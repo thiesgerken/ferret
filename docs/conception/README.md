@@ -33,7 +33,7 @@ It has two consumers:
 
 - Sharing documents between users (ACLs).
 - Server-side text extraction (PDF, OCR, docx). Paperless already OCRs, plugins extract text.
-- A built-in scheduler. Plugins run via cron, systemd timers or k8s CronJobs.
+- A built-in scheduler. Plugins run as Kubernetes CronJobs.
 - A chat viewer with media, reactions and replies.
 
 ## Architecture
@@ -239,6 +239,13 @@ Each document belongs to exactly one user. Search always filters by the caller's
 embedding cache is shared across users: a cache hit only saves compute for text the caller supplied
 themselves.
 
+Login, sessions, API keys and scopes: see [auth.md](auth.md).
+
+## Deployment
+
+Kubernetes-native: a Helm chart (server, Postgres, TEI, one CronJob per configured plugin) is the
+deployment, as in carapace. docker-compose exists for local development only.
+
 ## Consumers
 
 - **Search UI**: search first. Map and topics come later.
@@ -253,8 +260,8 @@ themselves.
   agent sessions get the skill at all.
 - **Prompt injection**: anyone who messages me can plant text an agent will read. Search output
   labels every hit with source and author and delimits the text as data.
-- **Tokens are scoped**: an agent's token can only search, an ingester's token can only ingest into
-  its sources.
+- **API keys are scoped**: an agent's key can only search, a plugin's key can only ingest into its
+  own sources ([auth.md](auth.md)).
 
 ## Backups
 
@@ -293,16 +300,15 @@ thousand articles), ~300k chunks.
 
 ## Open questions
 
-1. **Users and auth**: who besides me? How are users and tokens managed (static config, OIDC)?
-2. **Embedding model**: Qwen3-Embedding-0.6B vs bge-m3. Run a recall test on real German and
+1. **Embedding model**: Qwen3-Embedding-0.6B vs bge-m3. Run a recall test on real German and
    English chat windows and Paperless documents before the first full ingest.
-3. **Chat windowing**: gap and size parameters, and whether a window may cross the day-document
+2. **Chat windowing**: gap and size parameters, and whether a window may cross the day-document
    boundary (it can't with one document per day).
-4. **Email**: one document per message or per thread? How to strip quotes reliably?
-5. **AFFiNE**: is there a usable API or export for pages?
-6. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
+3. **Email**: one document per message or per thread? How to strip quotes reliably?
+4. **AFFiNE**: is there a usable API or export for pages?
+5. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
    mirror file?
-7. **Rebuild procedure** after a model change: re-embed in place (search degrades during the
+6. **Rebuild procedure** after a model change: re-embed in place (search degrades during the
    rebuild) or into a second column and switch?
 
 ## Naming
