@@ -33,31 +33,19 @@ It has two consumers:
 
 - Sharing documents between users (ACLs).
 - Server-side text extraction (PDF, OCR, docx). Paperless already OCRs, plugins extract text.
-- A built-in scheduler. Plugins run as Kubernetes CronJobs.
 - A chat viewer with media, reactions and replies.
 
 ## Architecture
 
-```text
- origins                 plugins (periodic)          ferret (one Rust binary)              consumers
- ───────                 ──────────────────          ────────────────────────              ─────────
- Obsidian, git     ─┐                               ┌─ ingest API ──┐
- Paperless         ─┤                               │               ▼
- email (IMAP)      ─┼─► ferret ingest <plugin> ─────┤      Postgres (pg_search, pgvector) ─► search API ─┬─► search UI
- AFFiNE            ─┤      (HTTP, like any          │               ▲                                  └─► carapace skill
- chats             ─┤       external ingester)      └─ embed worker ┘
- carapace, articles ┘                                      │
-                                                           ▼
-                                                    TEI (embeddings, reranker later)
-```
+See [architecture.md](architecture.md). In short:
 
-- **Server**: axum, sqlx. Ingest API and search API.
-- **Embed worker**: a tokio task inside the same binary, enabled by default (`--no-worker` to turn
-  it off). Several instances are safe because work is claimed with `SKIP LOCKED`.
-- **Embedder**: Hugging Face [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference)
-  (TEI), called over HTTP. It also serves rerankers.
-- **Plugins**: subcommands of the same binary (`ferret ingest paperless --config ...`). They talk to
-  the HTTP API like any third-party ingester, so the API is dogfooded.
+- **ferret-server** (Rust: axum, sqlx, juniper) is the only component with database access. GraphQL
+  for the UI, REST for machines, an internal API for plugin workers. It schedules plugin runs and
+  pumps chunks to the embedder.
+- **ferret-plugins** workers pull runs via long polling and ingest through the public REST API.
+- **TEI** (Hugging Face [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference))
+  computes embeddings, and later also serves the reranker.
+- **frontend**: Next.js, stack and look copied from carapace.
 
 ## Data model
 
@@ -95,7 +83,7 @@ create table chunks (
     text         text not null,
     text_hash    bytea not null,
     message_ids  text[],                   -- chats only: messages covered by this chunk
-    embedding    halfvec(1024)             -- null = waiting for the embed worker
+    embedding    halfvec(1024)             -- null = waiting for the embed pump
 );
 
 -- Saves compute across documents and users. Keyed by model, so a model change starts empty.
@@ -116,7 +104,7 @@ create table syncs (
 ```
 
 Indexes: BM25 (`pg_search`) on `chunks.text`, HNSW on `chunks.embedding`, a partial index on
-`chunks (id) where embedding is null` for the worker queue, GIN on `documents.meta`.
+`chunks (id) where embedding is null` for the embed queue, GIN on `documents.meta`.
 
 `halfvec` halves storage compared to `vector` with no measurable recall loss. The vector is copied
 into the chunk row although the cache has it too: search then stays on one table.
@@ -124,11 +112,11 @@ into the chunk row although the cache has it too: search then stays on one table
 ## Ingest API
 
 ```text
-PUT    /sources/{source}/documents/{external_id}    upsert, idempotent
-DELETE /sources/{source}/documents/{external_id}
-POST   /sources/{source}/syncs                      -> {sync_id}
-POST   /sources/{source}/syncs/{sync_id}/commit     sweep documents not seen in this sync
-GET    /documents/{id}                              full document, for context display
+PUT    /api/sources/{source}/documents/{external_id}    upsert, idempotent
+DELETE /api/sources/{source}/documents/{external_id}
+POST   /api/sources/{source}/syncs                      -> {sync_id}
+POST   /api/sources/{source}/syncs/{sync_id}/commit     sweep documents not seen in this sync
+GET    /api/documents/{id}                              full document, for context display
 ```
 
 Body of a PUT (non-chat):
@@ -178,7 +166,7 @@ All in one transaction:
 
 Plugins can therefore resend everything on every run without cost.
 
-## Embed worker
+## Embed pump
 
 The queue is `chunks where embedding is null`. No queue table, no Kafka.
 
@@ -191,7 +179,8 @@ for update skip locked;
 ```
 
 Embed the batch via TEI, write `chunks.embedding` and `embedding_cache`, commit. `LISTEN/NOTIFY`
-wakes idle workers after an ingest.
+wakes idle pumps after an ingest. Orchestration and scaling: see
+[architecture.md](architecture.md#embedding-orchestration).
 
 ## Removing stale content
 
@@ -215,12 +204,12 @@ token-aware and Markdown-aware splitting.
 | `chat` | windows split on gaps over ~30 min, capped at ~500 tokens, prefixed with channel name and participants |
 
 Every chunk keeps its offsets into the rendered text, so a hit shows both the localized snippet and,
-via `GET /documents/{id}`, the full context.
+via `GET /api/documents/{id}`, the full context.
 
 ## Search
 
 ```text
-GET /search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&k=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&k=
 ```
 
 - **Hybrid**: BM25 top N and vector top N, fused with reciprocal rank fusion (k = 60) in one SQL
@@ -243,12 +232,14 @@ Login, sessions, API keys and scopes: see [auth.md](auth.md).
 
 ## Deployment
 
-Kubernetes-native: a Helm chart (server, Postgres, TEI, one CronJob per configured plugin) is the
-deployment, as in carapace. docker-compose exists for local development only.
+Kubernetes-native: a Helm chart (server, plugin workers, frontend, TEI, Postgres) is the
+deployment, as in carapace. docker-compose exists for local development only. Details in
+[architecture.md](architecture.md#deployment).
 
 ## Consumers
 
-- **Search UI**: search first. Map and topics come later.
+- **UI**: a Google-like search page, plus Explore, Sources, Settings and Admin
+  ([architecture.md](architecture.md#frontend)). Map and topics come later.
 - **carapace**: a `kb-search` skill in the knowledge repo that calls the search API. The KB domain
   goes on the sandbox proxy allowlist, the token comes from the password manager, the sentinel gates
   the call. No carapace code.
@@ -260,8 +251,8 @@ deployment, as in carapace. docker-compose exists for local development only.
   agent sessions get the skill at all.
 - **Prompt injection**: anyone who messages me can plant text an agent will read. Search output
   labels every hit with source and author and delimits the text as data.
-- **API keys are scoped**: an agent's key can only search, a plugin's key can only ingest into its
-  own sources ([auth.md](auth.md)).
+- **Credentials are scoped**: an agent's API key can only search, a plugin run's token can only
+  ingest into its own source ([auth.md](auth.md)). Plugin credentials are encrypted at rest.
 
 ## Backups
 
@@ -276,7 +267,7 @@ itself on real data. Media (photos, voice notes) is not stored in ferret.
 3. carapace (memory mirror in the knowledge repo)
 4. Email (IMAP)
 5. AFFiNE (export or API, to be checked)
-6. Chats (WhatsApp and Signal exports, possibly Matrix with mautrix bridges for live ingestion)
+6. Chats (WhatsApp and Signal exports)
 7. Saved articles (Karakeep or Wallabag), their own source, so search can include or exclude them
 
 Only what I read or saved goes in. No news firehose.
@@ -294,7 +285,8 @@ thousand articles), ~300k chunks.
 ## Later
 
 - Local reranker (e.g. `bge-reranker-v2-m3` via TEI) over the fused top 50.
-- Map: Apple Embedding Atlas over all chunks, coloured by source.
+- Map in Explore: UMAP via Apple Embedding Atlas over all documents, coloured by source. Needs a
+  periodic projection job.
 - Topics and salience over carapace facts: BERTopic on the existing embeddings, plus custom
   salience (distinct sessions, spread, recency, a floor for durable facts).
 

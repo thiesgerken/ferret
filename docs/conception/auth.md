@@ -7,10 +7,20 @@ identity provider (e.g. Keycloak) later:
 
 - **Users** with password login. The browser session is a signed JWT in an HttpOnly cookie, checked
   against a server-side session record on every request.
-- **API keys** with scopes for everything that isn't a browser: plugins, agents, scripts.
+- **API keys** with scopes for agents, scripts and external ingesters.
+- **Plugin run tokens**: short-lived, issued per plugin run, scoped to one source.
+- **A worker PSK** for the internal API that plugin workers use to claim runs.
 - **Bootstrap** of the first admin from a Kubernetes Secret, no CLI step after deployment.
 
 All state lives in ferret's Postgres. The server itself is stateless.
+
+Each API accepts exactly one kind of credential:
+
+| API | Credential |
+|---|---|
+| GraphQL `/graphql` (UI) | session cookie |
+| REST `/api/...` | API key or plugin run token, as bearer |
+| REST `/internal/...` (own port) | worker PSK, as bearer |
 
 ## Users
 
@@ -113,28 +123,51 @@ create table api_keys (
 | `ingest` | list own sources and syncs | PUT and DELETE documents, start and commit syncs |
 | `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
-`sources` binds an ingest key to its sources: one plugin, one key. A leaked Paperless key can't
-overwrite or sweep chats.
+`sources` binds an ingest key to its sources. A leaked key for one ingester can't overwrite or sweep
+chats.
 
 Typical keys:
 
-- **A plugin**: `ingest:write`, `sources = {paperless}`.
+- **An external ingester** (a script outside ferret): `ingest:write`, `sources = {articles}`.
 - **carapace's `kb-search` skill**: `search:read`, nothing else.
 
 A key acts as its owner: it only ever sees and writes that user's documents.
 
+## Plugin run tokens
+
+Built-in plugins don't use API keys. When a worker claims a run ([architecture.md](architecture.md#plugin-orchestration)),
+the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `typ = plugin_run`, `sub` (the
+instance's user), `run` (run id), `source`, `exp` (run timeout).
+
+- It grants `ingest:write` on exactly that source of that user, nothing else.
+- On every request the server also checks that the run is still `running`. Finishing or losing a
+  run ends the token immediately.
+- Users never see or manage these tokens. Activating a plugin in the UI is all it takes.
+
+## Worker PSK
+
+Plugin workers authenticate to the internal API with `FERRET_WORKER_SECRET`, a pre-shared key
+mounted into server and workers from the same Secret (generated once by Helm via `lookup`, or
+`existingSecret`).
+
+- With it a worker can register, claim runs, send heartbeats and finish runs. A claimed run carries
+  decrypted plugin credentials, so the PSK is the most sensitive secret after the database
+  password and `FERRET_CONFIG_KEY`.
+- The internal API listens on its own port, which the Ingress doesn't expose and a NetworkPolicy
+  restricts to the worker pods. Running a worker outside the cluster is possible but not the
+  default.
+- Rotation: change the Secret, restart server and workers.
+
 ## Kubernetes
 
 ferret is Kubernetes-native: a Helm chart is the deployment, docker-compose exists for development
-only. For auth that means:
-
-- `FERRET_BOOTSTRAP_PASSWORD` and `FERRET_SESSION_SECRET` come from Secrets, as described above.
-- Plugins run as CronJobs from the same chart, each with its API key from its own Secret.
-- First deployment: install the chart, log in as `admin`, create the plugin keys in the UI, put
-  them into the plugins' Secrets. The plugins' CronJobs fail loudly until their Secret exists.
+only. All auth secrets (`FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`,
+`FERRET_WORKER_SECRET`) come from Secrets generated once via `lookup`, or from `existingSecret`.
+A fresh install needs no manual step: log in as `admin`, activate plugins in Sources.
 
 ## Later
 
 - **OIDC** (e.g. a Keycloak shared with carapace): login via the provider, local users matched by
   `sub` or username. API keys stay local.
+- Declarative provisioning of users and API keys (e.g. from Helm values), for GitOps setups.
 - Per-key IP restrictions or rate limits, if a key ever leaks in practice.
