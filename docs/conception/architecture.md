@@ -103,7 +103,7 @@ create table plugin_instances (
     id           uuid primary key,
     user_id      uuid not null references users on delete cascade,
     plugin       text not null references plugin_types,
-    source       text not null,                -- the source name its documents go to
+    source       text not null,                -- source root: documents go to it or below it
     config       jsonb not null,               -- secret fields encrypted, see below
     schedule     text not null,                -- cron expression
     enabled      boolean not null default true,

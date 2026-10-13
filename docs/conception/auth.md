@@ -8,7 +8,7 @@ identity provider (e.g. Keycloak) later:
 - **Users** with password login. The browser session is a signed JWT in an HttpOnly cookie, checked
   against a server-side session record on every request.
 - **API keys** with scopes for agents, scripts and external ingesters.
-- **Plugin run tokens**: short-lived, issued per plugin run, scoped to one source.
+- **Plugin run tokens**: short-lived, issued per plugin run, scoped to one source root.
 - **A worker PSK** for the internal API that plugin workers use to claim runs.
 - **Bootstrap** of the first admin from a Kubernetes Secret, no CLI step after deployment.
 
@@ -107,7 +107,7 @@ create table api_keys (
     prefix        text not null unique,
     secret_hash   text not null,
     scopes        text[] not null,             -- e.g. {'search:read', 'ingest:write'}
-    sources       text[],                      -- restricts ingest:write to these sources, null = all
+    sources       text[],                      -- restricts ingest:write to these source paths and below, null = all
     created_at    timestamptz not null,
     last_used_at  timestamptz,
     expires_at    timestamptz
@@ -124,8 +124,8 @@ create table api_keys (
 | `ingest` | list own sources and syncs | PUT and DELETE documents, start and commit syncs |
 | `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
-`sources` binds an ingest key to its sources. A leaked key for one ingester can't overwrite or sweep
-chats.
+`sources` binds an ingest key to source paths and everything below them. A leaked key for one
+ingester can't overwrite or sweep chats.
 
 Typical keys:
 
@@ -138,9 +138,10 @@ A key acts as its owner: it only ever sees and writes that user's documents.
 
 Built-in plugins don't use API keys. When a worker claims a run ([architecture.md](architecture.md#plugin-orchestration)),
 the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `typ = plugin_run`, `sub` (the
-instance's user), `run` (run id), `source`, `exp` (run timeout).
+instance's user), `run` (run id), `source` (the instance's source root), `exp` (run timeout).
 
-- It grants `ingest:write` on exactly that source of that user, nothing else.
+- It grants `ingest:write` on that source root and everything below it, for that user, nothing
+  else.
 - On every request the server also checks that the run is still `running`. Finishing or losing a
   run ends the token immediately.
 - Users never see or manage these tokens. Activating a plugin in the UI is all it takes.

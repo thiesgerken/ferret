@@ -59,7 +59,7 @@ Two layers with different durability:
 create table documents (
     id            uuid primary key,
     user_id       uuid not null,
-    source        text not null,           -- 'obsidian-main', 'paperless', 'whatsapp', ...
+    source        text not null,           -- a path: 'notes', 'paperless', 'carapace/facts', ...
     external_id   text not null,           -- stable id given by the ingester
     content_type  text not null,           -- 'markdown', 'plain', 'email': chunker and viewer hint
     title         text,
@@ -106,20 +106,35 @@ Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model o
 `chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at)` for
 thread navigation.
 
+## Sources
+
+Source names are paths (`carapace/facts`, `mail/inbox`). One plugin instance owns a root and may
+write into any source below it ([plugins.md](plugins.md#contract)).
+
+- Filters match by path prefix, segment-wise: `source=carapace` finds `carapace/facts` and
+  `carapace/sessions`, but not `carapace-old`. `source=` may be repeated.
+- Syncs, sweeps and credentials (run tokens, API keys) are scoped to a path and everything below it.
+
 ## Ingest API
 
 ```text
-PUT    /api/sources/{source}/documents/{external_id}    upsert, idempotent
-DELETE /api/sources/{source}/documents/{external_id}
-POST   /api/sources/{source}/syncs                      -> {sync_id}
-POST   /api/sources/{source}/syncs/{sync_id}/commit     sweep documents not seen in this sync
-GET    /api/documents/{id}                              full document, for context display
+PUT    /api/documents                           upsert by (source, external_id), idempotent
+DELETE /api/documents?source=&external_id=
+POST   /api/syncs                {source}      -> {sync_id}
+POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
+POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
+GET    /api/documents/{id}                      full document, for context display
 ```
+
+Source and external id travel in the body or query, never in the URL path: both may contain `/`
+(source paths, file paths), which path routing and proxies handle badly.
 
 Body of a PUT:
 
 ```json
 {
+  "source": "notes",
+  "external_id": "projects/ferret.md",
   "content_type": "markdown",
   "title": "...",
   "text": "...",
@@ -155,24 +170,8 @@ Plugins can therefore resend everything on every run without cost.
 
 ## Chats
 
-A chat plugin cuts a conversation into documents, one per **segment**:
-
-1. `external_id = {channel}:{first message id}`, `thread = {channel}`, `content_type = plain`.
-2. One open segment per channel. A message within the pause (~1 h) of the previous one is appended,
-   and the plugin re-sends the whole segment.
-3. A segment closes after a pause or at a size cap (~8k characters, a few chunks). A closed segment
-   never changes again, so late messages can't shift boundaries and produce duplicates (chats are
-   append-only, no sync sweep would clean them up).
-4. A segment under ~200 characters stays open across a pause, so a lone "ok" never becomes its own
-   document.
-5. The plugin state holds the cursor (last message id, open segment). Messages at or before the
-   cursor are skipped, so overlapping exports are harmless.
-6. The plugin renders the text: a header line (channel, participants, date), optionally the last
-   message of the previous segment as context, then one line per message (`[22:14] Alice: ...`).
-
-The parameters are guesses. They are plugin config, tunable once there are relevance judgments.
-
-The viewer navigates to the previous and next segment through `thread`.
+Chat plugins cut conversations into segments, each a regular `plain` document with
+`thread = {channel}`. See [plugins.md](plugins.md#chats).
 
 ## Embedding models
 
@@ -183,10 +182,12 @@ evaluates them on their own data and picks their own default. See [embeddings.md
 
 Depends on whether a source knows its full state:
 
-- **Full-state sources** (git, Obsidian, Paperless, AFFiNE, IMAP folders): start a sync, PUT
-  everything, commit. The commit deletes the source's documents with `seen_at < started_at`. If a
-  run crashes before the commit, nothing is deleted.
-- **Append-only sources** (chat exports, articles): never commit a sync. Explicit `DELETE` only.
+- **Origins that report deletions** (git diff): explicit `DELETE`.
+- **Origins that can list what exists** (Paperless, IMAP folders, a first full git ingest): start a
+  sync, `PUT` changed documents and `seen` the unchanged ones, commit. The commit deletes the
+  documents below the sync's source with `seen_at < started_at`. If a run crashes before the
+  commit, nothing is deleted.
+- **Append-only origins** (chat exports, articles): never commit a sync. Explicit `DELETE` only.
 
 ## Chunking
 
@@ -210,7 +211,8 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 
 - **Hybrid**: BM25 top N and vector top N, fused with reciprocal rank fusion (k = 60) in one SQL
   query. The vector half uses the user's default model unless `model=` says otherwise.
-- **Filters**: core columns plus equality on `meta` keys. No query language.
+- **Filters**: core columns plus equality on `meta` keys, `source` by path prefix. No query
+  language.
 - **Filtered vector search** needs pgvector's iterative index scans
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
@@ -250,7 +252,7 @@ deployment, as in carapace. docker-compose exists for local development only. De
 - **Prompt injection**: anyone who messages me can plant text an agent will read. Search output
   labels every hit with source and author and delimits the text as data.
 - **Credentials are scoped**: an agent's API key can only search, a plugin run's token can only
-  ingest into its own source ([auth.md](auth.md)). Plugin credentials are encrypted at rest.
+  ingest below its own source root ([auth.md](auth.md)). Plugin credentials are encrypted at rest.
 
 ## Backups
 
@@ -258,17 +260,10 @@ deployment, as in carapace. docker-compose exists for local development only. De
 barman). For chat exports it is the archive. Keep the raw export zips until the importer has proven
 itself on real data. Media (photos, voice notes) is not stored in ferret.
 
-## Plugins, in order of value per effort
+## Plugins
 
-1. Obsidian and git (files on disk)
-2. Paperless (REST API, OCR text included)
-3. carapace (memory mirror in the knowledge repo)
-4. Email (IMAP)
-5. AFFiNE (export or API, to be checked)
-6. Chats (WhatsApp and Signal exports)
-7. Saved articles (Karakeep or Wallabag), their own source, so search can include or exclude them
-
-Only what I read or saved goes in. No news firehose.
+v1 ships **git**, **Paperless** and **carapace**. Email, chats, AFFiNE and saved articles are on
+the roadmap. Details in [plugins.md](plugins.md).
 
 ## Sizing
 
@@ -294,9 +289,6 @@ thousand articles), ~300k chunks.
    evaluation feature ([embeddings.md](embeddings.md#evaluation)) once there are judgments.
 2. **Email**: one document per mail with `thread` = root Message-ID is the plan. How to strip
    quotes reliably?
-3. **AFFiNE**: is there a usable API or export for pages?
-4. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
-   mirror file?
 
 ## Naming
 
