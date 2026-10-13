@@ -52,8 +52,8 @@ See [architecture.md](architecture.md). In short:
 Two layers with different durability:
 
 - **`documents` is durable.** For chat exports it is the only copy. It gets backed up.
-- **`chunks` and embeddings are derived.** A change of model or chunker is a rebuild job over
-  `documents`, never a re-ingest.
+- **`chunks` and embeddings are derived.** A chunker change re-chunks from `documents`, a new model
+  backfills from `chunks`. Never a re-ingest.
 
 ```sql
 create table documents (
@@ -75,23 +75,19 @@ create table documents (
 );
 
 create table chunks (
-    id           uuid primary key,
-    document_id  uuid not null references documents on delete cascade,
-    ordinal      int not null,
-    start_offset int not null,             -- into the rendered document text
-    end_offset   int not null,
-    text         text not null,
-    text_hash    bytea not null,
-    message_ids  text[],                   -- chats only: messages covered by this chunk
-    embedding    halfvec(1024)             -- null = waiting for the embed pump
-);
-
--- Saves compute across documents and users. Keyed by model, so a model change starts empty.
-create table embedding_cache (
-    text_hash  bytea not null,
-    model      text not null,
-    embedding  halfvec(1024) not null,
-    primary key (text_hash, model)
+    id            uuid primary key,
+    document_id   uuid not null references documents on delete cascade,
+    -- Denormalized from documents, so BM25 and vector search filter without a join.
+    user_id       uuid not null,
+    source        text not null,
+    content_type  text not null,
+    ts            timestamptz not null,    -- chats: first message of the window, else document created_at
+    ordinal       int not null,
+    start_offset  int not null,            -- into the rendered document text
+    end_offset    int not null,
+    text          text not null,
+    text_hash     bytea not null,
+    message_ids   text[]                   -- chats only: messages covered by this chunk
 );
 
 create table syncs (
@@ -103,11 +99,11 @@ create table syncs (
 );
 ```
 
-Indexes: BM25 (`pg_search`) on `chunks.text`, HNSW on `chunks.embedding`, a partial index on
-`chunks (id) where embedding is null` for the embed queue, GIN on `documents.meta`.
+Embeddings live in `chunk_embeddings`, one row per chunk and model, so several models can be live
+at once. See [embeddings.md](embeddings.md).
 
-`halfvec` halves storage compared to `vector` with no measurable recall loss. The vector is copied
-into the chunk row although the cache has it too: search then stays on one table.
+Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
+`chunk_embeddings`, GIN on `documents.meta`.
 
 ## Ingest API
 
@@ -161,26 +157,15 @@ All in one transaction:
 1. Render the document text (chats: one line per message) and hash it.
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
 3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding. New
-   chunks look up `embedding_cache` and stay `null` on a miss.
+   chunks look up `embedding_cache` per configured model and are left to the embed pump on a miss.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
 Plugins can therefore resend everything on every run without cost.
 
-## Embed pump
+## Embedding models
 
-The queue is `chunks where embedding is null`. No queue table, no Kafka.
-
-```sql
-select id, text from chunks
-where embedding is null
-order by id
-limit 64
-for update skip locked;
-```
-
-Embed the batch via TEI, write `chunks.embedding` and `embedding_cache`, commit. `LISTEN/NOTIFY`
-wakes idle pumps after an ingest. Orchestration and scaling: see
-[architecture.md](architecture.md#embedding-orchestration).
+Several models can be live at the same time, each backfilled by the embed pump. Every user
+evaluates them on their own data and picks their own default. See [embeddings.md](embeddings.md).
 
 ## Removing stale content
 
@@ -209,14 +194,16 @@ via `GET /api/documents/{id}`, the full context.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&k=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&model=&k=
 ```
 
 - **Hybrid**: BM25 top N and vector top N, fused with reciprocal rank fusion (k = 60) in one SQL
-  query.
+  query. The vector half uses the user's default model unless `model=` says otherwise.
 - **Filters**: core columns plus equality on `meta` keys. No query language.
 - **Filtered vector search** needs pgvector's iterative index scans
-  (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k.
+  (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
+  scans only filter on columns of the vector's own table, hence the denormalized filter columns.
+  Author and `meta` filters are rare and selective and stay a join.
 - **German compounds**: "Versicherung" must find "Kfz-Versicherungsbeitrag". Index chunk text twice
   in `pg_search`: a stemmed field and an ngram field.
 - **Result**: chunk text with highlights, offsets, document id, source, content type, title,
@@ -280,7 +267,7 @@ thousand articles), ~300k chunks.
 - Embedding the full corpus once locally (Qwen3-Embedding-0.6B or bge-m3): a few hours on Apple
   Silicon, under one hour on a gaming GPU, days on a CPU-only server. Incremental updates are
   negligible.
-- Storage: ~600 MB of `halfvec(1024)` plus the HNSW index.
+- Storage: ~600 MB of `halfvec(1024)` per live model, plus its HNSW index.
 
 ## Later
 
@@ -292,16 +279,14 @@ thousand articles), ~300k chunks.
 
 ## Open questions
 
-1. **Embedding model**: Qwen3-Embedding-0.6B vs bge-m3. Run a recall test on real German and
-   English chat windows and Paperless documents before the first full ingest.
+1. **Initial default model**: Qwen3-Embedding-0.6B or bge-m3. Run both, then decide with the
+   evaluation feature ([embeddings.md](embeddings.md#evaluation)) once there are judgments.
 2. **Chat windowing**: gap and size parameters, and whether a window may cross the day-document
    boundary (it can't with one document per day).
 3. **Email**: one document per message or per thread? How to strip quotes reliably?
 4. **AFFiNE**: is there a usable API or export for pages?
 5. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
    mirror file?
-6. **Rebuild procedure** after a model change: re-embed in place (search degrades during the
-   rebuild) or into a second column and switch?
 
 ## Naming
 

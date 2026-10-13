@@ -35,7 +35,8 @@ create table users (
     token_version        int not null default 1,
     created_at           timestamptz not null,
     password_changed_at  timestamptz not null,
-    last_login_at        timestamptz
+    last_login_at        timestamptz,
+    default_embedding_model text           -- null = configured default, see embeddings.md
 );
 ```
 

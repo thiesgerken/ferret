@@ -172,14 +172,16 @@ XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the ser
 
 - **TEI** runs as its own Deployment. Scaling the embedders means scaling TEI (replicas behind a
   Service, GPU optional via `nodeSelector`).
+- **One TEI Deployment per configured model** ([embeddings.md](embeddings.md#models)).
 - **The embed pump** is a tokio task in ferret-server. `LISTEN chunks_pending` wakes it (polling as
-  fallback). It claims a batch of `chunks where embedding is null` with `SKIP LOCKED`, sends it to
-  TEI, and writes `chunks.embedding` and `embedding_cache` in one transaction.
+  fallback). It claims a batch of chunks without an embedding for a model with `SKIP LOCKED`, sends
+  it to that model's TEI, and writes `chunk_embeddings` and `embedding_cache` in one transaction.
+  Default model first.
 - **Several pumps** (concurrency setting, server replicas) share the queue through `SKIP LOCKED`.
   No worker protocol: routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
   semantically searchable first. Keyword search covers everything from the moment of ingest.
-- The backlog per source (`count(*) where embedding is null`) is visible in Sources and Admin.
+- The backlog per source and model is visible in Sources, Settings and Admin.
 
 ## Frontend
 
@@ -189,11 +191,11 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 
 | Section | Contents |
 |---|---|
-| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), snippets with highlighting, a hit opens the viewer at its position |
+| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Sources** (`/sources`) | One card per plugin instance: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs |
-| **Settings** (`/settings`) | Account, API keys |
-| **Admin** (`/admin`) | Users, workers and their plugins, system status (TEI, global backlog) |
+| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model), search log |
+| **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
 
@@ -210,7 +212,7 @@ The Helm chart, modelled on carapace's:
   port.
 - `ferret-plugins` Deployment, optionally several with different `--plugins` sets.
 - `frontend` Deployment.
-- TEI Deployment.
+- One TEI Deployment per configured embedding model.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
 - Ingress, NetworkPolicy for the internal port.
