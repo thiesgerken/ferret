@@ -124,6 +124,7 @@ POST   /api/syncs                {source}      -> {sync_id}
 POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
 GET    /api/documents/{id}                      full document, for context display
+GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
 ```
 
 Source and external id travel in the body or query, never in the URL path: both may contain `/`
@@ -221,6 +222,10 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   in `pg_search`: a stemmed field and an ngram field.
 - **Result**: chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`.
+- **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
+  this thread", like a web search collapses hits per domain. It catches quoted text that survived
+  email stripping and consecutive chat segments. The API returns the collapsed count, and
+  `collapse=false` turns it off.
 
 ## Users
 
@@ -296,8 +301,7 @@ thousand articles), ~300k chunks.
 
 ## Open questions
 
-1. **Email**: one document per mail with `thread` = root Message-ID is the plan. How to strip
-   quotes reliably?
+None for v1 at the moment. Plugin-specific details are settled when the plugin is built.
 
 ## Naming
 

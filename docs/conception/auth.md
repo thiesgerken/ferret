@@ -121,7 +121,7 @@ create table api_keys (
 | scope | read | write |
 |---|---|---|
 | `search` | search, `GET /documents/{id}`, conversation views | |
-| `ingest` | list own sources and syncs | PUT and DELETE documents, start and commit syncs |
+| `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
 | `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
 `sources` binds an ingest key to source paths and everything below them. A leaked key for one

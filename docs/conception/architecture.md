@@ -191,7 +191,7 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 
 | Section | Contents |
 |---|---|
-| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
+| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Sources** (`/sources`) | One card per plugin instance: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs |
 | **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model), search log |

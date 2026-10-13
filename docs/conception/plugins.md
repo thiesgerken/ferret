@@ -98,13 +98,61 @@ change its rendering freely.
 
 In rough order of value per effort:
 
-1. **Email (IMAP)**: one document per mail, `thread` = root Message-ID, quoted replies stripped.
-   Sources per folder, e.g. `mail/inbox`, `mail/sent`. Deletions via UID listing.
+1. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
+   follows as its own plugin (Microsoft Graph rather than IMAP).
 2. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
 3. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
    already talks to AFFiNE through an MCP server, which shows a working API and auth path. Worst
    case, the MCP server is the API.
 4. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
+
+### Email
+
+IMAP, MIME parsing with [`mail-parser`](https://crates.io/crates/mail-parser), which also turns HTML
+into text.
+
+**Identity**
+
+- `external_id` = Message-ID, so a mail in several folders is one document and a move to another
+  folder changes nothing but metadata.
+- Source = `mail/<account>`, e.g. `mail/zoho`. Folders go to `meta.folders` (an array).
+- `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
+- `title` = subject, `authors` = From, `meta`: To, Cc, folders, attachment names. `created_at` =
+  the `Date` header.
+- `url` from an optional `url_template` with `{message_id}` (e.g. `mid:{message_id}`, RFC 2392).
+  Without one, ferret's viewer is the origin.
+
+**Sync and deletions**
+
+- Per folder, `UIDVALIDITY` and the last UID are the cursor. New mails come in through
+  `UID FETCH`. A changed `UIDVALIDITY` refetches that folder.
+- Every run is a sync over the account: fetch the Message-IDs of all UIDs (`ENVELOPE`, a few MB for
+  50k mails), `seen` for all of them, `PUT` the new ones, commit. Deleted mails disappear with the
+  sweep.
+- Trash, Spam and Drafts are excluded (configurable), so a mail moved to Trash counts as deleted.
+- No noise filter: unwanted mails get deleted at the origin.
+
+**Stripping quoted text**, in this order:
+
+1. **HTML quote containers** before the HTML-to-text conversion: `blockquote[type=cite]` (Apple
+   Mail, Thunderbird), `div.gmail_quote`, Outlook's `#divRplyFwdMsg` and reply header block.
+2. **Text markers**, German and English: lines starting with `>`, `On ... wrote:` /
+   `Am ... schrieb ...:`, `-----Original Message-----` / `-----Ursprüngliche Nachricht-----`,
+   `From:`/`Sent:` and `Von:`/`Gesendet:` header blocks.
+3. **Thread diff**: the plugin processes a thread's new mails in date order and loads the thread's
+   earlier mails from ferret (`GET /api/documents?source=&thread=`, already stripped). From each new
+   mail it removes every run of at least 3 consecutive lines that already appeared in an earlier
+   mail of the thread, after normalizing (`>` removed, whitespace collapsed). Diffing against the
+   whole thread, not just the parent, also catches the parent's quote of the grandparent. Runs of 3
+   protect short lines like "Thanks!" that parent and reply happen to share. Top-posting and inline
+   replies both work, only matching runs go.
+
+Forwards (`Fwd:`, `WG:`) keep the forwarded content, it's new to me. An older mail that turns up
+after its replies (moved in from elsewhere) doesn't retroactively strip them. Accepted, it's a
+heuristic. Leftover duplicates are caught at search time by collapsing hits per thread
+([README](README.md#search)).
+
+**Wishlist**: attachment text (PDFs, Office documents).
 
 ### Chats
 
