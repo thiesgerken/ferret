@@ -61,14 +61,15 @@ create table documents (
     user_id       uuid not null,
     source        text not null,           -- 'obsidian-main', 'paperless', 'whatsapp', ...
     external_id   text not null,           -- stable id given by the ingester
-    content_type  text not null,           -- 'markdown', 'plain', 'email', 'chat'
+    content_type  text not null,           -- 'markdown', 'plain', 'email': chunker and viewer hint
     title         text,
-    url           text,                    -- required unless content_type = 'chat'
+    url           text,                    -- deep link to the origin, null = ferret's viewer is the origin
+    thread        text,                    -- groups documents into a sequence: chat channel, email thread
     authors       text[] not null,
     created_at    timestamptz not null,
     modified_at   timestamptz not null,
     meta          jsonb not null default '{}',
-    body          jsonb not null,          -- text, or structured messages for chats
+    text          text not null,
     content_hash  bytea not null,
     seen_at       timestamptz not null,    -- bumped on every PUT, even a no-op (see sync sweep)
     unique (user_id, source, external_id)
@@ -81,13 +82,12 @@ create table chunks (
     user_id       uuid not null,
     source        text not null,
     content_type  text not null,
-    ts            timestamptz not null,    -- chats: first message of the window, else document created_at
+    ts            timestamptz not null,    -- the document's created_at
     ordinal       int not null,
     start_offset  int not null,            -- into the rendered document text
     end_offset    int not null,
     text          text not null,
-    text_hash     bytea not null,
-    message_ids   text[]                   -- chats only: messages covered by this chunk
+    text_hash     bytea not null
 );
 
 create table syncs (
@@ -103,7 +103,8 @@ Embeddings live in `chunk_embeddings`, one row per chunk and model, so several m
 at once. See [embeddings.md](embeddings.md).
 
 Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
-`chunk_embeddings`, GIN on `documents.meta`.
+`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at)` for
+thread navigation.
 
 ## Ingest API
 
@@ -115,7 +116,7 @@ POST   /api/sources/{source}/syncs/{sync_id}/commit     sweep documents not seen
 GET    /api/documents/{id}                              full document, for context display
 ```
 
-Body of a PUT (non-chat):
+Body of a PUT:
 
 ```json
 {
@@ -123,6 +124,7 @@ Body of a PUT (non-chat):
   "title": "...",
   "text": "...",
   "url": "obsidian://open?vault=main&file=...",
+  "thread": null,
   "authors": ["..."],
   "created_at": "...",
   "modified_at": "...",
@@ -130,37 +132,47 @@ Body of a PUT (non-chat):
 }
 ```
 
-Chats are structured, one document per conversation and day (`external_id = {channel}:{date}`):
-
-```json
-{
-  "content_type": "chat",
-  "channel": "...",
-  "messages": [{"id": "...", "sender": "...", "sent_at": "...", "body": "..."}]
-}
-```
-
-When a new message arrives, the plugin sends the whole day again. The hash diff below makes that
-cheap.
+Everything is a document. **The ingesting client decides what a document is**, the server only
+chunks it. There is no chat-specific structure, see [Chats](#chats).
 
 ### Validation
 
-- `url` is required for `markdown`, `plain` and `email`, and rejected for `chat`. Chats have no
-  usable origin to link to (WhatsApp and Signal have no message deep links). A chat hit links to
-  ferret's own conversation view instead.
+- `url` is optional. Without one, ferret's viewer is the origin (e.g. WhatsApp and Signal exports,
+  which have no message deep links).
 - Missing required fields are a 4xx, never a silent default.
 
 ### What a PUT does
 
 All in one transaction:
 
-1. Render the document text (chats: one line per message) and hash it.
+1. Hash the document (text plus metadata).
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
 3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding. New
    chunks look up `embedding_cache` per configured model and are left to the embed pump on a miss.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
 Plugins can therefore resend everything on every run without cost.
+
+## Chats
+
+A chat plugin cuts a conversation into documents, one per **segment**:
+
+1. `external_id = {channel}:{first message id}`, `thread = {channel}`, `content_type = plain`.
+2. One open segment per channel. A message within the pause (~1 h) of the previous one is appended,
+   and the plugin re-sends the whole segment.
+3. A segment closes after a pause or at a size cap (~8k characters, a few chunks). A closed segment
+   never changes again, so late messages can't shift boundaries and produce duplicates (chats are
+   append-only, no sync sweep would clean them up).
+4. A segment under ~200 characters stays open across a pause, so a lone "ok" never becomes its own
+   document.
+5. The plugin state holds the cursor (last message id, open segment). Messages at or before the
+   cursor are skipped, so overlapping exports are harmless.
+6. The plugin renders the text: a header line (channel, participants, date), optionally the last
+   message of the previous segment as context, then one line per message (`[22:14] Alice: ...`).
+
+The parameters are guesses. They are plugin config, tunable once there are relevance judgments.
+
+The viewer navigates to the previous and next segment through `thread`.
 
 ## Embedding models
 
@@ -174,7 +186,7 @@ Depends on whether a source knows its full state:
 - **Full-state sources** (git, Obsidian, Paperless, AFFiNE, IMAP folders): start a sync, PUT
   everything, commit. The commit deletes the source's documents with `seen_at < started_at`. If a
   run crashes before the commit, nothing is deleted.
-- **Append-only sources** (chats, articles): never commit a sync. Explicit `DELETE` only.
+- **Append-only sources** (chat exports, articles): never commit a sync. Explicit `DELETE` only.
 
 ## Chunking
 
@@ -184,9 +196,8 @@ token-aware and Markdown-aware splitting.
 | content type | strategy |
 |---|---|
 | `markdown` | by heading, then paragraph, capped by tokens |
-| `plain` | by paragraph, capped by tokens |
-| `email` | quoted reply chains stripped (the quoted mail is its own document) |
-| `chat` | windows split on gaps over ~30 min, capped at ~500 tokens, prefixed with channel name and participants |
+| `plain` | by paragraph, then line, capped by tokens |
+| `email` | like `plain`. The plugin strips quoted replies, the quoted mail is its own document |
 
 Every chunk keeps its offsets into the rendered text, so a hit shows both the localized snippet and,
 via `GET /api/documents/{id}`, the full context.
@@ -207,7 +218,7 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **German compounds**: "Versicherung" must find "Kfz-Versicherungsbeitrag". Index chunk text twice
   in `pg_search`: a stemmed field and an ngram field.
 - **Result**: chunk text with highlights, offsets, document id, source, content type, title,
-  authors, timestamps, `url`. Chat hits carry `channel` and `message_id` instead of `url`.
+  authors, timestamps, `url`, `thread`.
 
 ## Users
 
@@ -281,11 +292,10 @@ thousand articles), ~300k chunks.
 
 1. **Initial default model**: Qwen3-Embedding-0.6B or bge-m3. Run both, then decide with the
    evaluation feature ([embeddings.md](embeddings.md#evaluation)) once there are judgments.
-2. **Chat windowing**: gap and size parameters, and whether a window may cross the day-document
-   boundary (it can't with one document per day).
-3. **Email**: one document per message or per thread? How to strip quotes reliably?
-4. **AFFiNE**: is there a usable API or export for pages?
-5. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
+2. **Email**: one document per mail with `thread` = root Message-ID is the plan. How to strip
+   quotes reliably?
+3. **AFFiNE**: is there a usable API or export for pages?
+4. **carapace**: parse the rendered Markdown mirror, or have carapace write a JSON file next to each
    mirror file?
 
 ## Naming

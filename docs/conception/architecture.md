@@ -199,10 +199,10 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 
 Everything except Search is reached through an app menu in the top right, like Google's.
 
-**The viewer** is shared by Search and Explore. It renders a document by content type: Markdown,
-plain text, email (headers plus body), chat (the conversation view: messages around the hit, with
-scrolling into earlier and later days). It always shows the link back to the origin when there is
-one.
+**The viewer** is shared by Search and Explore. It renders a document by content type (Markdown,
+plain text, email with headers), scrolled to the hit. Documents with a `thread` get previous and
+next navigation within it, which turns chat segments into a scrollable conversation and mails into
+a thread. It always shows the link back to the origin when there is one.
 
 ## Deployment
 
