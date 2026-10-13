@@ -20,12 +20,24 @@ embedding:
   default: qwen3-embedding-0.6b
   models:
     - name: qwen3-embedding-0.6b
-      url: http://ferret-tei-qwen3:80
-    - name: bge-m3
-      url: http://ferret-tei-bge-m3:80
+      url: http://ferret-tei-qwen3:80             # queries, and the pump unless bulk_url is set
+      bulk_url: http://ferret-tei-qwen3-gpu:80    # optional: the pump only
+      query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
+      document_prefix: ""
 ```
 
 At startup the server reads each model's dimension and `max_input_length` from TEI's `/info`.
+
+- **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
+  `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
+  part of the cache key (`text_hash` covers prefix plus text), so changing it never serves stale
+  vectors.
+- **`bulk_url`**: online embedding (queries, incremental ingest) runs on CPU. Big backfills run on a
+  GPU node that joins the cluster temporarily. With `bulk_url` set, the pump uses only that
+  endpoint. If it is unreachable the pump fails loudly (error in Admin, backlog grows) instead of
+  falling back to the CPU endpoint, which would slow the backfill to days without anyone noticing.
+  Queries are unaffected either way. One Service over CPU and GPU pods doesn't work: HTTP keep-alive
+  pins connections to pods, so the split would be random.
 
 - **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
   refuses to start. TEI would otherwise truncate chunks silently.

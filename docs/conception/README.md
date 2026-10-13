@@ -265,6 +265,17 @@ itself on real data. Media (photos, voice notes) is not stored in ferret.
 v1 ships **git**, **Paperless** and **carapace**. Email, chats, AFFiNE and saved articles are on
 the roadmap. Details in [plugins.md](plugins.md).
 
+## Embedding model choice
+
+- **Default: Qwen3-Embedding-0.6B** (June 2025, Apache 2.0, 1024 dimensions, 32k context,
+  multilingual, query instruction required).
+- **A second model from day one**, so the evaluation has something to compare against. Candidates
+  to check when the TEI deployment is set up (license, German quality, TEI support):
+  jina-embeddings-v5-text-small, Granite Embedding Multilingual R2, DenseOn (all 2026). bge-m3
+  (January 2024) is the fallback if none of them runs in TEI.
+- **Hardware**: CPU for queries and incremental ingest, a temporarily added GPU node (gaming PC)
+  for backfills ([embeddings.md](embeddings.md#models)).
+
 ## Sizing
 
 Rough corpus: ~40M tokens (50k mails, 500k chat messages, 5k Paperless documents, notes, a few
@@ -285,9 +296,7 @@ thousand articles), ~300k chunks.
 
 ## Open questions
 
-1. **Initial default model**: Qwen3-Embedding-0.6B or bge-m3. Run both, then decide with the
-   evaluation feature ([embeddings.md](embeddings.md#evaluation)) once there are judgments.
-2. **Email**: one document per mail with `thread` = root Message-ID is the plan. How to strip
+1. **Email**: one document per mail with `thread` = root Message-ID is the plan. How to strip
    quotes reliably?
 
 ## Naming

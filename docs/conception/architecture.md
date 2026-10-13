@@ -212,7 +212,10 @@ The Helm chart, modelled on carapace's:
   port.
 - `ferret-plugins` Deployment, optionally several with different `--plugins` sets.
 - `frontend` Deployment.
-- One TEI Deployment per configured embedding model.
+- One TEI Deployment per configured embedding model, on CPU.
+- Optionally (`tei.gpu.enabled`) a GPU TEI Deployment per model for backfills, pinned to a tainted
+  GPU node that joins the cluster temporarily. It sets the model's `bulk_url`. The image tag
+  depends on the GPU architecture and is a value.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
 - Ingress, NetworkPolicy for the internal port.
