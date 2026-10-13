@@ -58,20 +58,35 @@ Indexes files from a git repository: Obsidian vaults, notes repos, code docs.
 Reads the user's carapace knowledge repo through its upstream remote. ferret never talks to
 carapace itself.
 
-**Requires a carapace change:** the memory mirror writes a JSON sidecar next to every Markdown file
-(`ExtractionRecord` and `DigestRecord` as `model_dump_json()`). The plugin parses those, never the
-rendered Markdown, so carapace can change its rendering freely.
+**v1 parses the rendered Markdown** of the memory mirror (`src/carapace/memory/render.py`):
+
+- YAML front matter: `kind`, `session_id`, `week_key`, `month_key`, `created_at`, `provenance`
+  (digests: `period_key`, `coverage`).
+- Body sections by heading: abstract (prose under the title), `## Outcomes`, `## Open loops`,
+  `## On my mind`, `## Facts` with one `### <category>` per category, `## Friction`, `## Tags`.
+- Fact lines: `- **<subject>**: <statement> _(<source_kind> · <confidence> confidence ·
+  <durability or "dated until <date>"> · #<seq> ...)_`.
+
+This couples the plugin to carapace's render format. Parser tests run against fixtures rendered
+by carapace, and a line that doesn't parse fails the run instead of being skipped.
+
+**v2: JSON sidecars.** The mirror writes `ExtractionRecord` and `DigestRecord` as
+`model_dump_json()` next to every Markdown file, and the plugin switches to those. carapace can then
+change its rendering freely.
 
 | Source | Documents | `external_id` | Text |
 |---|---|---|---|
 | `carapace/sessions` | one per session | `{session_id}` | abstract, outcomes, open loops, on my mind |
-| `carapace/facts` | one per fact | `{session_id}#{seq}` | the fact, plus subject and category |
+| `carapace/facts` | one per fact | `{session_id}/{hash of subject and statement}` | the fact, plus subject and category |
 | `carapace/digests` | one per week and month | `{level}:{period_key}` | summary, highlights, open loops |
 | `carapace/files` | everything else in the repo (skills, workspace notes) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
   `session_id`. Session and digest `meta`: week and month keys, provenance.
 - `memory/facts/*.md` is ignored: it repeats the facts of the session files.
+- Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
+  share them). The hash of subject and statement is stable as long as the fact is, and a reworded
+  fact is a different fact.
 - Incremental like the git plugin. A changed session file can lose facts: the plugin compares the
   fact ids of the old version (`git show <cursor>:<path>`) with the new one and deletes the missing
   ones.
