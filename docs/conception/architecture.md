@@ -9,7 +9,7 @@
   through the same REST API any external ingester uses.
 - **TEI** computes embeddings.
 - **frontend** (Next.js) is a copy of carapace's stack and look: Google-like search page, plus
-  Explore, Sources, Settings and Admin.
+  Explore, Connections, Settings and Admin.
 
 Every component is stateless except Postgres, so server and workers scale by replicas. All
 coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message broker.
@@ -64,7 +64,7 @@ Three APIs, each with exactly one auth mechanism (details in [auth.md](auth.md))
 | REST `/api/...` | public | plugins, external ingesters, agents | API key or plugin run token (bearer) |
 | REST `/internal/...` | internal | plugin workers | worker PSK |
 
-- **GraphQL for the UI.** The UI reads nested, filtered data (sources with their runs and logs,
+- **GraphQL for the UI.** The UI reads nested, filtered data (connections with their runs and logs,
   facet counts in Explore, search hits with their documents), which is what GraphQL is good at.
   The server uses juniper via `juniper_axum`, the patterns come from moneta. The frontend uses urql
   with GraphQL Code Generator for typed documents. The server prints the SDL (`ferret schema`),
@@ -80,7 +80,7 @@ API layers stay thin.
 
 ## Plugin orchestration
 
-Plugins are configured per user in the server (Sources in the UI). Workers pull runs.
+A plugin configured by a user is a **connection** (Connections in the UI). Workers pull its runs.
 
 ### Data model
 
@@ -99,7 +99,7 @@ create table workers (
     last_seen_at  timestamptz not null
 );
 
-create table plugin_instances (
+create table connections (
     id           uuid primary key,
     user_id      uuid not null references users on delete cascade,
     plugin       text not null references plugin_types,
@@ -114,7 +114,7 @@ create table plugin_instances (
 
 create table plugin_runs (
     id            uuid primary key,
-    instance_id   uuid not null references plugin_instances on delete cascade,
+    connection_id uuid not null references connections on delete cascade,
     worker_id     uuid not null references workers,
     status        text not null,               -- 'running', 'succeeded', 'failed', 'lost'
     started_at    timestamptz not null,
@@ -125,6 +125,19 @@ create table plugin_runs (
     error         text
 );
 ```
+
+### Disabling and deleting
+
+- **Disable** stops runs and keeps the documents.
+- **Delete** removes the connection and every document below its source root, after the user types
+  the source root to confirm. For sources without an origin to re-fetch from (chat exports), the
+  confirmation says that ferret holds the only copy.
+
+### Source ownership
+
+Every source below a connection's root belongs to that connection exclusively: API keys can't
+write there, and connection roots can't overlap. Otherwise a sync sweep would delete documents
+someone else wrote. API keys write only to sources outside every connection's root.
 
 ### Run lifecycle
 
@@ -138,7 +151,7 @@ POST /internal/runs/{id}/finish    {status, state, stats, error}
 1. **Register**: at startup the worker upserts its plugin types and announces its capabilities.
    Dedicated workers per plugin come for free: a worker started with `--plugins imap` only ever gets
    IMAP runs.
-2. **Claim (long poll)**: the server looks for an enabled instance of one of the worker's plugins
+2. **Claim (long poll)**: the server looks for an enabled connection of one of the worker's plugins
    with `next_run_at <= now()` and no live run, using `FOR UPDATE SKIP LOCKED`. On a hit it inserts
    a `plugin_runs` row, advances `next_run_at` to the next cron slot, and returns the run: config
    with decrypted secrets, `state`, and a run token. Otherwise it holds the request until the
@@ -154,7 +167,7 @@ There is no scheduler process. Due runs are found at claim time, which works wit
 server replicas.
 
 **Lost runs**: a run whose heartbeat is older than the lease (2 min) counts as lost. The next claim
-marks it `lost` and may start the instance again. An uncommitted sync deletes nothing, so a crashed
+marks it `lost` and may start the connection again. An uncommitted sync deletes nothing, so a crashed
 run is harmless.
 
 ### Plugin credentials
@@ -181,7 +194,7 @@ XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the ser
   No worker protocol: routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
   semantically searchable first. Keyword search covers everything from the moment of ingest.
-- The backlog per source and model is visible in Sources, Settings and Admin.
+- The backlog per source and model is visible in Connections, Settings and Admin.
 
 ## Frontend
 
@@ -193,7 +206,7 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 |---|---|
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
-| **Sources** (`/sources`) | One card per plugin instance: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs |
+| **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
 | **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model), search log |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 

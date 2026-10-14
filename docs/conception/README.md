@@ -23,8 +23,8 @@ It has two consumers:
   as soon as the call returns, semantic search follows shortly after.
 - **One store.** Postgres with ParadeDB `pg_search` (BM25) and pgvector. No separate search engine,
   no message broker.
-- **Local embeddings.** DMs and private documents never leave the machine for indexing. One model
-  for everything, because all documents share one embedding space.
+- **Local embeddings.** DMs and private documents never leave the machine for indexing. Vectors
+  are only ever compared within one embedding model, several models can be live side by side.
 - **No knowledge graph, no LLM fact extraction.** The sources already carry structure (senders,
   correspondents, wikilinks, tags) that goes into metadata deterministically. Facts are carapace's
   job.
@@ -108,8 +108,8 @@ thread navigation.
 
 ## Sources
 
-Source names are paths (`carapace/facts`, `mail/inbox`). One plugin instance owns a root and may
-write into any source below it ([plugins.md](plugins.md#contract)).
+Source names are paths (`carapace/facts`, `mail/zoho`). A connection (a plugin configured by a
+user) owns a root and may write into any source below it ([plugins.md](plugins.md#contract)).
 
 - Filters match by path prefix, segment-wise: `source=carapace` finds `carapace/facts` and
   `carapace/sessions`, but not `carapace-old`. `source=` may be repeated.
@@ -184,7 +184,7 @@ evaluates them on their own data and picks their own default. See [embeddings.md
 Depends on whether a source knows its full state:
 
 - **Origins that report deletions** (git diff): explicit `DELETE`.
-- **Origins that can list what exists** (Paperless, IMAP folders, a first full git ingest): start a
+- **Origins that can list what exists** (Paperless, IMAP accounts, a first full git ingest): start a
   sync, `PUT` changed documents and `seen` the unchanged ones, commit. The commit deletes the
   documents below the sync's source with `seen_at < started_at`. If a run crashes before the
   commit, nothing is deleted.
@@ -220,7 +220,11 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   Author and `meta` filters are rare and selective and stay a join.
 - **German compounds**: "Versicherung" must find "Kfz-Versicherungsbeitrag". Index chunk text twice
   in `pg_search`: a stemmed field and an ngram field.
-- **Result**: chunk text with highlights, offsets, document id, source, content type, title,
+- **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
+  document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
+  the document level.
+- **Time filter**: `from`/`to` filter on `created_at`. `modified_at` is shown in the hit.
+- **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
@@ -243,7 +247,7 @@ deployment, as in carapace. docker-compose exists for local development only. De
 
 ## Consumers
 
-- **UI**: a Google-like search page, plus Explore, Sources, Settings and Admin
+- **UI**: a Google-like search page, plus Explore, Connections, Settings and Admin
   ([architecture.md](architecture.md#frontend)). Map and topics come later.
 - **carapace**: a `kb-search` skill in the knowledge repo that calls the search API. The KB domain
   goes on the sandbox proxy allowlist, the token comes from the password manager, the sentinel gates
@@ -261,9 +265,13 @@ deployment, as in carapace. docker-compose exists for local development only. De
 
 ## Backups
 
-`documents` is backed up like any primary data store (pg_dump on a schedule, or pgBackRest / CNPG
-barman). For chat exports it is the archive. Keep the raw export zips until the importer has proven
-itself on real data. Media (photos, voice notes) is not stored in ferret.
+Infrastructure's job, not the chart's: Velero snapshots the Postgres PVC (CSI snapshots on Ceph
+RBD, which are atomic, so Postgres recovers from them like from a crash). The volume must
+therefore sit on a storage class with CSI snapshots, not on a file-system backup. For chat exports
+`documents` is the only copy: keep the raw export zips until the importer has proven itself on real
+data. `FERRET_CONFIG_KEY` lives in a Secret and must be backed up with the cluster's Secrets,
+otherwise plugin credentials have to be re-entered after a restore. Media (photos, voice notes) is
+not stored in ferret.
 
 ## Plugins
 

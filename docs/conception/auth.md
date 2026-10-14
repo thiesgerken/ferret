@@ -125,7 +125,8 @@ create table api_keys (
 | `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
 `sources` binds an ingest key to source paths and everything below them. A leaked key for one
-ingester can't overwrite or sweep chats.
+ingester can't overwrite or sweep chats. Sources owned by a connection are off-limits to API keys
+([architecture.md](architecture.md#source-ownership)).
 
 Typical keys:
 
@@ -138,7 +139,7 @@ A key acts as its owner: it only ever sees and writes that user's documents.
 
 Built-in plugins don't use API keys. When a worker claims a run ([architecture.md](architecture.md#plugin-orchestration)),
 the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `typ = plugin_run`, `sub` (the
-instance's user), `run` (run id), `source` (the instance's source root), `exp` (run timeout).
+connection's user), `run` (run id), `source` (the connection's source root), `exp` (run timeout).
 
 - It grants `ingest:write` on that source root and everything below it, for that user, nothing
   else.
@@ -165,7 +166,7 @@ mounted into server and workers from the same Secret (generated once by Helm via
 ferret is Kubernetes-native: a Helm chart is the deployment, docker-compose exists for development
 only. All auth secrets (`FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`,
 `FERRET_WORKER_SECRET`) come from Secrets generated once via `lookup`, or from `existingSecret`.
-A fresh install needs no manual step: log in as `admin`, activate plugins in Sources.
+A fresh install needs no manual step: log in as `admin`, add connections.
 
 ## Later
 

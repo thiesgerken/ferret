@@ -3,17 +3,18 @@
 ## TLDR
 
 A plugin turns one kind of origin into documents. It decides what a document is, the server only
-chunks and indexes. v1 ships the bare minimum: **git**, **Paperless** and **carapace**. Further
+chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**. Further
 plugins follow continuously, see [Roadmap](#roadmap).
 
 ## Contract
 
-- **One plugin instance owns a source root** and may write into any source below it. The carapace
+- **A connection** (a plugin configured by a user) **owns a source root** and may write into any
+  source below it. The carapace
   plugin with root `carapace` writes `carapace/sessions`, `carapace/digests` and `carapace/facts`.
   Source names are paths, see [README](README.md#sources).
 - **Ingest goes through the public REST API** with the run's token, which is scoped to the root and
   everything below it ([auth.md](auth.md#plugin-run-tokens)).
-- **Incremental state** (last commit, last `modified` timestamp) lives in the instance's `state` and
+- **Incremental state** (last commit, last `modified` timestamp) lives in the connection's `state` and
   is only stored on success ([architecture.md](architecture.md#run-lifecycle)).
 - **Deletions**, depending on what the origin offers:
   - The origin reports them (git diff): explicit `DELETE`.
@@ -27,7 +28,8 @@ plugins follow continuously, see [Roadmap](#roadmap).
 
 ### git
 
-Indexes files from a git repository: Obsidian vaults, notes repos, code docs.
+Indexes files from a git repository: notes repos, code docs. Obsidian vaults synced with Syncthing
+are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
@@ -98,13 +100,17 @@ change its rendering freely.
 
 In rough order of value per effort:
 
-1. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
+1. **Files** (Obsidian vaults): the vaults are Syncthing folders, not git repos. A Syncthing node
+   in the cluster syncs them into a PVC, mounted read-only into a dedicated worker. Every run is a
+   full sync (`PUT` everything, the server skips unchanged files), excluding `.stfolder`,
+   `.stversions` and `.obsidian`.
+2. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
    follows as its own plugin (Microsoft Graph rather than IMAP).
-2. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
-3. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
+3. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
+4. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
    already talks to AFFiNE through an MCP server, which shows a working API and auth path. Worst
    case, the MCP server is the API.
-4. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
+5. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
 
 ### Email
 
@@ -114,10 +120,11 @@ into text.
 **Identity**
 
 - `external_id` = Message-ID, so a mail in several folders is one document and a move to another
-  folder changes nothing but metadata.
-- Source = `mail/<account>`, e.g. `mail/zoho`. Folders go to `meta.folders` (an array).
+  folder is invisible to ferret.
+- Source = `mail/<account>`, e.g. `mail/zoho`. Folders are not recorded in v1 (a folder filter
+  would require tracking moves).
 - `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
-- `title` = subject, `authors` = From, `meta`: To, Cc, folders, attachment names. `created_at` =
+- `title` = subject, `authors` = From, `meta`: To, Cc, attachment names. `created_at` =
   the `Date` header.
 - `url` from an optional `url_template` with `{message_id}` (e.g. `mid:{message_id}`, RFC 2392).
   Without one, ferret's viewer is the origin.
