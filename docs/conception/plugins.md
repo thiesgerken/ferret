@@ -92,8 +92,9 @@ change its rendering freely.
 - Incremental like the git plugin. A changed session file can lose facts: the plugin compares the
   fact ids of the old version (`git show <cursor>:<path>`) with the new one and deletes the missing
   ones.
-- `url`: carapace's memory view of the session or period (route to be checked), files link to
-  carapace's knowledge view.
+- `url` (relative to the configured carapace base URL): sessions
+  `/memory/sessions?session={session_id}`, facts link to their session, digests
+  `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.
 - The git and carapace plugins share the repository handling (clone, fetch, diff) in one module.
 
 ## Roadmap
