@@ -57,6 +57,11 @@ _Avoid_: full import, refresh
 The removal, at the commit of a sync, of documents that weren't reported during it.
 _Avoid_: cleanup, garbage collection
 
+**Exclusion**:
+A document or thread a user removed from the index for good, so its connection never ingests it
+again.
+_Avoid_: blocklist entry, denylist, hidden document
+
 ## Retrieval
 
 **Hit**:
