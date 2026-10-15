@@ -218,8 +218,11 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
   Author and `meta` filters are rare and selective and stay a join.
-- **German compounds**: "Versicherung" must find "Kfz-Versicherungsbeitrag". Index chunk text twice
-  in `pg_search`: a stemmed field and an ngram field.
+- **Languages**: German and English, often mixed in one text. Chunk text is indexed three times in
+  `pg_search`: German-stemmed, English-stemmed, and ngram (for compounds: "Versicherung" must find
+  "Kfz-Versicherungsbeitrag", and typos). Queries search all three fields. No language detection.
+- **Query syntax**: `"exact phrase"` and `-word` go into the BM25 half, the vector half gets the
+  query without operators. Filters are not part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
   document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
   the document level.

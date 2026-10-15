@@ -133,6 +133,23 @@ create table plugin_runs (
   the source root to confirm. For sources without an origin to re-fetch from (chat exports), the
   confirmation says that ferret holds the only copy.
 
+### Exclusions
+
+"Exclude from index" in the viewer deletes a document and adds it to its connection's exclusion
+list: by `external_id`, or by `thread` for a whole chat or mail thread. A `PUT` for an excluded
+document is dropped by the server and answered with `excluded`, so plugins need no knowledge of the
+list. The list is visible and editable on the connection's page.
+
+```sql
+create table exclusions (
+    connection_id  uuid not null references connections on delete cascade,
+    source         text not null,
+    external_id    text,                -- exactly one of external_id and thread is set
+    thread         text,
+    created_at     timestamptz not null
+);
+```
+
 ### Source ownership
 
 Every source below a connection's root belongs to that connection exclusively: API keys can't
@@ -207,7 +224,7 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
-| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model), search log |
+| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model) |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 
 Everything except Search is reached through an app menu in the top right, like Google's.

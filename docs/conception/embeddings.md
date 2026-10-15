@@ -7,8 +7,7 @@ are stored per chunk and model. The admin decides which models exist and get bac
 evaluates them on their own data and picks their own default.
 
 Model evaluation is a regular feature, not a one-off: switching to a new model needs evidence that
-it retrieves better on my data. ferret collects that evidence from the search log (which hit did I
-open) and from explicit "right hit" marks.
+it retrieves better on my data. ferret collects that evidence from explicit "right hit" marks.
 
 ## Models
 
@@ -117,26 +116,9 @@ for update of c skip locked;
 
 ### Collecting judgments
 
+A ✓ on a hit records an explicit judgment. It carries its own query, so there is no search log.
+
 ```sql
--- Every search, for replay and click statistics.
-create table searches (
-    id          uuid primary key,
-    user_id     uuid not null references users on delete cascade,
-    query       text not null,
-    filters     jsonb not null,
-    model       text not null,
-    created_at  timestamptz not null
-);
-
--- Implicit judgments: which hit was opened, at which rank.
-create table search_clicks (
-    search_id    uuid not null references searches on delete cascade,
-    document_id  uuid not null references documents on delete cascade,
-    rank         int not null,
-    clicked_at   timestamptz not null
-);
-
--- Explicit judgments: the "right hit" mark on a result.
 create table relevance_judgments (
     id           uuid primary key,
     user_id      uuid not null references users on delete cascade,
@@ -148,9 +130,6 @@ create table relevance_judgments (
 );
 ```
 
-The search log is the user's own data in their own ferret. It is deleted with the user, and the
-user can clear it in Settings.
-
 ### Measuring
 
 Settings, tab "Models", per configured model:
@@ -159,14 +138,14 @@ Settings, tab "Models", per configured model:
 - **recall@10** and **MRR** over the user's judgments, each for vector-only and for hybrid search.
   The server replays every judged query against the model and checks where the judged document
   lands. Runs on demand, results are kept until the next run.
-- **Click metrics** from `search_clicks` as a secondary signal. They are biased towards whatever
-  model was active when the user clicked (position bias), which is why explicit judgments count
-  more.
 
 Plus the model switch in the search UI, to compare result lists of two models by eye.
 
 ### Later
 
+- **Click logging**: record which hit was opened after a search, as implicit judgments. Biased
+  towards whatever model was active (you only click what you're shown), and it turns into a log of
+  every search.
 - **Interleaving** (team-draft): merge the results of two models into one list and count clicks
   per model. The fair way to compare from click data, without position bias.
 - Admin view with aggregated metrics across users (counts only, no queries).

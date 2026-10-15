@@ -103,11 +103,11 @@ Same format and storage as carapace's `ck_` keys:
 create table api_keys (
     id            uuid primary key,
     user_id       uuid not null references users on delete cascade,
-    name          text not null,               -- 'paperless plugin', 'carapace kb-search'
+    name          text not null,               -- 'paperless plugin', 'carapace search skill'
     prefix        text not null unique,
     secret_hash   text not null,
     scopes        text[] not null,             -- e.g. {'search:read', 'ingest:write'}
-    sources       text[],                      -- restricts ingest:write to these source paths and below, null = all
+    sources       text[],                      -- restricts every scope to these source paths and below, null = all
     created_at    timestamptz not null,
     last_used_at  timestamptz,
     expires_at    timestamptz
@@ -124,14 +124,16 @@ create table api_keys (
 | `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
 | `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
-`sources` binds an ingest key to source paths and everything below them. A leaked key for one
-ingester can't overwrite or sweep chats. Sources owned by a connection are off-limits to API keys
+`sources` restricts a key to source paths and everything below them, for reading, searching and
+writing alike, enforced by the server. A leaked key for one ingester can't overwrite or sweep
+chats, and an agent's key only finds what it was given. Sources owned by a connection are off-limits to API keys
 ([architecture.md](architecture.md#source-ownership)).
 
 Typical keys:
 
 - **An external ingester** (a script outside ferret): `ingest:write`, `sources = {articles}`.
-- **carapace's `kb-search` skill**: `search:read`, nothing else.
+- **carapace's search skill**: `search:read`, `sources = {carapace, notes, paperless}`. Mail and chats
+  stay invisible to it, and so never reach its LLM provider.
 
 A key acts as its owner: it only ever sees and writes that user's documents.
 
