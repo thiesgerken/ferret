@@ -252,9 +252,9 @@ deployment, as in carapace. docker-compose exists for local development only. De
 
 - **UI**: a Google-like search page, plus Explore, Connections, Settings and Admin
   ([architecture.md](architecture.md#frontend)). Map and topics come later.
-- **carapace**: a `kb-search` skill in the knowledge repo that calls the search API. The KB domain
-  goes on the sandbox proxy allowlist, the token comes from the password manager, the sentinel gates
-  the call. No carapace code.
+- **carapace**: a search skill in the knowledge repo that calls the search API with an API key
+  restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
+  the key comes from the password manager, the sentinel gates the call. No carapace code.
 
 ## Privacy and security
 
