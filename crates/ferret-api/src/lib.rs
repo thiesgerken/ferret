@@ -92,6 +92,10 @@ pub struct SearchQuery {
     /// Only documents of these content types. Empty: all. Repeated `content_type=`.
     #[serde(default, rename = "content_type")]
     pub content_types: Vec<ContentType>,
+    /// Only documents with at least one of these authors. Empty: any author. Repeated `author=`
+    /// in the query string.
+    #[serde(default, rename = "author")]
+    pub authors: Vec<String>,
     /// Only documents created at or after this time.
     pub from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -270,6 +274,12 @@ impl Client {
             let value = value.as_str().expect("content types serialize as strings");
             ("content_type", value.to_owned())
         }));
+        params.extend(
+            query
+                .authors
+                .iter()
+                .map(|author| ("author", author.clone())),
+        );
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
