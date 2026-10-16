@@ -8,9 +8,12 @@ use axum::{
 };
 use sqlx::{PgPool, migrate::MigrateError};
 
+mod api_auth;
+mod api_keys;
 mod auth;
 mod error;
 pub mod graphql;
+mod sources;
 mod users;
 
 pub use auth::SessionKey;
@@ -45,7 +48,7 @@ impl AppState {
 }
 
 /// The path decides the credential: `/graphql` takes the session cookie, `/auth` exchanges a
-/// password for it, `/api` takes bearer credentials.
+/// password for it, `/api` takes bearer credentials (`api_auth::ApiCaller`).
 pub fn router(state: AppState) -> Router {
     Router::new()
         // Outside /api, whose routes all take a bearer credential. Probes hit the pod directly.
@@ -53,6 +56,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/graphql", post(graphql::handle))
+        .route("/api/users", get(users::list))
         .with_state(state)
 }
 

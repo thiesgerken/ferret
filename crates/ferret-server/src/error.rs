@@ -20,6 +20,14 @@ impl ApiError {
             message: message.to_owned(),
         }
     }
+
+    /// Authenticated, but not allowed to do this.
+    pub fn forbidden(message: &str) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.to_owned(),
+        }
+    }
 }
 
 /// axum answers a malformed body or a wrong content type in plain text (400, 415 or 422).

@@ -46,6 +46,30 @@ pub async fn start_server(pool: PgPool) -> TestServer {
 }
 
 impl TestServer {
+    /// A machine API client that authenticates with `api_key`.
+    pub fn api_with_key(&self, api_key: &str) -> Client {
+        Client::new(self.url.clone()).with_api_key(api_key)
+    }
+
+    /// Creates an API key for the bootstrap admin and returns it (`fk_...`). `scopes` are the
+    /// GraphQL names (`"INGEST_WRITE"`, `"SEARCH_READ"`, ...), `sources` restricts every scope,
+    /// `None` for all sources.
+    pub async fn create_api_key(&self, scopes: &[&str], sources: Option<&[&str]>) -> String {
+        let cookie = self.sign_in().await;
+        let body = self
+            .graphql(
+                &cookie,
+                "mutation ($input: NewApiKey!) { createApiKey(input: $input) { key } }",
+                json!({"input": {"name": "test key", "scopes": scopes, "sources": sources}}),
+            )
+            .await;
+        assert_eq!(body["errors"], Value::Null, "{body}");
+        body["data"]["createApiKey"]["key"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http.request(method, format!("{}{path}", self.url))
     }
@@ -63,6 +87,19 @@ impl TestServer {
         let response = self.login("admin", ADMIN_PASSWORD).await;
         assert_eq!(response.status(), 204);
         session_cookie(&response)
+    }
+
+    /// Runs a GraphQL operation with the given `Cookie` header value and returns the response
+    /// body.
+    pub async fn graphql(&self, cookie: &str, query: &str, variables: Value) -> Value {
+        let response = self
+            .request(reqwest::Method::POST, "/graphql")
+            .header(header::COOKIE, cookie)
+            .json(&json!({"query": query, "variables": variables}))
+            .send()
+            .await
+            .unwrap();
+        json_body(response).await
     }
 
     /// Asks GraphQL for `me`, with the given `Cookie` header value.
