@@ -93,3 +93,11 @@ jobs:
           # Own scope, so the server's cache entries don't evict the frontend's.
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+      - run: helm lint charts/ferret --set ingress.hostname=ferret.example.com
+      - run: helm template ferret charts/ferret --set ingress.hostname=ferret.example.com > /dev/null
