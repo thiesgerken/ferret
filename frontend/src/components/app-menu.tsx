@@ -2,10 +2,17 @@
 
 import { Grip, LogOut } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { graphql, useFragment, type FragmentType } from "@/gql";
 import { logout } from "@/lib/auth";
 
-type MenuUser = { username: string; displayName?: string | null; isAdmin: boolean };
+const AppMenuUserFragment = graphql(`
+  fragment AppMenuUser on User {
+    username
+    displayName
+    isAdmin
+  }
+`);
 
 const SECTIONS = [
   { href: "/explore", label: "Explore" },
@@ -16,7 +23,9 @@ const SECTIONS = [
 const itemClass = "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent";
 
 // ponytail: the native popover handles outside clicks, Escape and focus; no menu library.
-export function AppMenu({ user }: { user: MenuUser }) {
+export function AppMenu(props: { user: FragmentType<typeof AppMenuUserFragment> }) {
+  const user = useFragment(AppMenuUserFragment, props.user);
+  const menuRef = useRef<HTMLElement>(null);
   const [error, setError] = useState("");
   const sections = user.isAdmin ? [...SECTIONS, { href: "/admin", label: "Admin" }] : SECTIONS;
 
@@ -44,6 +53,7 @@ export function AppMenu({ user }: { user: MenuUser }) {
       </button>
       <nav
         id="app-menu"
+        ref={menuRef}
         popover="auto"
         className="inset-auto top-14 right-4 m-0 w-56 rounded-xl border border-border bg-background p-1.5 text-foreground shadow-lg"
       >
@@ -51,7 +61,8 @@ export function AppMenu({ user }: { user: MenuUser }) {
           Signed in as {user.displayName || user.username}
         </p>
         {sections.map(({ href, label }) => (
-          <Link key={href} href={href} className={itemClass}>
+          // The menu outlives client-side navigation, and light dismiss only reacts to clicks outside it.
+          <Link key={href} href={href} onClick={() => menuRef.current?.hidePopover()} className={itemClass}>
             {label}
           </Link>
         ))}

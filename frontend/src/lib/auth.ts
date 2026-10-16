@@ -1,5 +1,5 @@
 export async function login(username: string, password: string): Promise<void> {
-  const res = await fetch("/api/auth/login", {
+  const res = await fetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -10,7 +10,7 @@ export async function login(username: string, password: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
-  const res = await fetch("/api/auth/logout", { method: "POST" });
+  const res = await fetch("/auth/logout", { method: "POST" });
   if (!res.ok) {
     throw new Error(await errorMessage(res, "Sign-out failed"));
   }

@@ -22,7 +22,7 @@ test("posts the credentials and reports success", async (t) => {
   await submit(view.container, "thies", "hunter2");
 
   const [url, init] = fetchMock.mock.calls[0].arguments as [string, RequestInit];
-  assert.equal(url, "/api/auth/login");
+  assert.equal(url, "/auth/login");
   assert.deepEqual(JSON.parse(String(init.body)), { username: "thies", password: "hunter2" });
   assert.equal(signedIn, true);
   await view.unmount();

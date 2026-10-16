@@ -1,31 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Client, fetchExchange, Provider } from "urql";
+import { gql, Provider, useQuery } from "urql";
 
 import { renderReact, settle } from "../../test/react-test-utils";
+import { createGraphqlClient } from "@/lib/graphql";
 import { AuthGate } from "./auth-gate";
 
-function renderGate(graphqlResponse: Response) {
-  const client = new Client({
-    url: "https://ferret.example.test/graphql",
-    exchanges: [fetchExchange],
-    fetch: async () => graphqlResponse,
-  });
+type Responder = (operationName: string) => Response;
+
+function renderGate(respond: Responder, page = <p id="page">page</p>) {
+  const client = createGraphqlClient(async (_url, init) => respond(JSON.parse(String(init?.body)).operationName));
   return renderReact(
     <Provider value={client}>
-      <AuthGate>
-        <p id="page">page</p>
-      </AuthGate>
+      <AuthGate>{page}</AuthGate>
     </Provider>,
   );
 }
 
-function meResponse(isAdmin: boolean): Response {
-  return Response.json({ data: { me: { username: "thies", displayName: null, isAdmin } } });
+const unauthorized = () => new Response("unauthorized", { status: 401 });
+
+function signedIn(isAdmin: boolean): Responder {
+  return () => Response.json({ data: { me: { __typename: "User", username: "thies", displayName: null, isAdmin } } });
 }
 
 test("shows the login form instead of the page when the server answers 401", async () => {
-  const view = await renderGate(new Response("unauthorized", { status: 401 }));
+  const view = await renderGate(unauthorized);
   await settle();
 
   assert.ok(view.container.querySelector("input#username"));
@@ -34,7 +33,7 @@ test("shows the login form instead of the page when the server answers 401", asy
 });
 
 test("shows the page and the app menu when signed in", async () => {
-  const view = await renderGate(meResponse(false));
+  const view = await renderGate(signedIn(false));
   await settle();
 
   assert.ok(view.container.querySelector("#page"));
@@ -45,9 +44,32 @@ test("shows the page and the app menu when signed in", async () => {
 });
 
 test("offers Admin in the app menu to admins only", async () => {
-  const view = await renderGate(meResponse(true));
+  const view = await renderGate(signedIn(true));
   await settle();
 
   assert.ok(view.container.querySelector("#app-menu a[href='/admin']"));
+  await view.unmount();
+});
+
+const ProbeQuery = gql`
+  query Probe {
+    me {
+      username
+    }
+  }
+`;
+
+function ProbePage() {
+  useQuery({ query: ProbeQuery });
+  return <p id="page">page</p>;
+}
+
+test("switches to the login form when a later query finds the session gone", async () => {
+  const me = signedIn(false);
+  const view = await renderGate((name) => (name === "Probe" ? unauthorized() : me(name)), <ProbePage />);
+  await settle();
+
+  assert.ok(view.container.querySelector("input#username"));
+  assert.equal(view.container.querySelector("#page"), null);
   await view.unmount();
 });
