@@ -6,6 +6,7 @@ use argon2::{
 };
 use axum::{Json, extract::State};
 use sqlx::PgPool;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::{
@@ -85,15 +86,13 @@ pub async fn bootstrap_admin(pool: &PgPool, password: Option<&str>) -> Result<()
 }
 
 async fn hash_password(password: String) -> String {
-    // Argon2 takes tens of milliseconds of CPU, which must not block the async runtime.
-    tokio::task::spawn_blocking(move || {
+    run_argon2(move || {
         Argon2::default()
             .hash_password(password.as_bytes())
             .expect("hashing with a fresh salt succeeds")
             .to_string()
     })
     .await
-    .expect("password hashing doesn't panic")
 }
 
 /// Checks `password` against a stored hash. Without a stored hash (unknown user) it checks
@@ -106,7 +105,7 @@ pub async fn password_matches(password: String, stored_hash: Option<String>) -> 
             .to_string()
     });
     let known_user = stored_hash.is_some();
-    tokio::task::spawn_blocking(move || {
+    run_argon2(move || {
         let hash = stored_hash.unwrap_or_else(|| DUMMY_HASH.clone());
         let hash = PasswordHash::new(&hash).expect("stored password hashes are PHC strings");
         let matches = Argon2::default()
@@ -115,5 +114,25 @@ pub async fn password_matches(password: String, stored_hash: Option<String>) -> 
         known_user && matches
     })
     .await
-    .expect("password verification doesn't panic")
+}
+
+/// Runs Argon2 off the async runtime (it takes tens of milliseconds of CPU), a few at a time.
+/// Each run allocates about 19 MiB, and logins are public, so an unbounded burst of them would
+/// allocate until the pod is OOM-killed. Excess runs queue instead.
+// ponytail: one global bound. Per-IP or per-username rate limiting if logins get hammered.
+async fn run_argon2<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    // Fixed rather than per core: the pod has no CPU limit, and a big node mustn't mean more memory.
+    static PERMITS: Semaphore = Semaphore::const_new(4);
+    let permit = PERMITS
+        .acquire()
+        .await
+        .expect("the semaphore is never closed");
+    tokio::task::spawn_blocking(move || {
+        // Held by the blocking task, not the request: a client that disconnects drops the
+        // request's future, but the hash keeps running and must keep its permit.
+        let _permit = permit;
+        work()
+    })
+    .await
+    .expect("Argon2 doesn't panic")
 }

@@ -34,16 +34,24 @@ async fn once_an_admin_exists_the_bootstrap_password_is_ignored(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
-async fn the_bootstrap_restores_a_disabled_admin_with_the_new_password(pool: PgPool) {
+async fn the_bootstrap_restores_a_disabled_or_demoted_admin_with_the_new_password(pool: PgPool) {
     let server = start_server(pool.clone()).await;
-    sqlx::query("update users set enabled = false")
-        .execute(&pool)
-        .await
-        .unwrap();
 
-    ferret_server::bootstrap_admin(&pool, Some(LONG_ENOUGH))
-        .await
-        .unwrap();
+    for (lockout, password) in [
+        ("update users set enabled = false", LONG_ENOUGH),
+        ("update users set is_admin = false", "another sixteen chars"),
+    ] {
+        sqlx::query(lockout).execute(&pool).await.unwrap();
 
-    assert_eq!(server.login("admin", LONG_ENOUGH).await.status(), 204);
+        ferret_server::bootstrap_admin(&pool, Some(password))
+            .await
+            .unwrap();
+
+        assert_eq!(server.login("admin", password).await.status(), 204);
+        let restored: bool = sqlx::query_scalar("select is_admin and enabled from users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(restored);
+    }
 }

@@ -19,7 +19,7 @@ The path decides the credential, each API accepts exactly one kind:
 | API | Credential |
 |---|---|
 | GraphQL `/graphql` (UI) | session cookie |
-| `/auth/...` (login, logout) | username and password, exchanged for the session cookie |
+| `/auth/...` (login, logout) | username and password, exchanged for the session cookie; logout reads the cookie to end its session |
 | REST `/api/...` | API key or plugin run token, as bearer |
 | REST `/internal/...` (own port) | worker PSK, as bearer |
 
@@ -54,6 +54,8 @@ If no enabled admin exists at startup, the server creates `admin` with the passw
 bootstrap is needed, the server exits with an error. Once an admin exists, the variable is ignored.
 If a user `admin` exists but isn't an enabled admin, the bootstrap turns it back into one with the
 variable's password: locked out of every admin account, setting the variable is the way back in.
+The Helm chart always provides the variable, so in the cluster any server restart after the last
+admin was disabled or demoted restores `admin` with the generated password and ends its sessions.
 
 The Helm chart takes the password from a Secret (`existingSecret`, or generated once and kept
 across upgrades via `lookup`, like carapace's Postgres password).
@@ -85,8 +87,10 @@ Same flow as carapace:
 without a CORS preflight, and `SameSite=Lax` keeps the cookie off cross-site `POST`s anyway. `GET`
 is excluded because `Lax` cookies do ride along on cross-site top-level navigations.
 
-**Errors**: every rejected request, including a malformed body (`400`, `415`, `422`), is answered
-with `{"error": "<message>"}`.
+**Errors**: `/auth` and REST rejections, including a malformed body (`400`, `415`, `422`), are
+answered with `{"error": "<message>"}`. `/graphql` answers a missing session with that `401` and
+everything else in GraphQL's own shape (`{"errors": [...]}`, `400` for a query that doesn't parse or
+validate). Unknown routes and methods get axum's bare `404` and `405`.
 
 ```sql
 create table sessions (
