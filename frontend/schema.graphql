@@ -1,4 +1,11 @@
 # Placeholder until the server prints its SDL (`ferret schema`) into this file.
 type Query {
-  version: String!
+  me: User!
+}
+
+type User {
+  id: ID!
+  username: String!
+  displayName: String
+  isAdmin: Boolean!
 }

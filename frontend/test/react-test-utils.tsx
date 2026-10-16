@@ -26,3 +26,10 @@ export async function renderReact(node: ReactNode): Promise<RenderHandle> {
     },
   };
 }
+
+/** Lets pending fetches and the state updates they trigger settle. */
+export async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
