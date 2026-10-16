@@ -10,8 +10,14 @@ use sqlx::{PgPool, migrate::MigrateError};
 
 mod api_keys;
 mod auth;
+mod chunking;
+mod content_type;
+mod documents;
 mod error;
 pub mod graphql;
+mod highlight;
+mod search;
+mod search_query;
 mod sources;
 mod users;
 
@@ -56,6 +62,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/logout", post(auth::logout))
         .route("/graphql", post(graphql::handle))
         .route("/api/users", get(users::list))
+        .route(
+            "/api/documents",
+            axum::routing::put(documents::put).delete(documents::delete),
+        )
+        .route("/api/documents/{id}", get(documents::get))
+        .route("/api/search", get(search::search))
         .with_state(state)
 }
 

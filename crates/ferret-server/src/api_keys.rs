@@ -206,10 +206,8 @@ pub async fn revoke(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx
 /// The caller of a `/api` route, authenticated by an API key. A key acts as its owner: it only
 /// ever sees and writes that user's documents, within its scopes and sources.
 pub struct ApiCaller {
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     pub user_id: Uuid,
     scopes: Vec<Scope>,
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     sources: Option<Vec<String>>,
 }
 
@@ -226,8 +224,12 @@ impl ApiCaller {
         }
     }
 
+    /// The source roots the key is restricted to, `None` for all sources.
+    pub fn sources(&self) -> Option<&[String]> {
+        self.sources.as_deref()
+    }
+
     /// Whether the caller may read or write documents of `source`.
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     pub fn may_access(&self, source: &str) -> bool {
         self.sources
             .as_ref()

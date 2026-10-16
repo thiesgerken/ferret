@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::rejection::JsonRejection,
+    extract::rejection::{JsonRejection, PathRejection, QueryRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -21,6 +21,20 @@ impl ApiError {
         }
     }
 
+    pub fn bad_request(message: &str) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.to_owned(),
+        }
+    }
+
+    pub fn not_found(message: &str) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: message.to_owned(),
+        }
+    }
+
     /// Authenticated, but not allowed to do this.
     pub fn forbidden(message: &str) -> Self {
         Self {
@@ -30,13 +44,26 @@ impl ApiError {
     }
 }
 
-/// axum answers a malformed body or a wrong content type in plain text (400, 415 or 422).
-impl From<JsonRejection> for ApiError {
-    fn from(rejection: JsonRejection) -> Self {
-        Self {
-            status: rejection.status(),
-            message: rejection.body_text(),
+/// axum answers malformed requests in plain text: bodies, content types (400, 415 or 422), query
+/// strings and paths.
+macro_rules! from_rejection {
+    ($($rejection:ty),*) => {$(
+        impl From<$rejection> for ApiError {
+            fn from(rejection: $rejection) -> Self {
+                Self {
+                    status: rejection.status(),
+                    message: rejection.body_text(),
+                }
+            }
         }
+    )*};
+}
+
+from_rejection!(JsonRejection, QueryRejection, PathRejection);
+
+impl From<axum_extra::extract::QueryRejection> for ApiError {
+    fn from(rejection: axum_extra::extract::QueryRejection) -> Self {
+        Self::bad_request(&rejection.to_string())
     }
 }
 
