@@ -256,4 +256,16 @@ The Helm chart, modelled on carapace's:
 Migrations (sqlx, embedded in the binary) run at server startup under sqlx's advisory lock, so
 replicas starting together are safe.
 
+### Server environment
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `FERRET_DATABASE_URL` | yes | Postgres URL. Without a password in it, `PGPASSWORD` supplies one, so the password needs no URL-encoding |
+| `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
+
+The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness
+probe: 200, or 503 while the database is unreachable. It lives outside `/api` because every `/api`
+route takes a bearer credential, and isn't routed by the Ingress. Liveness checks the TCP port only,
+so a database outage doesn't restart every server pod.
+
 docker-compose runs the same components for development.

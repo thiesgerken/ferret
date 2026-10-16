@@ -334,6 +334,7 @@ None for v1 at the moment. Plugin-specific details are settled when the plugin i
 
 ## Naming
 
-The binary and CLI are `ferret`. The crate name `ferret` is taken on crates.io and FerretDB
-occupies the name in the self-hosting world, so crate and container image need a qualified name
-(`ferret-search`, to be checked).
+The binary and CLI are `ferret`, the images `ferret`, `ferret-plugins` and `ferret-frontend` on
+ghcr, under the repository owner's namespace. The crates (`ferret-server`, `ferret-plugins`,
+`ferret-api`) are not published, so the taken `ferret` on crates.io doesn't matter. FerretDB shares
+the name in the self-hosting world, the owner namespace keeps the images apart.
