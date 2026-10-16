@@ -128,6 +128,32 @@ test("disables a connection, keeping its config and schedule", async () => {
   await view.unmount();
 });
 
+test("edits the config and schedule, starting from the stored ones", async () => {
+  const { view, operations, button } = await renderConnections(() =>
+    Response.json({ data: { updateConnection: { __typename: "Connection", id: "connection-1" } } }),
+  );
+  await act(async () => {
+    button("Edit").click();
+  });
+  const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
+  const remote = field<HTMLInputElement>("#edit-connection-1-remote");
+  assert.equal(remote.value, "https://example.test/notes.git");
+  remote.value = "https://example.test/notes-v2.git";
+  field<HTMLInputElement>("#schedule-connection-1").value = "0 3 * * *";
+
+  await act(async () => {
+    button("Save").closest("form")!.requestSubmit();
+  });
+  await settle();
+
+  const update = operations.find((operation) => operation.operationName === "UpdateConnection");
+  const input = update?.variables.input as Record<string, unknown>;
+  assert.deepEqual(JSON.parse(String(input.config)), { remote: "https://example.test/notes-v2.git" });
+  assert.equal(input.schedule, "0 3 * * *");
+  assert.equal(input.enabled, true);
+  await view.unmount();
+});
+
 test("deletes only once the source is typed", async () => {
   const { view, operations, button } = await renderConnections(() => Response.json({ data: { deleteConnection: 3 } }));
   await act(async () => {

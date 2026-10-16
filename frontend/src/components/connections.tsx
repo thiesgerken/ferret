@@ -119,7 +119,12 @@ export function Connections() {
       ) : (
         <ul className="space-y-4">
           {data.connections.map((connection) => (
-            <ConnectionCard key={connection.id} connection={connection} onChanged={reload} />
+            <ConnectionCard
+              key={connection.id}
+              connection={connection}
+              configSchema={data.pluginTypes.find(({ name }) => name === connection.plugin)?.configSchema}
+              onChanged={reload}
+            />
           ))}
         </ul>
       )}
@@ -137,14 +142,9 @@ function CreateConnectionForm({
   const [, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
   const [error, setError] = useState("");
-  const schema = pluginTypes.find(({ name }) => name === plugin)?.configSchema ?? "{}";
-  let fields: ConfigField[] = [];
-  let schemaError = "";
-  try {
-    fields = configFields(schema);
-  } catch (err) {
-    schemaError = err instanceof Error ? err.message : String(err);
-  }
+  const { fields, schemaError } = parseConfigSchema(
+    pluginTypes.find(({ name }) => name === plugin)?.configSchema ?? "{}",
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,19 +208,8 @@ function CreateConnectionForm({
       <p className="text-xs text-muted-foreground">
         The connection owns its source and everything below it: no other connection or API key can write there.
       </p>
-      {schemaError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {schemaError}
-        </p>
-      ) : (
-        // Keyed by plugin: another plugin's fields start from their own defaults.
-        <fieldset key={plugin} className="space-y-4">
-          <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Configuration</legend>
-          {fields.map((field) => (
-            <ConfigInput key={field.name} field={field} />
-          ))}
-        </fieldset>
-      )}
+      {/* Keyed by plugin: another plugin's fields start from their own defaults. */}
+      <ConfigFieldset key={plugin} idPrefix="config" fields={fields} schemaError={schemaError} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -237,14 +226,56 @@ function CreateConnectionForm({
   );
 }
 
-function ConfigInput({ field }: { field: ConfigField }) {
-  const id = `config-${field.name}`;
+function parseConfigSchema(schema: string): { fields: ConfigField[]; schemaError: string } {
+  try {
+    return { fields: configFields(schema), schemaError: "" };
+  } catch (err) {
+    return { fields: [], schemaError: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The config's inputs, filled from `values` (a stored config) or else left to the plugin's defaults. */
+function ConfigFieldset({
+  idPrefix,
+  fields,
+  schemaError,
+  values = {},
+}: {
+  idPrefix: string;
+  fields: ConfigField[];
+  schemaError: string;
+  values?: Record<string, unknown>;
+}) {
+  if (schemaError) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {schemaError}
+      </p>
+    );
+  }
+  return (
+    <fieldset className="space-y-4">
+      <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Configuration</legend>
+      {fields.map((field) => (
+        <ConfigInput key={field.name} id={`${idPrefix}-${field.name}`} field={field} value={values[field.name]} />
+      ))}
+    </fieldset>
+  );
+}
+
+function ConfigInput({ id, field, value }: { id: string; field: ConfigField; value: unknown }) {
   const name = configInputName(field);
   const label = field.name.replaceAll("_", " ");
   if (field.kind === "checkbox") {
     return (
       <label className="flex items-start gap-2 text-sm">
-        <input id={id} name={name} type="checkbox" defaultChecked={field.default === true} className="mt-1" />
+        <input
+          id={id}
+          name={name}
+          type="checkbox"
+          defaultChecked={(value ?? field.default) === true}
+          className="mt-1"
+        />
         <span>
           {label}
           <span className="block text-xs text-muted-foreground">{field.description}</span>
@@ -268,18 +299,42 @@ function ConfigInput({ field }: { field: ConfigField }) {
         {field.kind === "lines" ? " One per line." : ""}
       </p>
       {field.kind === "lines" ? (
-        <textarea id={id} name={name} rows={2} placeholder={placeholder} className={cn(fieldClass, "font-mono")} />
+        <textarea
+          id={id}
+          name={name}
+          rows={2}
+          defaultValue={Array.isArray(value) ? value.join("\n") : undefined}
+          placeholder={placeholder}
+          className={cn(fieldClass, "font-mono")}
+        />
       ) : (
-        <input id={id} name={name} required={field.required} placeholder={placeholder} className={fieldClass} />
+        <input
+          id={id}
+          name={name}
+          required={field.required}
+          defaultValue={typeof value === "string" ? value : undefined}
+          placeholder={placeholder}
+          className={fieldClass}
+        />
       )}
     </div>
   );
 }
 
-function ConnectionCard({ connection, onChanged }: { connection: Connection; onChanged: () => void }) {
+function ConnectionCard({
+  connection,
+  configSchema,
+  onChanged,
+}: {
+  connection: Connection;
+  /** Undefined while no registered worker offers the connection's plugin. */
+  configSchema: string | undefined;
+  onChanged: () => void;
+}) {
   const [, update] = useMutation(UpdateConnectionMutation);
   const [, runNow] = useMutation(RunConnectionNowMutation);
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const lastRun = connection.runs[0];
 
@@ -322,6 +377,15 @@ function ConnectionCard({ connection, onChanged }: { connection: Connection; onC
           >
             Run now
           </button>
+          <button
+            type="button"
+            disabled={configSchema === undefined}
+            title={configSchema === undefined ? "No worker offers this plugin right now." : undefined}
+            onClick={() => setEditing(true)}
+            className={buttonClass}
+          >
+            Edit
+          </button>
           <button type="button" onClick={() => setEnabled(!connection.enabled)} className={buttonClass}>
             {connection.enabled ? "Disable" : "Enable"}
           </button>
@@ -334,6 +398,17 @@ function ConnectionCard({ connection, onChanged }: { connection: Connection; onC
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
+      )}
+      {editing && configSchema !== undefined && (
+        <EditConnectionForm
+          connection={connection}
+          configSchema={configSchema}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onChanged();
+          }}
+        />
       )}
       {deleting && (
         <DeleteConnectionForm connection={connection} onCancel={() => setDeleting(false)} onDeleted={onChanged} />
@@ -372,6 +447,81 @@ function RunSummary({ run }: { run: Run }) {
       {run.stats &&
         ` · ${run.stats.put} put, ${run.stats.unchanged} unchanged, ${run.stats.deleted} deleted`}
     </>
+  );
+}
+
+function EditConnectionForm({
+  connection,
+  configSchema,
+  onCancel,
+  onSaved,
+}: {
+  connection: Connection;
+  configSchema: string;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [, update] = useMutation(UpdateConnectionMutation);
+  const [error, setError] = useState("");
+  const { fields, schemaError } = parseConfigSchema(configSchema);
+  const scheduleId = `schedule-${connection.id}`;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await update({
+      id: connection.id,
+      input: {
+        config: JSON.stringify(configFromForm(fields, form)),
+        schedule: String(form.get("schedule")),
+        enabled: connection.enabled,
+      },
+    });
+    if (result.error) {
+      setError(errorMessage(result.error));
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-border p-3 text-sm">
+      <div className="space-y-1.5">
+        <label htmlFor={scheduleId} className="text-xs font-medium text-muted-foreground">
+          Schedule (cron)
+        </label>
+        <input
+          id={scheduleId}
+          name="schedule"
+          required
+          defaultValue={connection.schedule}
+          className={cn(fieldClass, "font-mono")}
+        />
+      </div>
+      <ConfigFieldset
+        idPrefix={`edit-${connection.id}`}
+        fields={fields}
+        schemaError={schemaError}
+        values={JSON.parse(connection.config) as Record<string, unknown>}
+      />
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={Boolean(schemaError)}
+          className="rounded-lg bg-foreground px-4 py-2 font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button type="button" onClick={onCancel} className={buttonClass}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
