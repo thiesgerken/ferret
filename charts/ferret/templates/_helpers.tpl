@@ -19,3 +19,21 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "ferret.secretName" -}}
 {{- .Values.secrets.existingSecret | default (printf "%s-secrets" .Release.Name) -}}
 {{- end }}
+
+{{/* A model name as part of a Kubernetes name, which allows no dots or underscores. */}}
+{{- define "ferret.modelSlug" -}}
+{{- . | replace "." "-" | replace "_" "-" -}}
+{{- end }}
+
+{{/* The server's config.yaml (FERRET_CONFIG). */}}
+{{- define "ferret.config" -}}
+embedding:
+  default: {{ .Values.embedding.default | quote }}
+  models:
+    {{- range .Values.embedding.models }}
+    - name: {{ .name | quote }}
+      url: "http://{{ $.Release.Name }}-tei-{{ include "ferret.modelSlug" .name }}:80"
+      query_prefix: {{ .queryPrefix | quote }}
+      document_prefix: {{ .documentPrefix | quote }}
+    {{- end }}
+{{- end }}

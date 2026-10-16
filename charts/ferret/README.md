@@ -1,6 +1,8 @@
 # ferret Helm chart
 
-Deploys [ferret](https://github.com/thiesgerken/ferret): server, frontend and ParadeDB.
+Deploys [ferret](https://github.com/thiesgerken/ferret): server, frontend, ParadeDB and one CPU
+[TEI](https://github.com/huggingface/text-embeddings-inference) per embedding model
+(`embedding.models`).
 
 ## Prerequisites
 

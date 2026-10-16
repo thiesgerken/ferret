@@ -1,0 +1,75 @@
+{{- range .Values.embedding.models }}
+{{- $component := printf "tei-%s" (include "ferret.modelSlug" .name) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 8 }}
+    spec:
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: tei
+          image: {{ include "ferret.image" (dict "root" $ "image" $.Values.tei.image) }}
+          imagePullPolicy: {{ $.Values.tei.image.pullPolicy }}
+          args:
+            - --model-id
+            - {{ .modelId | quote }}
+            - --max-batch-tokens
+            - {{ .maxBatchTokens | quote }}
+          ports:
+            - name: http
+              containerPort: 80
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: models
+              mountPath: /data
+          # The first start downloads the model.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        # ponytail: re-downloaded on every pod start. A PVC per model if restarts get slow.
+        - name: models
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}

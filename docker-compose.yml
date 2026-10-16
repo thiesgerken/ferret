@@ -9,11 +9,17 @@ services:
     depends_on:
       paradedb:
         condition: service_healthy
+      # The server reads the model's limits from TEI at startup.
+      tei:
+        condition: service_healthy
     environment:
+      FERRET_CONFIG: /etc/ferret/config.yaml
       FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
       # Development values. Sign in as `admin` with the bootstrap password.
       FERRET_SESSION_SECRET: development session secret, not for production
       FERRET_BOOTSTRAP_PASSWORD: ferret-development
+    volumes:
+      - ./docker/ferret.yaml:/etc/ferret/config.yaml:ro
 
   frontend:
     build: ./frontend
@@ -57,10 +63,16 @@ services:
     restart: unless-stopped
     # The default batch budget (16k tokens) makes the warmup allocate attention for a 16k-token
     # sequence, which gets TEI OOM-killed in a typical Docker Desktop VM. 4096 still clears the
-    # chunker's ~500-token cap with room to spare (and caps TEI's max_input_length at 4096).
+    # chunker's 2000-character cap (and caps TEI's max_input_length at 4096).
     command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B", "--max-batch-tokens", "4096"]
     volumes:
       - tei-models:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost/health"]
+      interval: 5s
+      timeout: 3s
+      # The first start downloads the model.
+      start_period: 10m
 
 volumes:
   pgdata:
