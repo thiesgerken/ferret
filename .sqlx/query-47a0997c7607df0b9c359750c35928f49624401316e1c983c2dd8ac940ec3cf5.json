@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into embedding_cache (text_hash, model, embedding)\n             select text_hash, $1, embedding::halfvec\n             from unnest($2::bytea[], $3::text[]) as new(text_hash, embedding)\n             on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "ByteaArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "47a0997c7607df0b9c359750c35928f49624401316e1c983c2dd8ac940ec3cf5"
+}

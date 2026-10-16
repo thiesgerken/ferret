@@ -117,8 +117,9 @@ pub fn embedding_config(model: ModelConfig) -> EmbeddingConfig {
 impl TestServer {
     /// Waits until the pump has embedded `count` chunks (all models together).
     pub async fn wait_for_embeddings(&self, count: i64) {
+        let mut embedded = 0;
         for _ in 0..200 {
-            let embedded: i64 = sqlx::query_scalar("select count(*) from chunk_embeddings")
+            embedded = sqlx::query_scalar("select count(*) from chunk_embeddings")
                 .fetch_one(&self.pool)
                 .await
                 .unwrap();
@@ -127,7 +128,11 @@ impl TestServer {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        panic!("the pump didn't embed {count} chunks within 10 s");
+        let chunks: i64 = sqlx::query_scalar("select count(*) from chunks")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap();
+        panic!("the pump embedded {embedded} of {chunks} chunks within 10 s, expected {count}");
     }
 
     /// A machine API client that authenticates with `api_key`.

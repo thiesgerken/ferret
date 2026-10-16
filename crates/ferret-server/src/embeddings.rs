@@ -15,6 +15,8 @@ use crate::{
 
 /// Chunks per pump transaction, within TEI's default client batch size (32).
 const BATCH_SIZE: i64 = 32;
+/// How long the startup waits for a TEI that doesn't accept connections yet.
+const TEI_STARTUP_WAIT: Duration = Duration::from_secs(600);
 /// The pump also looks for work this often without a notification, e.g. after an outage.
 const IDLE_POLL: Duration = Duration::from_secs(30);
 
@@ -85,9 +87,7 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     let mut models = Vec::new();
     for config in configs {
         let name = &config.name;
-        let max_input_length = tei::max_input_length(&http, &config.url)
-            .await
-            .map_err(|error| format!("embedding model {name}: {error}"))?;
+        let max_input_length = wait_for_tei(&http, &config).await?;
         // Tokens against characters, one to one: Latin text practically never takes more than
         // one token per character.
         if max_input_length < MAX_CHUNK_CHARS {
@@ -113,6 +113,22 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
         models.push(model);
     }
     Ok(Embedding { http, models })
+}
+
+/// TEI's `max_input_length`, waiting while it isn't up yet: on a fresh deployment it may still
+/// be downloading its model. Any other failure stops the startup.
+async fn wait_for_tei(http: &reqwest::Client, config: &ModelConfig) -> Result<usize, StartupError> {
+    let deadline = tokio::time::Instant::now() + TEI_STARTUP_WAIT;
+    loop {
+        match tei::max_input_length(http, &config.url).await {
+            Ok(length) => return Ok(length),
+            Err(error) if error.is_connect() && tokio::time::Instant::now() < deadline => {
+                tracing::warn!(model = %config.name, url = %config.url, "waiting for TEI");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+            Err(error) => return Err(format!("embedding model {}: {error}", config.name).into()),
+        }
+    }
 }
 
 async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {

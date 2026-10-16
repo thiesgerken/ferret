@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (\n                   select 1 from embedding_cache where text_hash = $1 and model = $2\n               ) as \"cached!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cached!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cced85659ef6a05dca48c26cd6c77704c597bd3860c9fcc72373b852147d7441"
+}
