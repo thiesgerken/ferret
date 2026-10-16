@@ -15,8 +15,8 @@ v1 ([scope](docs/conception/README.md#v1-scope)) is in progress.
 docker compose up
 ```
 
-starts ParadeDB, TEI with Qwen3-Embedding-0.6B and the server on <http://localhost:8380>. On Apple
-Silicon, set `TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4` for a
+starts ParadeDB, TEI with Qwen3-Embedding-0.6B, the server and the UI on <http://127.0.0.1:3380>.
+Sign in as `admin` with the password `ferret-development`. On Apple Silicon, set `TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4` for a
 native TEI build. Tests need only the database:
 
 ```sh
