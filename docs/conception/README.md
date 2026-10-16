@@ -124,7 +124,7 @@ DELETE /api/documents?source=&external_id=      204, or 404 if there is no such 
 POST   /api/syncs                {source}      -> {sync_id}
 POST   /api/syncs/{id}/seen      {source, external_ids}
                                                 mark existing documents as seen, without content
-                                                -> {seen: number of them that exist}
+                                                -> {seen: number of them that exist}, 409 if already committed
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
                                                 -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display

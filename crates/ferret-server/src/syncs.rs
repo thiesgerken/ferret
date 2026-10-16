@@ -15,7 +15,6 @@ use uuid::Uuid;
 use crate::{
     AppState,
     api_auth::{ApiCaller, Scope},
-    documents::check_access,
     error::ApiError,
     sources,
 };
@@ -33,7 +32,7 @@ pub async fn start(
             body.source
         )));
     }
-    check_access(&caller, &body.source)?;
+    caller.require_source(&body.source)?;
     let sync_id = sqlx::query_scalar!(
         "insert into syncs (id, user_id, source, started_at)
          values (uuidv7(), $1, $2, now())
@@ -99,7 +98,7 @@ pub async fn commit(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("no such sync"))?;
-    check_access(&caller, &sync.source)?;
+    caller.require_source(&sync.source)?;
     if sync.committed {
         return Err(ApiError::conflict("the sync is already committed"));
     }
@@ -135,7 +134,7 @@ async fn open_sync(state: &AppState, caller: &ApiCaller, id: Uuid) -> Result<Ope
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| ApiError::not_found("no such sync"))?;
-    check_access(caller, &sync.source)?;
+    caller.require_source(&sync.source)?;
     if sync.committed {
         return Err(ApiError::conflict("the sync is already committed"));
     }

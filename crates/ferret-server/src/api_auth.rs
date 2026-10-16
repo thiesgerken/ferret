@@ -86,6 +86,17 @@ impl ApiCaller {
         }
     }
 
+    /// Fails with 403 unless the caller may read or write documents of `source`.
+    pub fn require_source(&self, source: &str) -> Result<(), ApiError> {
+        if self.may_access(source) {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden(&format!(
+                "this API key may not access the source {source:?}"
+            )))
+        }
+    }
+
     /// The source paths every scope is restricted to (each including everything below it),
     /// `None` for all sources.
     pub fn sources(&self) -> Option<&[String]> {

@@ -73,6 +73,7 @@ async fn a_sync_that_is_never_committed_deletes_nothing(pool: PgPool) {
 
     let sync = api.start_sync("paperless").await.unwrap().sync_id;
     api.sync_seen(sync, "paperless", &["a"]).await.unwrap();
+    assert_eq!(stored(&pool).await, ["paperless/a", "paperless/b"]);
     // A crashed run starts over with a new sync, which sees everything again.
     let next = api.start_sync("paperless").await.unwrap().sync_id;
     api.sync_seen(next, "paperless", &["a", "b"]).await.unwrap();
@@ -145,4 +146,32 @@ async fn syncs_need_ingest_write_within_the_keys_sources(pool: PgPool) {
         .unwrap();
     assert_eq!(notes.commit_sync(sync).await.unwrap().deleted, 0);
     assert_eq!(stored(&pool).await, ["notes/work/kept"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_sweep_leaves_other_users_documents_alone(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    // No user management yet, so the second user and their document come straight from SQL.
+    sqlx::query(
+        "with bob as (
+             insert into users (id, username, password_hash, created_at, password_changed_at)
+             values (uuidv7(), 'bob', 'unused', now(), now())
+             returning id
+         )
+         insert into documents (id, user_id, source, external_id, content_type, authors,
+                                created_at, modified_at, meta, text, content_hash, seen_at)
+         select uuidv7(), id, 'paperless', 'bobs', 'plain', '{}', now(), now(), '{}', 'Bob.',
+                '\\x00', now() - interval '1 day'
+         from bob",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let sync = api.start_sync("paperless").await.unwrap().sync_id;
+    let committed = api.commit_sync(sync).await.unwrap();
+
+    assert_eq!(committed.deleted, 0);
+    assert_eq!(stored(&pool).await, ["paperless/bobs"]);
 }
