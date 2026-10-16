@@ -68,7 +68,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(documents::put).delete(documents::delete),
         )
         .route("/api/documents/{id}", get(documents::get))
-        .route("/api/search", get(search::search))
+        .route("/api/search", get(search::handle))
         .with_state(state)
 }
 

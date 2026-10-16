@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, source, external_id, content_type, title, text, url, thread, authors,\n                  created_at, modified_at, meta as \"meta: Jsonb<serde_json::Map<String, serde_json::Value>>\"\n           from documents where id = $1 and user_id = $2",
+  "query": "select id, source, external_id, content_type, title, text, url, thread, authors,\n                  created_at, modified_at, meta as \"meta: Jsonb<serde_json::Map<String, serde_json::Value>>\"\n           from documents\n           where id = $1 and user_id = $2\n             and ($3::text[] is null or exists (\n                  select 1 from unnest($3::text[]) root where source_covers(root, source)))",
   "describe": {
     "columns": [
       {
@@ -139,7 +139,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "Uuid",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -157,5 +158,5 @@
       false
     ]
   },
-  "hash": "1d43ceb7e824014aa70bcadb483ae1727c5544dea6341b0ba932561bdcccd85e"
+  "hash": "56e4a2598f3d4a55e2de6b88739e56749fb58f48b04ff3dd3fbbb39a36676b0e"
 }

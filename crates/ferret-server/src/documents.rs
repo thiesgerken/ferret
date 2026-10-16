@@ -14,7 +14,7 @@ use axum::{
 use ferret_api::{Document, DocumentPut, PutOutcome, PutResponse};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use sqlx::{PgConnection, types::Json as Jsonb};
+use sqlx::{PgConnection, PgPool, types::Json as Jsonb};
 use uuid::Uuid;
 
 use crate::{
@@ -87,19 +87,35 @@ pub async fn get(
         .require(Scope::SearchRead)
         .or_else(|_| caller.require(Scope::IngestRead))?;
     let Path(id) = id?;
+    find(&state.pool, caller.user_id, caller.sources(), id)
+        .await?
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("no such document"))
+}
+
+/// `user_id`'s document `id`, if it lies within the `allowed` source roots (`None`: all
+/// sources). A document outside them doesn't exist for the caller. Both APIs read documents with
+/// this.
+pub async fn find(
+    pool: &PgPool,
+    user_id: Uuid,
+    allowed: Option<&[String]>,
+    id: Uuid,
+) -> Result<Option<Document>, sqlx::Error> {
     let document = sqlx::query!(
         r#"select id, source, external_id, content_type, title, text, url, thread, authors,
                   created_at, modified_at, meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
-           from documents where id = $1 and user_id = $2"#,
+           from documents
+           where id = $1 and user_id = $2
+             and ($3::text[] is null or exists (
+                  select 1 from unnest($3::text[]) root where source_covers(root, source)))"#,
         id,
-        caller.user_id,
+        user_id,
+        allowed,
     )
-    .fetch_optional(&state.pool)
-    .await?
-    // A document outside the key's sources doesn't exist for it.
-    .filter(|document| caller.may_access(&document.source))
-    .ok_or_else(|| ApiError::not_found("no such document"))?;
-    Ok(Json(Document {
+    .fetch_optional(pool)
+    .await?;
+    Ok(document.map(|document| Document {
         id: document.id,
         source: document.source,
         external_id: document.external_id,
