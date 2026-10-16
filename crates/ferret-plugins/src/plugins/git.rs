@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, path::Path};
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -15,13 +16,17 @@ use super::{Outcome, PluginError, Run};
 pub const NAME: &str = "git";
 
 /// Indexes the files of a git repository.
-// ponytail: no `token` for private repositories yet, it needs encrypted credentials (#11).
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "git")]
 pub struct GitConfig {
     /// The repository to clone, e.g. `https://github.com/owner/notes.git`.
     remote: String,
+    /// A token for a private repository over HTTPS, e.g. a GitHub fine-grained token that may read
+    /// the repository's contents.
+    #[serde(default)]
+    #[schemars(extend("writeOnly" = true))]
+    token: Option<String>,
     /// The branch to index. The repository's default branch when left out.
     #[serde(default)]
     branch: Option<String>,
@@ -59,13 +64,25 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
 
     let checkout = tempfile::tempdir()?;
     let dir = checkout.path();
-    let mut clone = vec!["clone", "--quiet", "--single-branch"];
+    let mut clone = git_command(Path::new("."));
+    clone.args(["clone", "--quiet", "--single-branch"]);
     if let Some(branch) = &config.branch {
-        clone.extend(["--branch", branch]);
+        clone.args(["--branch", branch]);
     }
-    let target = dir.to_str().ok_or("the temp dir's path isn't UTF-8")?;
-    clone.extend(["--", &config.remote, target]);
-    git(Path::new("."), &clone).await?;
+    clone.args(["--".as_ref(), config.remote.as_ref(), dir.as_os_str()]);
+    if let Some(token) = &config.token {
+        // Through the environment rather than `-c`, which would show the token in process
+        // listings. The clone itself doesn't keep it.
+        let credentials = STANDARD.encode(format!("x-access-token:{token}"));
+        clone
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+            .env(
+                "GIT_CONFIG_VALUE_0",
+                format!("Authorization: Basic {credentials}"),
+            );
+    }
+    output(&mut clone, "git clone").await?;
     let commit = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_owned();
     run.log
         .line(format!("cloned {} at {commit}", config.remote));
@@ -191,19 +208,28 @@ fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
     Ok(set.build()?)
 }
 
-/// Runs git in `dir` and returns its stdout. Never prompts: a repository that needs credentials
-/// fails instead of hanging the run.
+/// Runs git in `dir` and returns its stdout.
 async fn git(dir: &Path, args: &[&str]) -> Result<String, PluginError> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .await?;
+    output(
+        git_command(dir).args(args),
+        &format!("git {}", args.join(" ")),
+    )
+    .await
+}
+
+/// Git in `dir` that never prompts: a repository that needs other credentials fails instead of
+/// hanging the run.
+fn git_command(dir: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.current_dir(dir).env("GIT_TERMINAL_PROMPT", "0");
+    command
+}
+
+async fn output(command: &mut Command, name: &str) -> Result<String, PluginError> {
+    let output = command.output().await?;
     if !output.status.success() {
         return Err(format!(
-            "git {} failed: {}",
-            args.first().unwrap_or(&""),
+            "{name} failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         )
         .into());
