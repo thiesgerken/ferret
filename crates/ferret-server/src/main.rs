@@ -1,6 +1,6 @@
-use std::env;
+use std::{env, path::Path, sync::Arc};
 
-use ferret_server::{AppState, SessionKey, StartupError};
+use ferret_server::{AppState, SessionKey, StartupError, config::Config, embeddings};
 use sqlx::PgPool;
 use tokio::{net::TcpListener, signal};
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
@@ -33,18 +33,21 @@ async fn serve() -> Result<(), StartupError> {
 
     let database_url = required_env("FERRET_DATABASE_URL")?;
     let session_key = SessionKey::new(&required_env("FERRET_SESSION_SECRET")?)?;
+    let config = Config::load(Path::new(&required_env("FERRET_CONFIG")?))?;
     // Only needed while no enabled admin exists, so its absence is judged by the bootstrap.
     let bootstrap_password = env::var("FERRET_BOOTSTRAP_PASSWORD").ok();
 
     let pool = PgPool::connect(&database_url).await?;
     ferret_server::migrate(&pool).await?;
     ferret_server::bootstrap_admin(&pool, bootstrap_password.as_deref()).await?;
+    let embedding = Arc::new(embeddings::prepare(&pool, config.embedding).await?);
+    tokio::spawn(embeddings::run_pump(pool.clone(), embedding.clone()));
 
     let listener = TcpListener::bind(PUBLIC_ADDR).await?;
     tracing::info!(addr = PUBLIC_ADDR, "listening");
     axum::serve(
         listener,
-        ferret_server::router(AppState::new(pool, session_key)),
+        ferret_server::router(AppState::new(pool, session_key, embedding)),
     )
     .with_graceful_shutdown(shutdown_requested())
     .await?;

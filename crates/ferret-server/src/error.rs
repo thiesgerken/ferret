@@ -28,6 +28,14 @@ impl ApiError {
         }
     }
 
+    /// A service the server depends on, like TEI, failed.
+    pub fn bad_gateway(message: &str) -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            message: message.to_owned(),
+        }
+    }
+
     pub fn not_found(message: &str) -> Self {
         Self {
             status: StatusCode::NOT_FOUND,

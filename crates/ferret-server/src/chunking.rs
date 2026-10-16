@@ -8,7 +8,10 @@ use text_splitter::{ChunkConfig, MarkdownSplitter, TextSplitter};
 // ponytail: counts characters, not model tokens. ~2000 characters stay far below every
 // embedding model's input limit (Qwen3's TEI accepts 4096 tokens). Count tokens with the
 // model's tokenizer if chunks need to fill a token budget exactly.
-const CHUNK_CHARS: std::ops::Range<usize> = 1000..2000;
+const CHUNK_CHARS: std::ops::Range<usize> = 1000..MAX_CHUNK_CHARS;
+
+/// No chunk is longer, in characters.
+pub const MAX_CHUNK_CHARS: usize = 2000;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Chunk<'a> {

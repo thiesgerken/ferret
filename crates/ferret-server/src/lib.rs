@@ -12,17 +12,21 @@ mod api_auth;
 mod api_keys;
 mod auth;
 mod chunking;
+pub mod config;
 mod content_type;
 mod documents;
+pub mod embeddings;
 mod error;
 pub mod graphql;
 mod highlight;
 mod search;
 mod search_query;
 mod sources;
+mod tei;
 mod users;
 
 pub use auth::SessionKey;
+use embeddings::Embedding;
 pub use users::bootstrap_admin;
 
 pub type StartupError = Box<dyn std::error::Error + Send + Sync>;
@@ -41,14 +45,16 @@ pub struct AppState {
     pool: PgPool,
     session_key: Arc<SessionKey>,
     schema: Arc<graphql::Schema>,
+    embedding: Arc<Embedding>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, session_key: SessionKey) -> Self {
+    pub fn new(pool: PgPool, session_key: SessionKey, embedding: Arc<Embedding>) -> Self {
         Self {
             pool,
             session_key: Arc::new(session_key),
             schema: Arc::new(graphql::schema()),
+            embedding,
         }
     }
 }
