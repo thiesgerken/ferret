@@ -196,13 +196,17 @@ run is harmless.
 ### Plugin credentials
 
 Secret config fields (marked `writeOnly` in the plugin's schema) are encrypted with
-XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the server from a Secret
-(generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start without it.
+XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key in base64 mounted into the server from a
+Secret (generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start
+without it.
 
-- The GraphQL API never returns secret fields. An update that omits a secret keeps the stored value.
+- They're stored apart from the rest of the config (`connections.credentials`: nonce, then
+  ciphertext), so the GraphQL API can't return them. An update that omits a secret keeps the stored
+  value; `null` clears it.
 - Only claimed runs get decrypted secrets, over the internal API.
 - The key must be backed up separately from the database. A database backup without it restores
-  everything except plugin credentials, which then have to be re-entered.
+  everything except plugin credentials, which then have to be re-entered: runs fail with that
+  message, and an update has to enter them.
 
 ## Embedding orchestration
 
@@ -270,6 +274,7 @@ replicas starting together are safe.
 | `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
 | `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
 | `FERRET_WORKER_SECRET` | yes | the plugin workers' pre-shared key for the internal API, at least 32 bytes ([auth.md](auth.md#worker-psk)) |
+| `FERRET_CONFIG_KEY` | yes | encrypts plugin credentials, 32 bytes in base64 ([Plugin credentials](#plugin-credentials)) |
 | `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
 
 The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness

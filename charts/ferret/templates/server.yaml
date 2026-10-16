@@ -55,6 +55,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "ferret.secretName" . }}
                   key: worker-secret
+            - name: FERRET_CONFIG_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: config-key
             {{- with .Values.server.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
