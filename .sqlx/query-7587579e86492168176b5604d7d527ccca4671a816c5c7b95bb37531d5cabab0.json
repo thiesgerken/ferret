@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select k.id, k.secret_hash, k.scopes, k.sources, u.id as user_id, u.is_admin,\n                   u.enabled and (k.expires_at is null or k.expires_at > now()) as \"usable!\"\n               from api_keys k join users u on u.id = k.user_id\n               where k.prefix = $1",
+  "query": "select k.id, k.secret_hash, k.scopes, k.sources, u.id as user_id, u.is_admin,\n               u.enabled and (k.expires_at is null or k.expires_at > now()) as \"usable!\"\n           from api_keys k join users u on u.id = k.user_id\n           where k.prefix = $1",
   "describe": {
     "columns": [
       {
@@ -91,5 +91,5 @@
       null
     ]
   },
-  "hash": "fc63df98c0401a00919835444f5a582775e44169b786ed93adb14c0f3aa0d944"
+  "hash": "7587579e86492168176b5604d7d527ccca4671a816c5c7b95bb37531d5cabab0"
 }

@@ -1,9 +1,5 @@
-//! API keys: bearer credentials for the REST API, with scopes and an optional source restriction.
+//! API keys: long-lived bearer credentials for the REST API, created and revoked by their owner.
 
-use axum::{
-    extract::FromRequestParts,
-    http::{header::AUTHORIZATION, request::Parts},
-};
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
@@ -11,59 +7,15 @@ use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use crate::{AppState, error::ApiError, sources, users::User};
+use crate::{
+    api_auth::{ApiCaller, Scope},
+    sources,
+    users::User,
+};
 
 const KEY_TAG: &str = "fk_";
 const PREFIX_BYTES: usize = 4;
 const SECRET_BYTES: usize = 32;
-
-/// What a key may do: `<scope>:<access>`, where write implies read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, juniper::GraphQLEnum)]
-#[graphql(name = "ApiKeyScope")]
-pub enum Scope {
-    SearchRead,
-    IngestRead,
-    IngestWrite,
-    AdminRead,
-    AdminWrite,
-}
-
-impl Scope {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::SearchRead => "search:read",
-            Self::IngestRead => "ingest:read",
-            Self::IngestWrite => "ingest:write",
-            Self::AdminRead => "admin:read",
-            Self::AdminWrite => "admin:write",
-        }
-    }
-
-    fn parse(scope: &str) -> Self {
-        match scope {
-            "search:read" => Self::SearchRead,
-            "ingest:read" => Self::IngestRead,
-            "ingest:write" => Self::IngestWrite,
-            "admin:read" => Self::AdminRead,
-            "admin:write" => Self::AdminWrite,
-            // The table's check constraint admits no other value.
-            _ => panic!("unknown scope {scope:?} in the database"),
-        }
-    }
-
-    fn grants(self, needed: Self) -> bool {
-        self == needed
-            || matches!(
-                (self, needed),
-                (Self::IngestWrite, Self::IngestRead) | (Self::AdminWrite, Self::AdminRead)
-            )
-    }
-
-    /// Admin scopes only work while the key's owner is an admin.
-    fn needs_admin(self) -> bool {
-        matches!(self, Self::AdminRead | Self::AdminWrite)
-    }
-}
 
 /// A key as its owner sees it in Settings. The secret is gone after creation.
 pub struct ApiKey {
@@ -172,6 +124,10 @@ fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
     if !owner.is_admin && new.scopes.iter().any(|scope| scope.needs_admin()) {
         return invalid("only admins can create keys with an admin scope");
     }
+    if new.sources.is_some() && new.scopes.iter().any(|scope| scope.needs_admin()) {
+        // Users and the other admin objects have no source, so the restriction couldn't apply.
+        return invalid("admin scopes can't be restricted to sources");
+    }
     if let Some(sources) = &new.sources {
         if sources.is_empty() {
             return invalid("leave sources out for all sources, or name at least one");
@@ -203,94 +159,53 @@ pub async fn revoke(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx
     Ok(deleted.rows_affected() == 1)
 }
 
-/// The caller of a `/api` route, authenticated by an API key. A key acts as its owner: it only
-/// ever sees and writes that user's documents, within its scopes and sources.
-pub struct ApiCaller {
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
-    pub user_id: Uuid,
-    scopes: Vec<Scope>,
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
-    sources: Option<Vec<String>>,
-}
+/// The caller behind an API key (`fk_<prefix>.<secret>`), `None` for a malformed, unknown, revoked
+/// or expired key or a disabled owner.
+pub async fn authenticate(pool: &PgPool, key: &str) -> Result<Option<ApiCaller>, sqlx::Error> {
+    let Some((prefix, secret)) = key
+        .strip_prefix(KEY_TAG)
+        .and_then(|key| key.split_once('.'))
+    else {
+        return Ok(None);
+    };
+    // Hashed before the lookup, so an unknown prefix costs the same as a wrong secret.
+    let presented_hash = secret_hash(secret);
 
-impl ApiCaller {
-    /// Fails with 403 unless one of the caller's scopes grants `needed`.
-    pub fn require(&self, needed: Scope) -> Result<(), ApiError> {
-        if self.scopes.iter().any(|scope| scope.grants(needed)) {
-            Ok(())
-        } else {
-            Err(ApiError::forbidden(&format!(
-                "this API key lacks the {} scope",
-                needed.as_str()
-            )))
-        }
-    }
+    let key = sqlx::query!(
+        r#"select k.id, k.secret_hash, k.scopes, k.sources, u.id as user_id, u.is_admin,
+               u.enabled and (k.expires_at is null or k.expires_at > now()) as "usable!"
+           from api_keys k join users u on u.id = k.user_id
+           where k.prefix = $1"#,
+        prefix,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let stored_hash = key
+        .as_ref()
+        .map_or([0; 32].as_slice(), |key| key.secret_hash.as_slice());
+    let secret_matches: bool = presented_hash.as_slice().ct_eq(stored_hash).into();
+    let key = match key {
+        Some(key) if secret_matches && key.usable => key,
+        _ => return Ok(None),
+    };
 
-    /// Whether the caller may read or write documents of `source`.
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
-    pub fn may_access(&self, source: &str) -> bool {
-        self.sources
-            .as_ref()
-            .is_none_or(|roots| roots.iter().any(|root| sources::covers(root, source)))
-    }
-}
+    // At most one write per key and minute, however busy the key is.
+    sqlx::query!(
+        "update api_keys set last_used_at = now()
+         where id = $1 and (last_used_at is null or last_used_at < now() - interval '1 minute')",
+        key.id,
+    )
+    .execute(pool)
+    .await?;
 
-impl FromRequestParts<AppState> for ApiCaller {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        let invalid = || ApiError::unauthorized("missing or invalid API key");
-        let key = parts
-            .headers
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .ok_or_else(invalid)?;
-        let (prefix, secret) = key
-            .strip_prefix(KEY_TAG)
-            .and_then(|key| key.split_once('.'))
-            .ok_or_else(invalid)?;
-        // Hashed before the lookup, so an unknown prefix costs the same as a wrong secret.
-        let presented_hash = secret_hash(secret);
-
-        let key = sqlx::query!(
-            r#"select k.id, k.secret_hash, k.scopes, k.sources, u.id as user_id, u.is_admin,
-                   u.enabled and (k.expires_at is null or k.expires_at > now()) as "usable!"
-               from api_keys k join users u on u.id = k.user_id
-               where k.prefix = $1"#,
-            prefix,
-        )
-        .fetch_optional(&state.pool)
-        .await?;
-        let stored_hash = key
-            .as_ref()
-            .map_or([0; 32].as_slice(), |key| key.secret_hash.as_slice());
-        let secret_matches: bool = presented_hash.as_slice().ct_eq(stored_hash).into();
-        let key = match key {
-            Some(key) if secret_matches && key.usable => key,
-            _ => return Err(invalid()),
-        };
-
-        // At most one write per key and minute, however busy the key is.
-        sqlx::query!(
-            "update api_keys set last_used_at = now()
-             where id = $1 and (last_used_at is null or last_used_at < now() - interval '1 minute')",
-            key.id,
-        )
-        .execute(&state.pool)
-        .await?;
-
-        Ok(Self {
-            user_id: key.user_id,
-            scopes: key
-                .scopes
-                .iter()
-                .map(|scope| Scope::parse(scope))
-                .filter(|scope| key.is_admin || !scope.needs_admin())
-                .collect(),
-            sources: key.sources,
-        })
-    }
+    let scopes = key
+        .scopes
+        .iter()
+        .map(|scope| Scope::parse(scope))
+        // Admin scopes stop working the moment the owner stops being an admin.
+        .filter(|scope| key.is_admin || !scope.needs_admin())
+        .collect();
+    Ok(Some(ApiCaller::new(key.user_id, scopes, key.sources)))
 }
 
 fn secret_hash(secret: &str) -> [u8; 32] {
@@ -305,18 +220,4 @@ fn random_bytes<const N: usize>() -> [u8; N] {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn write_implies_read_of_the_same_scope_only() {
-        assert!(Scope::IngestWrite.grants(Scope::IngestRead));
-        assert!(Scope::AdminWrite.grants(Scope::AdminRead));
-        assert!(!Scope::IngestRead.grants(Scope::IngestWrite));
-        assert!(!Scope::IngestWrite.grants(Scope::SearchRead));
-        assert!(!Scope::AdminWrite.grants(Scope::IngestRead));
-    }
 }

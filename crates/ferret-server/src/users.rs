@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState, StartupError,
-    api_keys::{ApiCaller, Scope},
+    api_auth::{ApiCaller, Scope},
     error::ApiError,
 };
 

@@ -192,7 +192,7 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
       </fieldset>
       <div className="space-y-1.5">
         <label htmlFor="key-sources" className="text-xs font-medium text-muted-foreground">
-          Sources (optional, restricts every scope to these and below)
+          Sources (optional, restricts every scope to these and below; not with admin scopes)
         </label>
         <input id="key-sources" name="sources" placeholder="notes, paperless" className={fieldClass} />
       </div>

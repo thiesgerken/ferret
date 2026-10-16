@@ -16,7 +16,8 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    api_keys::{self, ApiKey, Scope},
+    api_auth::Scope,
+    api_keys::{self, ApiKey},
     auth,
     error::ApiError,
     users::User,
