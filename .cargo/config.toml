@@ -2,3 +2,10 @@
 # The ParadeDB of docker-compose.yml (and of CI's service container). `#[sqlx::test]` creates a
 # database per test in it. An exported DATABASE_URL takes precedence.
 DATABASE_URL = "postgres://ferret:ferret@localhost:5439/ferret"
+# Queries are checked against the metadata in .sqlx, so building needs no database. After changing
+# a query or a migration, regenerate it with `cargo sqlx prepare --workspace` (see AGENTS.md).
+SQLX_OFFLINE = "true"
+# ponytail: `#[sqlx::test]` pools share a budget of 20 connections, and each test (server plus test
+# code) keeps 2-3 open. From 10 parallel tests on, dropping the test databases waits out a 30 s
+# pool timeout. If tests ever need more connections each, lower this or give them smaller pools.
+RUST_TEST_THREADS = "6"

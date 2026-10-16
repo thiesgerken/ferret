@@ -11,6 +11,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check that frontend/schema.graphql matches the server's schema
+        run: |
+          cargo run --locked -q -p ferret-server -- schema > frontend/schema.graphql
+          git diff --exit-code -- frontend/schema.graphql
 
   rust-test:
     runs-on: ubuntu-latest

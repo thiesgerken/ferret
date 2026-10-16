@@ -9,7 +9,10 @@ publish = false
 
 [workspace.dependencies]
 ferret-api = { path = "crates/ferret-api" }
+argon2 = "0.6"
 axum = "0.8"
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+juniper = { version = "0.17", default-features = false, features = ["schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 sqlx = { version = "0.9", default-features = false, features = [
@@ -17,7 +20,18 @@ sqlx = { version = "0.9", default-features = false, features = [
     "migrate",
     "postgres",
     "runtime-tokio",
+    "uuid",
 ] }
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["serde"] }
+
+# Unoptimized, Argon2 takes seconds per hash, which makes every login in tests and `cargo run`
+# crawl.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

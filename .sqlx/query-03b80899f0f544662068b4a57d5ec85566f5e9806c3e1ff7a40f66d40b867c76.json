@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into users\n             (id, username, password_hash, is_admin, created_at, password_changed_at)\n         values (uuidv7(), $1, $2, true, now(), now())\n         on conflict (username) do update set\n             password_hash = excluded.password_hash,\n             is_admin = true,\n             enabled = true,\n             token_version = users.token_version + 1,\n             password_changed_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03b80899f0f544662068b4a57d5ec85566f5e9806c3e1ff7a40f66d40b867c76"
+}
