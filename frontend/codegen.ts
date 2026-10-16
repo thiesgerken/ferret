@@ -3,11 +3,15 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 const config: CodegenConfig = {
   schema: "schema.graphql",
   documents: ["src/**/*.{ts,tsx}", "!src/gql/**"],
-  // Until the first query exists there are no documents, which codegen treats as an error.
-  ignoreNoDocuments: true,
   generates: {
     "src/gql/": {
       preset: "client",
+      config: {
+        // String unions instead of TypeScript enums, so code and tests can write "SEARCH_READ".
+        enumsAsTypes: true,
+        // RFC 3339 strings on the wire.
+        scalars: { DateTime: "string" },
+      },
     },
   },
 };
