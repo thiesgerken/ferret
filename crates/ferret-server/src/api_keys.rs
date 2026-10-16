@@ -8,12 +8,12 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::{
-    api_auth::{ApiCaller, Scope},
+    api_auth::{ApiCaller, CallerKind, Scope},
     sources,
     users::User,
 };
 
-const KEY_TAG: &str = "fk_";
+pub const KEY_TAG: &str = "fk_";
 const PREFIX_BYTES: usize = 4;
 const SECRET_BYTES: usize = 32;
 
@@ -205,7 +205,12 @@ pub async fn authenticate(pool: &PgPool, key: &str) -> Result<Option<ApiCaller>,
         // Admin scopes stop working the moment the owner stops being an admin.
         .filter(|scope| key.is_admin || !scope.needs_admin())
         .collect();
-    Ok(Some(ApiCaller::new(key.user_id, scopes, key.sources)))
+    Ok(Some(ApiCaller::new(
+        key.user_id,
+        scopes,
+        key.sources,
+        CallerKind::ApiKey,
+    )))
 }
 
 fn secret_hash(secret: &str) -> [u8; 32] {

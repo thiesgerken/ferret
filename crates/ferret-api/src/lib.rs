@@ -16,8 +16,10 @@ pub struct User {
     pub enabled: bool,
 }
 
+pub mod internal;
+
 /// How the server chunks a document's text and how the viewer renders it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentType {
     Markdown,
@@ -187,7 +189,8 @@ impl Client {
         }
     }
 
-    /// Authenticates every `/api` call with `api_key` (`fk_...`).
+    /// Authenticates every `/api` call with a bearer credential: an API key (`fk_...`) or a
+    /// plugin run's token.
     pub fn with_api_key(self, api_key: impl Into<String>) -> Self {
         Self {
             api_key: Some(api_key.into()),

@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     AppState,
     api_auth::{ApiCaller, Scope},
-    chunking, content_type,
+    chunking, connections, content_type,
     error::ApiError,
     sources,
 };
@@ -42,6 +42,7 @@ pub async fn put(
         return Err(ApiError::bad_request("external_id must not be empty"));
     }
     check_access(&caller, &document.source)?;
+    connections::check_api_key_may_write(&state.pool, &caller, &document.source, false).await?;
 
     let mut tx = state.pool.begin().await?;
     let response = upsert(&mut tx, caller.user_id, &document).await?;
@@ -63,6 +64,7 @@ pub async fn delete(
     caller.require(Scope::IngestWrite)?;
     let Query(key) = key?;
     check_access(&caller, &key.source)?;
+    connections::check_api_key_may_write(&state.pool, &caller, &key.source, false).await?;
     let deleted = sqlx::query!(
         "delete from documents where user_id = $1 and source = $2 and external_id = $3",
         caller.user_id,

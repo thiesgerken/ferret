@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::{
     AppState,
     api_auth::{ApiCaller, Scope},
+    connections,
     documents::check_access,
     error::ApiError,
     sources,
@@ -34,6 +35,7 @@ pub async fn start(
         )));
     }
     check_access(&caller, &body.source)?;
+    connections::check_api_key_may_write(&state.pool, &caller, &body.source, true).await?;
     let sync_id = sqlx::query_scalar!(
         "insert into syncs (id, user_id, source, started_at)
          values (uuidv7(), $1, $2, now())
@@ -103,6 +105,8 @@ pub async fn commit(
     if sync.committed {
         return Err(ApiError::conflict("the sync is already committed"));
     }
+    // Checked again: a connection may have been created below the source since the start.
+    connections::check_api_key_may_write(&state.pool, &caller, &sync.source, true).await?;
     let deleted = sqlx::query!(
         "delete from documents
          where user_id = $1 and source_covers($2, source) and seen_at < $3",

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tokio::sync::Notify;
+
 use axum::{
     Router,
     extract::State,
@@ -12,11 +14,13 @@ mod api_auth;
 mod api_keys;
 mod auth;
 mod chunking;
+mod connections;
 mod content_type;
 mod documents;
 mod error;
 pub mod graphql;
 mod highlight;
+mod runs;
 mod search;
 mod search_query;
 mod sources;
@@ -24,6 +28,7 @@ mod syncs;
 mod users;
 
 pub use auth::SessionKey;
+pub use runs::WorkerSecret;
 pub use users::bootstrap_admin;
 
 pub type StartupError = Box<dyn std::error::Error + Send + Sync>;
@@ -41,17 +46,45 @@ pub async fn migrate(pool: &PgPool) -> Result<(), MigrateError> {
 pub struct AppState {
     pool: PgPool,
     session_key: Arc<SessionKey>,
+    worker_secret: Arc<WorkerSecret>,
+    /// Wakes waiting claims, fed by [`listen_for_due_runs`].
+    run_wakeup: Arc<Notify>,
     schema: Arc<graphql::Schema>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, session_key: SessionKey) -> Self {
+    pub fn new(pool: PgPool, session_key: SessionKey, worker_secret: WorkerSecret) -> Self {
         Self {
             pool,
             session_key: Arc::new(session_key),
+            worker_secret: Arc::new(worker_secret),
+            run_wakeup: Arc::new(Notify::new()),
             schema: Arc::new(graphql::schema()),
         }
     }
+}
+
+/// Wakes this replica's waiting claims whenever a connection becomes due on any replica. The
+/// listener reconnects by itself; a notification sent while it's disconnected is lost, and the
+/// claims then wake at their next event or timeout instead.
+pub async fn listen_for_due_runs(state: AppState) -> Result<(), sqlx::Error> {
+    let mut listener = sqlx::postgres::PgListener::connect_with(&state.pool).await?;
+    listener.listen(connections::RUNS_CHANNEL).await?;
+    loop {
+        listener.recv().await?;
+        state.run_wakeup.notify_waiters();
+    }
+}
+
+/// The internal API for plugin workers, on its own port, which the Ingress doesn't expose. Every
+/// route takes the worker PSK.
+pub fn internal_router(state: AppState) -> Router {
+    Router::new()
+        .route("/internal/workers/register", post(runs::register))
+        .route("/internal/runs/claim", post(runs::claim))
+        .route("/internal/runs/{id}/heartbeat", post(runs::heartbeat))
+        .route("/internal/runs/{id}/finish", post(runs::finish))
+        .with_state(state)
 }
 
 /// The path decides the credential: `/graphql` takes the session cookie, `/auth` exchanges a

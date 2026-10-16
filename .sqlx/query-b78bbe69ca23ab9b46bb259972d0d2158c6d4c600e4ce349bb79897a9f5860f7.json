@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select extract(epoch from min(at) - now())::float8 from (\n               select c.next_run_at as at from connections c\n               where c.enabled and c.plugin = any($1)\n                 and not exists (select 1 from plugin_runs r\n                                 where r.connection_id = c.id and r.status = 'running')\n               union all\n               select r.heartbeat_at + make_interval(secs => $2) from plugin_runs r\n               join connections c on c.id = r.connection_id\n               where r.status = 'running' and c.plugin = any($1)\n           ) events",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extract",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b78bbe69ca23ab9b46bb259972d0d2158c6d4c600e4ce349bb79897a9f5860f7"
+}

@@ -8,8 +8,9 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, TimeZone, Utc};
+use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
-use ferret_server::{AppState, SessionKey};
+use ferret_server::{AppState, SessionKey, WorkerSecret};
 use reqwest::{Response, header};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -17,11 +18,14 @@ use tokio::net::TcpListener;
 
 pub const ADMIN_PASSWORD: &str = "the bootstrap admin's password";
 const SESSION_SECRET: &str = "a session secret of at least 32 bytes";
+pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
 
 pub struct TestServer {
     /// The machine API's client.
     pub api: Client,
     url: String,
+    /// The plugin workers' API, on its own listener like in production.
+    pub internal_url: String,
     http: reqwest::Client,
 }
 
@@ -35,18 +39,31 @@ pub async fn start_server(pool: PgPool) -> TestServer {
         .await
         .expect("the admin is bootstrapped");
     let session_key = SessionKey::new(SESSION_SECRET).unwrap();
-    let app = ferret_server::router(AppState::new(pool, session_key));
+    let worker_secret = WorkerSecret::new(WORKER_SECRET.to_owned()).unwrap();
+    let state = AppState::new(pool, session_key, worker_secret);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
+    let internal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let internal_url = format!("http://{}", internal_listener.local_addr().unwrap());
+    tokio::spawn(ferret_server::listen_for_due_runs(state.clone()));
+    let internal = ferret_server::internal_router(state.clone());
+    tokio::spawn(async move { axum::serve(internal_listener, internal).await.unwrap() });
+    let app = ferret_server::router(state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     TestServer {
         api: Client::new(url.clone()),
         url,
+        internal_url,
         http: reqwest::Client::new(),
     }
 }
 
 impl TestServer {
+    /// A plugin worker's client for the internal API.
+    pub fn internal(&self) -> InternalClient {
+        InternalClient::new(self.internal_url.clone(), WORKER_SECRET)
+    }
+
     /// A machine API client that authenticates with `api_key`.
     pub fn api_with_key(&self, api_key: &str) -> Client {
         Client::new(self.url.clone()).with_api_key(api_key)
