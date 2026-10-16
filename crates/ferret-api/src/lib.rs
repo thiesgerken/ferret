@@ -8,7 +8,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// `base_url` is the server's origin without a trailing slash, e.g. `http://localhost:8080`.
+    /// `base_url` is the server's origin without a trailing slash, e.g. `http://localhost:8380`.
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             http: reqwest::Client::new(),

@@ -21,7 +21,7 @@ Keep `docs/` up to date when a change alters what it describes.
 - Start everything for development: `docker compose up`
 - Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`
 - Build: `cargo build --workspace`
-- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5432/ferret cargo run -p ferret-server`
+- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo run -p ferret-server`
 - Test: `cargo test --workspace` (needs the compose ParadeDB, see Testing)
 - Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`
 

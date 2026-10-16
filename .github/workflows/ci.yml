@@ -24,7 +24,7 @@ jobs:
           POSTGRES_USER: ferret
           POSTGRES_PASSWORD: ferret
         ports:
-          - 5432:5432
+          - 5439:5432
         options: >-
           --health-cmd "pg_isready -U ferret -d ferret"
           --health-interval 5s

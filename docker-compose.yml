@@ -3,7 +3,9 @@ services:
   server:
     build: .
     ports:
-      - "8080:8080"
+      # Host ports off the defaults (here and for ParadeDB), so ferret runs next to other
+      # stacks that already hold 8080 and 5432.
+      - "127.0.0.1:8380:8080"
     depends_on:
       paradedb:
         condition: service_healthy
@@ -19,7 +21,7 @@ services:
       POSTGRES_PASSWORD: ferret
     ports:
       # For `cargo test` and `cargo run` on the host, see .cargo/config.toml.
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5439:5432"
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
