@@ -1,0 +1,5 @@
+ferret is starting{{ if .Values.ingress.enabled }} at https://{{ .Values.ingress.hostname }}{{ end }}.
+
+Sign in as `admin` with the bootstrap password:
+
+  kubectl get secret -n {{ .Release.Namespace }} {{ include "ferret.secretName" . }} -o jsonpath='{.data.bootstrap-password}' | base64 -d

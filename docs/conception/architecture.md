@@ -18,7 +18,7 @@ coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message 
 
 ```text
                          ┌──────────────── Ingress ─────────────────┐
-                         │ /      /graphql, /auth, /api             │
+                         │ /           /graphql, /api, /auth        │
                          ▼                   ▼                      │
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
  browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (carapace skill)
@@ -220,7 +220,7 @@ XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the ser
 ## Frontend
 
 Next.js with carapace's stack and look and feel (React, Tailwind, shadcn-style components). In
-production the Ingress routes `/graphql`, `/auth` and `/api` to the server and everything else to
+production the HTTPRoute sends `/graphql`, `/api` and `/auth` to the server and everything else to
 the frontend. In development Next rewrites those paths to the local server, as in carapace.
 
 | Section | Contents |
@@ -252,7 +252,7 @@ The Helm chart, modelled on carapace's:
   depends on the GPU architecture and is a value.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
-- Ingress, NetworkPolicy for the internal port.
+- Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.
 - Secrets, each generated once via `lookup` or supplied via `existingSecret`: Postgres password,
   `FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`, `FERRET_WORKER_SECRET`,
   `FERRET_CONFIG_KEY`.
