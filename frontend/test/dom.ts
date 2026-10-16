@@ -7,11 +7,19 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "https://ferret.example.test/",
 });
 
-for (const key of ["window", "document", "navigator", "HTMLElement", "Node", "Event", "MouseEvent"] as const) {
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    writable: true,
-    value: key === "window" ? dom.window : dom.window[key],
-  });
+const globals = {
+  window: dom.window,
+  self: dom.window,
+  document: dom.window.document,
+  navigator: dom.window.navigator,
+  HTMLElement: dom.window.HTMLElement,
+  Node: dom.window.Node,
+  Event: dom.window.Event,
+  MouseEvent: dom.window.MouseEvent,
+  // Node's own FormData can't read a jsdom form.
+  FormData: dom.window.FormData,
+};
+for (const [key, value] of Object.entries(globals)) {
+  Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 }
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, writable: true, value: true });
