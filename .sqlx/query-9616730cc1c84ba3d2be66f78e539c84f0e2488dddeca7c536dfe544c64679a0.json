@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update syncs set committed_at = now() where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9616730cc1c84ba3d2be66f78e539c84f0e2488dddeca7c536dfe544c64679a0"
+}
