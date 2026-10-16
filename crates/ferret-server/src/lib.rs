@@ -1,15 +1,20 @@
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use sqlx::{PgPool, migrate::MigrateError};
 
-/// Applies pending migrations and builds the HTTP app.
+/// Applies pending migrations.
 ///
-/// Fails on a migration that errors, and on one that was edited or removed after it was
-/// applied, so a server never runs against a schema it doesn't know.
-pub async fn app(pool: PgPool) -> Result<Router, MigrateError> {
-    sqlx::migrate!().run(&pool).await?;
-    Ok(Router::new()
-        .route("/api/health", get(health))
-        .with_state(pool))
+/// Fails on a migration that errors or broke off on an earlier start, and on one that was
+/// edited or removed after it was applied, so a server never runs against a schema it doesn't
+/// know.
+pub async fn migrate(pool: &PgPool) -> Result<(), MigrateError> {
+    sqlx::migrate!().run(pool).await
+}
+
+pub fn router(pool: PgPool) -> Router {
+    Router::new()
+        // Outside /api, whose routes all take a bearer credential. Probes hit the pod directly.
+        .route("/healthz", get(health))
+        .with_state(pool)
 }
 
 async fn health(State(pool): State<PgPool>) -> StatusCode {

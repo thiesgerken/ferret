@@ -20,11 +20,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database_url =
         env::var("FERRET_DATABASE_URL").map_err(|_| "FERRET_DATABASE_URL is not set")?;
     let pool = PgPool::connect(&database_url).await?;
-    let app = ferret_server::app(pool).await?;
+    ferret_server::migrate(&pool).await?;
 
     let listener = TcpListener::bind(PUBLIC_ADDR).await?;
     tracing::info!(addr = PUBLIC_ADDR, "listening");
-    axum::serve(listener, app)
+    axum::serve(listener, ferret_server::router(pool))
         .with_graceful_shutdown(shutdown_requested())
         .await?;
     Ok(())

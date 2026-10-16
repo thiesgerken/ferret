@@ -10,7 +10,10 @@ use tokio::net::TcpListener;
 
 /// Starts the server in-process on a random port and returns a client for it.
 pub async fn start_server(pool: PgPool) -> Client {
-    let app = ferret_server::app(pool).await.expect("server starts");
+    ferret_server::migrate(&pool)
+        .await
+        .expect("migrations apply");
+    let app = ferret_server::router(pool);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

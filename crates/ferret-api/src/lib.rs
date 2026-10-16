@@ -19,7 +19,7 @@ impl Client {
     /// Succeeds when the server is up and reaches its database.
     pub async fn health(&self) -> Result<(), reqwest::Error> {
         self.http
-            .get(format!("{}/api/health", self.base_url))
+            .get(format!("{}/healthz", self.base_url))
             .send()
             .await?
             .error_for_status()?;

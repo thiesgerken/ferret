@@ -18,4 +18,3 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 ferret-api.workspace = true
-axum.workspace = true
