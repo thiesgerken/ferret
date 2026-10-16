@@ -111,6 +111,10 @@ for update of c skip locked;
 - `model=` on the search API and a model switch in the search UI override it per query.
 - A model can be chosen before its backfill is complete. Settings shows the coverage, so the user
   knows the semantic half is partial.
+- The model switch in the search UI only appears once more than one model is configured.
+
+v1 configures a single model, but adding one is a config change plus a TEI Deployment, and
+switching to it needs nothing but the Settings dropdown once its backfill is done.
 
 ## Evaluation
 

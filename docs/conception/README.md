@@ -292,6 +292,24 @@ the roadmap. Details in [plugins.md](plugins.md).
 - **Hardware**: CPU for queries and incremental ingest, a temporarily added GPU node (gaming PC)
   for backfills ([embeddings.md](embeddings.md#models)).
 
+## v1 scope
+
+- **Server**: ingest API (documents, syncs, `seen`, exclusions), search (hybrid, one hit per
+  document, collapsed per thread), GraphQL for the UI, auth (users, sessions, API keys restricted
+  by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
+  API.
+- **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
+  change, switching the default is a Settings dropdown.
+- **Plugins**: git, Paperless, carapace (Markdown mirror).
+- **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
+  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account,
+  API keys, default model with coverage), Admin (users, workers, backlog).
+- **Ops**: Helm chart, docker-compose for development, CI and releases as in carapace (images
+  `ferret`, `ferret-plugins`, `ferret-frontend`, chart as OCI on ghcr). Structured JSON logs, no
+  `/metrics` endpoint.
+- **Follow-up issues, opened as part of v1**: model evaluation (recall@10 and MRR per model from
+  the judgments, in Settings), and UI i18n (German and English).
+
 ## Sizing
 
 Rough corpus: ~40M tokens (50k mails, 500k chat messages, 5k Paperless documents, notes, a few

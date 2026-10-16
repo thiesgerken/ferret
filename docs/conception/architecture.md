@@ -224,7 +224,7 @@ frontend. In development Next rewrites those paths to the local server, as in ca
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
-| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data, recall@10 and MRR on my judgments, my default model) |
+| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data and my default model in v1, recall@10 and MRR on my judgments in v2) |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
