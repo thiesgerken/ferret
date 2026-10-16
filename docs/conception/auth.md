@@ -152,7 +152,7 @@ create table api_keys (
 `sources` restricts a key to source paths and everything below them, for reading, searching and
 writing alike, enforced by the server. Admin scopes act on users, which have no source, so a key
 with an admin scope can't have `sources`: the server refuses the combination at creation. A leaked key for one ingester can't overwrite or sweep
-chats, and an agent's key only finds what it was given. Sources owned by a connection are off-limits to API keys
+chats, and an agent's key only finds what it was given. API keys can't write below a connection's root
 ([architecture.md](architecture.md#source-ownership)).
 
 Typical keys:

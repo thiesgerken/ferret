@@ -1,6 +1,6 @@
 # ferret Helm chart
 
-Deploys [ferret](https://github.com/thiesgerken/ferret): server, frontend and ParadeDB.
+Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend and ParadeDB.
 
 ## Prerequisites
 
@@ -33,6 +33,7 @@ set `secrets.existingSecret`:
 | `postgres-password` | the database user |
 | `bootstrap-password` | the first `admin`, at least 16 characters |
 | `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
+| `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 
 ## Uninstall
 

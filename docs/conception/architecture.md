@@ -158,15 +158,17 @@ create table exclusions (
 
 Every source below a connection's root belongs to that connection exclusively: API keys can't
 write there, and connection roots can't overlap. Otherwise a sync sweep would delete documents
-someone else wrote. API keys write only to sources outside every connection's root.
+someone else wrote. API keys write only to sources outside every connection's root, and a sync of
+an API key can't contain a connection's root either. Reading and searching stay governed by the
+key's own sources.
 
 ### Run lifecycle
 
 ```text
 POST /internal/workers/register   {name, plugins: [{name, config_schema}]}    -> {worker_id}
-POST /internal/runs/claim?wait=30s                                           -> 204 | {run}
-POST /internal/runs/{id}/heartbeat {log_lines}
-POST /internal/runs/{id}/finish    {status, state, stats, error}
+POST /internal/runs/claim?wait=30 {worker_id}                                -> 204 | {run}
+POST /internal/runs/{id}/heartbeat {log_lines}                               -> 204, 409 once not live
+POST /internal/runs/{id}/finish    {result, state, stats, error, log_lines}  -> 204, 409 once not live
 ```
 
 1. **Register**: at startup the worker upserts its plugin types and announces its capabilities.
@@ -267,6 +269,7 @@ replicas starting together are safe.
 | `FERRET_DATABASE_URL` | yes | Postgres URL. Without a password in it, `PGPASSWORD` supplies one, so the password needs no URL-encoding |
 | `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
 | `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
+| `FERRET_WORKER_SECRET` | yes | the plugin workers' pre-shared key for the internal API, at least 32 bytes ([auth.md](auth.md#worker-psk)) |
 | `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
 
 The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness
