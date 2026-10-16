@@ -89,6 +89,9 @@ pub struct SearchQuery {
     /// the query string.
     #[serde(default, rename = "source")]
     pub sources: Vec<String>,
+    /// Only documents of these content types. Empty: all. Repeated `content_type=`.
+    #[serde(default, rename = "content_type")]
+    pub content_types: Vec<ContentType>,
     /// Only documents with at least one of these authors. Empty: any author. Repeated `author=`
     /// in the query string.
     #[serde(default, rename = "author")]
@@ -231,6 +234,11 @@ impl Client {
                 .iter()
                 .map(|source| ("source", source.clone())),
         );
+        params.extend(query.content_types.iter().map(|content_type| {
+            let value = serde_json::to_value(content_type).expect("a content type serializes");
+            let value = value.as_str().expect("content types serialize as strings");
+            ("content_type", value.to_owned())
+        }));
         params.extend(
             query
                 .authors

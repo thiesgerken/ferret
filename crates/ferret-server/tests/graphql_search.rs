@@ -24,6 +24,7 @@ async fn ingest(api: &Client) {
     let mut mail = document("mail/zoho", "invoice-b", "Your invoice is attached.");
     mail.authors = vec!["Stadtwerke".to_owned(), "billing".to_owned()];
     mail.created_at = day(10);
+    mail.content_type = ContentType::Email;
     let mut notes = document("notes", "invoice-c", "Pay the invoice before Friday.");
     notes.created_at = day(20);
     for document in [paperless, mail, notes] {
@@ -100,6 +101,13 @@ async fn graphql_search_returns_the_same_hits_as_rest(pool: PgPool) {
             json!({"q": "invoice", "authors": ["billing"]}),
             SearchQuery {
                 authors: vec!["billing".to_owned()],
+                ..Default::default()
+            },
+        ),
+        (
+            json!({"q": "invoice", "contentTypes": ["PLAIN"]}),
+            SearchQuery {
+                content_types: vec![ContentType::Plain],
                 ..Default::default()
             },
         ),

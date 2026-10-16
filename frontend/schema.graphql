@@ -32,6 +32,7 @@ input SearchInput {
   "Words, `\"exact phrases\"` and `-excluded` words." q: String!
   "Only documents in these sources or below them. Leave out for all sources." sources: [String!]
   "Only documents with at least one of these authors. Leave out for any author." authors: [String!]
+  "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
   "Only documents created at or after this time." from: DateTime
   "Only documents created before this time." to: DateTime
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int

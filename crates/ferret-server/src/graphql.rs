@@ -68,6 +68,12 @@ impl Query {
             q: input.q,
             sources: input.sources.unwrap_or_default(),
             authors: input.authors.unwrap_or_default(),
+            content_types: input
+                .content_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(ferret_api::ContentType::from)
+                .collect(),
             from: input.from,
             to: input.to,
             // A negative k becomes 0, which the search rejects like any k out of range.
@@ -100,6 +106,8 @@ struct SearchInput {
     sources: Option<Vec<String>>,
     /// Only documents with at least one of these authors. Leave out for any author.
     authors: Option<Vec<String>>,
+    /// Only documents of these content types. Leave out for all.
+    content_types: Option<Vec<ContentType>>,
     /// Only documents created at or after this time.
     from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -114,6 +122,16 @@ enum ContentType {
     Markdown,
     Plain,
     Email,
+}
+
+impl From<ContentType> for ferret_api::ContentType {
+    fn from(content_type: ContentType) -> Self {
+        match content_type {
+            ContentType::Markdown => Self::Markdown,
+            ContentType::Plain => Self::Plain,
+            ContentType::Email => Self::Email,
+        }
+    }
 }
 
 impl From<ferret_api::ContentType> for ContentType {
