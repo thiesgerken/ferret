@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
 // In production the HTTPRoute sends these paths to the server. The static export can't rewrite,
 // so only `next dev` proxies them.
 if (process.env.NODE_ENV === "development") {
-  const serverUrl = (process.env.FERRET_SERVER_URL?.trim() || "http://127.0.0.1:8080").replace(/\/$/, "");
+  const serverUrl = (process.env.FERRET_SERVER_URL?.trim() || "http://127.0.0.1:8380").replace(/\/$/, "");
   nextConfig.rewrites = async () => [
     { source: "/graphql", destination: `${serverUrl}/graphql` },
     { source: "/api/:path*", destination: `${serverUrl}/api/:path*` },
