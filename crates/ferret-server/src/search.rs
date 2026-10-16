@@ -2,8 +2,9 @@
 
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
+use chrono::{DateTime, Utc};
 use ferret_api::{Hit, HitChunk, SearchQuery, SearchResponse};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::{
@@ -87,53 +88,82 @@ pub async fn find(
         return Ok(vec![]);
     }
 
-    let rows = sqlx::query!(
-        r#"with excluded as (
-               select distinct document_id from chunks
-               where user_id = $1 and (text ||| $3 or text::pdb.alias('text_en') ||| $3)
-           ),
-           matches as (
-               select id, document_id, text, start_offset, end_offset, pdb.score(id) as score
-               from chunks c
-               where user_id = $1
-                 and (text &&& $2
-                      or text::pdb.alias('text_en') &&& $2
-                      or text::pdb.alias('text_ngram') &&& $2)
-                 and ($4::text[] is null or exists (
-                      select 1 from unnest($4::text[]) root where source_covers(root, c.source)))
-                 and ($5::timestamptz is null or ts >= $5)
-                 and ($6::timestamptz is null or ts < $6)
-                 and (select coalesce(bool_and(
-                          strpos(lower(regexp_replace(c.text, '\s+', ' ', 'g')), lower(phrase)) > 0),
-                          true)
-                      from unnest($7::text[]) phrase)
-               order by score desc
-               limit $8
-           ),
-           best as (
-               select distinct on (document_id) * from matches
-               where document_id not in (select document_id from excluded)
-               order by document_id, score desc
-           )
-           select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                  d.authors, d.created_at, d.modified_at,
-                  b.score as "score!", b.text as "chunk_text!",
-                  b.start_offset as "start_offset!", b.end_offset as "end_offset!"
-           from best b join documents d on d.id = b.document_id
-           order by b.score desc
-           limit $9"#,
-        user_id,
-        query.words.join(" "),
-        query.excluded.join(" "),
-        roots.as_deref(),
-        request.from,
-        request.to,
-        &query.phrases,
-        CANDIDATE_CHUNKS,
-        i64::from(k),
-    )
-    .fetch_all(pool)
-    .await?;
+    let content_types: Vec<&str> = request
+        .content_types
+        .iter()
+        .map(|content_type| content_type::as_str(*content_type))
+        .collect();
+
+    // Built rather than checked at compile time (ADR 0005): every word and every excluded word
+    // is its own clause, and pg_search only takes constant query strings in them.
+    let mut sql = QueryBuilder::<Postgres>::new(
+        "with matches as (
+             select id, document_id, text, start_offset, end_offset, pdb.score(id) as score
+             from chunks c
+             where user_id = ",
+    );
+    sql.push_bind(user_id);
+    // Every word must match in at least one field, so a compound and an inflected word can
+    // match the same chunk in different fields.
+    for word in &query.words {
+        sql.push(" and (text &&& ")
+            .push_bind(word)
+            .push(" or text::pdb.alias('text_en') &&& ")
+            .push_bind(word)
+            .push(" or text::pdb.alias('text_ngram') &&& ")
+            .push_bind(word)
+            .push(")");
+    }
+    // Excluded words drop whole documents, before the candidate limit.
+    for word in &query.excluded {
+        sql.push(" and document_id not in (select document_id from chunks where user_id = ")
+            .push_bind(user_id)
+            .push(" and (text &&& ")
+            .push_bind(word)
+            .push(" or text::pdb.alias('text_en') &&& ")
+            .push_bind(word)
+            .push(" or text::pdb.alias('text_ngram') &&& ")
+            .push_bind(word)
+            .push("))");
+    }
+    if let Some(roots) = roots {
+        sql.push(" and exists (select 1 from unnest(")
+            .push_bind(roots)
+            .push("::text[]) root where source_covers(root, c.source))");
+    }
+    if !content_types.is_empty() {
+        sql.push(" and content_type = any(")
+            .push_bind(content_types)
+            .push("::text[])");
+    }
+    if let Some(from) = request.from {
+        sql.push(" and ts >= ").push_bind(from);
+    }
+    if let Some(to) = request.to {
+        sql.push(" and ts < ").push_bind(to);
+    }
+    for phrase in &query.phrases {
+        sql.push(" and strpos(lower(regexp_replace(text, '\\s+', ' ', 'g')), lower(")
+            .push_bind(phrase)
+            .push(")) > 0");
+    }
+    sql.push(" order by score desc limit ")
+        .push_bind(CANDIDATE_CHUNKS)
+        .push(
+            "),
+             best as (
+                 select distinct on (document_id) * from matches
+                 order by document_id, score desc
+             )
+             select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
+                    d.authors, d.created_at, d.modified_at,
+                    b.score, b.text as chunk_text, b.start_offset, b.end_offset
+             from best b join documents d on d.id = b.document_id
+             order by b.score desc
+             limit ",
+        )
+        .push_bind(i64::from(k));
+    let rows: Vec<HitRow> = sql.build_query_as().fetch_all(pool).await?;
 
     Ok(rows
         .into_iter()
@@ -156,6 +186,24 @@ pub async fn find(
             },
         })
         .collect())
+}
+
+#[derive(sqlx::FromRow)]
+struct HitRow {
+    id: Uuid,
+    source: String,
+    external_id: String,
+    content_type: String,
+    title: Option<String>,
+    url: Option<String>,
+    thread: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    score: f32,
+    chunk_text: String,
+    start_offset: i32,
+    end_offset: i32,
 }
 
 fn offset(stored: i32) -> u32 {

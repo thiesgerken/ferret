@@ -1,7 +1,7 @@
 mod common;
 
 use common::{day, document, start_server};
-use ferret_api::{Client, Hit, SearchQuery};
+use ferret_api::{Client, ContentType, Hit, SearchQuery};
 use reqwest::{Method, StatusCode, header};
 use sqlx::PgPool;
 
@@ -136,6 +136,100 @@ async fn german_compounds_and_stems_in_both_languages(pool: PgPool) {
     assert_eq!(ids(&search(&api, "running").await), ["runner"]);
 }
 
+/// Each word may match in a different field: here a compound (trigrams) and an inflection
+/// (German stem) in the same chunk.
+#[sqlx::test(migrations = false)]
+async fn every_word_may_match_in_another_field(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "paperless",
+        "kfz",
+        "Kfz-Versicherungsbeitrag 2026, siehe Rechnung.",
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(ids(&search(&api, "Versicherung Rechnungen").await), ["kfz"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn excluded_words_also_drop_compounds(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "paperless",
+        "kfz",
+        "Kfz-Versicherungsbeitrag, Rechnung",
+    ))
+    .await
+    .unwrap();
+    api.put_document(&document("paperless", "strom", "Strom, Rechnung"))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        ids(&search(&api, "Rechnung -Versicherung").await),
+        ["strom"]
+    );
+}
+
+/// More matching chunks than the candidate limit, all of them excluded: the exclusion must
+/// apply before the limit, or the remaining hit is cut off.
+#[sqlx::test(migrations = false)]
+async fn exclusions_apply_before_the_candidate_limit(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let paragraph = "Rechnung Telekom Rechnung Telekom. ".repeat(40);
+    let invoices = vec![paragraph; 1100].join("\n\n");
+    api.put_document(&document("paperless", "telekom", &invoices))
+        .await
+        .unwrap();
+    let filler = "Nichts weiter. ".repeat(100);
+    api.put_document(&document(
+        "paperless",
+        "strom",
+        &format!("{filler} Rechnung {filler}"),
+    ))
+    .await
+    .unwrap();
+
+    // The precondition: without the exclusion, Telekom's chunks crowd out the other invoice.
+    assert_eq!(ids(&search(&api, "Rechnung").await), ["telekom"]);
+    assert_eq!(ids(&search(&api, "Rechnung -Telekom").await), ["strom"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn content_types_filter_and_may_repeat(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for content_type in [
+        ContentType::Markdown,
+        ContentType::Plain,
+        ContentType::Email,
+    ] {
+        let mut note = document("notes", &format!("{content_type:?}"), "shared word");
+        note.content_type = content_type;
+        api.put_document(&note).await.unwrap();
+    }
+    let of_types = |content_types: Vec<ContentType>| SearchQuery {
+        q: "shared".to_owned(),
+        content_types,
+        ..Default::default()
+    };
+
+    let markdown = search_with(&api, of_types(vec![ContentType::Markdown])).await;
+    let mut plain_or_email =
+        ids(&search_with(&api, of_types(vec![ContentType::Plain, ContentType::Email])).await)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+    plain_or_email.sort();
+
+    assert_eq!(ids(&markdown), ["Markdown"]);
+    assert_eq!(plain_or_email, ["Email", "Plain"]);
+}
+
 #[sqlx::test(migrations = false)]
 async fn sources_filter_by_path_prefix_and_may_repeat(pool: PgPool) {
     let server = start_server(pool).await;
@@ -255,6 +349,7 @@ async fn invalid_searches_are_rejected(pool: PgPool) {
         "q=word&source=/notes",
         "k=5",
         "q=word&from=yesterday",
+        "q=word&content_type=pdf",
     ] {
         let response = server
             .request(Method::GET, &format!("/api/search?{query}"))
