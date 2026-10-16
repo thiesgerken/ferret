@@ -2,9 +2,9 @@
 
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
-use ferret_api::{Hit, HitChunk, SearchResponse};
-use serde::Deserialize;
+use ferret_api::{Hit, HitChunk, SearchQuery, SearchResponse};
+use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::{
     AppState,
@@ -21,48 +21,70 @@ const MAX_K: u32 = 100;
 // below this many chunks can't be a hit, which matters only when k approaches it.
 const CANDIDATE_CHUNKS: i64 = 1000;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SearchParams {
-    q: String,
-    #[serde(default, rename = "source")]
-    sources: Vec<String>,
-    from: Option<DateTime<Utc>>,
-    to: Option<DateTime<Utc>>,
-    k: Option<u32>,
-}
-
-pub async fn search(
+pub async fn handle(
     State(state): State<AppState>,
     caller: ApiCaller,
-    params: Result<Query<SearchParams>, QueryRejection>,
+    query: Result<Query<SearchQuery>, QueryRejection>,
 ) -> Result<Json<SearchResponse>, ApiError> {
     caller.require(Scope::SearchRead)?;
-    let Query(params) = params?;
-    let query = search_query::parse(&params.q);
+    let Query(query) = query?;
+    let hits = find(&state.pool, caller.user_id, caller.sources(), &query).await?;
+    Ok(Json(SearchResponse { hits }))
+}
+
+pub enum SearchError {
+    /// The query can't be run as posed, the message says why.
+    Invalid(String),
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for SearchError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
+impl From<SearchError> for ApiError {
+    fn from(error: SearchError) -> Self {
+        match error {
+            SearchError::Invalid(message) => ApiError::bad_request(&message),
+            SearchError::Database(error) => error.into(),
+        }
+    }
+}
+
+/// Searches `user_id`'s documents, within the `allowed` source roots (`None`: all sources).
+/// Both APIs answer searches with this.
+pub async fn find(
+    pool: &PgPool,
+    user_id: Uuid,
+    allowed: Option<&[String]>,
+    request: &SearchQuery,
+) -> Result<Vec<Hit>, SearchError> {
+    let query = search_query::parse(&request.q);
     if query.words.is_empty() {
-        return Err(ApiError::bad_request(
-            "the query needs at least one word that isn't excluded",
+        return Err(SearchError::Invalid(
+            "the query needs at least one word that isn't excluded".to_owned(),
         ));
     }
-    let k = params.k.unwrap_or(DEFAULT_K);
+    let k = request.k.unwrap_or(DEFAULT_K);
     if !(1..=MAX_K).contains(&k) {
-        return Err(ApiError::bad_request(&format!(
+        return Err(SearchError::Invalid(format!(
             "k must be between 1 and {MAX_K}"
         )));
     }
-    if let Some(invalid) = params
+    if let Some(invalid) = request
         .sources
         .iter()
         .find(|source| !sources::is_valid(source))
     {
-        return Err(ApiError::bad_request(&format!(
+        return Err(SearchError::Invalid(format!(
             "{invalid:?} is not a source path like `notes` or `mail/zoho`"
         )));
     }
-    let roots = sources::narrow(&params.sources, caller.sources());
+    let roots = sources::narrow(&request.sources, allowed);
     if roots.as_ref().is_some_and(Vec::is_empty) {
-        return Ok(Json(SearchResponse { hits: vec![] }));
+        return Ok(vec![]);
     }
 
     let rows = sqlx::query!(
@@ -100,20 +122,20 @@ pub async fn search(
            from best b join documents d on d.id = b.document_id
            order by b.score desc
            limit $9"#,
-        caller.user_id,
+        user_id,
         query.words.join(" "),
         query.excluded.join(" "),
         roots.as_deref(),
-        params.from,
-        params.to,
+        request.from,
+        request.to,
         &query.phrases,
         CANDIDATE_CHUNKS,
         i64::from(k),
     )
-    .fetch_all(&state.pool)
+    .fetch_all(pool)
     .await?;
 
-    let hits = rows
+    Ok(rows
         .into_iter()
         .map(|row| Hit {
             document_id: row.id,
@@ -133,8 +155,7 @@ pub async fn search(
                 parts: highlight(&row.chunk_text, &query.words),
             },
         })
-        .collect();
-    Ok(Json(SearchResponse { hits }))
+        .collect())
 }
 
 fn offset(stored: i32) -> u32 {

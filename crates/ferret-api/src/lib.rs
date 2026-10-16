@@ -80,11 +80,14 @@ pub struct Document {
 }
 
 /// The parameters of `GET /api/search`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchQuery {
     /// Words, `"exact phrases"` and `-excluded` words.
     pub q: String,
-    /// Only documents in these sources or below them. Empty: all sources.
+    /// Only documents in these sources or below them. Empty: all sources. Repeated `source=` in
+    /// the query string.
+    #[serde(default, rename = "source")]
     pub sources: Vec<String>,
     /// Only documents created at or after this time.
     pub from: Option<DateTime<Utc>>,
