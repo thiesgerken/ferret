@@ -25,7 +25,14 @@ embedding:
       document_prefix: ""
 ```
 
-At startup the server reads each model's dimension and `max_input_length` from TEI's `/info`.
+The configuration is a YAML file the server reads from `FERRET_CONFIG` (Helm: a ConfigMap). At
+startup the server reads each model's `max_input_length` from TEI's `/info` and its dimension from
+embedding a probe text, since `/info` doesn't report it. A model that isn't reachable stops the
+startup. Model names end up in index names and SQL literals, so they are limited to
+`[a-z0-9][a-z0-9._-]*`.
+
+- **No silent truncation**: every embed request sets `truncate: false`, so TEI rejects an
+  over-long text instead of embedding its beginning.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
@@ -106,6 +113,13 @@ for update of c skip locked;
   `chunk_embeddings` and `embedding_cache` in one transaction.
 - `LISTEN chunks_pending` wakes the pump after an ingest. Several pumps share the queue through
   `SKIP LOCKED`.
+- A statement trigger on `chunks` sends the notification, delivered when the ingest commits. The
+  pump also polls every 30 s, which picks up after outages.
+- A failed batch is logged and stored in `embedding_errors` (model, error, time) until the model's
+  next successful batch, for Admin. The pump keeps retrying, an unreachable `bulk_url` therefore
+  shows as an error and a growing backlog.
+- The claimed chunks stay locked while TEI works on them, so a `PUT` that changes one of them
+  waits for that batch.
 
 ## Per-user model choice
 
