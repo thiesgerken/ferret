@@ -40,7 +40,7 @@ At startup the server reads each model's dimension and `max_input_length` from T
 
 - **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
   refuses to start. TEI would otherwise truncate chunks silently. The cap counts characters (2000)
-  and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
+  and `max_input_length` tokens. The check compares them one to one: Latin text practically never takes more
   than one token per character, so a model that accepts 2000 tokens takes every chunk.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
 - **Removing a model**: the server drops its index and its rows. User preferences pointing to it
