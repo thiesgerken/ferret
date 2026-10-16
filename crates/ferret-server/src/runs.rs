@@ -300,9 +300,9 @@ pub async fn finish(
 ) -> Result<StatusCode, ApiError> {
     let Path(id) = id?;
     let Json(finish) = body?;
-    let status = match finish.result {
-        RunResult::Succeeded => "succeeded",
-        RunResult::Failed => "failed",
+    let (status, stats, error, cursor) = match finish.result {
+        RunResult::Succeeded { state, stats } => ("succeeded", Some(stats), None, Some(state)),
+        RunResult::Failed { error } => ("failed", None, Some(error), None),
     };
     let mut tx = state.pool.begin().await?;
     let Some(connection_id) = sqlx::query_scalar!(
@@ -312,8 +312,8 @@ pub async fn finish(
          returning connection_id",
         id,
         status,
-        serde_json::to_value(finish.stats).expect("stats serialize"),
-        finish.error,
+        stats.map(|stats| serde_json::to_value(stats).expect("stats serialize")),
+        error,
         log_text(&finish.log_lines),
         LOG_CAP_CHARS,
     )
@@ -322,11 +322,11 @@ pub async fn finish(
     else {
         return Err(ApiError::conflict("the run isn't running anymore"));
     };
-    if finish.result == RunResult::Succeeded {
+    if let Some(cursor) = cursor {
         sqlx::query!(
             "update connections set state = $2 where id = $1",
             connection_id,
-            finish.state,
+            cursor,
         )
         .execute(&mut *tx)
         .await?;

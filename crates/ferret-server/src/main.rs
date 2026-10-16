@@ -48,15 +48,7 @@ async fn serve() -> Result<(), StartupError> {
     let internal = TcpListener::bind(INTERNAL_ADDR).await?;
     tracing::info!(public = PUBLIC_ADDR, internal = INTERNAL_ADDR, "listening");
 
-    let wakeups = tokio::spawn({
-        let state = state.clone();
-        async move {
-            // Degrades, doesn't break: claims then only wake at their next event or timeout.
-            if let Err(error) = ferret_server::listen_for_due_runs(state).await {
-                tracing::error!(%error, "can't listen for due runs");
-            }
-        }
-    });
+    let wakeups = tokio::spawn(ferret_server::listen_for_due_runs(state.clone()));
     let (stop, stopped) = watch::channel(false);
     tokio::spawn(async move {
         shutdown_requested().await;
