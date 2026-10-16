@@ -139,11 +139,12 @@ function CreateConnectionForm({
   pluginTypes: ConnectionsData["pluginTypes"];
   onCreated: () => void;
 }) {
-  const [, create] = useMutation(CreateConnectionMutation);
+  const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
   const [error, setError] = useState("");
   const { fields, schemaError } = parseConfigSchema(
-    pluginTypes.find(({ name }) => name === plugin)?.configSchema ?? "{}",
+    plugin,
+    pluginTypes.find(({ name }) => name === plugin)?.configSchema,
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -217,7 +218,7 @@ function CreateConnectionForm({
       )}
       <button
         type="submit"
-        disabled={Boolean(schemaError)}
+        disabled={Boolean(schemaError) || fetching}
         className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
       >
         Create connection
@@ -226,7 +227,13 @@ function CreateConnectionForm({
   );
 }
 
-function parseConfigSchema(schema: string): { fields: ConfigField[]; schemaError: string } {
+function parseConfigSchema(
+  plugin: string,
+  schema: string | undefined,
+): { fields: ConfigField[]; schemaError: string } {
+  if (schema === undefined) {
+    return { fields: [], schemaError: `No worker offers the plugin "${plugin}" anymore.` };
+  }
   try {
     return { fields: configFields(schema), schemaError: "" };
   } catch (err) {
@@ -303,6 +310,7 @@ function ConfigInput({ id, field, value }: { id: string; field: ConfigField; val
           id={id}
           name={name}
           rows={2}
+          required={field.required}
           defaultValue={Array.isArray(value) ? value.join("\n") : undefined}
           placeholder={placeholder}
           className={cn(fieldClass, "font-mono")}
@@ -373,6 +381,7 @@ function ConnectionCard({
             type="button"
             disabled={!connection.enabled || lastRun?.status === "RUNNING"}
             onClick={() => mutate(() => runNow({ id: connection.id }))}
+            aria-label={`Run ${connection.source} now`}
             className={buttonClass}
           >
             Run now
@@ -382,14 +391,25 @@ function ConnectionCard({
             disabled={configSchema === undefined}
             title={configSchema === undefined ? "No worker offers this plugin right now." : undefined}
             onClick={() => setEditing(true)}
+            aria-label={`Edit ${connection.source}`}
             className={buttonClass}
           >
             Edit
           </button>
-          <button type="button" onClick={() => setEnabled(!connection.enabled)} className={buttonClass}>
+          <button
+            type="button"
+            onClick={() => setEnabled(!connection.enabled)}
+            aria-label={`${connection.enabled ? "Disable" : "Enable"} ${connection.source}`}
+            className={buttonClass}
+          >
             {connection.enabled ? "Disable" : "Enable"}
           </button>
-          <button type="button" onClick={() => setDeleting(true)} className={cn(buttonClass, "text-destructive")}>
+          <button
+            type="button"
+            onClick={() => setDeleting(true)}
+            aria-label={`Delete ${connection.source}`}
+            className={cn(buttonClass, "text-destructive")}
+          >
             Delete
           </button>
         </div>
@@ -463,7 +483,7 @@ function EditConnectionForm({
 }) {
   const [, update] = useMutation(UpdateConnectionMutation);
   const [error, setError] = useState("");
-  const { fields, schemaError } = parseConfigSchema(configSchema);
+  const { fields, schemaError } = parseConfigSchema(connection.plugin, configSchema);
   const scheduleId = `schedule-${connection.id}`;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -562,6 +582,7 @@ function DeleteConnectionForm({
         value={confirmSource}
         onChange={(event) => setConfirmSource(event.target.value)}
         autoComplete="off"
+        autoFocus
         className={fieldClass}
       />
       {error && (

@@ -31,6 +31,22 @@ pub struct Run {
     /// The cursor the last successful run left, `{}` at first.
     pub state: Value,
     pub log: Log,
+    pub options: PluginOptions,
+}
+
+/// How the worker lets plugins reach out, fixed per deployment rather than per connection.
+#[derive(Clone)]
+pub struct PluginOptions {
+    /// The transports git may use, as `GIT_ALLOW_PROTOCOL` takes them (colon-separated).
+    pub git_protocols: String,
+}
+
+impl Default for PluginOptions {
+    fn default() -> Self {
+        Self {
+            git_protocols: "https".to_owned(),
+        }
+    }
 }
 
 /// What a successful run hands back.
@@ -56,6 +72,12 @@ impl Log {
     /// The lines since the last call.
     pub fn take(&self) -> Vec<String> {
         std::mem::take(&mut *self.0.lock().expect("the log lock isn't poisoned"))
+    }
+
+    /// Returns lines that `take` handed out but couldn't be delivered, ahead of newer ones.
+    pub fn put_back(&self, lines: Vec<String>) {
+        let mut log = self.0.lock().expect("the log lock isn't poisoned");
+        log.splice(0..0, lines);
     }
 }
 

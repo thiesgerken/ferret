@@ -1,7 +1,7 @@
 use std::env;
 
 use ferret_api::internal::InternalClient;
-use ferret_plugins::worker::Worker;
+use ferret_plugins::{plugins::PluginOptions, worker::Worker};
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 type StartupError = Box<dyn std::error::Error + Send + Sync>;
@@ -25,6 +25,7 @@ async fn main() -> Result<(), StartupError> {
         public_url: required_env("FERRET_SERVER_URL")?,
         // Informational, so the pod's name is good enough.
         name: env::var("HOSTNAME").unwrap_or_else(|_| "ferret-plugins".to_owned()),
+        options: PluginOptions::default(),
     };
     worker.work().await
 }

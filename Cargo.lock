@@ -888,7 +888,6 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "reqwest",
- "schemars",
  "serde",
  "serde_json",
  "uuid",
@@ -901,6 +900,7 @@ dependencies = [
  "chrono",
  "ferret-api",
  "globset",
+ "percent-encoding",
  "reqwest",
  "schemars",
  "serde",

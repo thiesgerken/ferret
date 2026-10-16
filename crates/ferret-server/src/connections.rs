@@ -131,6 +131,27 @@ pub async fn create(
             new.source
         ));
     }
+    // The connection's first sync would sweep documents that others wrote below its root.
+    // ponytail: an API key writing between this count and the commit slips through; a lock on
+    // the user's documents would close that, unlikely enough to leave for now.
+    let existing = sqlx::query_scalar!(
+        r#"select count(*) as "count!" from documents where user_id = $1 and source_covers($2, source)"#,
+        user_id,
+        new.source,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if existing > 0 {
+        let documents = if existing == 1 {
+            "1 document already lives".to_owned()
+        } else {
+            format!("{existing} documents already live")
+        };
+        return invalid(format!(
+            "{documents} below {:?}: delete them or pick another root",
+            new.source
+        ));
+    }
     let connection = sqlx::query_as!(
         Connection,
         "insert into connections (id, user_id, plugin, source, config, schedule, next_run_at, created_at)

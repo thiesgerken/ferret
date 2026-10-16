@@ -61,24 +61,27 @@ pub struct Heartbeat {
     pub log_lines: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RunResult {
-    Succeeded,
-    Failed,
-}
-
-/// `POST /internal/runs/{id}/finish`
+/// `POST /internal/runs/{id}/finish`, e.g. `{"result": "failed", "error": "…", "log_lines": []}`.
+// No `deny_unknown_fields`: serde doesn't support it next to `flatten`.
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct RunFinish {
+    #[serde(flatten)]
     pub result: RunResult,
-    /// The new cursor. Stored only when the run succeeded.
-    pub state: Value,
-    pub stats: RunStats,
-    pub error: Option<String>,
     /// Log lines since the last heartbeat.
     pub log_lines: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "lowercase")]
+pub enum RunResult {
+    /// `state` is the new cursor.
+    Succeeded {
+        state: Value,
+        stats: RunStats,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 /// What a run did to the index.
@@ -89,6 +92,10 @@ pub struct RunStats {
     pub unchanged: u64,
     pub deleted: u64,
 }
+
+/// Requests other than a claim answer right away, so this only trips on a server or connection
+/// that stopped answering.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A client for the internal API.
 #[derive(Clone)]
@@ -102,7 +109,11 @@ impl InternalClient {
     /// `base_url` is the internal API's origin, e.g. `http://ferret-server:8081`.
     pub fn new(base_url: impl Into<String>, secret: impl Into<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .expect("the HTTP client builds"),
             base_url: base_url.into(),
             secret: secret.into(),
         }
@@ -129,6 +140,7 @@ impl InternalClient {
     ) -> Result<Option<ClaimedRun>, reqwest::Error> {
         let response = self
             .post(&format!("/internal/runs/claim?wait={}", wait.as_secs()))
+            .timeout(wait + REQUEST_TIMEOUT)
             .json(&ClaimRequest { worker_id })
             .send()
             .await?

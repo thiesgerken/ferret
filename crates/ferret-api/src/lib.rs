@@ -1,6 +1,8 @@
 //! Shared request and response types of ferret's REST and internal APIs, plus a small HTTP
 //! client for them.
 
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -19,7 +21,7 @@ pub struct User {
 pub mod internal;
 
 /// How the server chunks a document's text and how the viewer renders it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentType {
     Markdown,
@@ -186,7 +188,13 @@ impl Client {
     /// `base_url` is the server's origin without a trailing slash, e.g. `http://localhost:8380`.
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            // No overall timeout, a large batch may take a while to upload. A connection that
+            // stops answering fails instead of hanging the caller.
+            http: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .read_timeout(Duration::from_secs(120))
+                .build()
+                .expect("the HTTP client builds"),
             base_url: base_url.into(),
             api_key: None,
         }
