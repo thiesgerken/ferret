@@ -7,6 +7,9 @@ Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers,
 - [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs and a Gateway to attach the `HTTPRoute` to
 - A ReadWriteOnce StorageClass for the database. Backups are the cluster's job: pick a class with
   CSI snapshots (e.g. for Velero), the chart takes none itself.
+- A CNI that enforces NetworkPolicies (Cilium, Calico, …). With `networkPolicy.enabled` (the
+  default) the chart restricts the server's internal port to the plugin workers. Without
+  enforcement, the worker secret is all that guards it.
 
 ## Install
 
