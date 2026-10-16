@@ -1,0 +1,82 @@
+# -- Server image (tag defaults to appVersion)
+image:
+  registry: ghcr.io
+  repository: thiesgerken/ferret
+  tag: ""
+  pullPolicy: IfNotPresent
+
+server:
+  # -- Migrations run under an advisory lock, so several replicas may start together.
+  replicas: 1
+  # -- tracing filter, e.g. "info" or "ferret=debug,info"
+  logLevel: info
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  # -- Extra environment variables for the server container
+  extraEnv: []
+
+frontend:
+  image:
+    registry: ghcr.io
+    repository: thiesgerken/ferret-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+# -- Gateway API HTTPRoute: /graphql and /api go to the server, everything else to the frontend.
+ingress:
+  enabled: true
+  hostname: ferret.example.com
+  # -- Gateway parent references (required when ingress is enabled)
+  parentRefs:
+    - name: default-gateway
+  annotations: {}
+
+# -- Generated once and kept across upgrades via `lookup`, or taken from existingSecret.
+# WARNING: `lookup` only works under `helm install/upgrade`. Tools that render with
+# `helm template` (Argo CD, Flux) get an empty lookup and would generate new values on every sync:
+# a new Postgres password the initialized database doesn't know, and a new session secret that
+# logs everyone out. Under GitOps, use existingSecret.
+secrets:
+  # -- Existing Secret with the keys postgres-password, bootstrap-password (at least 16
+  # characters) and session-secret.
+  existingSecret: ""
+
+# -- ParadeDB (Postgres with pg_search and pgvector), single instance with its own PVC. Backups are
+# the cluster's job (CSI snapshots, e.g. Velero): put the PVC on a storage class that supports them.
+postgres:
+  image:
+    registry: docker.io
+    repository: paradedb/paradedb
+    tag: "0.26.2-pg18@sha256:c552094b6b68dcb0a4e7a3969963d801eaec02490db4d2dd032dcb096bc86cf8"
+    pullPolicy: IfNotPresent
+  database: ferret
+  username: ferret
+  persistence:
+    size: 20Gi
+    # -- Leave empty to use the cluster default StorageClass
+    storageClassName: ""
+    # -- e.g. [kubernetes.io/pvc-protection] against accidental pruning
+    finalizers: []
+  # -- fsGroup so Postgres (uid 999) can write the data volume
+  podSecurityContext:
+    fsGroup: 999
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# -- Priority class for all pods
+priorityClassName: ""

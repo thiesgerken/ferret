@@ -248,7 +248,7 @@ The Helm chart, modelled on carapace's:
   depends on the GPU architecture and is a value.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
-- Ingress, NetworkPolicy for the internal port.
+- Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.
 - Secrets, each generated once via `lookup` or supplied via `existingSecret`: Postgres password,
   `FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`, `FERRET_WORKER_SECRET`,
   `FERRET_CONFIG_KEY`.
