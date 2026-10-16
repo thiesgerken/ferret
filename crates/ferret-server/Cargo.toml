@@ -34,4 +34,6 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+ferret-plugins = { path = "../ferret-plugins" }
+tempfile.workspace = true
 reqwest = { workspace = true, features = ["json"] }

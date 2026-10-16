@@ -59,6 +59,11 @@ pub async fn start_server(pool: PgPool) -> TestServer {
 }
 
 impl TestServer {
+    /// The public API's origin.
+    pub fn public_url(&self) -> String {
+        self.url.clone()
+    }
+
     /// A plugin worker's client for the internal API.
     pub fn internal(&self) -> InternalClient {
         InternalClient::new(self.internal_url.clone(), WORKER_SECRET)
