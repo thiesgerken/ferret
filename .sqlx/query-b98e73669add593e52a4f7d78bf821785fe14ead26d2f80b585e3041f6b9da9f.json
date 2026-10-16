@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (select 1 from users where is_admin and enabled) as \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b98e73669add593e52a4f7d78bf821785fe14ead26d2f80b585e3041f6b9da9f"
+}

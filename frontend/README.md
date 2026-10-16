@@ -11,7 +11,8 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). `pnpm dev` proxies `/graphql`, `/api/*` and
-`/auth/*` to `FERRET_SERVER_URL` (default `http://127.0.0.1:8080`), so start the server separately.
+`/auth/*` to `FERRET_SERVER_URL`. The default, `http://127.0.0.1:8380`, is the server from the
+repository's docker-compose.
 
 - `pnpm lint`, `pnpm test` (`node --test`, React components render into jsdom), `pnpm build`
   (static export into `out/`, served by nginx in the Docker image).

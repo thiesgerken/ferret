@@ -14,11 +14,12 @@ identity provider (e.g. Keycloak) later:
 
 All state lives in ferret's Postgres. The server itself is stateless.
 
-Each API accepts exactly one kind of credential:
+The path decides the credential, each API accepts exactly one kind:
 
 | API | Credential |
 |---|---|
 | GraphQL `/graphql` (UI) | session cookie |
+| `/auth/...` (login, logout) | username and password, exchanged for the session cookie; logout reads the cookie to end its session |
 | REST `/api/...` | API key or plugin run token, as bearer |
 | REST `/internal/...` (own port) | worker PSK, as bearer |
 
@@ -51,6 +52,10 @@ admin portal.
 If no enabled admin exists at startup, the server creates `admin` with the password from
 `FERRET_BOOTSTRAP_PASSWORD`. If the variable is missing or shorter than 16 characters while the
 bootstrap is needed, the server exits with an error. Once an admin exists, the variable is ignored.
+If a user `admin` exists but isn't an enabled admin, the bootstrap turns it back into one with the
+variable's password: locked out of every admin account, setting the variable is the way back in.
+The Helm chart always provides the variable, so in the cluster any server restart after the last
+admin was disabled or demoted restores `admin` with the generated password and ends its sessions.
 
 The Helm chart takes the password from a Secret (`existingSecret`, or generated once and kept
 across upgrades via `lookup`, like carapace's Postgres password).
@@ -59,15 +64,33 @@ across upgrades via `lookup`, like carapace's Postgres password).
 
 Same flow as carapace:
 
-1. `POST /api/auth/login` verifies the password and creates a `sessions` row.
-2. The response sets the `ferret_session` HttpOnly, `Secure`, `SameSite=Lax` cookie holding an
-   HS256 JWT: `iss`, `aud`, `typ = session`, `sub` (user id), `sid`, `iat`, `exp`, `ver`
-   (`token_version`).
-3. Every request verifies the signature, then checks that the session row exists and that the user
-   is enabled and its `token_version` matches `ver`. Logout and disabling a user take effect
-   immediately, not at cookie expiry.
-4. `POST /api/auth/logout` deletes the session row and the cookie.
-5. Changing a password increments `token_version`, which invalidates all of the user's cookies.
+1. `POST /auth/login` with `{"username", "password"}` verifies the password and creates a
+   `sessions` row. The username is trimmed and lowercased. An unknown user, a wrong password and a
+   disabled user all get the same `401 {"error": "invalid username or password"}`, and an unknown
+   user still costs a password hash, so neither answer nor timing reveals which usernames exist.
+2. The `204` response sets the `ferret_session` cookie (`HttpOnly; Secure; SameSite=Lax; Path=/`)
+   holding an HS256 JWT: `iss = ferret`, `aud = ferret-web`, `typ = session`, `sub` (user id),
+   `sid`, `iat`, `exp`, `ver` (`token_version`). It has no body: the UI reads the user from
+   GraphQL's `me`, so there is one user shape.
+3. Sessions last 14 days from login, fixed: no sliding renewal, no setting. The cookie's `Max-Age`
+   and the row's `expires_at` match.
+4. Every GraphQL request verifies the signature, then checks that the session row exists and hasn't
+   expired, and that the user is enabled and its `token_version` matches `ver`. Logout and disabling
+   a user take effect immediately, not at cookie expiry. Without a valid session the answer is HTTP
+   `401`, not a GraphQL error, so the UI can key off the status.
+5. `POST /auth/logout` deletes the session row, if the cookie names one, and clears the cookie
+   (`Max-Age=0`). It always answers `204`.
+6. Changing a password increments `token_version`, which invalidates all of the user's cookies.
+
+**CSRF**: `/graphql` takes `POST` only, and `/graphql` and `/auth/login` accept only
+`Content-Type: application/json` (anything else is a `415`). Cross-site HTML forms can't send JSON
+without a CORS preflight, and `SameSite=Lax` keeps the cookie off cross-site `POST`s anyway. `GET`
+is excluded because `Lax` cookies do ride along on cross-site top-level navigations.
+
+**Errors**: `/auth` and REST rejections, including a malformed body (`400`, `415`, `422`), are
+answered with `{"error": "<message>"}`. `/graphql` answers a missing session with that `401` and
+everything else in GraphQL's own shape (`{"errors": [...]}`, `400` for a query that doesn't parse or
+validate). Unknown routes and methods get axum's bare `404` and `405`.
 
 ```sql
 create table sessions (
@@ -79,7 +102,7 @@ create table sessions (
 ```
 
 The signing secret comes from `FERRET_SESSION_SECRET` (Helm: generated once and kept via `lookup`,
-or `existingSecret`). The server refuses to start without it. Rotating it logs everyone out, which
+or `existingSecret`). The server refuses to start without it, or with one shorter than 32 bytes. Rotating it logs everyone out, which
 is the intended effect.
 
 The JWT is redundant with the session lookup today. It stays because the claims (`iss`, `aud`,

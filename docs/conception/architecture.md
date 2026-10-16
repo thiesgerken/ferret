@@ -18,7 +18,7 @@ coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message 
 
 ```text
                          ┌──────────────── Ingress ─────────────────┐
-                         │ /           /graphql, /api               │
+                         │ /           /graphql, /api, /auth        │
                          ▼                   ▼                      │
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
  browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (carapace skill)
@@ -56,19 +56,23 @@ git, parsers) never end up in the server.
 
 ## APIs
 
-Three APIs, each with exactly one auth mechanism (details in [auth.md](auth.md)):
+Three APIs plus the login endpoints. The path decides the credential, each accepts exactly one
+(details in [auth.md](auth.md)):
 
 | API | Port | Consumers | Auth |
 |---|---|---|---|
 | GraphQL `/graphql` | public | the frontend | session cookie |
+| `/auth/login`, `/auth/logout` | public | the frontend | password, exchanged for the session cookie |
 | REST `/api/...` | public | plugins, external ingesters, agents | API key or plugin run token (bearer) |
 | REST `/internal/...` | internal | plugin workers | worker PSK |
 
 - **GraphQL for the UI.** The UI reads nested, filtered data (connections with their runs and logs,
   facet counts in Explore, search hits with their documents), which is what GraphQL is good at.
-  The server uses juniper via `juniper_axum`, the patterns come from moneta. The frontend uses urql
-  with GraphQL Code Generator for typed documents. The server prints the SDL (`ferret schema`),
-  codegen runs against that file.
+  The server uses juniper with its own small axum handler instead of `juniper_axum`, whose request
+  extractor also takes `GET`, `application/graphql` and forms, which the CSRF rules forbid
+  ([auth.md](auth.md#browser-sessions)). The patterns come from moneta. The frontend uses urql
+  with GraphQL Code Generator for typed documents. `ferret schema` prints the SDL into
+  `frontend/schema.graphql`, codegen runs against that file, and CI fails when it's out of date.
 - **REST for machines.** Ingest is a natural `PUT` of a document by id, agents call search with a
   plain `GET`, and scopes map one-to-one onto routes. A third-party ingester needs nothing but curl.
 - **The internal API is HTTP like the others.** It listens on its own port, which the Ingress
@@ -216,8 +220,8 @@ XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the ser
 ## Frontend
 
 Next.js with carapace's stack and look and feel (React, Tailwind, shadcn-style components). In
-production the Ingress routes `/graphql` and `/api` to the server and everything else to the
-frontend. In development Next rewrites those paths to the local server, as in carapace.
+production the HTTPRoute sends `/graphql`, `/api` and `/auth` to the server and everything else to
+the frontend. In development Next rewrites those paths to the local server, as in carapace.
 
 | Section | Contents |
 |---|---|
@@ -248,7 +252,7 @@ The Helm chart, modelled on carapace's:
   depends on the GPU architecture and is a value.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
-- Ingress, NetworkPolicy for the internal port.
+- Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.
 - Secrets, each generated once via `lookup` or supplied via `existingSecret`: Postgres password,
   `FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`, `FERRET_WORKER_SECRET`,
   `FERRET_CONFIG_KEY`.
@@ -256,4 +260,20 @@ The Helm chart, modelled on carapace's:
 Migrations (sqlx, embedded in the binary) run at server startup under sqlx's advisory lock, so
 replicas starting together are safe.
 
-docker-compose runs the same components for development.
+### Server environment
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `FERRET_DATABASE_URL` | yes | Postgres URL. Without a password in it, `PGPASSWORD` supplies one, so the password needs no URL-encoding |
+| `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
+| `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
+| `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
+
+The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness
+probe: 200, or 503 while the database is unreachable. It lives outside `/api` because every `/api`
+route takes a bearer credential, and isn't routed by the Ingress. Liveness checks the TCP port only,
+so a database outage doesn't restart every server pod.
+
+docker-compose runs the same components for development. A traefik container stands in for the
+Ingress: it serves UI and server on one origin (`http://127.0.0.1:3380`) with the same routes. Next's
+dev server (`pnpm dev`) proxies the server paths to the compose server itself.
