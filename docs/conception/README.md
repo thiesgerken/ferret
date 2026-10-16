@@ -122,11 +122,17 @@ PUT    /api/documents                           upsert by (source, external_id),
                                                 -> {id, outcome: created | updated | unchanged}
 DELETE /api/documents?source=&external_id=      204, or 404 if there is no such document
 POST   /api/syncs                {source}      -> {sync_id}
-POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
+POST   /api/syncs/{id}/seen      {source, external_ids}
+                                                mark existing documents as seen, without content
+                                                -> {seen: number of them that exist}, 409 if already committed
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
+                                                -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
 GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
 ```
+
+`seen` names the source of its external ids: a sync over `carapace` covers `carapace/facts` and
+`carapace/sessions`, whose external ids may repeat. It must be the sync's source or below it.
 
 Source and external id travel in the body or query, never in the URL path: both may contain `/`
 (source paths, file paths), which path routing and proxies handle badly.
@@ -156,6 +162,10 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
 
 - `url` is optional. Without one, ferret's viewer is the origin (e.g. WhatsApp and Signal exports,
   which have no message deep links).
+- `url` must not use the `javascript:`, `data:` or `vbscript:` scheme (case-insensitive, leading
+  spaces and control characters and inner tabs or line breaks ignored, as browsers read it): a
+  `400`. A denylist rather than an allowlist, because origins use custom schemes (`obsidian:`,
+  `mid:`, `zotero:`). The UI applies the same rule before rendering any `url` as a link.
 - `title` and `thread` are optional too, `meta` defaults to `{}`. Everything else is required.
 - Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
   default. `source` must be a well-formed path, `external_id` must not be empty.
@@ -245,8 +255,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
   the document level.
 - **Time filter**: `from`/`to` filter on `created_at`, `from` inclusive, `to` exclusive.
-  `modified_at` is shown in the hit.
-- **Repeated filters**: `source=` and `content_type=` may repeat, a document matches any of them.
+  `created_at` is shown in the hit, so the date matches what the filter works on.
+- **Repeated filters**: `source=`, `content_type=` and `author=` may repeat, a document matches any
+  of them.
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query

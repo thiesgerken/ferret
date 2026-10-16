@@ -92,6 +92,10 @@ pub struct SearchQuery {
     /// Only documents of these content types. Empty: all. Repeated `content_type=`.
     #[serde(default, rename = "content_type")]
     pub content_types: Vec<ContentType>,
+    /// Only documents with at least one of these authors. Empty: any author. Repeated `author=`
+    /// in the query string.
+    #[serde(default, rename = "author")]
+    pub authors: Vec<String>,
     /// Only documents created at or after this time.
     pub from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -136,6 +140,41 @@ pub struct HitChunk {
 pub struct TextPart {
     pub text: String,
     pub highlight: bool,
+}
+
+/// The body of `POST /api/syncs`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncStart {
+    /// The root to sweep at the commit: this source and everything below it.
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncStarted {
+    pub sync_id: Uuid,
+}
+
+/// The body of `POST /api/syncs/{id}/seen`: documents that still exist at the origin and didn't
+/// change, so they aren't sent again.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncSeen {
+    /// The sync's source or one below it. External ids are only unique within a source.
+    pub source: String,
+    pub external_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncSeenResponse {
+    /// How many of the external ids belong to existing documents.
+    pub seen: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncCommitted {
+    /// How many documents the sweep deleted.
+    pub deleted: u64,
 }
 
 /// A client for ferret's public REST API.
@@ -235,6 +274,12 @@ impl Client {
             let value = value.as_str().expect("content types serialize as strings");
             ("content_type", value.to_owned())
         }));
+        params.extend(
+            query
+                .authors
+                .iter()
+                .map(|author| ("author", author.clone())),
+        );
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
@@ -245,6 +290,51 @@ impl Client {
             .error_for_status()?
             .json()
             .await
+    }
+
+    /// Starts a sync over `source` and everything below it. Needs the `ingest:write` scope.
+    pub async fn start_sync(&self, source: &str) -> Result<SyncStarted, reqwest::Error> {
+        self.api(reqwest::Method::POST, "/api/syncs")
+            .json(&SyncStart {
+                source: source.to_owned(),
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
+    /// Reports existing, unchanged documents of `source` to the sync.
+    pub async fn sync_seen(
+        &self,
+        sync_id: Uuid,
+        source: &str,
+        external_ids: &[&str],
+    ) -> Result<SyncSeenResponse, reqwest::Error> {
+        self.api(reqwest::Method::POST, &format!("/api/syncs/{sync_id}/seen"))
+            .json(&SyncSeen {
+                source: source.to_owned(),
+                external_ids: external_ids.iter().map(|id| (*id).to_owned()).collect(),
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
+    /// Commits the sync: deletes the documents below its source that weren't put or seen in it.
+    pub async fn commit_sync(&self, sync_id: Uuid) -> Result<SyncCommitted, reqwest::Error> {
+        self.api(
+            reqwest::Method::POST,
+            &format!("/api/syncs/{sync_id}/commit"),
+        )
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await
     }
 
     fn api(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {

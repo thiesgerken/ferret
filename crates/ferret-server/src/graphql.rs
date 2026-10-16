@@ -1,6 +1,8 @@
 //! The UI's API. Every request needs a valid session, which the transport checks before juniper
 //! sees the request.
 
+use std::sync::Arc;
+
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
@@ -8,8 +10,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use juniper::{
-    EmptySubscription, FieldError, FieldResult, GraphQLInputObject, ID, RootNode, graphql_object,
-    graphql_value, http,
+    EmptySubscription, FieldError, FieldResult, GraphQLEnum, GraphQLInputObject, GraphQLObject, ID,
+    RootNode, graphql_object, graphql_value, http,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -18,8 +20,10 @@ use crate::{
     AppState,
     api_auth::Scope,
     api_keys::{self, ApiKey},
-    auth,
+    auth, documents,
+    embeddings::Embedding,
     error::ApiError,
+    search::{self, SearchError},
     users::User,
 };
 
@@ -40,6 +44,7 @@ pub fn sdl() -> String {
 pub struct Context {
     user: User,
     pool: PgPool,
+    embedding: Arc<Embedding>,
 }
 
 impl juniper::Context for Context {}
@@ -59,6 +64,207 @@ impl Query {
             .await
             .map_err(internal)
     }
+
+    /// Searches the signed-in user's documents, one hit per document. The same search as
+    /// `GET /api/search`.
+    async fn search(context: &Context, input: SearchInput) -> FieldResult<Vec<Hit>> {
+        let request = ferret_api::SearchQuery {
+            q: input.q,
+            sources: input.sources.unwrap_or_default(),
+            authors: input.authors.unwrap_or_default(),
+            content_types: input
+                .content_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(ferret_api::ContentType::from)
+                .collect(),
+            from: input.from,
+            to: input.to,
+            // A negative k becomes 0, which the search rejects like any k out of range.
+            k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
+        };
+        match search::find(
+            &context.pool,
+            &context.embedding,
+            context.user.id,
+            None,
+            &request,
+        )
+        .await
+        {
+            Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
+            Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
+            Err(SearchError::Embedding(error)) => {
+                tracing::error!(%error, "can't embed a query");
+                Err(FieldError::new(
+                    "the embedding model is unavailable",
+                    graphql_value!(null),
+                ))
+            }
+            Err(SearchError::Database(error)) => Err(internal(error)),
+        }
+    }
+
+    /// One of the signed-in user's documents, null when there is none with this id.
+    async fn document(context: &Context, id: ID) -> FieldResult<Option<Document>> {
+        let Ok(id) = id.parse::<Uuid>() else {
+            return Ok(None);
+        };
+        let document = documents::find(&context.pool, context.user.id, None, id)
+            .await
+            .map_err(internal)?;
+        Ok(document.map(Document::from))
+    }
+}
+
+#[derive(GraphQLInputObject)]
+struct SearchInput {
+    /// Words, `"exact phrases"` and `-excluded` words.
+    q: String,
+    /// Only documents in these sources or below them. Leave out for all sources.
+    sources: Option<Vec<String>>,
+    /// Only documents with at least one of these authors. Leave out for any author.
+    authors: Option<Vec<String>>,
+    /// Only documents of these content types. Leave out for all.
+    content_types: Option<Vec<ContentType>>,
+    /// Only documents created at or after this time.
+    from: Option<DateTime<Utc>>,
+    /// Only documents created before this time.
+    to: Option<DateTime<Utc>>,
+    /// How many hits at most, 1 to 100. The server's default applies when left out.
+    k: Option<i32>,
+}
+
+/// How the viewer renders a document.
+#[derive(GraphQLEnum)]
+enum ContentType {
+    Markdown,
+    Plain,
+    Email,
+}
+
+impl From<ContentType> for ferret_api::ContentType {
+    fn from(content_type: ContentType) -> Self {
+        match content_type {
+            ContentType::Markdown => Self::Markdown,
+            ContentType::Plain => Self::Plain,
+            ContentType::Email => Self::Email,
+        }
+    }
+}
+
+impl From<ferret_api::ContentType> for ContentType {
+    fn from(content_type: ferret_api::ContentType) -> Self {
+        match content_type {
+            ferret_api::ContentType::Markdown => Self::Markdown,
+            ferret_api::ContentType::Plain => Self::Plain,
+            ferret_api::ContentType::Email => Self::Email,
+        }
+    }
+}
+
+/// A document returned by a search, with its best-matching chunk.
+#[derive(GraphQLObject)]
+struct Hit {
+    document_id: ID,
+    source: String,
+    external_id: String,
+    content_type: ContentType,
+    title: Option<String>,
+    /// Deep link to the origin, null when ferret's viewer is the origin.
+    url: Option<String>,
+    thread: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    score: f64,
+    chunk: HitChunk,
+}
+
+/// The best-matching chunk of a hit. Offsets count characters (Unicode code points) into the
+/// document's text.
+#[derive(GraphQLObject)]
+struct HitChunk {
+    start_offset: i32,
+    end_offset: i32,
+    /// The chunk's text, cut into parts that match the query and parts that don't.
+    parts: Vec<TextPart>,
+}
+
+#[derive(GraphQLObject)]
+struct TextPart {
+    text: String,
+    highlight: bool,
+}
+
+impl From<ferret_api::Hit> for Hit {
+    fn from(hit: ferret_api::Hit) -> Self {
+        Self {
+            document_id: ID::new(hit.document_id.to_string()),
+            source: hit.source,
+            external_id: hit.external_id,
+            content_type: hit.content_type.into(),
+            title: hit.title,
+            url: hit.url,
+            thread: hit.thread,
+            authors: hit.authors,
+            created_at: hit.created_at,
+            modified_at: hit.modified_at,
+            score: hit.score.into(),
+            chunk: HitChunk {
+                start_offset: graphql_int(hit.chunk.start_offset),
+                end_offset: graphql_int(hit.chunk.end_offset),
+                parts: hit
+                    .chunk
+                    .parts
+                    .into_iter()
+                    .map(|part| TextPart {
+                        text: part.text,
+                        highlight: part.highlight,
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
+#[derive(GraphQLObject)]
+struct Document {
+    id: ID,
+    source: String,
+    external_id: String,
+    content_type: ContentType,
+    title: Option<String>,
+    text: String,
+    /// Deep link to the origin, null when ferret's viewer is the origin.
+    url: Option<String>,
+    thread: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+}
+
+impl From<ferret_api::Document> for Document {
+    fn from(document: ferret_api::Document) -> Self {
+        Self {
+            id: ID::new(document.id.to_string()),
+            source: document.source,
+            external_id: document.external_id,
+            content_type: document.content_type.into(),
+            title: document.title,
+            text: document.text,
+            url: document.url,
+            thread: document.thread,
+            authors: document.authors,
+            created_at: document.created_at,
+            modified_at: document.modified_at,
+        }
+    }
+}
+
+/// GraphQL's `Int` is 32 bits. Chunk offsets beyond that would need a 2 GB document.
+fn graphql_int(offset: u32) -> i32 {
+    i32::try_from(offset).expect("chunk offsets fit into 32 bits")
 }
 
 pub struct Mutation;
@@ -89,10 +295,7 @@ impl Mutation {
         };
         match api_keys::create(&context.pool, &context.user, new).await {
             Ok((api_key, key)) => Ok(CreatedApiKey { api_key, key }),
-            Err(api_keys::CreateError::Invalid(message)) => Err(FieldError::new(
-                message,
-                graphql_value!({ "code": "INVALID_INPUT" }),
-            )),
+            Err(api_keys::CreateError::Invalid(message)) => Err(invalid_input(message)),
             Err(api_keys::CreateError::Database(error)) => Err(internal(error)),
         }
     }
@@ -162,6 +365,10 @@ impl ApiKey {
     }
 }
 
+fn invalid_input(message: String) -> FieldError {
+    FieldError::new(message, graphql_value!({ "code": "INVALID_INPUT" }))
+}
+
 /// Database failures are logged, the client only learns that something went wrong.
 fn internal(error: sqlx::Error) -> FieldError {
     tracing::error!(%error, "database error");
@@ -201,6 +408,7 @@ pub async fn handle(
     let context = Context {
         user,
         pool: state.pool.clone(),
+        embedding: state.embedding.clone(),
     };
     let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {

@@ -123,6 +123,7 @@ pub async fn find(
             .iter()
             .map(|content_type| content_type::as_str(*content_type))
             .collect(),
+        authors: &request.authors,
         from: request.from,
         to: request.to,
         excluded: &query.excluded,
@@ -253,6 +254,7 @@ struct Filters<'a> {
     user_id: Uuid,
     roots: Option<Vec<String>>,
     content_types: Vec<&'static str>,
+    authors: &'a [String],
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
     excluded: &'a [String],
@@ -289,6 +291,15 @@ impl Filters<'_> {
             sql.push(format!(" and {table}.content_type = any("))
                 .push_bind(self.content_types.clone())
                 .push("::text[])");
+        }
+        // Authors live on documents only: a join, inside the candidates, so a rare author doesn't
+        // lose hits to the limits.
+        if !self.authors.is_empty() {
+            sql.push(format!(
+                " and exists (select 1 from documents d where d.id = {table}.document_id and d.authors && "
+            ))
+            .push_bind(self.authors.to_vec())
+            .push("::text[])");
         }
         if let Some(from) = self.from {
             sql.push(format!(" and {table}.ts >= ")).push_bind(from);

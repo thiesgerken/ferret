@@ -22,6 +22,7 @@ mod highlight;
 mod search;
 mod search_query;
 mod sources;
+mod syncs;
 mod tei;
 mod users;
 
@@ -75,6 +76,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/documents/{id}", get(documents::get))
         .route("/api/search", get(search::handle))
+        .route("/api/syncs", post(syncs::start))
+        .route("/api/syncs/{id}/seen", post(syncs::seen))
+        .route("/api/syncs/{id}/commit", post(syncs::commit))
         .with_state(state)
 }
 

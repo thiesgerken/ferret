@@ -41,7 +41,14 @@ pub async fn put(
     if document.external_id.is_empty() {
         return Err(ApiError::bad_request("external_id must not be empty"));
     }
-    check_access(&caller, &document.source)?;
+    if let Some(url) = &document.url
+        && let Some(scheme) = dangerous_scheme(url)
+    {
+        return Err(ApiError::bad_request(&format!(
+            "url must not use the {scheme}: scheme"
+        )));
+    }
+    caller.require_source(&document.source)?;
 
     let mut tx = state.pool.begin().await?;
     let response = upsert(&mut tx, caller.user_id, &document).await?;
@@ -62,7 +69,7 @@ pub async fn delete(
 ) -> Result<StatusCode, ApiError> {
     caller.require(Scope::IngestWrite)?;
     let Query(key) = key?;
-    check_access(&caller, &key.source)?;
+    caller.require_source(&key.source)?;
     let deleted = sqlx::query!(
         "delete from documents where user_id = $1 and source = $2 and external_id = $3",
         caller.user_id,
@@ -129,16 +136,6 @@ pub async fn find(
         modified_at: document.modified_at,
         meta: document.meta.0,
     }))
-}
-
-fn check_access(caller: &ApiCaller, source: &str) -> Result<(), ApiError> {
-    if caller.may_access(source) {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(&format!(
-            "this API key may not access the source {source:?}"
-        )))
-    }
 }
 
 /// Stores `document` unless it's unchanged, and re-chunks a changed one. Chunks whose text
@@ -338,5 +335,52 @@ impl ChunkRows {
         self.end_offsets.push(int(chunk.end_offset));
         self.texts.push(chunk.text.to_owned());
         self.text_hashes.push(text_hash);
+    }
+}
+
+/// Schemes that run code or smuggle content when a browser follows the link. A denylist, because
+/// origins legitimately use custom schemes (`obsidian:`, `mid:`, `zotero:`). The frontend applies
+/// the same rule before rendering a link (`frontend/src/lib/safe-url.ts`).
+const DANGEROUS_SCHEMES: [&str; 3] = ["javascript", "data", "vbscript"];
+
+/// The dangerous scheme `url` uses, read the way browsers do: leading control characters and
+/// spaces don't count, tabs and line breaks inside are dropped, case doesn't matter.
+fn dangerous_scheme(url: &str) -> Option<&'static str> {
+    let url: String = url
+        .trim_start_matches(|c: char| c <= ' ')
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let (scheme, _) = url.split_once(':')?;
+    DANGEROUS_SCHEMES
+        .into_iter()
+        .find(|dangerous| scheme.eq_ignore_ascii_case(dangerous))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_dangerous_schemes_the_way_browsers_read_them() {
+        for url in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "  \u{1}javascript:alert(1)",
+            "java\tscript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "VBScript:msgbox",
+        ] {
+            assert!(dangerous_scheme(url).is_some(), "{url:?}");
+        }
+        for url in [
+            "https://example.com",
+            "obsidian://open?vault=main&file=a",
+            "mid:1234@example.com",
+            "relative/javascript:path",
+            "no scheme at all",
+        ] {
+            assert_eq!(dangerous_scheme(url), None, "{url:?}");
+        }
     }
 }

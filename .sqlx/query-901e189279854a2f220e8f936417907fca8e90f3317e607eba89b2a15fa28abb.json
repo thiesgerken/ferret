@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select source, committed_at is not null as \"committed!\"\n         from syncs where id = $1 and user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "syncs",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "committed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "901e189279854a2f220e8f936417907fca8e90f3317e607eba89b2a15fa28abb"
+}
