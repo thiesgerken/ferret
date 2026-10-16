@@ -250,3 +250,26 @@ async fn a_keys_sources_restrict_writing_and_reading(pool: PgPool) {
     assert_eq!(delete_outside.status(), Some(StatusCode::FORBIDDEN));
     assert_eq!(read_outside.status(), Some(StatusCode::NOT_FOUND));
 }
+
+#[sqlx::test(migrations = false)]
+async fn urls_with_scripting_schemes_are_rejected(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+
+    for url in [
+        " JavaScript:alert(1)",
+        "data:text/html,x",
+        "vbscript:msgbox",
+    ] {
+        let mut note = document("notes", "a.md", "Text.");
+        note.url = Some(url.to_owned());
+        let error = api.put_document(&note).await.unwrap_err();
+        assert_eq!(error.status(), Some(StatusCode::BAD_REQUEST), "{url}");
+    }
+    let mut note = document("notes", "a.md", "Text.");
+    note.url = Some("obsidian://open?vault=main&file=a".to_owned());
+    assert_eq!(
+        api.put_document(&note).await.unwrap().outcome,
+        PutOutcome::Created
+    );
+}

@@ -162,6 +162,10 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
 
 - `url` is optional. Without one, ferret's viewer is the origin (e.g. WhatsApp and Signal exports,
   which have no message deep links).
+- `url` must not use the `javascript:`, `data:` or `vbscript:` scheme (case-insensitive, leading
+  spaces and control characters and inner tabs or line breaks ignored, as browsers read it): a
+  `400`. A denylist rather than an allowlist, because origins use custom schemes (`obsidian:`,
+  `mid:`, `zotero:`). The UI applies the same rule before rendering any `url` as a link.
 - `title` and `thread` are optional too, `meta` defaults to `{}`. Everything else is required.
 - Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
   default. `source` must be a well-formed path, `external_id` must not be empty.
