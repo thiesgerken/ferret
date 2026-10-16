@@ -124,7 +124,7 @@ DELETE /api/documents?source=&external_id=      204, or 404 if there is no such 
 POST   /api/syncs                {source}      -> {sync_id}
 POST   /api/syncs/{id}/seen      {source, external_ids}
                                                 mark existing documents as seen, without content
-                                                -> {seen: number of them that exist}
+                                                -> {seen: number of them that exist}, 409 if already committed
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
                                                 -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
@@ -232,17 +232,22 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   Author and `meta` filters are rare and selective and stay a join.
 - **Languages**: German and English, often mixed in one text. Chunk text is indexed three times in
   `pg_search`: German-stemmed, English-stemmed, and trigrams (for compounds: "Versicherung" must
-  find "Kfz-Versicherungsbeitrag"). Queries search all three fields: the words match a chunk if they
-  all match German- or English-stemmed, or if all their trigrams occur in it. No language
-  detection. Typo tolerance would need a disjunctive or fuzzy trigram match and isn't built.
-- **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as typed,
-  ignoring case and whitespace differences, and `-word` drops every document that contains it. All
+  find "Kfz-Versicherungsbeitrag"). Every query word must match the chunk in at least one of the
+  three: German or English stem, or all of its trigrams. So the words of one query may match in
+  different fields: `Versicherung Rechnungen` finds "Kfz-Versicherungsbeitrag … Rechnung". No
+  language detection. No typo tolerance in v1: the trigram match needs all trigrams, so a
+  misspelled word doesn't match (follow-up in #21).
+- **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as a
+  substring, ignoring case and whitespace differences (so it also matches inside longer words).
+  `-word` drops every document containing it in any of the three fields, compounds included. All
   three go into the BM25 half, the vector half gets the words without operators. Filters are not
   part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
   document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
   the document level.
-- **Time filter**: `from`/`to` filter on `created_at`. `modified_at` is shown in the hit.
+- **Time filter**: `from`/`to` filter on `created_at`, `from` inclusive, `to` exclusive.
+  `modified_at` is shown in the hit.
+- **Repeated filters**: `source=` and `content_type=` may repeat, a document matches any of them.
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query

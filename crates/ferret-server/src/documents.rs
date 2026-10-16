@@ -41,7 +41,7 @@ pub async fn put(
     if document.external_id.is_empty() {
         return Err(ApiError::bad_request("external_id must not be empty"));
     }
-    check_access(&caller, &document.source)?;
+    caller.require_source(&document.source)?;
     connections::check_api_key_may_write(&state.pool, &caller, &document.source, false).await?;
 
     let mut tx = state.pool.begin().await?;
@@ -63,7 +63,7 @@ pub async fn delete(
 ) -> Result<StatusCode, ApiError> {
     caller.require(Scope::IngestWrite)?;
     let Query(key) = key?;
-    check_access(&caller, &key.source)?;
+    caller.require_source(&key.source)?;
     connections::check_api_key_may_write(&state.pool, &caller, &key.source, false).await?;
     let deleted = sqlx::query!(
         "delete from documents where user_id = $1 and source = $2 and external_id = $3",
@@ -131,16 +131,6 @@ pub async fn find(
         modified_at: document.modified_at,
         meta: document.meta.0,
     }))
-}
-
-pub fn check_access(caller: &ApiCaller, source: &str) -> Result<(), ApiError> {
-    if caller.may_access(source) {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(&format!(
-            "this API key may not access the source {source:?}"
-        )))
-    }
 }
 
 /// Stores `document` unless it's unchanged, and re-chunks a changed one. Chunks whose text

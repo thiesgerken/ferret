@@ -16,7 +16,6 @@ use crate::{
     AppState,
     api_auth::{ApiCaller, Scope},
     connections,
-    documents::check_access,
     error::ApiError,
     sources,
 };
@@ -34,7 +33,7 @@ pub async fn start(
             body.source
         )));
     }
-    check_access(&caller, &body.source)?;
+    caller.require_source(&body.source)?;
     connections::check_api_key_may_write(&state.pool, &caller, &body.source, true).await?;
     let sync_id = sqlx::query_scalar!(
         "insert into syncs (id, user_id, source, started_at)
@@ -101,7 +100,7 @@ pub async fn commit(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("no such sync"))?;
-    check_access(&caller, &sync.source)?;
+    caller.require_source(&sync.source)?;
     if sync.committed {
         return Err(ApiError::conflict("the sync is already committed"));
     }
@@ -139,7 +138,7 @@ async fn open_sync(state: &AppState, caller: &ApiCaller, id: Uuid) -> Result<Ope
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| ApiError::not_found("no such sync"))?;
-    check_access(caller, &sync.source)?;
+    caller.require_source(&sync.source)?;
     if sync.committed {
         return Err(ApiError::conflict("the sync is already committed"));
     }
