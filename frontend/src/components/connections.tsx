@@ -134,14 +134,14 @@ function CreateConnectionForm({
   pluginTypes: ConnectionsData["pluginTypes"];
   onCreated: () => void;
 }) {
-  const [, create] = useMutation(CreateConnectionMutation);
+  const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
   const [error, setError] = useState("");
-  const schema = pluginTypes.find(({ name }) => name === plugin)?.configSchema ?? "{}";
+  const schema = pluginTypes.find(({ name }) => name === plugin)?.configSchema;
   let fields: ConfigField[] = [];
-  let schemaError = "";
+  let schemaError = schema === undefined ? `No worker offers the plugin "${plugin}" anymore.` : "";
   try {
-    fields = configFields(schema);
+    fields = schema === undefined ? [] : configFields(schema);
   } catch (err) {
     schemaError = err instanceof Error ? err.message : String(err);
   }
@@ -228,7 +228,7 @@ function CreateConnectionForm({
       )}
       <button
         type="submit"
-        disabled={Boolean(schemaError)}
+        disabled={Boolean(schemaError) || fetching}
         className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
       >
         Create connection
@@ -268,7 +268,14 @@ function ConfigInput({ field }: { field: ConfigField }) {
         {field.kind === "lines" ? " One per line." : ""}
       </p>
       {field.kind === "lines" ? (
-        <textarea id={id} name={name} rows={2} placeholder={placeholder} className={cn(fieldClass, "font-mono")} />
+        <textarea
+          id={id}
+          name={name}
+          rows={2}
+          required={field.required}
+          placeholder={placeholder}
+          className={cn(fieldClass, "font-mono")}
+        />
       ) : (
         <input id={id} name={name} required={field.required} placeholder={placeholder} className={fieldClass} />
       )}
@@ -318,14 +325,25 @@ function ConnectionCard({ connection, onChanged }: { connection: Connection; onC
             type="button"
             disabled={!connection.enabled || lastRun?.status === "RUNNING"}
             onClick={() => mutate(() => runNow({ id: connection.id }))}
+            aria-label={`Run ${connection.source} now`}
             className={buttonClass}
           >
             Run now
           </button>
-          <button type="button" onClick={() => setEnabled(!connection.enabled)} className={buttonClass}>
+          <button
+            type="button"
+            onClick={() => setEnabled(!connection.enabled)}
+            aria-label={`${connection.enabled ? "Disable" : "Enable"} ${connection.source}`}
+            className={buttonClass}
+          >
             {connection.enabled ? "Disable" : "Enable"}
           </button>
-          <button type="button" onClick={() => setDeleting(true)} className={cn(buttonClass, "text-destructive")}>
+          <button
+            type="button"
+            onClick={() => setDeleting(true)}
+            aria-label={`Delete ${connection.source}`}
+            className={cn(buttonClass, "text-destructive")}
+          >
             Delete
           </button>
         </div>
@@ -412,6 +430,7 @@ function DeleteConnectionForm({
         value={confirmSource}
         onChange={(event) => setConfirmSource(event.target.value)}
         autoComplete="off"
+        autoFocus
         className={fieldClass}
       />
       {error && (
