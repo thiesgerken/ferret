@@ -89,6 +89,10 @@ pub struct SearchQuery {
     /// the query string.
     #[serde(default, rename = "source")]
     pub sources: Vec<String>,
+    /// Only documents with at least one of these authors. Empty: any author. Repeated `author=`
+    /// in the query string.
+    #[serde(default, rename = "author")]
+    pub authors: Vec<String>,
     /// Only documents created at or after this time.
     pub from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -226,6 +230,12 @@ impl Client {
                 .sources
                 .iter()
                 .map(|source| ("source", source.clone())),
+        );
+        params.extend(
+            query
+                .authors
+                .iter()
+                .map(|author| ("author", author.clone())),
         );
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));

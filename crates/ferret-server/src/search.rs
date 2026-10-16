@@ -103,6 +103,11 @@ pub async fn find(
                       select 1 from unnest($4::text[]) root where source_covers(root, c.source)))
                  and ($5::timestamptz is null or ts >= $5)
                  and ($6::timestamptz is null or ts < $6)
+                 -- Authors live on documents only: rare and selective enough for a join here,
+                 -- where it doesn't count against the candidate limit.
+                 and (cardinality($10::text[]) = 0 or exists (
+                      select 1 from documents d
+                      where d.id = c.document_id and d.authors && $10::text[]))
                  and (select coalesce(bool_and(
                           strpos(lower(regexp_replace(c.text, '\s+', ' ', 'g')), lower(phrase)) > 0),
                           true)
@@ -131,6 +136,7 @@ pub async fn find(
         &query.phrases,
         CANDIDATE_CHUNKS,
         i64::from(k),
+        &request.authors,
     )
     .fetch_all(pool)
     .await?;
