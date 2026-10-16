@@ -1,0 +1,4 @@
+[env]
+# The ParadeDB of docker-compose.yml (and of CI's service container). `#[sqlx::test]` creates a
+# database per test in it. An exported DATABASE_URL takes precedence.
+DATABASE_URL = "postgres://ferret:ferret@localhost:5432/ferret"

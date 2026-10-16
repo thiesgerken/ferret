@@ -1,0 +1,42 @@
+# Development only. The deployment is the Helm chart.
+services:
+  server:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      paradedb:
+        condition: service_healthy
+    environment:
+      FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
+
+  paradedb:
+    image: paradedb/paradedb:0.26.2-pg18@sha256:c552094b6b68dcb0a4e7a3969963d801eaec02490db4d2dd032dcb096bc86cf8
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ferret
+      POSTGRES_USER: ferret
+      POSTGRES_PASSWORD: ferret
+    ports:
+      # For `cargo test` and `cargo run` on the host, see .cargo/config.toml.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferret -d ferret"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  tei:
+    # amd64 only. On Apple Silicon use the native build instead of emulation:
+    # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d}
+    restart: unless-stopped
+    command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B"]
+    volumes:
+      - tei-models:/data
+
+volumes:
+  pgdata:
+  tei-models:
