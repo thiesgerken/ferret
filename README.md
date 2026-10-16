@@ -7,7 +7,7 @@ back to the origin, for me through a search UI and for agents through the same A
 
 ## Status
 
-v1 is in progress, tracked in [#22](https://github.com/thiesgerken/ferret/pull/22).
+v1 ([scope](docs/conception/README.md#v1-scope)) is in progress.
 
 ## Development
 
