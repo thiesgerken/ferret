@@ -658,18 +658,18 @@ dependencies = [
 
 [[package]]
 name = "ferret-api"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "reqwest",
 ]
 
 [[package]]
 name = "ferret-plugins"
-version = "0.1.0"
+version = "0.0.0"
 
 [[package]]
 name = "ferret-server"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "argon2",
  "axum",

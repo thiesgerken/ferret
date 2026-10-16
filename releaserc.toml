@@ -1,0 +1,47 @@
+# python-semantic-release, run by .github/workflows/release.yml (`semantic-release -c releaserc.toml`).
+[semantic_release]
+version_toml = ["Cargo.toml:workspace.package.version"]
+version_variables = [
+    "frontend/package.json:version",
+    "charts/ferret/Chart.yaml:version",
+    "charts/ferret/Chart.yaml:appVersion",
+]
+allow_zero_version = true
+commit_parser = "emoji"
+# Cargo.lock records the workspace crates' versions too.
+build_command = """
+    cargo update --workspace
+    git add Cargo.lock
+"""
+
+[semantic_release.commit_parser_options]
+major_tags = ["💥", ":boom:"]
+minor_tags = ["✨", ":sparkles:"]
+patch_tags = [
+    "🐛",
+    ":bug:",
+    "🚑",
+    ":ambulance:",
+    "♻️",
+    ":recycle:",
+    "⚡",
+    ":zap:",
+    "🔒",
+    ":lock:",
+    "🩹",
+    ":adhesive_bandage:",
+    "⬆️",
+    ":arrow_up:",
+    "🔧",
+    ":wrench:",
+    "💄",
+    ":lipstick:",
+    "🗑️",
+    ":wastebasket:",
+    "👷",
+    ":construction_worker:",
+]
+ignore_merge_commits = false
+
+[semantic_release.changelog]
+template_dir = "templates"

@@ -1,0 +1,136 @@
+name: Release
+
+# Only main releases. Integration branches merge into main as a whole.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    concurrency: release
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      # releaserc.toml's build_command updates Cargo.lock.
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+
+      # Not the python-semantic-release action: it builds its image with an
+      # unpinned `gitpython ~= 3.0`, and 3.1.60 dropped Actor.name_email_regex,
+      # which psr 10.6.1 still uses. Drop the --with once psr releases a fix.
+      - name: Semantic Release (version only)
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          uv tool run
+          --from 'python-semantic-release==10.6.1'
+          --with 'gitpython<3.1.60'
+          semantic-release -c releaserc.toml -v version --no-vcs-release
+
+  docker:
+    needs: version
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: ferret
+            context: .
+            target: server
+          - image: ferret-plugins
+            context: .
+            target: plugins
+          - image: ferret-frontend
+            context: frontend
+            target: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
+            type=raw,value=latest
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  publish:
+    needs: [version, docker]
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+
+      - name: Push Helm chart to GHCR
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
+          helm package charts/ferret --version "$version" --app-version "$version"
+          helm push "ferret-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          owner="${{ github.repository_owner }}"
+
+          # The latest changelog section
+          notes=$(awk '/^## v'"${version}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
+
+          notes="${notes}
+
+          ## Docker Images
+
+          \`\`\`
+          docker pull ghcr.io/${owner}/ferret:${version}
+          docker pull ghcr.io/${owner}/ferret-plugins:${version}
+          docker pull ghcr.io/${owner}/ferret-frontend:${version}
+          \`\`\`
+
+          ## Helm Chart
+
+          \`\`\`
+          helm install ferret oci://ghcr.io/${owner}/charts/ferret --version ${version}
+          \`\`\`"
+
+          gh release create "v${version}" \
+            --repo "${{ github.repository }}" \
+            --title "v${version}" \
+            --notes "${notes}"
