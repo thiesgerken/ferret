@@ -33,7 +33,7 @@ frontend:
     limits:
       memory: 64Mi
 
-# -- Gateway API HTTPRoute: /graphql and /api go to the server, everything else to the frontend.
+# -- Gateway API HTTPRoute: /graphql, /api and /auth go to the server, everything else to the frontend.
 ingress:
   enabled: true
   hostname: ferret.example.com

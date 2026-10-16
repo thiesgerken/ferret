@@ -22,6 +22,9 @@ spec:
         - path:
             type: PathPrefix
             value: /api
+        - path:
+            type: PathPrefix
+            value: /auth
       backendRefs:
         - name: {{ .Release.Name }}-server
           port: 8080
