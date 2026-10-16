@@ -119,7 +119,8 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
 
 ```text
 PUT    /api/documents                           upsert by (source, external_id), idempotent
-DELETE /api/documents?source=&external_id=
+                                                -> {id, outcome: created | updated | unchanged}
+DELETE /api/documents?source=&external_id=      204, or 404 if there is no such document
 POST   /api/syncs                {source}      -> {sync_id}
 POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
@@ -155,7 +156,9 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
 
 - `url` is optional. Without one, ferret's viewer is the origin (e.g. WhatsApp and Signal exports,
   which have no message deep links).
-- Missing required fields are a 4xx, never a silent default.
+- `title` and `thread` are optional too, `meta` defaults to `{}`. Everything else is required.
+- Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
+  default. `source` must be a well-formed path, `external_id` must not be empty.
 
 ### What a PUT does
 
@@ -193,16 +196,19 @@ Depends on whether a source knows its full state:
 ## Chunking
 
 Server-side, per content type. [`text-splitter`](https://crates.io/crates/text-splitter) does the
-token-aware and Markdown-aware splitting.
+Markdown-aware splitting. Chunks hold 1000 to 2000 characters: characters rather than model tokens,
+because ~2000 characters stay far below every embedding model's input limit, and counting tokens
+would tie the chunker to one model's tokenizer.
 
 | content type | strategy |
 |---|---|
-| `markdown` | by heading, then paragraph, capped by tokens |
-| `plain` | by paragraph, then line, capped by tokens |
+| `markdown` | by heading, then paragraph, capped at 2000 characters |
+| `plain` | by paragraph, then line, capped at 2000 characters |
 | `email` | like `plain`. The plugin strips quoted replies, the quoted mail is its own document |
 
-Every chunk keeps its offsets into the rendered text, so a hit shows both the localized snippet and,
-via `GET /api/documents/{id}`, the full context.
+Every chunk keeps its offsets into the document's text, counted in characters (Unicode scalar
+values), so a hit shows both the localized snippet and, via `GET /api/documents/{id}`, the full
+context.
 
 ## Search
 
@@ -219,16 +225,28 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
   Author and `meta` filters are rare and selective and stay a join.
 - **Languages**: German and English, often mixed in one text. Chunk text is indexed three times in
-  `pg_search`: German-stemmed, English-stemmed, and ngram (for compounds: "Versicherung" must find
-  "Kfz-Versicherungsbeitrag", and typos). Queries search all three fields. No language detection.
-- **Query syntax**: `"exact phrase"` and `-word` go into the BM25 half, the vector half gets the
-  query without operators. Filters are not part of the query text, the UI sets them as chips.
+  `pg_search`: German-stemmed, English-stemmed, and trigrams (for compounds: "Versicherung" must
+  find "Kfz-Versicherungsbeitrag"). Every query word must match the chunk in at least one of the
+  three: German or English stem, or all of its trigrams. So the words of one query may match in
+  different fields: `Versicherung Rechnungen` finds "Kfz-Versicherungsbeitrag … Rechnung". No
+  language detection. No typo tolerance in v1: the trigram match needs all trigrams, so a
+  misspelled word doesn't match (follow-up in #21).
+- **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as a
+  substring, ignoring case and whitespace differences (so it also matches inside longer words).
+  `-word` drops every document containing it in any of the three fields, compounds included. All
+  three go into the BM25 half, the vector half gets the words without operators. Filters are not
+  part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
   document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
   the document level.
-- **Time filter**: `from`/`to` filter on `created_at`. `modified_at` is shown in the hit.
+- **Time filter**: `from`/`to` filter on `created_at`, `from` inclusive, `to` exclusive.
+  `modified_at` is shown in the hit.
+- **Repeated filters**: `source=` and `content_type=` may repeat, a document matches any of them.
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
-  authors, timestamps, `url`, `thread`.
+  authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
+  or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
+  word, share its German or English stem, or contain it (compounds).
+- **Size**: `k` hits, 10 by default, at most 100. Hits are aggregated from the 1000 best chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
   email stripping and consecutive chat segments. The API returns the collapsed count, and

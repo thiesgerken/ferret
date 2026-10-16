@@ -12,16 +12,20 @@ path = "src/main.rs"
 [dependencies]
 argon2.workspace = true
 axum.workspace = true
+axum-extra.workspace = true
 base64.workspace = true
 chrono.workspace = true
 ferret-api.workspace = true
 getrandom.workspace = true
 jsonwebtoken.workspace = true
 juniper.workspace = true
+rust-stemmers.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 subtle.workspace = true
+text-splitter.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -29,4 +33,3 @@ uuid.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }
-serde_json = "1"

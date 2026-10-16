@@ -60,7 +60,6 @@ impl Scope {
 /// The caller of a `/api` route. It acts as its owner: it only ever sees and writes that user's
 /// documents, within its scopes and sources.
 pub struct ApiCaller {
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     pub user_id: Uuid,
     scopes: Vec<Scope>,
     sources: Option<Vec<String>>,
@@ -89,13 +88,11 @@ impl ApiCaller {
 
     /// The source paths every scope is restricted to (each including everything below it),
     /// `None` for all sources.
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     pub fn sources(&self) -> Option<&[String]> {
         self.sources.as_deref()
     }
 
     /// Whether the caller may read or write documents of `source`.
-    #[allow(dead_code, reason = "first read by ingest and search (#4)")]
     pub fn may_access(&self, source: &str) -> bool {
         self.sources
             .as_ref()

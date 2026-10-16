@@ -7,7 +7,8 @@
 // Every test file compiles its own copy of this module and uses only part of it.
 #![allow(dead_code)]
 
-use ferret_api::Client;
+use chrono::{DateTime, TimeZone, Utc};
+use ferret_api::{Client, ContentType, DocumentPut};
 use ferret_server::{AppState, SessionKey};
 use reqwest::{Response, header};
 use serde_json::{Value, json};
@@ -49,6 +50,18 @@ impl TestServer {
     /// A machine API client that authenticates with `api_key`.
     pub fn api_with_key(&self, api_key: &str) -> Client {
         Client::new(self.url.clone()).with_api_key(api_key)
+    }
+
+    pub fn api_without_key(&self) -> Client {
+        Client::new(self.url.clone())
+    }
+
+    /// A client for the bootstrap admin with a key that may ingest and search everywhere.
+    pub async fn admin_api(&self) -> Client {
+        let key = self
+            .create_api_key(&["INGEST_WRITE", "SEARCH_READ"], None)
+            .await;
+        self.api_with_key(&key)
     }
 
     /// Creates an API key for the bootstrap admin and returns it (`fk_...`). `scopes` are the
@@ -124,4 +137,26 @@ pub fn set_cookie(response: &Response) -> &str {
 
 pub async fn json_body(response: Response) -> Value {
     response.json().await.unwrap()
+}
+
+/// A plain-text document created at [`day`]`(1)`, to adjust per test.
+pub fn document(source: &str, external_id: &str, text: &str) -> DocumentPut {
+    DocumentPut {
+        source: source.to_owned(),
+        external_id: external_id.to_owned(),
+        content_type: ContentType::Plain,
+        title: Some(external_id.to_owned()),
+        text: text.to_owned(),
+        url: None,
+        thread: None,
+        authors: vec!["someone".to_owned()],
+        created_at: day(1),
+        modified_at: day(1),
+        meta: Default::default(),
+    }
+}
+
+/// Noon on the given day of January 2026.
+pub fn day(day: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 1, day, 12, 0, 0).unwrap()
 }

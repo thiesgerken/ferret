@@ -39,7 +39,9 @@ At startup the server reads each model's dimension and `max_input_length` from T
   pins connections to pods, so the split would be random.
 
 - **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
-  refuses to start. TEI would otherwise truncate chunks silently.
+  refuses to start. TEI would otherwise truncate chunks silently. The cap counts characters (2000)
+  and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
+  than one token per character, so a model that accepts 2000 tokens takes every chunk.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
 - **Removing a model**: the server drops its index and its rows. User preferences pointing to it
   are reset to the default at startup, logged as a warning.
@@ -78,8 +80,9 @@ of different models are never compared.
 All models embed the same chunks. That keeps comparisons fair (same units, same BM25 half) and
 storage simple. The consequences:
 
-- The chunker's token cap (~500) must fit every configured model. Current models accept 8k tokens
-  and more, so this only excludes old 512-token models.
+- The chunker's cap (2000 characters, roughly 500 to 700 tokens of German text) must fit every
+  configured model. Current models accept 8k tokens and more, so this only excludes old
+  512-token models.
 - Chunk size can't be compared like models can. A chunker change means re-chunking all documents,
   after which every configured model re-embeds. If comparing chunkers becomes a need, `chunks` gets
   a `chunker` column (the same pattern as models).
