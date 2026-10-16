@@ -18,7 +18,7 @@ coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message 
 
 ```text
                          ┌──────────────── Ingress ─────────────────┐
-                         │ /           /graphql, /api               │
+                         │ /           /graphql, /api, /auth        │
                          ▼                   ▼                      │
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
  browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (carapace skill)
@@ -216,8 +216,8 @@ XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the ser
 ## Frontend
 
 Next.js with carapace's stack and look and feel (React, Tailwind, shadcn-style components). In
-production the Ingress routes `/graphql` and `/api` to the server and everything else to the
-frontend. In development Next rewrites those paths to the local server, as in carapace.
+production the HTTPRoute sends `/graphql`, `/api` and `/auth` to the server and everything else to
+the frontend. In development Next rewrites those paths to the local server, as in carapace.
 
 | Section | Contents |
 |---|---|

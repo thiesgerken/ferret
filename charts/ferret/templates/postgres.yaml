@@ -5,6 +5,10 @@ metadata:
   labels:
     {{- include "ferret.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
+  # Survives `helm uninstall` together with the Secret: the index takes days to rebuild, and the
+  # database only accepts the password it was initialized with.
+  annotations:
+    helm.sh/resource-policy: keep
   {{- with .Values.postgres.persistence.finalizers }}
   finalizers:
     {{- toYaml . | nindent 4 }}

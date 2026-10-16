@@ -34,4 +34,14 @@ set `secrets.existingSecret`:
 | `bootstrap-password` | the first `admin`, at least 16 characters |
 | `session-secret` | signing session cookies; changing it signs everyone out |
 
+## Uninstall
+
+`helm uninstall` keeps the database PVC and the Secret, so a reinstall under the same release name
+finds the index and its password again. To really remove everything:
+
+```bash
+helm uninstall ferret -n ferret
+kubectl delete -n ferret pvc/ferret-postgres secret/ferret-secrets
+```
+
 See [values.yaml](values.yaml) for everything else.

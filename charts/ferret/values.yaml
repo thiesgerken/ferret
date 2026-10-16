@@ -36,7 +36,8 @@ frontend:
 # -- Gateway API HTTPRoute: /graphql, /api and /auth go to the server, everything else to the frontend.
 ingress:
   enabled: true
-  hostname: ferret.example.com
+  # -- Required when enabled, e.g. ferret.example.com
+  hostname: ""
   # -- Gateway parent references (required when ingress is enabled)
   parentRefs:
     - name: default-gateway

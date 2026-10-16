@@ -13,7 +13,7 @@ spec:
   parentRefs:
     {{- toYaml .Values.ingress.parentRefs | nindent 4 }}
   hostnames:
-    - {{ .Values.ingress.hostname | quote }}
+    - {{ required "ingress.hostname is required when ingress.enabled" .Values.ingress.hostname | quote }}
   rules:
     - matches:
         - path:
