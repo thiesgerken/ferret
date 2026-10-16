@@ -238,6 +238,10 @@ plain text, email with headers), scrolled to the hit. Documents with a `thread` 
 next navigation within it, which turns chat segments into a scrollable conversation and mails into
 a thread. It always shows the link back to the origin when there is one.
 
+Routes that carry an id use query parameters (`/view?id=…&start=…&end=…`, the hit's character
+offsets), not path segments: the static export has no page per document, so only such a route
+survives a reload or a shared link.
+
 ## Deployment
 
 The Helm chart, modelled on carapace's:
