@@ -35,7 +35,10 @@ services:
     # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
     image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d}
     restart: unless-stopped
-    command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B"]
+    # The default batch budget (16k tokens) makes the warmup allocate attention for a 16k-token
+    # sequence, which gets TEI OOM-killed in a typical Docker Desktop VM. 4096 still clears the
+    # chunker's ~500-token cap with room to spare (and caps TEI's max_input_length at 4096).
+    command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B", "--max-batch-tokens", "4096"]
     volumes:
       - tei-models:/data
 
