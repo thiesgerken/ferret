@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use tokio::sync::Notify;
 
@@ -73,12 +73,24 @@ impl AppState {
     }
 }
 
-/// Wakes this replica's waiting claims whenever a connection becomes due on any replica. The
-/// listener reconnects by itself; a notification sent while it's disconnected is lost, and the
-/// claims then wake at their next event or timeout instead.
-pub async fn listen_for_due_runs(state: AppState) -> Result<(), sqlx::Error> {
+/// Wakes this replica's waiting claims whenever a connection becomes due on any replica. Runs
+/// forever: when the database goes away, it reconnects until it's back.
+pub async fn listen_for_due_runs(state: AppState) -> ! {
+    loop {
+        let Err(error) = listen(&state).await;
+        tracing::error!(%error, "listening for due runs failed, reconnecting");
+        tokio::time::sleep(LISTEN_RETRY).await;
+    }
+}
+
+/// Between attempts to listen again. Meanwhile claims only wake at their next event or timeout.
+const LISTEN_RETRY: Duration = Duration::from_secs(5);
+
+async fn listen(state: &AppState) -> Result<Infallible, sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(&state.pool).await?;
     listener.listen(connections::RUNS_CHANNEL).await?;
+    // Notifications sent while no one listened are lost, so waiting claims look again.
+    state.run_wakeup.notify_waiters();
     loop {
         listener.recv().await?;
         state.run_wakeup.notify_waiters();

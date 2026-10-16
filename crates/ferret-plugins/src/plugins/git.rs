@@ -1,11 +1,12 @@
 //! git: one document per file of a repository, a full sync on every run.
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, time::Duration};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
 use globset::{Glob, GlobSet, GlobSetBuilder};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -14,6 +15,27 @@ use tokio::process::Command;
 use super::{Outcome, PluginError, Run};
 
 pub const NAME: &str = "git";
+
+/// Larger files aren't indexed: far more text than search needs, and reading them could exhaust
+/// the worker's memory.
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
+/// A git command that takes longer has stalled, e.g. on a remote that stopped answering. The
+/// heartbeats would otherwise keep the run alive forever.
+const GIT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// Characters a path segment can't carry into a URL as they are.
+const URL_SEGMENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'&')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
 
 /// Indexes the files of a git repository.
 #[derive(Deserialize, JsonSchema)]
@@ -50,6 +72,7 @@ fn markdown_by_default() -> Vec<String> {
 }
 
 /// The latest and the first commit that touched a file.
+#[derive(Debug, PartialEq)]
 struct FileHistory {
     author: String,
     modified_at: DateTime<Utc>,
@@ -61,10 +84,13 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let include = glob_set(&config.include)?;
     let exclude = glob_set(&config.exclude)?;
     let markdown = glob_set(&config.markdown)?;
+    let git = Git {
+        protocols: &run.options.git_protocols,
+    };
 
     let checkout = tempfile::tempdir()?;
     let dir = checkout.path();
-    let mut clone = git_command(Path::new("."));
+    let mut clone = git.command(Path::new("."));
     clone.args(["clone", "--quiet", "--single-branch"]);
     if let Some(branch) = &config.branch {
         clone.args(["--branch", branch]);
@@ -83,28 +109,51 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             );
     }
     output(&mut clone, "git clone").await?;
-    let commit = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_owned();
+    let commit = git
+        .run(dir, &["rev-parse", "HEAD"])
+        .await?
+        .trim()
+        .to_owned();
     run.log
         .line(format!("cloned {} at {commit}", config.remote));
 
-    let files: Vec<String> = git(dir, &["-c", "core.quotePath=false", "ls-files", "-z"])
-        .await?
-        .split('\0')
-        .filter(|path| !path.is_empty())
-        .filter(|path| {
-            (config.include.is_empty() || include.is_match(path)) && !exclude.is_match(path)
-        })
-        .map(str::to_owned)
-        .collect();
-    let history = history(dir).await?;
+    let listing = git.run(dir, &["ls-files", "--stage", "-z"]).await?;
+    let files = tracked_files(&listing)?;
+    let history = parse_history(
+        &git.run(
+            dir,
+            &["log", "-z", "--format=%x1e%an%x1f%aI", "--name-only"],
+        )
+        .await?,
+    )?;
 
     let sync = run.api.start_sync(&run.source).await?.sync_id;
     let mut stats = RunStats::default();
     let mut indexed = 0;
-    for path in &files {
-        let Some(file_history) = history.get(path) else {
+    for (mode, path) in files {
+        if (!config.include.is_empty() && !include.is_match(path)) || exclude.is_match(path) {
             continue;
-        };
+        }
+        // Symlinks (120000) would let a repository read the worker's own files, submodules
+        // (160000) have no content here. git never checks a regular file out below a symlink,
+        // so a regular file's path stays inside the checkout.
+        if mode != "100644" && mode != "100755" {
+            run.log.line(format!("skipped {path}: not a regular file"));
+            continue;
+        }
+        let metadata = tokio::fs::symlink_metadata(dir.join(path)).await?;
+        if !metadata.is_file() {
+            return Err(format!("{path} is a regular file in git but not in the checkout").into());
+        }
+        if metadata.len() > MAX_FILE_BYTES {
+            run.log.line(format!(
+                "skipped {path}: larger than {MAX_FILE_BYTES} bytes"
+            ));
+            continue;
+        }
+        let file_history = history
+            .get(path)
+            .ok_or_else(|| format!("{path} is tracked but no commit in the log touched it"))?;
         let bytes = tokio::fs::read(dir.join(path)).await?;
         let Some(text) = String::from_utf8(bytes)
             .ok()
@@ -120,14 +169,13 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         };
         let document = DocumentPut {
             source: run.source.clone(),
-            external_id: path.clone(),
+            external_id: path.to_owned(),
             content_type,
             title: Some(title(path, &text, content_type)),
-            url: config.url_template.as_ref().map(|template| {
-                template
-                    .replace("{path}", path)
-                    .replace("{commit}", &commit)
-            }),
+            url: config
+                .url_template
+                .as_ref()
+                .map(|template| file_url(template, path, &commit)),
             text,
             thread: None,
             authors: vec![file_history.author.clone()],
@@ -152,29 +200,42 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     })
 }
 
-/// Author and dates of every file, from one pass over the log: newest commits come first, so a
-/// file's first appearance is its latest commit and its last appearance its first.
-async fn history(dir: &Path) -> Result<HashMap<String, FileHistory>, PluginError> {
-    let log = git(
-        dir,
-        &[
-            "-c",
-            "core.quotePath=false",
-            "log",
-            "--format=%x1e%an%x1f%aI",
-            "--name-only",
-        ],
-    )
-    .await?;
+/// Mode and path of every file in `git ls-files --stage -z`.
+fn tracked_files(listing: &str) -> Result<Vec<(&str, &str)>, PluginError> {
+    listing
+        .split('\0')
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let (meta, path) = entry
+                .split_once('\t')
+                .ok_or("unexpected git ls-files output")?;
+            let mode = meta.split(' ').next().unwrap_or_default();
+            Ok((mode, path))
+        })
+        .collect()
+}
+
+/// Author and dates of every file, from `git log -z --format=%x1e%an%x1f%aI --name-only`: per
+/// commit a header, NUL, a line break, then the paths, each ending in NUL. Newest commits come
+/// first, so a file's first appearance is its latest commit and its last appearance its first.
+fn parse_history(log: &str) -> Result<HashMap<String, FileHistory>, PluginError> {
     let mut files: HashMap<String, FileHistory> = HashMap::new();
     for commit in log.split('\x1e').filter(|commit| !commit.is_empty()) {
-        let mut lines = commit.lines();
-        let header = lines.next().unwrap_or_default();
+        let mut fields = commit.split('\0');
+        let header = fields.next().unwrap_or_default();
         let (author, date) = header
             .split_once('\x1f')
             .ok_or("unexpected git log output")?;
         let date = DateTime::parse_from_rfc3339(date)?.with_timezone(&Utc);
-        for path in lines.filter(|line| !line.is_empty()) {
+        for (index, path) in fields.enumerate() {
+            let path = if index == 0 {
+                path.strip_prefix('\n').unwrap_or(path)
+            } else {
+                path
+            };
+            if path.is_empty() {
+                continue;
+            }
             files
                 .entry(path.to_owned())
                 .and_modify(|file| file.created_at = date)
@@ -200,6 +261,17 @@ fn title(path: &str, text: &str, content_type: ContentType) -> String {
         .to_owned()
 }
 
+fn file_url(template: &str, path: &str, commit: &str) -> String {
+    let path = path
+        .split('/')
+        .map(|segment| utf8_percent_encode(segment, URL_SEGMENT).to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    template
+        .replace("{path}", &path)
+        .replace("{commit}", commit)
+}
+
 fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
     let mut set = GlobSetBuilder::new();
     for glob in globs {
@@ -208,25 +280,45 @@ fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
     Ok(set.build()?)
 }
 
-/// Runs git in `dir` and returns its stdout.
-async fn git(dir: &Path, args: &[&str]) -> Result<String, PluginError> {
-    output(
-        git_command(dir).args(args),
-        &format!("git {}", args.join(" ")),
-    )
-    .await
+struct Git<'a> {
+    /// What `GIT_ALLOW_PROTOCOL` gets.
+    protocols: &'a str,
 }
 
-/// Git in `dir` that never prompts: a repository that needs other credentials fails instead of
-/// hanging the run.
-fn git_command(dir: &Path) -> Command {
-    let mut command = Command::new("git");
-    command.current_dir(dir).env("GIT_TERMINAL_PROMPT", "0");
-    command
+impl Git<'_> {
+    /// Git in `dir`, limited to the allowed transports, so a remote can't point at the worker's
+    /// files or at plain-HTTP services inside the cluster. It never prompts: a repository that
+    /// needs credentials fails instead of hanging the run.
+    fn command(&self, dir: &Path) -> Command {
+        let mut command = Command::new("git");
+        command
+            .current_dir(dir)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_ALLOW_PROTOCOL", self.protocols)
+            // Ends git when the run is dropped, e.g. because the server ended it.
+            .kill_on_drop(true);
+        command
+    }
+
+    /// Runs git in `dir` and returns its stdout.
+    async fn run(&self, dir: &Path, args: &[&str]) -> Result<String, PluginError> {
+        output(
+            self.command(dir).args(args),
+            &format!("git {}", args.join(" ")),
+        )
+        .await
+    }
 }
 
 async fn output(command: &mut Command, name: &str) -> Result<String, PluginError> {
-    let output = command.output().await?;
+    let output = tokio::time::timeout(GIT_TIMEOUT, command.output())
+        .await
+        .map_err(|_| {
+            format!(
+                "{name} took longer than {} minutes",
+                GIT_TIMEOUT.as_secs() / 60
+            )
+        })??;
     if !output.status.success() {
         return Err(format!(
             "{name} failed: {}",
@@ -254,6 +346,70 @@ mod tests {
         assert_eq!(
             title("src/main.rs", "# not a heading in Rust", ContentType::Plain),
             "main.rs"
+        );
+    }
+
+    #[test]
+    fn history_takes_the_latest_author_and_the_first_date() {
+        // Two commits, newest first, the way `git log -z` prints them. One path has a tab and
+        // quotes, which git would C-quote without -z.
+        let log = "\x1eGrace\x1f2026-10-17T12:00:00+02:00\0\nnotes/a b.md\0c.md\0\
+                   \x1eAda\x1f2026-10-16T09:30:00+02:00\0\nnotes/a b.md\0tab\t\"q\".md\0";
+
+        let history = parse_history(log).unwrap();
+
+        let at = |iso: &str| {
+            DateTime::parse_from_rfc3339(iso)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        assert_eq!(history.len(), 3);
+        assert_eq!(
+            history["notes/a b.md"],
+            FileHistory {
+                author: "Grace".to_owned(),
+                modified_at: at("2026-10-17T12:00:00+02:00"),
+                created_at: at("2026-10-16T09:30:00+02:00"),
+            }
+        );
+        assert_eq!(history["tab\t\"q\".md"].author, "Ada");
+        assert_eq!(history["c.md"].created_at, at("2026-10-17T12:00:00+02:00"));
+    }
+
+    #[test]
+    fn tracked_files_carry_their_mode() {
+        let listing = "100644 0123abcd 0\tnotes/a b.md\x00120000 4567ef01 0\tleak\0";
+
+        assert_eq!(
+            tracked_files(listing).unwrap(),
+            [("100644", "notes/a b.md"), ("120000", "leak")]
+        );
+    }
+
+    #[tokio::test]
+    async fn remotes_are_limited_to_the_allowed_protocols() {
+        let git = Git { protocols: "https" };
+
+        let error = git
+            .run(
+                Path::new("."),
+                &["ls-remote", "http://127.0.0.1:9/repo.git"],
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("not allowed"), "{error}");
+    }
+
+    #[test]
+    fn urls_encode_each_path_segment() {
+        assert_eq!(
+            file_url(
+                "https://git.example/{commit}/{path}",
+                "notes/a b#1?.md",
+                "abc"
+            ),
+            "https://git.example/abc/notes/a%20b%231%3F.md"
         );
     }
 }

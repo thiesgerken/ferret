@@ -168,12 +168,13 @@ key's own sources.
 POST /internal/workers/register   {name, plugins: [{name, config_schema}]}    -> {worker_id}
 POST /internal/runs/claim?wait=30 {worker_id}                                -> 204 | {run}
 POST /internal/runs/{id}/heartbeat {log_lines}                               -> 204, 409 once not live
-POST /internal/runs/{id}/finish    {result, state, stats, error, log_lines}  -> 204, 409 once not live
+POST /internal/runs/{id}/finish    {result: succeeded, state, stats, log_lines}
+                                   | {result: failed, error, log_lines}      -> 204, 409 once not live
 ```
 
 1. **Register**: at startup the worker upserts its plugin types and announces its capabilities.
-   Dedicated workers per plugin come for free: a worker started with `--plugins imap` only ever gets
-   IMAP runs.
+   Every worker registers every plugin it knows. Dedicated workers per plugin (`--plugins imap`)
+   would come for free from this, but don't exist yet.
 2. **Claim (long poll)**: the server looks for an enabled connection of one of the worker's plugins
    with `next_run_at <= now()` and no live run, using `FOR UPDATE SKIP LOCKED`. On a hit it inserts
    a `plugin_runs` row, advances `next_run_at` to the next cron slot, and returns the run: config
@@ -250,7 +251,8 @@ The Helm chart, modelled on carapace's:
 
 - `ferret-server` Deployment (replicas configurable), Services for the public and the internal
   port.
-- `ferret-plugins` Deployment, optionally several with different `--plugins` sets.
+- `ferret-plugins` Deployment, without a service account token: runs read files from repositories
+  they don't control.
 - `frontend` Deployment.
 - One TEI Deployment per configured embedding model, on CPU.
 - Optionally (`tei.gpu.enabled`) a GPU TEI Deployment per model for backfills, pinned to a tainted
@@ -276,6 +278,16 @@ replicas starting together are safe.
 | `FERRET_WORKER_SECRET` | yes | the plugin workers' pre-shared key for the internal API, at least 32 bytes ([auth.md](auth.md#worker-psk)) |
 | `FERRET_CONFIG_KEY` | yes | encrypts plugin credentials, 32 bytes in base64 ([Plugin credentials](#plugin-credentials)) |
 | `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
+
+### Plugin worker environment
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `FERRET_INTERNAL_URL` | yes | the server's internal API, e.g. `http://ferret-server:8081` |
+| `FERRET_SERVER_URL` | yes | the server's public API, where runs ingest, e.g. `http://ferret-server:8080` |
+| `FERRET_WORKER_SECRET` | yes | the same pre-shared key as the server's |
+| `HOSTNAME` | no | the worker's name in the server's records, the pod name in Kubernetes |
+| `RUST_LOG` | no | as for the server |
 
 The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness
 probe: 200, or 503 while the database is unreachable. It lives outside `/api` because every `/api`

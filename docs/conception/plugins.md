@@ -33,13 +33,21 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone (token write-only) |
+| `remote`, `branch`, `token` | repository to clone over HTTPS (token write-only, [#11](https://github.com/thiesgerken/ferret/issues/11)) |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
-| `content_types` | glob to content type, default `*.md` → `markdown`, others `plain` |
-| `url_template` | deep link, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
+| `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
+| `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
 
-- One document per file, `external_id = {path}`, `title` from the first heading or the file name,
-  `authors` from the last commit touching the file, `created_at` from the first.
+- One document per file, `external_id = {path}`, `title` from the first `# ` heading (deeper ones
+  don't count) or the file name, `authors` from the last commit touching the file, `created_at`
+  from the first.
+- Only regular files: symlinks and submodules are skipped (a symlink could point at the worker's
+  own files), so are files above 1 MiB and files that aren't UTF-8 text. Each skip is a line in
+  the run log.
+- Remotes are limited to HTTPS, so a connection can't reach the worker's filesystem or plain-HTTP
+  services in the cluster. A git command that runs longer than 30 minutes fails the run.
+- With `{commit}` in `url_template`, every new commit changes every file's URL, so a full sync
+  puts (and re-chunks) every file again.
 - First run: full ingest inside a sync, commit at the end. Later runs:
   `git diff --name-status <cursor>..HEAD`, `PUT` changed files, `DELETE` removed ones, renames are
   both. Cursor = `HEAD`.

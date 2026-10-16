@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(*) as \"count!\" from documents where user_id = $1 and source_covers($2, source)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "77ce5b65fd3e7d546fa48eeb6aaa77b0b7a473d8ed53d954ae063980c45dffcc"
+}

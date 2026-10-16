@@ -192,7 +192,7 @@ impl PluginRun {
         self.finished_at
     }
 
-    /// Null until the run finished.
+    /// Only for a run that succeeded.
     fn stats(&self) -> Option<RunStats> {
         let stats: ferret_api::internal::RunStats =
             serde_json::from_value(self.stats.clone()?).expect("stored stats are RunStats");

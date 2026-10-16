@@ -14,7 +14,7 @@ use axum::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use common::{TestServer, start_server};
 use ferret_api::SearchQuery;
-use ferret_plugins::worker::Worker;
+use ferret_plugins::{plugins::PluginOptions, worker::Worker};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
@@ -43,14 +43,16 @@ fn commit(repo: &Path, author: &str, message: &str) {
     );
 }
 
-/// A repository with a Markdown note, a plain file and an excluded settings file.
-fn repository(dir: &Path) {
+/// A repository with a Markdown note, a plain file, an excluded settings file and a symlink to
+/// `outside`, a file on the worker that mustn't get into the index.
+fn repository(dir: &Path, outside: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     std::fs::create_dir_all(dir.join("notes")).unwrap();
     std::fs::create_dir_all(dir.join(".obsidian")).unwrap();
     std::fs::write(dir.join("notes/alpha.md"), "# Alpha\n\nThe invoice is due.").unwrap();
     std::fs::write(dir.join("todo.txt"), "Pay the invoice.").unwrap();
     std::fs::write(dir.join(".obsidian/app.json"), "{\"invoice\": true}").unwrap();
+    std::os::unix::fs::symlink(outside, dir.join("leak.txt")).unwrap();
     commit(dir, "Ada", "first");
     std::fs::write(
         dir.join("notes/alpha.md"),
@@ -87,13 +89,19 @@ async fn invoice_hits(server: &TestServer) -> Vec<(String, String, Vec<String>, 
 
 #[sqlx::test(migrations = false)]
 async fn a_git_connection_indexes_the_files_and_sweeps_removed_ones(pool: PgPool) {
+    let worker_files = tempfile::tempdir().unwrap();
+    let outside = worker_files.path().join("token");
+    std::fs::write(&outside, "The invoice for the worker's own secret.").unwrap();
     let repo = tempfile::tempdir().unwrap();
-    repository(repo.path());
+    repository(repo.path(), &outside);
     let server = start_server(pool.clone()).await;
     let worker = Worker {
         internal: server.internal(),
         public_url: server.public_url(),
         name: "test-worker".to_owned(),
+        options: PluginOptions {
+            git_protocols: "file".to_owned(),
+        },
     };
     let worker_id = worker.register().await;
     let cookie = server.sign_in().await;
@@ -168,18 +176,44 @@ async fn a_git_connection_indexes_the_files_and_sweeps_removed_ones(pool: PgPool
     let runs = server
         .graphql(
             &cookie,
-            "{ connections { runs { status stats { put unchanged deleted } } } }",
+            "{ connections { runs { status log stats { put unchanged deleted } } } }",
             json!({}),
         )
         .await;
+    let runs = runs["data"]["connections"][0]["runs"].as_array().unwrap();
     // The note is put again because its URL carries the new commit.
     assert_eq!(
-        runs["data"]["connections"][0]["runs"],
-        json!([
-            {"status": "SUCCEEDED", "stats": {"put": 1, "unchanged": 0, "deleted": 1}},
-            {"status": "SUCCEEDED", "stats": {"put": 2, "unchanged": 0, "deleted": 0}},
-        ])
+        runs.iter()
+            .map(|run| (run["status"].clone(), run["stats"].clone()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                json!("SUCCEEDED"),
+                json!({"put": 1, "unchanged": 0, "deleted": 1})
+            ),
+            (
+                json!("SUCCEEDED"),
+                json!({"put": 2, "unchanged": 0, "deleted": 0})
+            ),
+        ]
     );
+    assert!(
+        runs[1]["log"]
+            .as_str()
+            .unwrap()
+            .contains("skipped leak.txt: not a regular file"),
+        "{runs:?}"
+    );
+    let leaked = server
+        .admin_api()
+        .await
+        .search(&SearchQuery {
+            q: "secret".to_owned(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(leaked.hits.is_empty(), "the symlink's target got indexed");
 }
 
 /// Serves `repo` over git's dumb HTTP protocol, only to requests with the token, the way GitHub
@@ -216,8 +250,9 @@ async fn serve_private(repo: PathBuf, token: &str) -> String {
 
 #[sqlx::test(migrations = false)]
 async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: PgPool) {
+    let worker_files = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
-    repository(repo.path());
+    repository(repo.path(), &worker_files.path().join("missing"));
     let served = tempfile::tempdir().unwrap();
     let bare = served.path().join("repo.git");
     git(
@@ -234,6 +269,9 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
         internal: server.internal(),
         public_url: server.public_url(),
         name: "test-worker".to_owned(),
+        options: PluginOptions {
+            git_protocols: "http".to_owned(),
+        },
     };
     let worker_id = worker.register().await;
     let cookie = server.sign_in().await;

@@ -69,16 +69,25 @@ async fn claim_now(internal: &InternalClient, worker: Uuid) -> Option<ClaimedRun
     internal.claim(worker, Duration::ZERO).await.unwrap()
 }
 
-fn finish(result: RunResult, state: Value) -> RunFinish {
+fn success(state: Value) -> RunFinish {
     RunFinish {
-        result,
-        state,
-        stats: RunStats {
-            put: 1,
-            unchanged: 0,
-            deleted: 0,
+        result: RunResult::Succeeded {
+            state,
+            stats: RunStats {
+                put: 1,
+                unchanged: 0,
+                deleted: 0,
+            },
         },
-        error: (result == RunResult::Failed).then(|| "it broke".to_owned()),
+        log_lines: vec!["done".to_owned()],
+    }
+}
+
+fn failure() -> RunFinish {
+    RunFinish {
+        result: RunResult::Failed {
+            error: "it broke".to_owned(),
+        },
         log_lines: vec!["done".to_owned()],
     }
 }
@@ -190,13 +199,7 @@ async fn only_a_successful_run_stores_its_state_and_a_finished_runs_token_dies(p
         )
         .await
         .unwrap();
-    internal
-        .finish(
-            failed.run_id,
-            &finish(RunResult::Failed, json!({"cursor": "bad"})),
-        )
-        .await
-        .unwrap();
+    internal.finish(failed.run_id, &failure()).await.unwrap();
     assert_eq!(connection_state(&pool).await, json!({}));
     assert_eq!(
         put_status(&server.api_with_key(&failed.token), "notes").await,
@@ -211,15 +214,12 @@ async fn only_a_successful_run_stores_its_state_and_a_finished_runs_token_dies(p
         "a failed run retries from the old cursor"
     );
     internal
-        .finish(
-            succeeded.run_id,
-            &finish(RunResult::Succeeded, json!({"cursor": "abc"})),
-        )
+        .finish(succeeded.run_id, &success(json!({"cursor": "abc"})))
         .await
         .unwrap();
     assert_eq!(connection_state(&pool).await, json!({"cursor": "abc"}));
     let again = internal
-        .finish(succeeded.run_id, &finish(RunResult::Succeeded, json!({})))
+        .finish(succeeded.run_id, &success(json!({})))
         .await
         .unwrap_err();
     assert_eq!(again.status(), Some(StatusCode::CONFLICT));
@@ -235,7 +235,7 @@ async fn only_a_successful_run_stores_its_state_and_a_finished_runs_token_dies(p
         runs["data"]["connections"][0]["runs"],
         json!([
             {"status": "SUCCEEDED", "log": "done\n", "error": null, "stats": {"put": 1}},
-            {"status": "FAILED", "log": "cloning\ndone\n", "error": "it broke", "stats": {"put": 1}},
+            {"status": "FAILED", "log": "cloning\ndone\n", "error": "it broke", "stats": null},
         ])
     );
 }
@@ -287,7 +287,7 @@ async fn run_now_wakes_a_waiting_claim(pool: PgPool) {
     let id = created["data"]["createConnection"]["id"].clone();
     let first = claim_now(&internal, worker).await.unwrap();
     internal
-        .finish(first.run_id, &finish(RunResult::Succeeded, json!({})))
+        .finish(first.run_id, &success(json!({})))
         .await
         .unwrap();
 
@@ -475,4 +475,21 @@ async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_a
         updated["errors"][0]["message"],
         "the stored credentials can't be decrypted with FERRET_CONFIG_KEY, enter them again"
     );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_root_with_documents_below_it_is_refused(pool: PgPool) {
+    let server = start_server(pool).await;
+    register(&server.internal()).await;
+    let api = server.admin_api().await;
+    assert_eq!(put_status(&api, "notes/work").await, StatusCode::OK);
+
+    let refused = create_connection(&server, "notes", "0 * * * *").await;
+    let elsewhere = create_connection(&server, "mail", "0 * * * *").await;
+
+    assert_eq!(
+        refused["errors"][0]["message"],
+        "1 document already lives below \"notes\": delete them or pick another root"
+    );
+    assert_eq!(elsewhere["errors"], Value::Null, "{elsewhere}");
 }
