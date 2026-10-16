@@ -16,6 +16,9 @@ spec:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "plugins") | nindent 8 }}
     spec:
+      # Runs read files from repositories they don't control; there's nothing in the Kubernetes API
+      # a worker needs.
+      automountServiceAccountToken: false
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
