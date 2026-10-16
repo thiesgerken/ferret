@@ -50,7 +50,7 @@ ingress:
 # logs everyone out. Under GitOps, use existingSecret.
 secrets:
   # -- Existing Secret with the keys postgres-password, bootstrap-password (at least 16
-  # characters) and session-secret.
+  # characters) and session-secret (at least 32 bytes).
   existingSecret: ""
 
 # -- ParadeDB (Postgres with pg_search and pgvector), single instance with its own PVC. Backups are
