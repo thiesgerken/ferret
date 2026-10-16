@@ -32,7 +32,7 @@ set `secrets.existingSecret`:
 |---|---|
 | `postgres-password` | the database user |
 | `bootstrap-password` | the first `admin`, at least 16 characters |
-| `session-secret` | signing session cookies; changing it signs everyone out |
+| `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
 
 ## Uninstall
 

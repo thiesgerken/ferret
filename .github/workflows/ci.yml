@@ -11,6 +11,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check that frontend/schema.graphql matches the server's schema
+        run: |
+          cargo run --locked -q -p ferret-server -- schema > frontend/schema.graphql
+          git diff --exit-code -- frontend/schema.graphql
 
   rust-test:
     runs-on: ubuntu-latest
@@ -34,6 +38,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
       - run: cargo test --workspace --locked
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: sqlx-cli@0.9.0
+      # .sqlx is keyed by query text, so a migration that changes a column's type under an unchanged
+      # query would otherwise keep compiling against stale types.
+      - name: Check that .sqlx matches the migrated schema
+        env:
+          DATABASE_URL: postgres://ferret:ferret@localhost:5439/ferret
+        run: |
+          cargo sqlx migrate run --source crates/ferret-server/migrations
+          cargo sqlx prepare --workspace --check
 
   docker-server:
     runs-on: ubuntu-latest

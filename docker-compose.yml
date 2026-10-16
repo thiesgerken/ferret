@@ -11,6 +11,9 @@ services:
         condition: service_healthy
     environment:
       FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
+      # Development values. Sign in as `admin` with the bootstrap password.
+      FERRET_SESSION_SECRET: development session secret, not for production
+      FERRET_BOOTSTRAP_PASSWORD: ferret-development
 
   frontend:
     build: ./frontend

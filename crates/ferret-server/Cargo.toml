@@ -10,11 +10,18 @@ name = "ferret"
 path = "src/main.rs"
 
 [dependencies]
+argon2.workspace = true
 axum.workspace = true
+jsonwebtoken.workspace = true
+juniper.workspace = true
+serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 ferret-api.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+serde_json = "1"

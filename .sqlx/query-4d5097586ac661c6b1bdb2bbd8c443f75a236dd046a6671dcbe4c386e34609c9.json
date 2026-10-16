@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into sessions (id, user_id, created_at, expires_at)\n         values (gen_random_uuid(), $1, now(), now() + make_interval(secs => $2))\n         returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4d5097586ac661c6b1bdb2bbd8c443f75a236dd046a6671dcbe4c386e34609c9"
+}

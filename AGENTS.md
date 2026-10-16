@@ -21,7 +21,12 @@ Keep `docs/` up to date when a change alters what it describes.
 - Start everything for development: `docker compose up`
 - Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`
 - Build: `cargo build --workspace`
-- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo run -p ferret-server`
+- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_SESSION_SECRET=<32+ bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`
+- Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`
+- After changing a query or a migration, refresh the sqlx query metadata (needs
+  `cargo install sqlx-cli` and a migrated database):
+  `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
+  then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`
 - Test: `cargo test --workspace` (needs the compose ParadeDB, see Testing)
 - Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`
 
@@ -42,10 +47,13 @@ docker-compose.yml   development only, the deployment is the Helm chart
 ## Testing
 
 - Server tests are black-box: they start the server in-process (`tests/common`) and talk to it
-  through the `ferret-api` client, against a real ParadeDB. No mocked database.
+  over HTTP (the `ferret-api` client for the machine API), against a real ParadeDB. No mocked
+  database.
 - `#[sqlx::test(migrations = false)]` gives each test its own database, the server's startup
   migrates it. `DATABASE_URL` comes from `.cargo/config.toml` (the compose ParadeDB), an exported
   one takes precedence.
+- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005). Builds read their metadata
+  from `.sqlx/` (`SQLX_OFFLINE`), so only tests need a database.
 - Plugin parsers are tested against fixtures, the frontend with `node --test`.
 
 ## CI
