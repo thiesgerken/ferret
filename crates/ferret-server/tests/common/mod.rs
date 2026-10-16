@@ -51,6 +51,25 @@ impl TestServer {
         Client::new(self.url.clone()).with_api_key(api_key)
     }
 
+    /// Creates an API key for the bootstrap admin and returns it (`fk_...`). `scopes` are the
+    /// GraphQL names (`"INGEST_WRITE"`, `"SEARCH_READ"`, ...), `sources` restricts every scope,
+    /// `None` for all sources.
+    pub async fn create_api_key(&self, scopes: &[&str], sources: Option<&[&str]>) -> String {
+        let cookie = self.sign_in().await;
+        let body = self
+            .graphql(
+                &cookie,
+                "mutation ($input: NewApiKey!) { createApiKey(input: $input) { key } }",
+                json!({"input": {"name": "test key", "scopes": scopes, "sources": sources}}),
+            )
+            .await;
+        assert_eq!(body["errors"], Value::Null, "{body}");
+        body["data"]["createApiKey"]["key"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http.request(method, format!("{}{path}", self.url))
     }

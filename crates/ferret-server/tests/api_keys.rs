@@ -21,8 +21,7 @@ async fn create_key(server: &TestServer, input: Value) -> Value {
 }
 
 async fn admin_key(server: &TestServer, scopes: &[&str]) -> String {
-    let created = create_key(server, json!({"name": "admin tooling", "scopes": scopes})).await;
-    created["key"].as_str().unwrap().to_owned()
+    server.create_api_key(scopes, None).await
 }
 
 fn client(server: &TestServer, key: &str) -> Client {
