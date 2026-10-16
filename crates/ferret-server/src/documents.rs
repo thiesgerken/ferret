@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    api_keys::{ApiCaller, Scope},
+    api_auth::{ApiCaller, Scope},
     chunking, content_type,
     error::ApiError,
     sources,

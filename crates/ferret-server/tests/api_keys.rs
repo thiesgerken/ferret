@@ -213,6 +213,10 @@ async fn invalid_keys_are_refused_at_creation(pool: PgPool) {
             "\"notes/\" is not a source path",
         ),
         (
+            json!({"name": "k", "scopes": ["ADMIN_READ"], "sources": ["notes"]}),
+            "admin scopes can't be restricted to sources",
+        ),
+        (
             json!({"name": "k", "scopes": ["SEARCH_READ"], "expiresAt": "2020-01-01T00:00:00Z"}),
             "the expiry date must lie in the future",
         ),
@@ -249,4 +253,40 @@ async fn last_used_at_is_written_at_most_once_a_minute(pool: PgPool) {
         .unwrap();
     client(&server, &key).users().await.unwrap();
     assert!(last_used().await.unwrap() >= first);
+}
+
+#[sqlx::test(migrations = false)]
+async fn users_neither_see_nor_revoke_each_others_keys(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    // No user management yet, so the second user and their key come straight from SQL.
+    let other_key_id: uuid::Uuid = sqlx::query_scalar(
+        "with other as (
+             insert into users (id, username, password_hash, is_admin, created_at, password_changed_at)
+             values (uuidv7(), 'bob', 'unused', true, now(), now())
+             returning id
+         )
+         insert into api_keys (id, user_id, name, prefix, secret_hash, scopes, created_at)
+         select uuidv7(), id, 'bob tooling', '0b0b0b0b', sha256('bobsecret'), '{admin:read}', now()
+         from other
+         returning id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let other_key = "fk_0b0b0b0b.bobsecret";
+    let cookie = server.sign_in().await;
+
+    let listed = server
+        .graphql(&cookie, "{ apiKeys { id } }", json!({}))
+        .await;
+    assert_eq!(listed["data"]["apiKeys"], json!([]));
+    let revoked = server
+        .graphql(
+            &cookie,
+            "mutation ($id: ID!) { revokeApiKey(id: $id) }",
+            json!({"id": other_key_id.to_string()}),
+        )
+        .await;
+    assert_eq!(revoked["errors"][0]["message"], "no such API key");
+    assert_eq!(users_status(&server, other_key).await, StatusCode::OK);
 }

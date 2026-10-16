@@ -20,17 +20,20 @@ const KEY = {
   expiresAt: null,
 };
 
-/** Renders the settings against a fake server and records every operation it receives. */
-async function renderSettings(isAdmin: boolean, respond: (operation: Operation) => unknown = () => null) {
+/**
+ * Renders the settings against a fake server and records every operation it receives. `respond`
+ * answers the mutations with a whole response, like the server: 200 with `data`, or 400 with
+ * `errors` for rejected input.
+ */
+async function renderSettings(isAdmin: boolean, respond: (operation: Operation) => Response = () => Response.json({})) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body)) as Operation;
     operations.push(operation);
-    const data =
-      operation.operationName === "ApiKeys"
-        ? { me: { __typename: "User", isAdmin }, apiKeys: [KEY] }
-        : respond(operation);
-    return Response.json({ data });
+    if (operation.operationName === "ApiKeys") {
+      return Response.json({ data: { me: { __typename: "User", isAdmin }, apiKeys: [KEY] } });
+    }
+    return respond(operation);
   });
   const view = await renderReact(
     <Provider value={client}>
@@ -56,9 +59,9 @@ test("lists the keys and offers admin scopes to admins only", async () => {
 });
 
 test("creates a key from the form and shows it once", async () => {
-  const { view, operations } = await renderSettings(false, () => ({
-    createApiKey: { __typename: "CreatedApiKey", key: "fk_0a1b2c3d.secret" },
-  }));
+  const { view, operations } = await renderSettings(false, () =>
+    Response.json({ data: { createApiKey: { __typename: "CreatedApiKey", key: "fk_0a1b2c3d.secret" } } }),
+  );
   const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
   field<HTMLInputElement>("#key-name").value = "paperless";
   field<HTMLSelectElement>("select[name=INGEST]").value = "WRITE";
@@ -79,7 +82,7 @@ test("creates a key from the form and shows it once", async () => {
 
 test("revokes a key after confirmation", async (t) => {
   t.mock.method(window, "confirm", () => true);
-  const { view, operations } = await renderSettings(false, () => ({ revokeApiKey: "key-1" }));
+  const { view, operations } = await renderSettings(false, () => Response.json({ data: { revokeApiKey: "key-1" } }));
   const revokeButton = [...view.container.querySelectorAll("button")].find((b) => b.textContent === "Revoke")!;
 
   await act(async () => {
@@ -89,5 +92,26 @@ test("revokes a key after confirmation", async (t) => {
 
   const revoke = operations.find((operation) => operation.operationName === "RevokeApiKey");
   assert.deepEqual(revoke?.variables, { id: "key-1" });
+  await view.unmount();
+});
+
+test("shows the server's reason when it rejects a new key", async () => {
+  const { view } = await renderSettings(false, () =>
+    Response.json(
+      { data: null, errors: [{ message: '"notes/" is not a source path', extensions: { code: "INVALID_INPUT" } }] },
+      { status: 400 },
+    ),
+  );
+  view.container.querySelector<HTMLInputElement>("#key-name")!.value = "notes";
+  view.container.querySelector<HTMLSelectElement>("select[name=SEARCH]")!.value = "READ";
+  view.container.querySelector<HTMLInputElement>("#key-sources")!.value = "notes/";
+
+  await act(async () => {
+    view.container.querySelector("form")!.requestSubmit();
+  });
+  await settle();
+
+  assert.equal(view.container.querySelector("[role=alert]")?.textContent, '"notes/" is not a source path');
+  assert.equal(view.container.querySelector("#created-key"), null);
   await view.unmount();
 });

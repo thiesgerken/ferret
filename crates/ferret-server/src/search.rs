@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     AppState,
-    api_keys::{ApiCaller, Scope},
+    api_auth::{ApiCaller, Scope},
     content_type,
     error::ApiError,
     highlight::highlight,
