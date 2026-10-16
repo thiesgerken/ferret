@@ -1,5 +1,6 @@
 mod common;
 
+use chrono::{DateTime, Utc};
 use common::{TestServer, day, document, start_server};
 use ferret_api::{Client, ContentType, SearchQuery};
 use serde_json::{Value, json};
@@ -7,7 +8,7 @@ use sqlx::PgPool;
 
 const SEARCH: &str = "query ($input: SearchInput!) {
     search(input: $input) {
-        documentId externalId source authors
+        documentId externalId source contentType title url thread authors createdAt modifiedAt
         chunk { startOffset endOffset parts { text highlight } }
     }
 }";
@@ -25,8 +26,11 @@ async fn ingest(api: &Client) {
     mail.authors = vec!["Stadtwerke".to_owned(), "billing".to_owned()];
     mail.created_at = day(10);
     mail.content_type = ContentType::Email;
+    mail.thread = Some("invoices".to_owned());
     let mut notes = document("notes", "invoice-c", "Pay the invoice before Friday.");
     notes.created_at = day(20);
+    notes.title = Some("Friday".to_owned());
+    notes.url = Some("https://notes.example.test/invoice-c".to_owned());
     for document in [paperless, mail, notes] {
         api.put_document(&document).await.unwrap();
     }
@@ -48,7 +52,13 @@ async fn graphql_hits(server: &TestServer, cookie: &str, input: Value) -> Vec<Va
                 "document_id": hit["documentId"],
                 "external_id": hit["externalId"],
                 "source": hit["source"],
+                "content_type": hit["contentType"].as_str().unwrap().to_lowercase(),
+                "title": hit["title"],
+                "url": hit["url"],
+                "thread": hit["thread"],
                 "authors": hit["authors"],
+                "created_at": timestamp(&hit["createdAt"]),
+                "modified_at": timestamp(&hit["modifiedAt"]),
                 "chunk": {
                     "start_offset": chunk["startOffset"],
                     "end_offset": chunk["endOffset"],
@@ -57,6 +67,13 @@ async fn graphql_hits(server: &TestServer, cookie: &str, input: Value) -> Vec<Va
             })
         })
         .collect()
+}
+
+/// GraphQL's and serde's RFC 3339 strings may differ in precision, the instant may not.
+fn timestamp(value: &Value) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value.as_str().unwrap())
+        .unwrap()
+        .with_timezone(&Utc)
 }
 
 async fn rest_hits(api: &Client, query: SearchQuery) -> Vec<Value> {
@@ -70,7 +87,13 @@ async fn rest_hits(api: &Client, query: SearchQuery) -> Vec<Value> {
                 "document_id": hit.document_id,
                 "external_id": hit.external_id,
                 "source": hit.source,
+                "content_type": hit.content_type,
+                "title": hit.title,
+                "url": hit.url,
+                "thread": hit.thread,
                 "authors": hit.authors,
+                "created_at": hit.created_at,
+                "modified_at": hit.modified_at,
                 "chunk": {
                     "start_offset": hit.chunk.start_offset,
                     "end_offset": hit.chunk.end_offset,
