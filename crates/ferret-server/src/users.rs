@@ -4,10 +4,15 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
+use axum::{Json, extract::State};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::StartupError;
+use crate::{
+    AppState, StartupError,
+    api_keys::{ApiCaller, Scope},
+    error::ApiError,
+};
 
 pub const BOOTSTRAP_USERNAME: &str = "admin";
 pub const BOOTSTRAP_PASSWORD_MIN_CHARS: usize = 16;
@@ -18,6 +23,21 @@ pub struct User {
     pub username: String,
     pub display_name: Option<String>,
     pub is_admin: bool,
+}
+
+/// `GET /api/users`: every user, for admin tooling.
+pub async fn list(
+    State(state): State<AppState>,
+    caller: ApiCaller,
+) -> Result<Json<Vec<ferret_api::User>>, ApiError> {
+    caller.require(Scope::AdminRead)?;
+    let users = sqlx::query_as!(
+        ferret_api::User,
+        "select id, username, display_name, is_admin, enabled from users order by username"
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(users))
 }
 
 /// Makes sure an enabled admin exists, creating `admin` with `password` if none does.

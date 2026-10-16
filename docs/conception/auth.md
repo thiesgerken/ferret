@@ -116,7 +116,9 @@ Same format and storage as carapace's `ck_` keys:
 - Validation looks the row up by prefix, compares hashes in constant time, and hashes even when the
   prefix is unknown, so timing doesn't reveal valid prefixes.
 - Shown once at creation. `last_used_at` is updated at most once a minute per key.
-- Sent as `Authorization: Bearer fk_...`.
+- Sent as `Authorization: Bearer fk_...`. A missing, unknown, revoked or expired key, or one whose
+  owner is disabled, gets `401`. A valid key without the needed scope gets `403`.
+- Revoking deletes the key. An expired key stays listed until its owner revokes it.
 
 ```sql
 create table api_keys (
@@ -124,7 +126,7 @@ create table api_keys (
     user_id       uuid not null references users on delete cascade,
     name          text not null,               -- 'paperless plugin', 'carapace search skill'
     prefix        text not null unique,
-    secret_hash   text not null,
+    secret_hash   bytea not null,              -- sha256 of the part after the dot
     scopes        text[] not null,             -- e.g. {'search:read', 'ingest:write'}
     sources       text[],                      -- restricts every scope to these source paths and below, null = all
     created_at    timestamptz not null,
@@ -141,7 +143,7 @@ create table api_keys (
 |---|---|---|
 | `search` | search, `GET /documents/{id}`, conversation views | |
 | `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
-| `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
+| `admin` | list users (`GET /api/users`) | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
 `sources` restricts a key to source paths and everything below them, for reading, searching and
 writing alike, enforced by the server. A leaked key for one ingester can't overwrite or sweep

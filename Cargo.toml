@@ -10,19 +10,25 @@ publish = false
 [workspace.dependencies]
 ferret-api = { path = "crates/ferret-api" }
 argon2 = "0.6"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false }
 axum = "0.8"
+getrandom = "0.4"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-juniper = { version = "0.17", default-features = false, features = ["schema-language"] }
+juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 sqlx = { version = "0.9", default-features = false, features = [
     "macros",
+    "chrono",
     "migrate",
     "postgres",
     "runtime-tokio",
     "uuid",
 ] }
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.11"
+subtle = "2"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

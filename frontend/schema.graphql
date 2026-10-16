@@ -2,11 +2,72 @@
 
 schema {
   query: Query
+  mutation: Mutation
+}
+
+"What a key may do: `<scope>:<access>`, where write implies read."
+enum ApiKeyScope {
+  SEARCH_READ
+  INGEST_READ
+  INGEST_WRITE
+  ADMIN_READ
+  ADMIN_WRITE
+}
+
+input NewApiKey {
+  name: String!
+  scopes: [ApiKeyScope!]!
+  "Restricts every scope to these source paths and below. Leave out for all sources." sources: [String!]
+  expiresAt: DateTime
+}
+
+"""
+  Combined date and time (with time zone) in [RFC 3339][0] format.
+
+  Represents a description of an exact instant on the time-line (such as the
+  instant that a user account was created).
+
+  [`DateTime` scalar][1] compliant.
+
+  See also [`chrono::DateTime`][2] for details.
+
+  [0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5
+  [1]: https://graphql-scalars.dev/docs/scalars/date-time
+  [2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
+"""
+scalar DateTime
+
+type ApiKey {
+  id: ID!
+  name: String!
+  "The non-secret part after `fk_`, to tell keys apart."
+  prefix: String!
+  scopes: [ApiKeyScope!]!
+  "Source paths every scope is restricted to, null for all sources."
+  sources: [String!]
+  createdAt: DateTime!
+  "Updated at most once a minute."
+  lastUsedAt: DateTime
+  expiresAt: DateTime
+}
+
+type CreatedApiKey {
+  apiKey: ApiKey!
+  "`fk_<prefix>.<secret>`, for `Authorization: Bearer`."
+  key: String!
+}
+
+type Mutation {
+  createApiKey(input: NewApiKey!): CreatedApiKey!
+  "Revokes one of the signed-in user's keys and returns its id."
+  revokeApiKey(id: ID!): ID!
 }
 
 type Query {
   "The signed-in user."
   me: User!
+  "The signed-in user's API keys, newest first."
+  apiKeys: [ApiKey!]!
 }
 
 type User {

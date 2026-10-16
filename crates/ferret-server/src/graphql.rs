@@ -6,14 +6,26 @@ use axum::{
     extract::{State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode},
 };
-use juniper::{EmptyMutation, EmptySubscription, ID, RootNode, graphql_object, http};
+use chrono::{DateTime, Utc};
+use juniper::{
+    EmptySubscription, FieldError, FieldResult, GraphQLInputObject, ID, RootNode, graphql_object,
+    graphql_value, http,
+};
+use sqlx::PgPool;
+use uuid::Uuid;
 
-use crate::{AppState, auth, error::ApiError, users::User};
+use crate::{
+    AppState,
+    api_keys::{self, ApiKey, Scope},
+    auth,
+    error::ApiError,
+    users::User,
+};
 
-pub type Schema = RootNode<Query, EmptyMutation<Context>, EmptySubscription<Context>>;
+pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
 
 pub fn schema() -> Schema {
-    Schema::new(Query, EmptyMutation::new(), EmptySubscription::new())
+    Schema::new(Query, Mutation, EmptySubscription::new())
 }
 
 /// The SDL that `ferret schema` prints into `frontend/schema.graphql` for the frontend's codegen.
@@ -26,6 +38,7 @@ pub fn sdl() -> String {
 
 pub struct Context {
     user: User,
+    pool: PgPool,
 }
 
 impl juniper::Context for Context {}
@@ -38,6 +51,120 @@ impl Query {
     fn me(context: &Context) -> &User {
         &context.user
     }
+
+    /// The signed-in user's API keys, newest first.
+    async fn api_keys(context: &Context) -> FieldResult<Vec<ApiKey>> {
+        api_keys::list(&context.pool, context.user.id)
+            .await
+            .map_err(internal)
+    }
+}
+
+pub struct Mutation;
+
+#[derive(GraphQLInputObject)]
+struct NewApiKey {
+    name: String,
+    scopes: Vec<Scope>,
+    /// Restricts every scope to these source paths and below. Leave out for all sources.
+    sources: Option<Vec<String>>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+/// A new key, with the full key string. The only time it is shown.
+struct CreatedApiKey {
+    api_key: ApiKey,
+    key: String,
+}
+
+#[graphql_object(context = Context)]
+impl Mutation {
+    async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
+        let new = api_keys::NewApiKey {
+            name: input.name,
+            scopes: input.scopes,
+            sources: input.sources,
+            expires_at: input.expires_at,
+        };
+        match api_keys::create(&context.pool, &context.user, new).await {
+            Ok((api_key, key)) => Ok(CreatedApiKey { api_key, key }),
+            Err(api_keys::CreateError::Invalid(message)) => Err(FieldError::new(
+                message,
+                graphql_value!({ "code": "INVALID_INPUT" }),
+            )),
+            Err(api_keys::CreateError::Database(error)) => Err(internal(error)),
+        }
+    }
+
+    /// Revokes one of the signed-in user's keys and returns its id.
+    async fn revoke_api_key(context: &Context, id: ID) -> FieldResult<ID> {
+        let not_found = || FieldError::new("no such API key", graphql_value!(null));
+        let key_id = id.parse::<Uuid>().map_err(|_| not_found())?;
+        if api_keys::revoke(&context.pool, context.user.id, key_id)
+            .await
+            .map_err(internal)?
+        {
+            Ok(id)
+        } else {
+            Err(not_found())
+        }
+    }
+}
+
+#[graphql_object(context = Context)]
+impl CreatedApiKey {
+    fn api_key(&self) -> &ApiKey {
+        &self.api_key
+    }
+
+    /// `fk_<prefix>.<secret>`, for `Authorization: Bearer`.
+    fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+#[graphql_object(context = Context)]
+impl ApiKey {
+    fn id(&self) -> ID {
+        ID::new(self.id.to_string())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The non-secret part after `fk_`, to tell keys apart.
+    fn prefix(&self) -> &str {
+        &self.prefix
+    }
+
+    fn scopes(&self) -> &[Scope] {
+        &self.scopes
+    }
+
+    /// Source paths every scope is restricted to, null for all sources.
+    fn sources(&self) -> Option<&[String]> {
+        self.sources.as_deref()
+    }
+
+    fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+
+    /// Updated at most once a minute.
+    fn last_used_at(&self) -> Option<DateTime<Utc>> {
+        self.last_used_at
+    }
+
+    fn expires_at(&self) -> Option<DateTime<Utc>> {
+        self.expires_at
+    }
+}
+
+/// Database failures are logged, the client only learns that something went wrong.
+fn internal(error: sqlx::Error) -> FieldError {
+    tracing::error!(%error, "database error");
+    FieldError::new("internal error", graphql_value!(null))
 }
 
 #[graphql_object(context = Context)]
@@ -70,7 +197,11 @@ pub async fn handle(
         .await?
         .ok_or_else(|| ApiError::unauthorized("not signed in"))?;
     let Json(request) = request?;
-    let response = request.execute(&state.schema, &Context { user }).await;
+    let context = Context {
+        user,
+        pool: state.pool.clone(),
+    };
+    let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {
         StatusCode::OK
     } else {
