@@ -1,4 +1,4 @@
-use std::{num::NonZero, sync::LazyLock, thread};
+use std::sync::LazyLock;
 
 use argon2::{
     Argon2,
@@ -96,18 +96,23 @@ pub async fn password_matches(password: String, stored_hash: Option<String>) -> 
     .await
 }
 
-/// Runs Argon2 off the async runtime (it takes tens of milliseconds of CPU), at most one per core
-/// at a time. Each run allocates about 19 MiB, and logins are public, so an unbounded burst of
-/// them would allocate until the pod is OOM-killed. Excess runs queue instead.
+/// Runs Argon2 off the async runtime (it takes tens of milliseconds of CPU), a few at a time.
+/// Each run allocates about 19 MiB, and logins are public, so an unbounded burst of them would
+/// allocate until the pod is OOM-killed. Excess runs queue instead.
 // ponytail: one global bound. Per-IP or per-username rate limiting if logins get hammered.
 async fn run_argon2<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    static PERMITS: LazyLock<Semaphore> =
-        LazyLock::new(|| Semaphore::new(thread::available_parallelism().map_or(1, NonZero::get)));
-    let _permit = PERMITS
+    // Fixed rather than per core: the pod has no CPU limit, and a big node mustn't mean more memory.
+    static PERMITS: Semaphore = Semaphore::const_new(4);
+    let permit = PERMITS
         .acquire()
         .await
         .expect("the semaphore is never closed");
-    tokio::task::spawn_blocking(work)
-        .await
-        .expect("Argon2 doesn't panic")
+    tokio::task::spawn_blocking(move || {
+        // Held by the blocking task, not the request: a client that disconnects drops the
+        // request's future, but the hash keeps running and must keep its permit.
+        let _permit = permit;
+        work()
+    })
+    .await
+    .expect("Argon2 doesn't panic")
 }
