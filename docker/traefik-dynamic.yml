@@ -1,0 +1,25 @@
+# One origin for the UI and the server, as the HTTPRoute does in the cluster. /healthz stays
+# internal there too.
+http:
+  routers:
+    ferret-server:
+      rule: Path(`/graphql`) || PathPrefix(`/api`) || PathPrefix(`/auth`)
+      entryPoints:
+        - web
+      priority: 100
+      service: ferret-server
+    ferret-frontend:
+      rule: PathPrefix(`/`)
+      entryPoints:
+        - web
+      priority: 1
+      service: ferret-frontend
+  services:
+    ferret-server:
+      loadBalancer:
+        servers:
+          - url: http://server:8080
+    ferret-frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:80
