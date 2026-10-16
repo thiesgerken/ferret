@@ -28,6 +28,14 @@ impl ApiError {
         }
     }
 
+    /// The request conflicts with the resource's state, e.g. a sync that is already committed.
+    pub fn conflict(message: &str) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: message.to_owned(),
+        }
+    }
+
     pub fn not_found(message: &str) -> Self {
         Self {
             status: StatusCode::NOT_FOUND,

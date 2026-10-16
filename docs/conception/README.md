@@ -122,11 +122,17 @@ PUT    /api/documents                           upsert by (source, external_id),
                                                 -> {id, outcome: created | updated | unchanged}
 DELETE /api/documents?source=&external_id=      204, or 404 if there is no such document
 POST   /api/syncs                {source}      -> {sync_id}
-POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
+POST   /api/syncs/{id}/seen      {source, external_ids}
+                                                mark existing documents as seen, without content
+                                                -> {seen: number of them that exist}
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
+                                                -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
 GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
 ```
+
+`seen` names the source of its external ids: a sync over `carapace` covers `carapace/facts` and
+`carapace/sessions`, whose external ids may repeat. It must be the sync's source or below it.
 
 Source and external id travel in the body or query, never in the URL path: both may contain `/`
 (source paths, file paths), which path routing and proxies handle badly.

@@ -131,7 +131,7 @@ pub async fn find(
     }))
 }
 
-fn check_access(caller: &ApiCaller, source: &str) -> Result<(), ApiError> {
+pub fn check_access(caller: &ApiCaller, source: &str) -> Result<(), ApiError> {
     if caller.may_access(source) {
         Ok(())
     } else {
