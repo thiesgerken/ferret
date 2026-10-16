@@ -59,3 +59,33 @@ body {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 }
+
+/* The hit in the viewer: a <mark> in plain text, whole blocks in rendered Markdown. */
+.hit {
+  background: color-mix(in oklch, var(--brand) 22%, transparent);
+  border-radius: 0.25rem;
+  color: inherit;
+}
+
+/* Rendered Markdown in the viewer, as in carapace. */
+.prose {
+  line-height: 1.65;
+}
+.prose > * + * { margin-top: 0.75em; }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-weight: 600; margin-top: 1.25em; }
+.prose h1 { font-size: 1.4em; }
+.prose h2 { font-size: 1.2em; }
+.prose h3 { font-size: 1.05em; }
+.prose ul, .prose ol { padding-left: 1.5em; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li { margin: 0.2em 0; }
+.prose a { text-decoration: underline; text-underline-offset: 2px; }
+.prose blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
+.prose code { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 0.85em; }
+.prose :not(pre) > code { background: var(--muted); border-radius: 0.25rem; padding: 0.15em 0.35em; }
+.prose pre { background: var(--muted); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem 1rem; overflow-x: auto; }
+.prose table { border-collapse: collapse; font-size: 0.9em; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 0.35em 0.75em; text-align: left; }
+.prose th { background: var(--muted); font-weight: 600; }
+.prose li.hit, .prose p.hit { padding: 0 0.25rem; margin-left: -0.25rem; }
