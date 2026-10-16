@@ -1,6 +1,8 @@
 //! The UI's API. Every request needs a valid session, which the transport checks before juniper
 //! sees the request.
 
+use std::sync::Arc;
+
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
@@ -20,6 +22,7 @@ use crate::{
     api_keys::{self, ApiKey},
     auth,
     connections::{self, Connection, ConnectionError, PluginRun, PluginType},
+    credentials::ConfigKey,
     error::ApiError,
     users::User,
 };
@@ -41,6 +44,7 @@ pub fn sdl() -> String {
 pub struct Context {
     user: User,
     pool: PgPool,
+    config_key: Arc<ConfigKey>,
 }
 
 impl juniper::Context for Context {}
@@ -256,7 +260,7 @@ impl Mutation {
             config: parse_config(&input.config)?,
             schedule: input.schedule,
         };
-        connections::create(&context.pool, context.user.id, new)
+        connections::create(&context.pool, &context.config_key, context.user.id, new)
             .await
             .map_err(connection_error)
     }
@@ -271,10 +275,16 @@ impl Mutation {
             schedule: input.schedule,
             enabled: input.enabled,
         };
-        connections::update(&context.pool, context.user.id, parse_id(&id)?, update)
-            .await
-            .map_err(connection_error)?
-            .ok_or_else(no_such_connection)
+        connections::update(
+            &context.pool,
+            &context.config_key,
+            context.user.id,
+            parse_id(&id)?,
+            update,
+        )
+        .await
+        .map_err(connection_error)?
+        .ok_or_else(no_such_connection)
     }
 
     /// Starts a run without waiting for the schedule. Fails for a disabled connection.
@@ -456,6 +466,7 @@ pub async fn handle(
     let context = Context {
         user,
         pool: state.pool.clone(),
+        config_key: state.config_key.clone(),
     };
     let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {

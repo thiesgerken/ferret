@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.schedule, c.state\n         from connections c\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
+  "query": "insert into connections\n             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)\n         values (uuidv7(), $1, $2, $3, $4, $5, $6, now(), now())\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
   "describe": {
     "columns": [
       {
@@ -16,17 +16,6 @@
       },
       {
         "ordinal": 1,
-        "name": "user_id",
-        "type_info": "Uuid",
-        "origin": {
-          "Table": {
-            "table": "connections",
-            "name": "user_id"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
         "name": "plugin",
         "type_info": "Text",
         "origin": {
@@ -37,7 +26,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "source",
         "type_info": "Text",
         "origin": {
@@ -48,7 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "config",
         "type_info": "Jsonb",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "schedule",
         "type_info": "Text",
         "origin": {
@@ -70,20 +59,47 @@
         }
       },
       {
-        "ordinal": 6,
-        "name": "state",
-        "type_info": "Jsonb",
+        "ordinal": 5,
+        "name": "enabled",
+        "type_info": "Bool",
         "origin": {
           "Table": {
             "table": "connections",
-            "name": "state"
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "next_run_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "next_run_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "created_at"
           }
         }
       }
     ],
     "parameters": {
       "Left": [
-        "TextArray"
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bytea",
+        "Text"
       ]
     },
     "nullable": [
@@ -93,8 +109,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "4fa56982bddf58b0a990dc8cf07a18a34a1e2b09b51cbd45a52bf1a219e6e2a8"
+  "hash": "25f856d66e5aa995522d7c279c5a30bf46869b693a13d29011215e4171d7fe97"
 }

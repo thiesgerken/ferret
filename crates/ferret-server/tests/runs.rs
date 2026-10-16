@@ -441,3 +441,38 @@ async fn configs_and_schedules_are_validated(pool: PgPool) {
         "{schedule}"
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_again(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let internal = server.internal();
+    let worker = register(&internal).await;
+    let id = connection_id(&server, "notes").await;
+    // As after restoring the database without its FERRET_CONFIG_KEY.
+    sqlx::query("update connections set credentials = $1")
+        .bind(vec![7u8; 64])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(claim_now(&internal, worker).await.is_none());
+    let (status, error): (String, String) = sqlx::query_as("select status, error from plugin_runs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "failed");
+    assert!(error.contains("enter them again"), "{error}");
+
+    let cookie = server.sign_in().await;
+    let updated = server
+        .graphql(
+            &cookie,
+            "mutation ($id: ID!, $input: ConnectionUpdate!) { updateConnection(id: $id, input: $input) { id } }",
+            json!({"id": id, "input": {"config": r#"{"path": "/data"}"#, "schedule": "0 * * * *", "enabled": true}}),
+        )
+        .await;
+    assert_eq!(
+        updated["errors"][0]["message"],
+        "the stored credentials can't be decrypted with FERRET_CONFIG_KEY, enter them again"
+    );
+}

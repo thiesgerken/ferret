@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into plugin_runs (id, connection_id, worker_id, status, started_at, heartbeat_at)\n         values (uuidv7(), $1, $2, 'running', now(), now())\n         returning id",
+  "query": "insert into plugin_runs (id, connection_id, worker_id, status, started_at, heartbeat_at)\n             values (uuidv7(), $1, $2, 'running', now(), now())\n             returning id",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "ee1ee0611463a83efb9310b29c0396fb21c54539ebb4531a8d8b3a5905d5916d"
+  "hash": "5415682ab68a0a12921ff76c723cf966e56a289dd914b18386e1f0aefbf8cb0b"
 }

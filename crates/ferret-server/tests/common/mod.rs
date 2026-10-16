@@ -10,7 +10,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
-use ferret_server::{AppState, SessionKey, WorkerSecret};
+use ferret_server::{AppState, ConfigKey, SessionKey, WorkerSecret};
 use reqwest::{Response, header};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -18,6 +18,8 @@ use tokio::net::TcpListener;
 
 pub const ADMIN_PASSWORD: &str = "the bootstrap admin's password";
 const SESSION_SECRET: &str = "a session secret of at least 32 bytes";
+/// 32 bytes in base64.
+const CONFIG_KEY: &str = "dGVzdCBjb25maWcga2V5IG9mIHRoaXJ0eS10d28gYnk=";
 pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
 
 pub struct TestServer {
@@ -40,7 +42,8 @@ pub async fn start_server(pool: PgPool) -> TestServer {
         .expect("the admin is bootstrapped");
     let session_key = SessionKey::new(SESSION_SECRET).unwrap();
     let worker_secret = WorkerSecret::new(WORKER_SECRET.to_owned()).unwrap();
-    let state = AppState::new(pool, session_key, worker_secret);
+    let config_key = ConfigKey::new(CONFIG_KEY).unwrap();
+    let state = AppState::new(pool, session_key, worker_secret, config_key);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let internal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

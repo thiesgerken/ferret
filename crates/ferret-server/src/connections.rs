@@ -5,11 +5,16 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
-use crate::{api_auth::ApiCaller, error::ApiError, sources};
+use crate::{
+    api_auth::ApiCaller,
+    credentials::{self, ConfigKey},
+    error::ApiError,
+    sources,
+};
 
 /// The channel that wakes waiting claims: a connection became due (run now, a new or changed
 /// connection). Every server replica listens, so a claim waiting on any of them wakes.
@@ -24,6 +29,7 @@ pub struct Connection {
     pub id: Uuid,
     pub plugin: String,
     pub source: String,
+    /// Without the credentials, which never leave the server except to a claimed run.
     pub config: Value,
     pub schedule: String,
     pub enabled: bool,
@@ -109,6 +115,7 @@ pub async fn find(
 /// Creates a connection that runs right away, then on its schedule.
 pub async fn create(
     pool: &PgPool,
+    config_key: &ConfigKey,
     user_id: Uuid,
     new: NewConnection,
 ) -> Result<Connection, ConnectionError> {
@@ -119,7 +126,9 @@ pub async fn create(
         ));
     }
     next_slot(&new.schedule, Utc::now())?;
-    validate_config(pool, &new.plugin, &new.config).await?;
+    let schema = config_schema(pool, &new.plugin).await?;
+    validate_config(&schema, &new.config)?;
+    let (config, credentials) = credentials::split(&schema, new.config);
     let mut tx = pool.begin().await?;
     // Serializes creations per user, so two overlapping roots can't slip in side by side.
     sqlx::query!("select id from users where id = $1 for update", user_id)
@@ -133,13 +142,15 @@ pub async fn create(
     }
     let connection = sqlx::query_as!(
         Connection,
-        "insert into connections (id, user_id, plugin, source, config, schedule, next_run_at, created_at)
-         values (uuidv7(), $1, $2, $3, $4, $5, now(), now())
+        "insert into connections
+             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)
+         values (uuidv7(), $1, $2, $3, $4, $5, $6, now(), now())
          returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
         user_id,
         new.plugin,
         new.source,
-        new.config,
+        config,
+        seal(config_key, &credentials),
         new.schedule,
     )
     .fetch_one(&mut *tx)
@@ -150,8 +161,10 @@ pub async fn create(
 }
 
 /// Changes config, schedule and whether the connection runs. A new schedule takes effect from now.
+/// Credentials the new config leaves out keep their stored values.
 pub async fn update(
     pool: &PgPool,
+    config_key: &ConfigKey,
     user_id: Uuid,
     id: Uuid,
     update: ConnectionUpdate,
@@ -164,16 +177,21 @@ pub async fn update(
     } else {
         next_slot(&update.schedule, Utc::now())?
     };
-    validate_config(pool, &current.plugin, &update.config).await?;
+    let schema = config_schema(pool, &current.plugin).await?;
+    let config = with_stored_credentials(pool, config_key, &schema, id, update.config).await?;
+    validate_config(&schema, &config)?;
+    let (config, credentials) = credentials::split(&schema, config);
     let mut tx = pool.begin().await?;
     let connection = sqlx::query_as!(
         Connection,
-        "update connections set config = $3, schedule = $4, enabled = $5, next_run_at = $6
+        "update connections
+         set config = $3, credentials = $4, schedule = $5, enabled = $6, next_run_at = $7
          where id = $1 and user_id = $2
          returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
         id,
         user_id,
-        update.config,
+        config,
+        seal(config_key, &credentials),
         update.schedule,
         update.enabled,
         next_run_at,
@@ -266,21 +284,21 @@ pub fn next_slot(schedule: &str, after: DateTime<Utc>) -> Result<DateTime<Utc>, 
         .map_err(|error| ConnectionError::Invalid(format!("{schedule:?} never runs: {error}")))
 }
 
-async fn validate_config(
-    pool: &PgPool,
-    plugin: &str,
-    config: &Value,
-) -> Result<(), ConnectionError> {
-    let Some(schema) = sqlx::query_scalar!(
+async fn config_schema(pool: &PgPool, plugin: &str) -> Result<Value, ConnectionError> {
+    match sqlx::query_scalar!(
         "select config_schema from plugin_types where name = $1",
         plugin
     )
     .fetch_optional(pool)
     .await?
-    else {
-        return invalid(format!("no worker offers the plugin {plugin:?}"));
-    };
-    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+    {
+        Some(schema) => Ok(schema),
+        None => invalid(format!("no worker offers the plugin {plugin:?}")),
+    }
+}
+
+fn validate_config(schema: &Value, config: &Value) -> Result<(), ConnectionError> {
+    let validator = jsonschema::validator_for(schema).map_err(|error| {
         ConnectionError::Invalid(format!("the plugin's config schema is broken: {error}"))
     })?;
     if let Some(error) = validator.iter_errors(config).next() {
@@ -293,6 +311,39 @@ async fn validate_config(
         return invalid(format!("invalid config{at}: {error}"));
     }
     Ok(())
+}
+
+fn seal(config_key: &ConfigKey, credentials: &Map<String, Value>) -> Option<Vec<u8>> {
+    (!credentials.is_empty()).then(|| config_key.seal(credentials))
+}
+
+/// `config` with the stored credentials it leaves out. If those can't be opened anymore (the
+/// database was restored without its key), the update has to enter the credentials again.
+async fn with_stored_credentials(
+    pool: &PgPool,
+    config_key: &ConfigKey,
+    schema: &Value,
+    id: Uuid,
+    mut config: Value,
+) -> Result<Value, ConnectionError> {
+    let Some(sealed) = sqlx::query_scalar!("select credentials from connections where id = $1", id)
+        .fetch_one(pool)
+        .await?
+    else {
+        return Ok(config);
+    };
+    let entered = !credentials::split(schema, config.clone()).1.is_empty();
+    let stored = match config_key.open(&sealed) {
+        Ok(stored) => stored,
+        Err(_) if entered => Map::new(),
+        Err(error) => return invalid(error.to_string()),
+    };
+    if let Some(fields) = config.as_object_mut() {
+        for (name, value) in stored {
+            fields.entry(name).or_insert(value);
+        }
+    }
+    Ok(config)
 }
 
 /// Wakes waiting claims on every server replica once the transaction commits.
