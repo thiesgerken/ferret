@@ -84,6 +84,7 @@ impl Query {
                 name: worker.name,
                 plugins: worker.plugins,
                 last_seen_at: worker.last_seen_at,
+                online: worker.online,
             })
             .collect())
     }
@@ -1298,6 +1299,9 @@ struct Worker {
     plugins: Vec<String>,
     /// When the worker last asked for a run.
     last_seen_at: DateTime<Utc>,
+    /// Asked for a run in the last two minutes, or is running one. A worker that asks again is
+    /// online again. A restarted worker registers anew and leaves its old row offline.
+    online: bool,
 }
 
 #[derive(GraphQLObject)]

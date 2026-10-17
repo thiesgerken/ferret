@@ -1,5 +1,7 @@
 mod common;
 
+use std::time::Duration;
+
 use common::{TestServer, document, session_cookie, start_server};
 use ferret_api::internal::{PluginRegistration, WorkerRegistration};
 use reqwest::StatusCode;
@@ -237,4 +239,71 @@ async fn admins_see_workers_tei_health_and_the_backlog_per_source(pool: PgPool) 
         }])
     );
     assert_eq!(down["embeddingStatus"][0]["online"], false);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_worker_is_offline_once_it_stops_asking_unless_it_is_running_a_run(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let admin = server.sign_in().await;
+    let internal = server.internal();
+    let mut ids = Vec::new();
+    for name in ["idle", "gone", "busy", "ancient"] {
+        let registered = internal
+            .register(&WorkerRegistration {
+                name: name.to_owned(),
+                plugins: vec![PluginRegistration {
+                    name: "fake".to_owned(),
+                    config_schema: json!({"type": "object"}),
+                }],
+            })
+            .await
+            .unwrap();
+        ids.push(registered.worker_id);
+    }
+    let created = server
+        .graphql(
+            &admin,
+            "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
+            json!({"input": {"plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
+        )
+        .await;
+    assert_eq!(created["errors"], Value::Null, "{created}");
+    internal
+        .claim(ids[2], Duration::ZERO)
+        .await
+        .unwrap()
+        .expect("the new connection is due");
+    for (id, ago) in [
+        (ids[1], "10 minutes"),
+        (ids[2], "10 minutes"),
+        (ids[3], "2 days"),
+    ] {
+        sqlx::query("update workers set last_seen_at = now() - $2::interval where id = $1")
+            .bind(id)
+            .bind(ago)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    const WORKERS: &str = "{ workers { name online } }";
+
+    let before = graphql_ok(&server, &admin, WORKERS, json!({})).await;
+    assert!(
+        internal
+            .claim(ids[1], Duration::ZERO)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let back = graphql_ok(&server, &admin, WORKERS, json!({})).await;
+
+    assert_eq!(
+        before["workers"],
+        json!([
+            {"name": "idle", "online": true},
+            {"name": "busy", "online": true},
+            {"name": "gone", "online": false},
+        ])
+    );
+    assert_eq!(back["workers"][0], json!({"name": "gone", "online": true}));
 }
