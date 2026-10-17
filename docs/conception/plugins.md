@@ -66,9 +66,14 @@ are the files plugin's job ([Roadmap](#roadmap)).
   Deleted documents disappear with the sweep. Cursor = the newest `modified`.
 - Renaming a tag, correspondent or document type doesn't change a document's `modified`, so its
   documents keep the old name until they change otherwise.
-- Requires Paperless-ngx 2.16 or later: requests pin API version 9, where `created` is a date.
+- Requires Paperless-ngx 3.0 or later: requests pin API version 10, the newest 3.3 accepts
+  (checked against v3.3.2's source). In 3.x, versions of a document stay out of the list, its
+  `content` is the latest version's, and a new version bumps its `modified`.
 - Auth: a Paperless API token (write-only config field, `Authorization: Token …`). Objects the
   token's user can't see are left out of `meta` with a line in the run log.
+- The URL must reach Paperless directly, e.g. the in-cluster service
+  (`http://paperless.apps-paperless.svc:8000`). A public hostname behind a login proxy answers
+  with a redirect (302), which fails the run with that hint instead of being followed.
 
 ### carapace
 

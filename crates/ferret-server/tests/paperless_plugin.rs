@@ -47,6 +47,13 @@ async fn documents(
     if !authorized(&headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    // Like Paperless-ngx 3.3, which serves versions 9 and 10 only.
+    if headers
+        .get("accept")
+        .is_none_or(|accept| accept != "application/json; version=10")
+    {
+        return StatusCode::NOT_ACCEPTABLE.into_response();
+    }
     let documents = fake.documents.lock().unwrap().clone();
     if query.get("fields").map(String::as_str) == Some("id,modified") {
         return page(
@@ -219,4 +226,57 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
         .await
         .unwrap();
     assert_eq!(state, json!({"modified": "2025-04-01T08:00:00Z"}));
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_login_proxy_in_front_of_paperless_fails_the_run_with_a_hint(pool: PgPool) {
+    let app = Router::new().fallback(|| async {
+        (
+            StatusCode::FOUND,
+            [("location", "https://auth.example.test/login")],
+        )
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let server = start_server(pool).await;
+    let worker = Worker {
+        internal: server.internal(),
+        public_url: server.public_url(),
+        name: "test-worker".to_owned(),
+        options: PluginOptions::default(),
+    };
+    let worker_id = worker.register().await;
+    let cookie = server.sign_in().await;
+    server
+        .graphql(
+            &cookie,
+            "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
+            json!({"input": {
+                "plugin": "paperless",
+                "source": "paperless",
+                "config": json!({"url": proxy, "token": TOKEN}).to_string(),
+                "schedule": "0 * * * *",
+            }}),
+        )
+        .await;
+
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let runs = server
+        .graphql(
+            &cookie,
+            "{ connections { runs { status error } } }",
+            json!({}),
+        )
+        .await;
+    let run = &runs["data"]["connections"][0]["runs"][0];
+    assert_eq!(run["status"], "FAILED");
+    assert!(
+        run["error"]
+            .as_str()
+            .unwrap()
+            .contains("reaches Paperless directly"),
+        "{run}"
+    );
 }

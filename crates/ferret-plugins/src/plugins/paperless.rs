@@ -13,9 +13,9 @@ use super::{Log, Outcome, PluginError, Run};
 
 pub const NAME: &str = "paperless";
 
-/// Version 9 is the first where `created` is a date (Paperless-ngx 2.16). Pinned, so a newer
-/// Paperless keeps answering in the shape this plugin parses.
-const ACCEPT: &str = "application/json; version=9";
+/// Pinned, so a newer Paperless keeps answering in the shape this plugin parses. Version 10 came
+/// with Paperless-ngx 3.0 and is the newest that 3.3 accepts (it also takes 9).
+const ACCEPT: &str = "application/json; version=10";
 const LIST_PAGE_SIZE: usize = 1000;
 /// Documents carry their whole OCR text, so they come in smaller pages.
 const DOCUMENT_PAGE_SIZE: usize = 100;
@@ -24,12 +24,14 @@ const DOCUMENT_FIELDS: &str =
 /// `seen` takes the ids in batches, so a large archive doesn't make one huge request.
 const SEEN_BATCH: usize = 1000;
 
-/// Indexes the documents of a Paperless-ngx instance (2.16 or later).
+/// Indexes the documents of a Paperless-ngx instance (3.0 or later).
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Paperless")]
 pub struct PaperlessConfig {
-    /// The instance's address, e.g. `https://paperless.example.com`.
+    /// The instance's address as the worker reaches it, e.g.
+    /// `http://paperless.apps-paperless.svc:8000`. Not an address behind a login proxy: the API
+    /// token only works on requests that reach Paperless directly.
     url: String,
     /// An API token of the Paperless user whose documents to index (Paperless: My Profile → API
     /// Auth Token).
@@ -225,6 +227,9 @@ impl Paperless {
             http: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
                 .read_timeout(Duration::from_secs(120))
+                // Paperless's API doesn't redirect. A redirect comes from something in front of
+                // it, typically a login proxy, whose page would only fail to parse.
+                .redirect(reqwest::redirect::Policy::none())
                 .build()?,
             base_url: config.url.trim_end_matches('/').to_owned(),
             token: config.token.clone(),
@@ -244,6 +249,14 @@ impl Paperless {
                 .send()
                 .await?;
             let status = response.status();
+            if status.is_redirection() {
+                return Err(format!(
+                    "{} redirected {path} ({status}), probably to a login: use an address that \
+                     reaches Paperless directly",
+                    self.base_url
+                )
+                .into());
+            }
             if !status.is_success() {
                 // Only the status: the body of whatever answered could be anything, and the run
                 // log is shown to the user.
