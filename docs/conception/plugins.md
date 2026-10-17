@@ -39,8 +39,10 @@ are the files plugin's job ([Roadmap](#roadmap)).
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
 
 - One document per file, `external_id = {path}`, `title` from the first `# ` heading of a
-  Markdown file (deeper ones don't count), else the file name, `authors` from the last commit
-  touching the file, `created_at` from the first.
+  Markdown file (deeper ones don't count), else its name in words (`tavascan_review.md` becomes
+  "Tavascan Review": no extension, `_` and `-` as spaces, lowercase words capitalized). Other files
+  keep their name (`main.rs`). `authors` from the last commit touching the file, `created_at` from
+  the first.
 - Only regular files: symlinks and submodules are skipped (a symlink could point at the worker's
   own files), so are files above 1 MiB and files that aren't UTF-8 text. Each skip is a line in
   the run log.
@@ -54,7 +56,7 @@ are the files plugin's job ([Roadmap](#roadmap)).
   `git diff --name-status --no-renames <cursor> HEAD`, `PUT` changed files, `DELETE` removed ones
   (and files that can't be indexed any more), renames are both. The state stores the cursor
   (`HEAD` of the last successful run) and the indexing settings (remote, branch, globs,
-  `url_template`).
+  `url_template`, the title rule).
 - Full sync instead when the cursor is no longer in the branch's history (force push) or the
   indexing settings changed, since files the diff doesn't mention may now be in or out.
 - With `{commit}` in `url_template`, an unchanged file keeps the URL of the commit it was last
@@ -121,7 +123,8 @@ change its rendering freely.
 | `carapace/sessions` | one per session | `{session_id}` | abstract, outcomes, open loops, on my mind |
 | `carapace/facts` | one per fact | `{session_id}/{hash of subject and statement}` | the fact, plus subject and category |
 | `carapace/digests` | one per week and month | `{level}:{period_key}` | summary, highlights, open loops |
-| `carapace/files` | the repo's other Markdown files (skills, workspace notes, research) | `{path}` | as in the git plugin |
+| `carapace/skills` | one per Markdown file under `skills/` | `{path}` | as in the git plugin, titled by the front matter's `name` |
+| `carapace/files` | the repo's other Markdown files (workspace notes, research) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
   `session_id`. Session `meta`: `week_key`, `month_key`,
@@ -136,7 +139,7 @@ change its rendering freely.
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
 - Incremental like the git plugin. The state stores the indexed commit and the indexing settings
-  (`carapace_url` and the rule for files). A run diffs against that commit and puts the changed
+  (`carapace_url`, the rule for files and skills, the title rule). A run diffs against that commit and puts the changed
   files' documents. A changed session file can lose facts, so the plugin also reads every changed or
   deleted file's version at the cursor (`git show <cursor>:<path>`) and deletes whatever that
   version held but the new one doesn't. This assumes a document comes from one path only: a session
