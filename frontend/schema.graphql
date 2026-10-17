@@ -28,11 +28,6 @@ enum DocumentOrder {
   SOURCE
 }
 
-enum OriginKind {
-  CONNECTION
-  API_KEY
-}
-
 enum RunStatus {
   RUNNING
   SUCCEEDED
@@ -46,6 +41,11 @@ enum TimeRange {
   WEEK
   MONTH
   YEAR
+}
+
+enum WriterKind {
+  CONNECTION
+  API_KEY
 }
 
 input ConnectionUpdate {
@@ -297,12 +297,14 @@ type Hit {
   createdAt: DateTime!
   modifiedAt: DateTime!
   """
+    The connection or API key that put the document, null for one from before writers were
+    recorded.
+  """
+  writer: Writer
+  """
     The best BM25 score among the document's chunks in the keyword half's candidates, null
     when none of them is.
-    The connection or API key the document comes from. Null when no key is known (documents
-    from before keys were recorded).
   """
-  origin: Origin
   keywordScore: Float
   """
     The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
@@ -386,20 +388,10 @@ type Mutation {
   "Renames one of the signed-in user's keys or changes its icon."
   updateApiKey(id: ID!, name: String!, icon: String!): ApiKey!
   """
-    Revokes one of the signed-in user's keys and returns its id. It stays the origin of the
+    Revokes one of the signed-in user's keys and returns its id. It stays the writer of the
     documents it put.
   """
   revokeApiKey(id: ID!): ID!
-}
-
-"Where documents come from."
-type Origin {
-  kind: OriginKind!
-  "The connection's or API key's id."
-  id: ID!
-  name: String!
-  "A lucide icon name."
-  icon: String!
 }
 
 type PluginRun {
@@ -520,10 +512,12 @@ type SourceCount {
   value: String!
   count: Int!
   """
-    The connection whose root covers the source, else the API key that put its most recently
-    modified document. Null when no key is known (documents from before keys were recorded).
+    Who put its documents, for grouping: the connection covering it, else the one connection
+    below it or the API key of its most recently modified document that has one. Null when no
+    writer is known (documents from before writers were recorded) or there's more than one kind
+    (a root over a connection's documents and a key's).
   """
-  origin: Origin
+  writer: Writer
 }
 
 type TextPart {
@@ -570,4 +564,14 @@ type Worker {
     online again. A restarted worker registers anew and leaves its old row offline.
   """
   online: Boolean!
+}
+
+"A connection or an API key: what puts documents into sources."
+type Writer {
+  kind: WriterKind!
+  "The connection's or API key's id."
+  id: ID!
+  name: String!
+  "A lucide icon name."
+  icon: String!
 }

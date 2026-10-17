@@ -7,9 +7,9 @@ use ferret_api::internal::{PluginRegistration, WorkerRegistration};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
-/// A connection named "Notes" on `notes` and the API of its live run, which writes like its
+/// A connection named "Notes" on `source` and the API of its live run, which writes like its
 /// plugin would.
-async fn notes_connection(server: &TestServer) -> ferret_api::Client {
+async fn notes_connection(server: &TestServer, source: &str) -> ferret_api::Client {
     let internal = server.internal();
     let worker = internal
         .register(&WorkerRegistration {
@@ -27,7 +27,7 @@ async fn notes_connection(server: &TestServer) -> ferret_api::Client {
         .graphql(
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
-            json!({"input": {"name": "Notes", "icon": "notebook", "plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
+            json!({"input": {"name": "Notes", "icon": "notebook", "plugin": "fake", "source": source, "config": "{}", "schedule": "0 * * * *"}}),
         )
         .await;
     assert_eq!(created["errors"], Value::Null, "{created}");
@@ -41,16 +41,16 @@ async fn notes_connection(server: &TestServer) -> ferret_api::Client {
 
 const SEARCH: &str = "query ($q: String!) {
     search(input: {q: $q}) {
-        hits { externalId origin { kind name icon } }
-        facets { sources { value origin { kind name icon } } }
+        hits { externalId writer { kind name icon } }
+        facets { sources { value writer { kind name icon } } }
     }
-    explore(input: {}) { facets { sources { value origin { kind name } } } }
+    explore(input: {}) { facets { sources { value writer { kind name } } } }
 }";
 
 #[sqlx::test(migrations = false)]
 async fn hits_and_source_facets_come_with_their_connection_or_api_key(pool: PgPool) {
     let server = start_server(pool).await;
-    let run = notes_connection(&server).await;
+    let run = notes_connection(&server, "notes").await;
     run.put_document(&document("notes", "note", "An invoice in my notes."))
         .await
         .unwrap();
@@ -67,42 +67,42 @@ async fn hits_and_source_facets_come_with_their_connection_or_api_key(pool: PgPo
     assert_eq!(body["errors"], Value::Null, "{body}");
     let connection = json!({"kind": "CONNECTION", "name": "Notes", "icon": "notebook"});
     let key = json!({"kind": "API_KEY", "name": "test key", "icon": "key-round"});
-    let origins: Vec<(String, Value)> = body["data"]["search"]["hits"]
+    let writers: Vec<(String, Value)> = body["data"]["search"]["hits"]
         .as_array()
         .unwrap()
         .iter()
         .map(|hit| {
             (
                 hit["externalId"].as_str().unwrap().to_owned(),
-                hit["origin"].clone(),
+                hit["writer"].clone(),
             )
         })
         .collect();
     assert!(
-        origins.contains(&("note".to_owned(), connection.clone())),
-        "{origins:?}"
+        writers.contains(&("note".to_owned(), connection.clone())),
+        "{writers:?}"
     );
     assert!(
-        origins.contains(&("scan".to_owned(), key.clone())),
-        "{origins:?}"
+        writers.contains(&("scan".to_owned(), key.clone())),
+        "{writers:?}"
     );
     let sources = &body["data"]["search"]["facets"]["sources"];
     assert!(
         sources
             .as_array()
             .unwrap()
-            .contains(&json!({"value": "notes", "origin": connection})),
+            .contains(&json!({"value": "notes", "writer": connection})),
         "{sources}"
     );
     let explored = &body["data"]["explore"]["facets"]["sources"];
     assert!(
         explored.as_array().unwrap().contains(
-            &json!({"value": "inbox", "origin": {"kind": "API_KEY", "name": "test key"}})
+            &json!({"value": "inbox", "writer": {"kind": "API_KEY", "name": "test key"}})
         ),
         "{explored}"
     );
 
-    // A revoked key stops working but stays the origin of what it put.
+    // A revoked key stops working but stays the writer of what it put.
     let keys = server
         .graphql(&cookie, "{ apiKeys { id } }", json!({}))
         .await;
@@ -125,7 +125,7 @@ async fn hits_and_source_facets_come_with_their_connection_or_api_key(pool: PgPo
         .is_err()
     );
     let body = server.graphql(&cookie, SEARCH, json!({"q": "inbox"})).await;
-    assert_eq!(body["data"]["search"]["hits"][0]["origin"], key, "{body}");
+    assert_eq!(body["data"]["search"]["hits"][0]["writer"], key, "{body}");
     let keys = server
         .graphql(&cookie, "{ apiKeys { id } }", json!({}))
         .await;
@@ -139,7 +139,7 @@ async fn hits_and_source_facets_come_with_their_connection_or_api_key(pool: PgPo
 #[sqlx::test(migrations = false)]
 async fn connections_and_keys_take_a_name_and_an_icon(pool: PgPool) {
     let server = start_server(pool).await;
-    notes_connection(&server).await;
+    notes_connection(&server, "notes").await;
     let cookie = server.sign_in().await;
     let connections = server
         .graphql(&cookie, "{ connections { id name icon } }", json!({}))
@@ -200,5 +200,41 @@ async fn connections_and_keys_take_a_name_and_an_icon(pool: PgPool) {
     assert_eq!(
         rejected["errors"][0]["message"],
         "\"\" is not an icon name like `key-round`"
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_root_over_a_connections_and_a_keys_documents_has_no_single_writer(pool: PgPool) {
+    let server = start_server(pool).await;
+    let run = notes_connection(&server, "mail/zoho").await;
+    run.put_document(&document("mail/zoho", "a", "An invoice by mail."))
+        .await
+        .unwrap();
+    server
+        .admin_api()
+        .await
+        .put_document(&document("mail/notes", "b", "An invoice noted down."))
+        .await
+        .unwrap();
+    let cookie = server.sign_in().await;
+
+    let body = server
+        .graphql(
+            &cookie,
+            "{ search(input: {q: \"invoice\", sources: [\"mail\"]}) {
+                 facets { sources { value writer { kind } } }
+             } }",
+            json!({}),
+        )
+        .await;
+
+    assert_eq!(
+        body["data"]["search"]["facets"]["sources"],
+        json!([
+            {"value": "mail", "writer": null},
+            {"value": "mail/notes", "writer": {"kind": "API_KEY"}},
+            {"value": "mail/zoho", "writer": {"kind": "CONNECTION"}},
+        ]),
+        "{body}"
     );
 }

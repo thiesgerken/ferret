@@ -7,7 +7,7 @@ use ferret_api::{ContentType, SourceCount};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use crate::{content_type, origins::Origins, sources};
+use crate::{content_type, sources, writers::Writers};
 
 pub const MAX_LIMIT: i64 = 100;
 /// Authors are the one facet that grows with the data, so only the most frequent ones count,
@@ -155,10 +155,11 @@ pub async fn explore(
         .push(" limit ")
         .push_bind(page.limit);
 
-    // The most recently modified document's key is the origin of a source no connection covers.
+    // The key of the most recently modified document that has one, see `Writers::of_source`.
     let mut by_source = QueryBuilder::new(
         "select d.source as value, count(*),
-                (array_agg(d.api_key_id order by d.modified_at desc))[1] as api_key_id
+                (array_agg(d.api_key_id order by d.modified_at desc)
+                     filter (where d.api_key_id is not null))[1] as api_key_id
          from documents d",
     );
     push_filters(&mut by_source, user_id, filter, Some(Facet::Source));
@@ -170,7 +171,8 @@ pub async fn explore(
     by_selected_source.push_bind(filter.sources.clone()).push(
         "::text[]) root cross join lateral (
                  select count(*),
-                        (array_agg(d.api_key_id order by d.modified_at desc))[1] as api_key_id
+                        (array_agg(d.api_key_id order by d.modified_at desc)
+                             filter (where d.api_key_id is not null))[1] as api_key_id
                  from documents d",
     );
     push_filters(
@@ -242,14 +244,14 @@ pub async fn explore(
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
-    let origins = Origins::load(&mut connection, user_id).await?;
+    let writers = Writers::load(&mut connection, user_id).await?;
     sources.retain(|source| !filter.sources.contains(&source.value));
     sources.extend(selected_sources);
     sources.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
     let sources = sources
         .into_iter()
         .map(|source| SourceCount {
-            origin: origins.of(&source.value, source.api_key_id),
+            writer: writers.of_source(&source.value, source.api_key_id),
             count: u32::try_from(source.count).expect("a count is never negative"),
             value: source.value,
         })

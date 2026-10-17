@@ -143,7 +143,7 @@ Same format and storage as carapace's `ck_` keys:
 - Shown once at creation. `last_used_at` is updated at most once a minute per key.
 - Sent as `Authorization: Bearer fk_...`. A missing, unknown, revoked or expired key, or one whose
   owner is disabled, gets `401`. A valid key without the needed scope gets `403`.
-- Revoking sets `revoked_at`: the key stops working and leaves Settings, but stays the origin of
+- Revoking sets `revoked_at`: the key stops working and leaves Settings, but stays the writer of
   the documents it put (see [Sources](README.md#sources)). An expired key stays listed until its
   owner revokes it.
 - Each key has a name and an icon (a lucide name like `key-round`), both editable.

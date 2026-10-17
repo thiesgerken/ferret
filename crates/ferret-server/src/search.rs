@@ -23,9 +23,9 @@ use crate::{
     embeddings::{EmbedError, Embedding, Model},
     error::ApiError,
     highlight::highlight,
-    origins::Origins,
     search_query::{self, ParsedQuery},
     sources,
+    writers::Writers,
 };
 
 const DEFAULT_K: u32 = 10;
@@ -249,12 +249,12 @@ pub async fn find(
     } else {
         Some(hybrid.matches(&mut tx, &without_authors, 0..0).await?)
     };
-    let origins = Origins::load(&mut tx, user_id).await?;
+    let writers = Writers::load(&mut tx, user_id).await?;
     tx.commit().await?;
     let by_source = by_source.as_deref().unwrap_or(&matches);
     let by_author = by_author.as_deref().unwrap_or(&matches);
     let facets = SearchFacets {
-        sources: source_counts(by_source, &request.sources, &origins),
+        sources: source_counts(by_source, &request.sources, &writers),
         authors: author_counts(by_author, collapse, &request.authors),
         are_lower_bounds: is_lower_bound(by_source) || is_lower_bound(by_author),
     };
@@ -270,7 +270,7 @@ pub async fn find(
     let hits = page_rows
         .into_iter()
         .map(|row| Hit {
-            origin: origins.of(&row.source, row.api_key_id),
+            writer: writers.of(&row.source, row.api_key_id),
             document_id: row.id,
             source: row.source,
             external_id: row.external_id,
@@ -502,8 +502,8 @@ fn is_lower_bound(rows: &[MatchRow]) -> bool {
 }
 
 /// Matches per source, and per selected root, which may be a parent of the stored sources. Each
-/// with its origin: for API sources the key of the most recently modified match.
-fn source_counts(rows: &[MatchRow], selected: &[String], origins: &Origins) -> Vec<SourceCount> {
+/// with its writer, see `Writers::of_source`.
+fn source_counts(rows: &[MatchRow], selected: &[String], writers: &Writers) -> Vec<SourceCount> {
     let tops: Vec<&MatchRow> = rows.iter().filter(|row| row.is_top()).collect();
     let mut by_source: BTreeMap<&str, Vec<&MatchRow>> = BTreeMap::new();
     for row in &tops {
@@ -524,9 +524,13 @@ fn source_counts(rows: &[MatchRow], selected: &[String], origins: &Origins) -> V
     let mut counts: Vec<SourceCount> = stored
         .chain(selected)
         .map(|(value, rows): (String, Vec<&MatchRow>)| {
-            let latest = rows.iter().max_by_key(|row| row.modified_at);
+            let newest_key = rows
+                .iter()
+                .filter(|row| row.api_key_id.is_some())
+                .max_by_key(|row| row.modified_at)
+                .and_then(|row| row.api_key_id);
             SourceCount {
-                origin: origins.of(&value, latest.and_then(|row| row.api_key_id)),
+                writer: writers.of_source(&value, newest_key),
                 count: u32::try_from(rows.len()).expect("at most the candidates match"),
                 value,
             }
