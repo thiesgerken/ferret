@@ -1,4 +1,5 @@
-//! git: one document per file of a repository, a full sync on every run.
+//! git: one document per file of a repository. The first run is a full sync, later runs index
+//! the diff since the last run's commit.
 
 use std::{collections::HashMap, path::Path, time::Duration};
 
@@ -8,7 +9,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::process::Command;
 
 use super::{Outcome, PluginError, Run};
@@ -62,6 +63,22 @@ pub struct GitConfig {
     url_template: Option<String>,
 }
 
+impl GitConfig {
+    /// The settings that decide which files become which documents. When they change between
+    /// runs, the next run is a full sync, since files the diff doesn't mention may now be in or
+    /// out. Holds no secrets: it is stored in the connection's state.
+    fn indexing(&self) -> Value {
+        json!({
+            "remote": self.remote,
+            "branch": self.branch,
+            "include": self.include,
+            "exclude": self.exclude,
+            "markdown": self.markdown,
+            "url_template": self.url_template,
+        })
+    }
+}
+
 fn markdown_by_default() -> Vec<String> {
     vec!["**/*.md".to_owned()]
 }
@@ -76,9 +93,6 @@ struct FileHistory {
 
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: GitConfig = serde_json::from_value(run.config.clone())?;
-    let include = glob_set(&config.include)?;
-    let exclude = glob_set(&config.exclude)?;
-    let markdown = glob_set(&config.markdown)?;
     let git = Git {
         protocols: &run.options.git_protocols,
     };
@@ -101,7 +115,6 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         .line(format!("cloned {} at {commit}", config.remote));
 
     let listing = git.run(dir, &["ls-files", "--stage", "-z"]).await?;
-    let files = tracked_files(&listing)?;
     let history = parse_history(
         &git.run(
             dir,
@@ -109,22 +122,162 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         )
         .await?,
     )?;
+    let indexer = Indexer {
+        run,
+        config: &config,
+        include: glob_set(&config.include)?,
+        exclude: glob_set(&config.exclude)?,
+        markdown: glob_set(&config.markdown)?,
+        dir,
+        commit: &commit,
+        modes: tracked_files(&listing)?
+            .into_iter()
+            .map(|(mode, path)| (path, mode))
+            .collect(),
+        history,
+    };
 
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
-    let mut stats = RunStats::default();
-    let mut indexed = 0;
-    for (mode, path) in files {
-        if (!config.include.is_empty() && !include.is_match(path)) || exclude.is_match(path) {
-            continue;
+    let indexing = config.indexing();
+    let stats = match incremental_base(&git, dir, &run.state, &indexing).await? {
+        Ok(base) => indexer.changes_since(&git, &base).await?,
+        Err(reason) => {
+            run.log.line(format!("full sync: {reason}"));
+            indexer.full_sync().await?
         }
+    };
+    run.log.line(format!(
+        "{} put, {} unchanged, {} deleted",
+        stats.put, stats.unchanged, stats.deleted
+    ));
+    Ok(Outcome {
+        state: json!({ "commit": commit, "indexing": indexing }),
+        stats,
+    })
+}
+
+/// The commit the last run indexed, if this run can index just the changes since it, or why
+/// it can't.
+async fn incremental_base(
+    git: &Git<'_>,
+    dir: &Path,
+    state: &Value,
+    indexing: &Value,
+) -> Result<Result<String, String>, PluginError> {
+    let Some(base) = state.get("commit").and_then(Value::as_str) else {
+        return Ok(Err("no earlier run".to_owned()));
+    };
+    if state.get("indexing") != Some(indexing) {
+        return Ok(Err("which files to index or how changed".to_owned()));
+    }
+    // From the connection's own state, but it ends up in a git command line.
+    if base.is_empty() || !base.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("the stored commit {base:?} isn't a commit hash").into());
+    }
+    // A force push leaves the old commit outside the branch's history.
+    if !git
+        .succeeds(dir, &["merge-base", "--is-ancestor", base, "HEAD"])
+        .await?
+    {
+        return Ok(Err(format!("{base} is no longer in the branch's history")));
+    }
+    Ok(Ok(base.to_owned()))
+}
+
+/// What a run needs to turn files of the checkout into documents.
+struct Indexer<'a> {
+    run: &'a Run,
+    config: &'a GitConfig,
+    include: GlobSet,
+    exclude: GlobSet,
+    markdown: GlobSet,
+    dir: &'a Path,
+    commit: &'a str,
+    /// Every tracked file's mode, by path.
+    modes: HashMap<&'a str, &'a str>,
+    history: HashMap<String, FileHistory>,
+}
+
+impl Indexer<'_> {
+    /// Puts every file inside a sync, whose commit deletes the documents of files that are gone.
+    async fn full_sync(&self) -> Result<RunStats, PluginError> {
+        let run = self.run;
+        let sync = run.api.start_sync(&run.source).await?.sync_id;
+        let mut stats = RunStats::default();
+        let mut paths: Vec<_> = self.modes.keys().copied().collect();
+        paths.sort_unstable();
+        for path in paths {
+            if self.selected(path) {
+                self.put(path, &mut stats).await?;
+            }
+        }
+        stats.deleted = run.api.commit_sync(sync).await?.deleted;
+        Ok(stats)
+    }
+
+    /// Puts the files that changed since `base` and deletes the ones that are gone. Renames
+    /// count as both, `--no-renames` reports them that way.
+    async fn changes_since(&self, git: &Git<'_>, base: &str) -> Result<RunStats, PluginError> {
+        let diff = git
+            .run(
+                self.dir,
+                &["diff", "--name-status", "--no-renames", "-z", base, "HEAD"],
+            )
+            .await?;
+        let mut stats = RunStats::default();
+        for (status, path) in name_status(&diff)? {
+            if !self.selected(path) {
+                continue;
+            }
+            if status == "D" {
+                self.delete(path, &mut stats).await?;
+            } else {
+                self.put(path, &mut stats).await?;
+            }
+        }
+        Ok(stats)
+    }
+
+    /// Whether the config's globs select `path`.
+    fn selected(&self, path: &str) -> bool {
+        (self.config.include.is_empty() || self.include.is_match(path))
+            && !self.exclude.is_match(path)
+    }
+
+    /// Puts the file at `path`, or deletes its document if the file can't be indexed (any more):
+    /// a symlink, too big, not text.
+    async fn put(&self, path: &str, stats: &mut RunStats) -> Result<(), PluginError> {
+        match self.document(path).await? {
+            Some(document) => match self.run.api.put_document(&document).await?.outcome {
+                PutOutcome::Unchanged => stats.unchanged += 1,
+                PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+            },
+            None => self.delete(path, stats).await?,
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, path: &str, stats: &mut RunStats) -> Result<(), PluginError> {
+        match self.run.api.delete_document(&self.run.source, path).await {
+            Ok(()) => stats.deleted += 1,
+            // Never indexed, e.g. a file that was always too big.
+            Err(error) if error.status() == Some(reqwest::StatusCode::NOT_FOUND) => {}
+            Err(error) => return Err(error.into()),
+        }
+        Ok(())
+    }
+
+    /// The document for the file at `path`, `None` (and a log line) if it can't be indexed.
+    async fn document(&self, path: &str) -> Result<Option<DocumentPut>, PluginError> {
+        let run = self.run;
         // Symlinks (120000) would let a repository read the worker's own files, submodules
         // (160000) have no content here. git never checks a regular file out below a symlink,
         // so a regular file's path stays inside the checkout.
+        let mode = self.modes.get(path).copied().unwrap_or_default();
         if mode != "100644" && mode != "100755" {
             run.log.line(format!("skipped {path}: not a regular file"));
-            continue;
+            return Ok(None);
         }
-        let metadata = tokio::fs::symlink_metadata(dir.join(path)).await?;
+        let metadata = tokio::fs::symlink_metadata(self.dir.join(path)).await?;
         if !metadata.is_file() {
             return Err(format!("{path} is a regular file in git but not in the checkout").into());
         }
@@ -132,55 +285,54 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             run.log.line(format!(
                 "skipped {path}: larger than {MAX_FILE_BYTES} bytes"
             ));
-            continue;
+            return Ok(None);
         }
-        let file_history = history
+        let file_history = self
+            .history
             .get(path)
             .ok_or_else(|| format!("{path} is tracked but no commit in the log touched it"))?;
-        let bytes = tokio::fs::read(dir.join(path)).await?;
+        let bytes = tokio::fs::read(self.dir.join(path)).await?;
         let Some(text) = String::from_utf8(bytes)
             .ok()
             .filter(|text| !text.contains('\0'))
         else {
             run.log.line(format!("skipped {path}: not text"));
-            continue;
+            return Ok(None);
         };
-        let content_type = if markdown.is_match(path) {
+        let content_type = if self.markdown.is_match(path) {
             ContentType::Markdown
         } else {
             ContentType::Plain
         };
-        let document = DocumentPut {
+        Ok(Some(DocumentPut {
             source: run.source.clone(),
             external_id: path.to_owned(),
             content_type,
             title: Some(title(path, &text, content_type)),
-            url: config
+            url: self
+                .config
                 .url_template
                 .as_ref()
-                .map(|template| file_url(template, path, &commit)),
+                .map(|template| file_url(template, path, self.commit)),
             text,
             thread: None,
             authors: vec![file_history.author.clone()],
             created_at: file_history.created_at,
             modified_at: file_history.modified_at,
             meta: Default::default(),
-        };
-        match run.api.put_document(&document).await?.outcome {
-            PutOutcome::Unchanged => stats.unchanged += 1,
-            PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
-        }
-        indexed += 1;
+        }))
     }
-    stats.deleted = run.api.commit_sync(sync).await?.deleted;
-    run.log.line(format!(
-        "{indexed} files: {} put, {} unchanged, {} deleted",
-        stats.put, stats.unchanged, stats.deleted
-    ));
-    Ok(Outcome {
-        state: json!({ "commit": commit }),
-        stats,
-    })
+}
+
+/// Status and path of every entry in `git diff --name-status --no-renames -z`.
+fn name_status(diff: &str) -> Result<Vec<(&str, &str)>, PluginError> {
+    let mut fields = diff.split('\0').filter(|field| !field.is_empty());
+    let mut entries = Vec::new();
+    while let Some(status) = fields.next() {
+        let path = fields.next().ok_or("unexpected git diff output")?;
+        entries.push((status, path));
+    }
+    Ok(entries)
 }
 
 /// Mode and path of every file in `git ls-files --stage -z`.
@@ -281,6 +433,14 @@ impl Git<'_> {
             // Ends git when the run is dropped, e.g. because the server ended it.
             .kill_on_drop(true);
         command
+    }
+
+    /// Whether git in `dir` exits successfully, for commands that answer with their status.
+    async fn succeeds(&self, dir: &Path, args: &[&str]) -> Result<bool, PluginError> {
+        let status = tokio::time::timeout(GIT_TIMEOUT, self.command(dir).args(args).status())
+            .await
+            .map_err(|_| format!("git {} took too long", args.join(" ")))??;
+        Ok(status.success())
     }
 
     /// Runs git in `dir` and returns its stdout.
