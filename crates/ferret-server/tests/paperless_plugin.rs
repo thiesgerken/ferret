@@ -22,11 +22,14 @@ use sqlx::PgPool;
 const TOKEN: &str = "paperless-api-token";
 
 /// A Paperless that serves the recorded fixtures, with documents the test can change between
-/// runs. It records which documents were fetched in full.
-#[derive(Clone)]
+/// runs. It records which documents were fetched in full. The id listing comes one document per
+/// page, so paging is exercised.
+#[derive(Clone, Default)]
 struct FakePaperless {
     documents: Arc<Mutex<Vec<Value>>>,
     fetched: Arc<Mutex<Vec<String>>>,
+    /// Deleted while the second page of the listing is served.
+    deleted_during_listing: Arc<Mutex<Option<u64>>>,
 }
 
 fn page(results: Vec<Value>) -> Json<Value> {
@@ -54,14 +57,33 @@ async fn documents(
     {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     }
-    let documents = fake.documents.lock().unwrap().clone();
+    // Without an order, Paperless pages over `-created`, which has ties.
+    if query.get("ordering").map(String::as_str) != Some("id") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let number: usize = query["page"].parse().unwrap();
+    if number == 2
+        && let Some(id) = fake.deleted_during_listing.lock().unwrap().take()
+    {
+        fake.documents
+            .lock()
+            .unwrap()
+            .retain(|document| document["id"] != id);
+    }
+    let mut documents = fake.documents.lock().unwrap().clone();
+    documents.sort_by_key(|document| document["id"].as_u64());
     if query.get("fields").map(String::as_str) == Some("id,modified") {
-        return page(
-            documents
-                .iter()
+        let next = (number < documents.len()).then(|| format!("?page={}", number + 1));
+        return Json(json!({
+            "count": documents.len(),
+            "next": next,
+            "previous": null,
+            "results": documents
+                .get(number - 1)
                 .map(|document| json!({"id": document["id"], "modified": document["modified"]}))
-                .collect(),
-        )
+                .into_iter()
+                .collect::<Vec<_>>(),
+        }))
         .into_response();
     }
     let ids = query["id__in"].clone();
@@ -134,7 +156,7 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
         documents: Arc::new(Mutex::new(fixture_results(include_str!(
             "../../ferret-plugins/fixtures/paperless/documents.json"
         )))),
-        fetched: Arc::default(),
+        ..Default::default()
     };
     let paperless = serve(fake.clone()).await;
     let server = start_server(pool.clone()).await;
@@ -153,7 +175,11 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
             json!({"input": {
                 "plugin": "paperless",
                 "source": "paperless",
-                "config": json!({"url": format!("{paperless}/"), "token": TOKEN}).to_string(),
+                "config": json!({
+                    "url": format!("{paperless}/"),
+                    "public_url": "https://paperless.example.test",
+                    "token": TOKEN,
+                }).to_string(),
                 "schedule": "0 * * * *",
             }}),
         )
@@ -168,7 +194,7 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
         search(&server, "Versicherung").await,
         [(
             "412".to_owned(),
-            Some(format!("{paperless}/documents/412/details")),
+            Some("https://paperless.example.test/documents/412/details".to_owned()),
             vec!["Allianz".to_owned()],
         )]
     );
@@ -225,7 +251,84 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(state, json!({"modified": "2025-04-01T08:00:00Z"}));
+    assert_eq!(
+        state,
+        json!({
+            "modified": "2025-04-01T08:00:00Z",
+            "addresses": {"url": format!("{paperless}/"), "public_url": "https://paperless.example.test"},
+        })
+    );
+
+    // A state from other addresses fetches every document again, so their links follow.
+    sqlx::query(
+        "update connections set state = jsonb_set(state, '{addresses,public_url}', 'null')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    server
+        .graphql(
+            &cookie,
+            "mutation ($id: ID!) { runConnectionNow(id: $id) }",
+            json!({"id": id}),
+        )
+        .await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+    assert_eq!(fake.fetched.lock().unwrap().last().unwrap(), "412");
+    assert_eq!(fake.fetched.lock().unwrap().len(), 3);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_document_deleted_while_listing_fails_the_run_instead_of_sweeping_others(pool: PgPool) {
+    let fake = FakePaperless {
+        documents: Arc::new(Mutex::new(fixture_results(include_str!(
+            "../../ferret-plugins/fixtures/paperless/documents.json"
+        )))),
+        ..Default::default()
+    };
+    let paperless = serve(fake.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let worker = Worker {
+        internal: server.internal(),
+        public_url: server.public_url(),
+        name: "test-worker".to_owned(),
+        options: PluginOptions::default(),
+    };
+    let worker_id = worker.register().await;
+    let cookie = server.sign_in().await;
+    let created = server
+        .graphql(
+            &cookie,
+            "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
+            json!({"input": {
+                "plugin": "paperless",
+                "source": "paperless",
+                "config": json!({"url": paperless, "token": TOKEN}).to_string(),
+                "schedule": "0 * * * *",
+            }}),
+        )
+        .await;
+    assert_eq!(created["errors"], Value::Null, "{created}");
+    // 412 is on page 1. Deleting it shifts 977 from page 2 to page 1, out of the listing's reach.
+    *fake.deleted_during_listing.lock().unwrap() = Some(412);
+
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let runs = server
+        .graphql(
+            &cookie,
+            "{ connections { runs { status error } } }",
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        runs["data"]["connections"][0]["runs"][0],
+        json!({
+            "status": "FAILED",
+            "error": "Paperless changed while listing /api/documents/, the next run retries",
+        })
+    );
+    assert!(fake.fetched.lock().unwrap().is_empty());
 }
 
 #[sqlx::test(migrations = false)]

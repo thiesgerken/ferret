@@ -1,9 +1,12 @@
 //! Paperless-ngx: one document per Paperless document, with its OCR text and metadata. Every run
 //! lists all ids to sweep deleted documents, and fetches only those modified since the last run.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
 use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::DeserializeOwned};
@@ -23,6 +26,10 @@ const DOCUMENT_FIELDS: &str =
     "id,title,content,created,modified,correspondent,document_type,tags,archive_serial_number";
 /// `seen` takes the ids in batches, so a large archive doesn't make one huge request.
 const SEEN_BATCH: usize = 1000;
+/// Paperless sets `modified` inside the transaction that saves a document, so a save that commits
+/// after a listing can carry a `modified` older than the newest one listed. Fetching this window
+/// before the cursor again catches it. Unchanged documents only cost a no-op `PUT`.
+const CURSOR_OVERLAP: TimeDelta = TimeDelta::minutes(10);
 
 /// Indexes the documents of a Paperless-ngx instance (3.0 or later).
 #[derive(Deserialize, JsonSchema)]
@@ -33,6 +40,10 @@ pub struct PaperlessConfig {
     /// `http://paperless.apps-paperless.svc:8000`. Not an address behind a login proxy: the API
     /// token only works on requests that reach Paperless directly.
     url: String,
+    /// The address people open Paperless at, which hits link to, e.g.
+    /// `https://paperless.example.com`. `url` when left out.
+    #[serde(default)]
+    public_url: Option<String>,
     /// An API token of the Paperless user whose documents to index (Paperless: My Profile → API
     /// Auth Token).
     #[schemars(extend("writeOnly" = true))]
@@ -41,6 +52,7 @@ pub struct PaperlessConfig {
 
 #[derive(Deserialize)]
 struct Page<T> {
+    count: usize,
     next: Option<String>,
     results: Vec<T>,
 }
@@ -81,8 +93,22 @@ struct Names {
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: PaperlessConfig = serde_json::from_value(run.config.clone())?;
     let paperless = Paperless::new(&config)?;
+    let links = config
+        .public_url
+        .as_deref()
+        .unwrap_or(&config.url)
+        .trim_end_matches('/');
+    // Documents link to the instance, so they are all fetched again when its addresses change.
+    let addresses = json!({"url": config.url, "public_url": config.public_url});
     let cursor = match run.state.get("modified") {
-        Some(modified) => Some(serde_json::from_value::<DateTime<Utc>>(modified.clone())?),
+        Some(modified) if run.state.get("addresses") == Some(&addresses) => {
+            Some(serde_json::from_value::<DateTime<Utc>>(modified.clone())?)
+        }
+        Some(_) => {
+            run.log
+                .line("the addresses of Paperless changed: fetching every document");
+            None
+        }
         None => None,
     };
 
@@ -91,6 +117,12 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             "/api/documents/?fields=id,modified&page_size={LIST_PAGE_SIZE}"
         ))
         .await?;
+    // A document missing from the listing would be swept, and the cursor would never fetch it
+    // again.
+    let distinct: HashSet<u64> = listed.iter().map(|document| document.id).collect();
+    if distinct.len() != listed.len() {
+        return Err(changed_during_listing("/api/documents/"));
+    }
     let changed = changed_since(&listed, cursor);
     run.log.line(format!(
         "{} documents in Paperless, {} modified since the last run",
@@ -119,7 +151,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
                 ))
                 .await?;
             for document in documents {
-                let put = to_document(document, &names, &paperless.base_url, &run.source, &run.log);
+                let put = to_document(document, &names, links, &run.source, &run.log);
                 match run.api.put_document(&put).await?.outcome {
                     PutOutcome::Unchanged => stats.unchanged += 1,
                     PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
@@ -138,17 +170,18 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         .map(|document| document.modified)
         .max()
         .max(cursor);
-    Ok(Outcome {
-        state: newest.map_or_else(|| json!({}), |modified| json!({ "modified": modified })),
-        stats,
-    })
+    let mut state = json!({ "addresses": addresses });
+    if let Some(modified) = newest {
+        state["modified"] = json!(modified);
+    }
+    Ok(Outcome { state, stats })
 }
 
-/// The ids modified after `cursor`, all of them on the first run.
+/// The ids modified after `cursor` (less the overlap), all of them on the first run.
 fn changed_since(listed: &[Listed], cursor: Option<DateTime<Utc>>) -> Vec<u64> {
     listed
         .iter()
-        .filter(|document| cursor.is_none_or(|cursor| document.modified > cursor))
+        .filter(|document| cursor.is_none_or(|cursor| document.modified > cursor - CURSOR_OVERLAP))
         .map(|document| document.id)
         .collect()
 }
@@ -215,6 +248,11 @@ fn to_document(
     }
 }
 
+fn changed_during_listing(path: &str) -> PluginError {
+    let endpoint = path.split('?').next().unwrap_or(path);
+    format!("Paperless changed while listing {endpoint}, the next run retries").into()
+}
+
 struct Paperless {
     http: reqwest::Client,
     base_url: String,
@@ -236,14 +274,17 @@ impl Paperless {
         })
     }
 
-    /// Every page of a list endpoint. Pages are counted here rather than followed through `next`,
-    /// which Paperless builds from the host it believes it's on, wrong behind some proxies.
+    /// Every page of a list endpoint, ordered by id: Paperless's default order (`-created`, a
+    /// date) has ties, and paging over ties isn't stable. Pages are counted here rather than
+    /// followed through `next`, which Paperless builds from the host it believes it's on, wrong
+    /// behind some proxies.
     async fn all<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>, PluginError> {
         let mut results = Vec::new();
+        let mut count = None;
         for page in 1.. {
             let response = self
                 .http
-                .get(format!("{}{path}&page={page}", self.base_url))
+                .get(format!("{}{path}&ordering=id&page={page}", self.base_url))
                 .header("Accept", ACCEPT)
                 .header("Authorization", format!("Token {}", self.token))
                 .send()
@@ -262,11 +303,20 @@ impl Paperless {
                 // log is shown to the user.
                 return Err(format!("Paperless answered {path} with {status}").into());
             }
-            let page: Page<T> = response.json().await?;
+            // Not serde's message, which quotes the body: whatever answered could be anything.
+            let page: Page<T> = response.json().await.map_err(|_| {
+                format!("Paperless answered {path} with something that isn't a version 10 list")
+            })?;
+            if *count.get_or_insert(page.count) != page.count {
+                return Err(changed_during_listing(path));
+            }
             results.extend(page.results);
             if page.next.is_none() {
                 break;
             }
+        }
+        if Some(results.len()) != count {
+            return Err(changed_during_listing(path));
         }
         Ok(results)
     }
@@ -396,5 +446,11 @@ mod tests {
 
         assert_eq!(changed_since(&listed, None), [412, 977]);
         assert_eq!(changed_since(&listed, Some(cursor)), [977]);
+        let just_after_977 = "2025-03-03T17:25:00Z".parse().unwrap();
+        assert_eq!(
+            changed_since(&listed, Some(just_after_977)),
+            [977],
+            "within the overlap"
+        );
     }
 }

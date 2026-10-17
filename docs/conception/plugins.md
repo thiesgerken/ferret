@@ -63,10 +63,18 @@ are the files plugin's job ([Roadmap](#roadmap)).
 - `meta`: correspondent, document type, tags (by name), archive serial number. `authors` = the
   correspondent. `created_at` = Paperless' `created` date at noon UTC (Paperless keeps only the
   date; noon keeps it in every time zone from UTC-11 to UTC+11). `url` =
-  `{paperless}/documents/{id}/details`.
+  `{public_url}/documents/{id}/details`, `public_url` being the address people open (`url` when
+  left out).
 - Every run: a sync, list all ids (`/api/documents/?fields=id,modified`), `seen` for all of them,
   fetch the ones modified after the cursor (`id__in`, 100 at a time) and `PUT` them, commit.
-  Deleted documents disappear with the sweep. Cursor = the newest `modified`.
+  Deleted documents disappear with the sweep. Cursor = the newest `modified`, minus 10 minutes on
+  the next run: Paperless sets `modified` before its save commits, so a save may commit after a
+  listing with an older timestamp.
+- Every list is paged `ordering=id`. Paperless's default order (`-created`, a date) has ties, and
+  paging over ties can skip a document, which the sweep would then delete for good. A listing
+  whose count changes between pages, or with an id twice, fails the run.
+- The state stores the cursor and `url`/`public_url`. When they change, every document is fetched
+  again, so links follow.
 - Renaming a tag, correspondent or document type doesn't change a document's `modified`, so its
   documents keep the old name until they change otherwise.
 - Requires Paperless-ngx 3.0 or later: requests pin API version 10, the newest 3.3 accepts
@@ -77,6 +85,9 @@ are the files plugin's job ([Roadmap](#roadmap)).
 - The URL must reach Paperless directly, e.g. the in-cluster service
   (`http://paperless.apps-paperless.svc:8000`). A public hostname behind a login proxy answers
   with a redirect (302), which fails the run with that hint instead of being followed.
+- Unlike git remotes, `url` may be any plain-HTTP address in the cluster, checked for neither
+  scheme nor host. A user can point the worker at another in-cluster service, and the run log then
+  tells which statuses it answers (never its bodies). Accepted for a household in v1.
 
 ### carapace
 
