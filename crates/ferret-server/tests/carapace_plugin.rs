@@ -23,6 +23,15 @@ fn git(repo: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
+fn head(repo: &Path) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
 fn commit(repo: &Path, message: &str) {
     git(repo, &["add", "-A"]);
     git(
@@ -195,6 +204,7 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
     )
     .unwrap();
     commit(repo.path(), "new render format");
+    let unparsable = head(repo.path());
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
@@ -259,4 +269,52 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         full["stats"]["unchanged"], 8,
         "1 session, 3 facts, 2 digests, 2 files"
     );
+
+    // carapace moves the session to another month's directory. The file's documents are put
+    // under the new path before the old path's are deleted, so none of them go.
+    let moved = repo.path().join("memory/sessions/2026/10/s-talos.md");
+    std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    std::fs::rename(&talos, &moved).unwrap();
+    commit(repo.path(), "move");
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    assert_eq!(
+        latest_run(&server, &cookie).await["stats"],
+        json!({"put": 0, "unchanged": 4, "deleted": 0})
+    );
+    assert_eq!(documents_per_source(&pool).await["carapace/facts"], 3);
+
+    // A cursor whose version of a file this plugin can't parse falls back to a full sync.
+    sqlx::query("update connections set state = jsonb_set(state, '{commit}', to_jsonb($1::text))")
+        .bind(&unparsable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let fallback = latest_run(&server, &cookie).await;
+    assert_eq!(fallback["status"], "SUCCEEDED");
+    assert!(
+        fallback["log"].as_str().unwrap().contains(&format!(
+            "full sync: {TALOS} at {unparsable}: Facts: body line "
+        )),
+        "{fallback}"
+    );
+
+    // So does a force push, after which the cursor isn't in the history anymore.
+    git(repo.path(), &["commit", "--amend", "-qm", "rewritten"]);
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let rewritten = latest_run(&server, &cookie).await;
+    assert!(
+        rewritten["log"]
+            .as_str()
+            .unwrap()
+            .contains("is no longer in the branch's history"),
+        "{rewritten}"
+    );
+    assert_eq!(documents_per_source(&pool).await["carapace/facts"], 3);
 }

@@ -131,6 +131,8 @@ change its rendering freely.
   diffs against that commit and puts the changed files' documents. A changed session file can lose
   facts, so the plugin also reads every changed or deleted file's version at the cursor
   (`git show <cursor>:<path>`) and deletes whatever that version held but the new one doesn't.
+  This assumes a document comes from one path only: a session copied to a second file whose old
+  copy is deleted in a later commit loses its documents until the next full sync.
 - Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the
   first run, after a force push, when `carapace_url` changed (every link changes), and when an
   old version doesn't parse (a render format this plugin no longer reads).
