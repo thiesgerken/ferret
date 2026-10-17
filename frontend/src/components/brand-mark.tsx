@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 /**
  * The ferret mark (docs/brand), drawn in the theme's `--brand` so it follows light and dark mode.
  * The view box ends at the mark's flat base, so it sits on the text baseline next to "ferret".
@@ -10,5 +12,15 @@ export function BrandMark({ className }: { className?: string }) {
       <path fill="#1c110a" d="M23.285,8.321 L23.271,8.524 L23.218,8.719 L23.128,8.901 L23.004,9.062 L22.851,9.195 L22.676,9.296 L22.483,9.361 L22.282,9.387 L22.080,9.373 L21.884,9.320 L21.702,9.230 L21.542,9.106 L21.408,8.954 L21.307,8.778 L21.243,8.586 L21.217,8.385 L21.230,8.182 L21.283,7.986 L21.373,7.805 L21.497,7.644 L21.650,7.511 L21.826,7.410 L22.018,7.345 L22.219,7.319 L22.421,7.333 L22.617,7.386 L22.799,7.476 L22.959,7.599 L23.093,7.752 L23.194,7.928 L23.259,8.120 Z" />
       <path fill="#f3ece2" d="M22.835,7.891 L22.808,7.996 L22.751,8.087 L22.669,8.157 L22.569,8.197 L22.461,8.204 L22.356,8.178 L22.265,8.121 L22.195,8.039 L22.155,7.939 L22.147,7.831 L22.174,7.726 L22.231,7.635 L22.313,7.565 L22.413,7.525 L22.521,7.517 L22.626,7.544 L22.717,7.601 L22.787,7.683 L22.827,7.783 Z" />
     </svg>
+  );
+}
+
+/** "ferret" with the mark, linking home: the top-left of every page with a header. */
+export function HomeLink() {
+  return (
+    <Link href="/" className="inline-flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight text-brand select-none">
+      <BrandMark className="h-[0.8em] w-auto" />
+      ferret
+    </Link>
   );
 }

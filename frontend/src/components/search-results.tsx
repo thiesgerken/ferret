@@ -12,7 +12,7 @@ import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/sea
 import { plainMarkdown, snippet } from "@/lib/snippet";
 import { viewerHref } from "@/lib/viewer-url";
 import { cn } from "@/lib/utils";
-import { BrandMark } from "@/components/brand-mark";
+import { HomeLink } from "@/components/brand-mark";
 
 const SearchHitsQueryDocument = graphql(`
   query SearchHits($input: SearchInput!) {
@@ -83,10 +83,7 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
   return (
     <div className="min-h-dvh">
       <header className="flex items-center gap-6 border-b border-border px-4 py-3 pr-16">
-        <Link href="/" className="inline-flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight text-brand select-none">
-          <BrandMark className="h-[0.8em] w-auto" />
-          ferret
-        </Link>
+        <HomeLink />
         <SearchField defaultValue={state.q} onSearch={(q) => onChange({ ...state, q })} />
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
