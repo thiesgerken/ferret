@@ -6,12 +6,12 @@
   <a href="charts/ferret/README.md"><img alt="Helm chart" src="https://img.shields.io/badge/helm-chart-885629?logo=helm&logoColor=white"></a>
 </p>
 
-<h1 align="center">
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
     <img src="docs/brand/logo-light.svg" alt="ferret" width="360">
   </picture>
-</h1>
+</p>
 <p align="center"><strong>A personal search index over everything that describes you.</strong></p>
 
 <p align="center">Hybrid search. Deep links to the origin. One API for you and your agents.</p>
@@ -40,7 +40,7 @@ where it lives. Your agents get the same search through the same API.
   the file in your git forge or Obsidian vault, the carapace session. ferret keeps a copy to search
   it, never to become the place you read it.
 - 🔌 **Plugins for your systems, a REST API for everything else.** git, Paperless and carapace sync
-  on a schedule; IMAP and AFFiNE are coming. Anything else `PUT`s documents with a plain HTTP call.
+  on a schedule; IMAP and AFFiNE are coming. Anything else sends documents with a plain HTTP `PUT`.
 - 🤖 **One API for you and your agents.** The search your agents call is the one you use. API keys
   are scoped to sources and to read or write, so an agent sees exactly what you hand it.
 - ⚡ **Embeddings on your own hardware.** A pool of TEI servers, in the cluster and on your
