@@ -65,7 +65,7 @@ async fn finds_a_document_by_keyword_with_its_best_chunk_highlighted(pool: PgPoo
         .take((hit.chunk.end_offset - hit.chunk.start_offset) as usize)
         .collect();
     assert_eq!(chunk, at_offsets);
-    assert!(hit.score > 0.0);
+    assert!(hit.keyword_score.is_some_and(|score| score > 0.0));
 }
 
 #[sqlx::test(migrations = false)]
@@ -392,4 +392,42 @@ async fn invalid_searches_are_rejected(pool: PgPool) {
         .await
         .unwrap_err();
     assert_eq!(forbidden.status(), Some(StatusCode::FORBIDDEN));
+}
+
+#[sqlx::test(migrations = false)]
+async fn the_response_counts_all_matches_and_the_documents_in_scope(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for (source, id, text) in [
+        ("notes", "a", "invoice one"),
+        ("notes", "b", "invoice two"),
+        ("notes", "c", "something else"),
+        ("paperless", "d", "invoice three"),
+    ] {
+        api.put_document(&document(source, id, text)).await.unwrap();
+    }
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            k: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(response.hits.len(), 1);
+    assert_eq!(response.total, 3);
+    assert!(!response.total_is_lower_bound);
+    assert_eq!(response.documents_in_scope, 4);
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            sources: vec!["notes".to_owned()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(response.total, 2);
+    assert_eq!(response.documents_in_scope, 3);
 }

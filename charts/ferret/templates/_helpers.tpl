@@ -47,5 +47,6 @@ embedding:
       {{- with .documentPrefix }}
       document_prefix: {{ . | quote }}
       {{- end }}
+      min_similarity: {{ required "embedding.models[].minSimilarity is required" .minSimilarity }}
     {{- end }}
 {{- end }}
