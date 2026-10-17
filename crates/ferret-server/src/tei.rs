@@ -65,9 +65,12 @@ pub async fn embed(
         .await
 }
 
-/// Whether the TEI at `url` answers its health check within `timeout`.
+/// Whether the TEI at `url` answers within `timeout`. Asks `/info`, not `/health`: TEI runs its
+/// health check on the thread that runs the embedding batches, so a TEI busy with a backfill
+/// would look offline. TEI only listens once its model is loaded, and a stuck one shows up as
+/// the embed pump's last error.
 pub async fn healthy(http: &reqwest::Client, url: &str, timeout: Duration) -> bool {
-    http.get(format!("{url}/health"))
+    http.get(format!("{url}/info"))
         .timeout(timeout)
         .send()
         .await

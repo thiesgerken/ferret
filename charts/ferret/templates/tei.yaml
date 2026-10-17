@@ -74,16 +74,19 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /data
+          # /info, not /health: TEI answers /health on the same thread as the embedding batches, so
+          # the pod would drop out of the Service while a backfill keeps it busy. /info answers
+          # from memory, and TEI only starts listening once the model is loaded and warmed up.
           # The first start downloads the model.
           startupProbe:
             httpGet:
-              path: /health
+              path: /info
               port: http
             periodSeconds: 10
             failureThreshold: 90
           readinessProbe:
             httpGet:
-              path: /health
+              path: /info
               port: http
             periodSeconds: 10
       volumes:
