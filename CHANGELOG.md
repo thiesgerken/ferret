@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #123 from thiesgerken/58-i18n
+  ([`99351fb`](https://github.com/thiesgerken/ferret/commit/99351fbbb65bdeda7d7d964e71d62ad72a1e658d))
+
+### ✨ Features
+
+
+- ✨ feat(frontend): German UI for search, viewer, sign-in and settings
+  ([`99351fb`](https://github.com/thiesgerken/ferret/commit/99351fbbb65bdeda7d7d964e71d62ad72a1e658d))
+
+- ✨ feat(frontend): German UI for search, viewer, sign-in and settings
+  ([`978e07f`](https://github.com/thiesgerken/ferret/commit/978e07fae8600b8e5fc1de458be4b78c51c38238))
+
+  The UI follows the browser's languages until the user picks one in Settings, stored per browser. next-intl with catalogues in frontend/messages, as in carapace; a test fails when a key is missing in either. Dates and numbers format with the active locale.
+
+  The home page drops its tagline and counts chunks too, largest first.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.10.0 (2026-10-17)
 
 
