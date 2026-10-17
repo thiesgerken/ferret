@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #95 from thiesgerken/menu-icons
+  ([`53147e0`](https://github.com/thiesgerken/ferret/commit/53147e0e6f4b9c6d36544e8781588962f22aecbf))
+
+- Merge pull request #94 from thiesgerken/integration/v1
+  ([`0e595c0`](https://github.com/thiesgerken/ferret/commit/0e595c0740be2122a8d58e1cc575c52fd8343a1b))
+
+- Merge pull request #93 from thiesgerken/84-plugin-titles
+  ([`fef065f`](https://github.com/thiesgerken/ferret/commit/fef065f8eb09b6af4dbfd2ab4c7713a25b53c6b6))
+
+### 💄 UI/UX
+
+
+- 💄 style(ui): icons in the app menu, and a way back to search
+  ([`53147e0`](https://github.com/thiesgerken/ferret/commit/53147e0e6f4b9c6d36544e8781588962f22aecbf))
+
+- 💄 style(ui): icons in the app menu, and a way back to search
+  ([`1c96fb1`](https://github.com/thiesgerken/ferret/commit/1c96fb1570cdef28d0efe5e79c6efba682e0b4f1))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### ✨ Features
+
+
+- ✨ feat(plugins): readable file titles and a carapace skills sub-source
+  ([`0e595c0`](https://github.com/thiesgerken/ferret/commit/0e595c0740be2122a8d58e1cc575c52fd8343a1b))
+
+- ✨ feat(plugins): readable file titles and a carapace skills sub-source
+  ([`fef065f`](https://github.com/thiesgerken/ferret/commit/fef065f8eb09b6af4dbfd2ab4c7713a25b53c6b6))
+
+- ✨ feat(plugins): carapace indexes skills as their own sub-source
+  ([`aebf60a`](https://github.com/thiesgerken/ferret/commit/aebf60a0a8b279de26b6e9d8ef2e20bd7dd7a304))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(plugins): Markdown files without a heading are titled by their name in words
+  ([`f7902a3`](https://github.com/thiesgerken/ferret/commit/f7902a318b1ee1c525496993b73094902ce3af7a))
+
+  Part of #84.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.1.0 (2026-10-17)
 
 
