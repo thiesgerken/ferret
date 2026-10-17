@@ -28,10 +28,25 @@ enum RunStatus {
   "The worker stopped sending heartbeats." LOST
 }
 
+"A time range up to now."
+enum TimeRange {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
 input ConnectionUpdate {
   config: String!
   schedule: String!
   enabled: Boolean!
+}
+
+"A ✓ on a hit, or taking it back."
+input JudgmentInput {
+  "The search the hit answered, as it was passed to `search`." search: SearchInput!
+  documentId: ID!
+  "Whether the document is the right hit for the search." judged: Boolean!
 }
 
 input NewApiKey {
@@ -58,6 +73,7 @@ input SearchInput {
   "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
   "Only documents created at or after this time." from: DateTime
   "Only documents created before this time." to: DateTime
+  "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
 }
 
@@ -143,6 +159,8 @@ type Hit {
   modifiedAt: DateTime!
   score: Float!
   chunk: HitChunk!
+  "Whether the signed-in user marked this document as the right hit for this very search."
+  judged: Boolean!
 }
 
 """
@@ -157,6 +175,11 @@ type HitChunk {
 }
 
 type Mutation {
+  """
+    Marks a document as the right hit for a search, or takes that back. Returns `judged`.
+    Model evaluation replays the judged searches.
+  """
+  setJudgment(input: JudgmentInput!): Boolean!
   "Creates a connection, which runs right away and then on its schedule."
   createConnection(input: NewConnection!): Connection!
   updateConnection(id: ID!, input: ConnectionUpdate!): Connection!
