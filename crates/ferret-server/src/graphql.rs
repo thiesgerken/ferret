@@ -1745,8 +1745,8 @@ struct ModelStatus {
     /// The Hugging Face model a TEI must serve to work for it.
     model_id: String,
     is_default: bool,
-    /// Null until something was embedded with it.
-    dimension: Option<i32>,
+    /// Of its vectors, from the config.
+    dimension: i32,
     /// Chunks still to embed, per source and across users. Empty when everything is embedded.
     backlog: Vec<SourceBacklog>,
     /// Chunks with an embedding for this model, across users.
@@ -1876,7 +1876,7 @@ impl From<embeddings::ModelStatus> for ModelStatus {
             name: status.name,
             model_id: status.model_id,
             is_default: status.is_default,
-            dimension: status.dimension.map(|dimension| count(dimension as i64)),
+            dimension: count(status.dimension as i64),
             backlog: status
                 .backlog
                 .into_iter()

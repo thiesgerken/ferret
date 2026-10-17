@@ -65,8 +65,8 @@ Remove an external TEI from the list once it's gone for good.
 
 ### ⚠️ From chart versions with `tei.gpu` or `bulkUrl`
 
-`tei.gpu.*` and the models' `bulkUrl` are gone, and the chart refuses to render while they're
-set. Deploy a GPU TEI yourself (TEI's image for your GPU generation, e.g. `89-1.9.4`, with the
+Every model needs its `dimension` (1024 for Qwen3-Embedding-0.6B). `tei.gpu.*` and the models'
+`bulkUrl` are gone, and the chart refuses to render while they're set. Deploy a GPU TEI yourself (TEI's image for your GPU generation, e.g. `89-1.9.4`, with the
 model's `--model-id`) and list its Service URL in `externalTeis`. A `bulkUrl` becomes an entry of
 `externalTeis` as it is. Unlike `bulk_url`, the CPU TEI keeps embedding next to it unless Admin
 switches its embedding off.

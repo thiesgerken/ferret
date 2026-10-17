@@ -228,7 +228,7 @@ async fn admins_see_workers_tei_health_and_the_backlog_per_source(pool: PgPool) 
             "name": common::MODEL,
             "modelId": common::fake_tei::FAKE_MODEL_ID,
             "isDefault": true,
-            "dimension": null,
+            "dimension": common::fake_tei::DIMENSION,
             "backlog": [
                 {"source": "mail", "pending": 1, "failed": 0},
                 {"source": "notes", "pending": 2, "failed": 0},

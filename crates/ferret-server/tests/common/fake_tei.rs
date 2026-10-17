@@ -49,6 +49,8 @@ pub struct FakeTei {
 
 struct FakeState {
     model_id: String,
+    /// `--served-model-name`, the model id when `None`.
+    served_name: Option<String>,
     /// The model embeddings come back under, when it isn't the one `/info` reports.
     answers_as: Option<String>,
     max_input_length: usize,
@@ -77,6 +79,7 @@ impl FakeTei {
     pub async fn serving(model_id: &str, max_input_length: usize) -> Self {
         let state = Arc::new(Mutex::new(FakeState {
             model_id: model_id.to_owned(),
+            served_name: None,
             answers_as: None,
             max_input_length,
             embedded: Vec::new(),
@@ -99,6 +102,11 @@ impl FakeTei {
     /// Loads another model, like a laptop's TEI restarted with it.
     pub fn serve(&self, model_id: &str) {
         self.state.lock().unwrap().model_id = model_id.to_owned();
+    }
+
+    /// Serves its model under `name`, like TEI started with `--served-model-name`.
+    pub fn serve_as(&self, name: &str) {
+        self.state.lock().unwrap().served_name = Some(name.to_owned());
     }
 
     /// From now on, embeddings come back under `model`, while `/info` still reports the old one:
@@ -137,7 +145,7 @@ async fn info(State(state): State<Arc<Mutex<FakeState>>>) -> Result<Json<Value>,
     let state = state.lock().unwrap();
     Ok(Json(json!({
         "model_id": state.model_id,
-        "served_model_name": state.model_id,
+        "served_model_name": state.served_name.as_ref().unwrap_or(&state.model_id),
         "model_type": {"embedding": {"pooling": "last_token"}},
         "max_input_length": state.max_input_length,
         "max_client_batch_size": MAX_CLIENT_BATCH_SIZE,
@@ -175,7 +183,10 @@ async fn embeddings(
         ));
     }
     state.embedded.extend(inputs.iter().cloned());
-    let model = state.answers_as.clone().unwrap_or(state.model_id.clone());
+    let model = (state.answers_as.as_ref())
+        .or(state.served_name.as_ref())
+        .unwrap_or(&state.model_id)
+        .clone();
     let data: Vec<Value> = inputs
         .iter()
         .enumerate()

@@ -103,16 +103,8 @@ async fn the_model_and_its_prefixes_are_used_and_identical_texts_embedded_once(p
 }
 
 #[sqlx::test(migrations = false)]
-async fn each_model_gets_a_partial_hnsw_index_with_its_first_embedding(pool: PgPool) {
-    let server = start_semantic_server(pool.clone()).await;
-    // The dimension, which the index needs, is known once something is embedded.
-    server
-        .admin_api()
-        .await
-        .put_document(&document("notes", "car", "My car broke down."))
-        .await
-        .unwrap();
-    server.wait_for_embeddings(1).await;
+async fn each_model_gets_a_partial_hnsw_index(pool: PgPool) {
+    let _server = start_semantic_server(pool.clone()).await;
 
     let definition: String = sqlx::query_scalar(
         "select indexdef from pg_indexes where indexname = 'chunk_embeddings_hnsw_fake'",
@@ -127,6 +119,29 @@ async fn each_model_gets_a_partial_hnsw_index_with_its_first_embedding(pool: PgP
         definition.contains("WHERE (model = 'fake'::text)"),
         "{definition}"
     );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_configured_dimension_that_differs_from_stored_embeddings_stops_the_server(pool: PgPool) {
+    let server = start_semantic_server(pool.clone()).await;
+    server
+        .admin_api()
+        .await
+        .put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+    let tei = server.tei.clone();
+    drop(server);
+
+    let mut config = embedding_config(model(MODEL, &tei), &[&tei]);
+    config.models[0].dimension = 1024;
+    let error = ferret_server::embeddings::prepare(&pool, config)
+        .await
+        .err()
+        .unwrap();
+
+    assert!(error.to_string().contains("256 dimensions"), "{error}");
 }
 
 /// Enough rows that the planner uses the HNSW index rather than an exact scan.

@@ -419,8 +419,8 @@ type ModelStatus {
   "The Hugging Face model a TEI must serve to work for it."
   modelId: String!
   isDefault: Boolean!
-  "Null until something was embedded with it."
-  dimension: Int
+  "Of its vectors, from the config."
+  dimension: Int!
   "Chunks still to embed, per source and across users. Empty when everything is embedded."
   backlog: [SourceBacklog!]!
   "Chunks with an embedding for this model, across users."

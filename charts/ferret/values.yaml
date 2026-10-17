@@ -32,6 +32,9 @@ embedding:
       # -- Hugging Face model id: the internal TEI serves it, and a TEI reporting it in /info works
       # for this model. Two models can't share one.
       modelId: Qwen/Qwen3-Embedding-0.6B
+      # -- Of the model's vectors. TEI doesn't report it: every answer is checked against it, and
+      # the model's index is built for it.
+      dimension: 1024
       queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       documentPrefix: ""
       # -- Semantic candidates less similar to the query are dropped (cosine similarity, 0 to 1).

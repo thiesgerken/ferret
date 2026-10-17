@@ -657,9 +657,7 @@ fn push_nearest(
 ) {
     // Validated model names need no quoting (config.rs). The dimension and name are literals so
     // the planner can use the model's partial index.
-    let dimension = model
-        .dimension()
-        .expect("an embedded query gave the model its dimension");
+    let dimension = model.dimension();
     sql.push(format!(
         "select e.chunk_id as id, e.embedding::halfvec({dimension})
                     <=> (select embedding from embedding_cache where text_hash = ",

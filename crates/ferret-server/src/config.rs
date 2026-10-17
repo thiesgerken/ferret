@@ -40,6 +40,9 @@ pub struct ModelConfig {
     pub name: String,
     /// The Hugging Face model id a TEI reports in `/info` when it serves this model.
     pub model_id: String,
+    /// Of its vectors. TEI doesn't report it, and the model's index needs it: every answer is
+    /// checked against it.
+    pub dimension: usize,
     /// Asymmetric models expect an instruction or marker in front of queries and documents.
     #[serde(default)]
     pub query_prefix: String,
@@ -84,6 +87,13 @@ impl EmbeddingConfig {
             }
             if !names.insert(model.name.as_str()) {
                 return Err(format!("embedding model {:?} is configured twice", model.name).into());
+            }
+            if model.dimension == 0 {
+                return Err(format!(
+                    "embedding model {:?}: dimension must be positive",
+                    model.name
+                )
+                .into());
             }
             if !model_ids.insert(model.model_id.as_str()) {
                 return Err(format!(
@@ -154,6 +164,7 @@ mod tests {
                 .map(|name| ModelConfig {
                     name: name.to_string(),
                     model_id: format!("org/{name}"),
+                    dimension: 1024,
                     query_prefix: String::new(),
                     document_prefix: String::new(),
                     min_similarity: 0.5,
@@ -175,6 +186,7 @@ embedding:
   models:
     - name: qwen3-embedding-0.6b
       model_id: Qwen/Qwen3-Embedding-0.6B
+      dimension: 1024
       query_prefix: "Instruct: Given a search query\nQuery: "
       min_similarity: 0.4
   teis:
@@ -188,6 +200,7 @@ embedding:
         config.embedding.validate().unwrap();
         let model = &config.embedding.models[0];
         assert_eq!(model.model_id, "Qwen/Qwen3-Embedding-0.6B");
+        assert_eq!(model.dimension, 1024);
         let teis = &config.embedding.teis;
         assert!(!teis[0].external);
         assert!(teis[1].external);

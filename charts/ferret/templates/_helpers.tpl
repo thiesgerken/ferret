@@ -47,6 +47,7 @@ embedding:
     {{- range .Values.embedding.models }}
     - name: {{ .name | quote }}
       model_id: {{ required "embedding.models[].modelId is required" .modelId | quote }}
+      dimension: {{ required "embedding.models[].dimension is required" .dimension }}
       {{- with .queryPrefix }}
       query_prefix: {{ . | quote }}
       {{- end }}

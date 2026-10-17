@@ -3,7 +3,7 @@
 
 use std::{
     sync::{
-        RwLock,
+        Mutex, RwLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -28,6 +28,9 @@ pub struct Tei {
     pub url: String,
     pub external: bool,
     state: RwLock<TeiState>,
+    /// The switches as the database had them at the last look: only a change there overrides
+    /// the state, so a look that started before an admin's change doesn't undo it.
+    stored_switches: Mutex<Option<Switches>>,
     batch_size: BatchSize,
     /// A pump batch of this process is in flight.
     busy: AtomicBool,
@@ -76,6 +79,7 @@ impl Tei {
                 switches: Switches::defaults(config.external),
                 discovery: Discovery::Pending,
             }),
+            stored_switches: Mutex::new(None),
             batch_size: BatchSize::new(),
             busy: AtomicBool::new(false),
         }
@@ -85,17 +89,25 @@ impl Tei {
         self.state.read().expect("no panics while updating").clone()
     }
 
-    /// Replaces the state and returns whether it changed.
-    pub fn set_state(&self, state: TeiState) -> bool {
-        let mut current = self.state.write().expect("no panics while updating");
-        let changed = *current != state;
-        *current = state;
-        changed
+    /// Changes the state in place, and returns whether it changed.
+    pub fn update(&self, change: impl FnOnce(&mut TeiState)) -> bool {
+        let mut state = self.state.write().expect("no panics while updating");
+        let before = state.clone();
+        change(&mut state);
+        *state != before
     }
 
-    pub fn set_discovery(&self, discovery: Discovery) -> bool {
-        let state = self.state();
-        self.set_state(TeiState { discovery, ..state })
+    /// Takes the switches the database has, if they changed there since the last look.
+    pub fn apply_stored_switches(&self, stored: Switches) -> bool {
+        let mut last = self
+            .stored_switches
+            .lock()
+            .expect("no panics while updating");
+        if *last == Some(stored) {
+            return false;
+        }
+        *last = Some(stored);
+        self.update(|state| state.switches = stored)
     }
 
     /// The model index and served model name, if the TEI serves a model and is enabled for `use`.
@@ -150,6 +162,22 @@ impl Tei {
     }
 }
 
+impl Discovery {
+    /// Why a TEI is of no use, `None` while it serves.
+    pub fn problem(&self) -> Option<String> {
+        match self {
+            Self::Serving { .. } => None,
+            Self::Pending => Some("not asked yet".to_owned()),
+            Self::Offline(error) => Some(error.clone()),
+            Self::Unused(info) => Some(format!(
+                "serves {}, which no configured model uses",
+                info.model_id
+            )),
+            Self::Unsuitable { problem, .. } => Some(problem.clone()),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum Use {
     Queries,
@@ -194,6 +222,20 @@ pub async fn discover(
     else {
         return Discovery::Unused(info);
     };
+    // Answers are checked against the name they come back under. Only the model id tells the
+    // models apart: under a fixed name, a TEI could switch models unnoticed.
+    if info.served_model_name() != info.model_id {
+        let problem = format!(
+            "serves its model as {:?}, so its answers can't be checked: start it without \
+             --served-model-name",
+            info.served_model_name()
+        );
+        return Discovery::Unsuitable {
+            info,
+            model,
+            problem,
+        };
+    }
     // Tokens against characters, one to one: Latin text practically never takes more than one
     // token per character.
     if info.max_input_length < min_input_length {

@@ -218,3 +218,54 @@ async fn a_tei_serving_an_unconfigured_model_is_unused_until_it_loads_a_configur
     );
     assert_eq!(online["model"], MODEL);
 }
+
+#[sqlx::test(migrations = false)]
+async fn a_tei_serving_its_model_under_another_name_is_unsuitable(pool: PgPool) {
+    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
+    // Under a fixed name, its answers couldn't tell another model loaded meanwhile.
+    tei.serve_as("embed");
+    let config = embedding_config(model(MODEL, &tei), &[&tei]);
+    let server = start_server_with(pool, tei.clone(), config).await;
+
+    let listed = listed(&server, &tei.url).await;
+
+    assert_eq!(listed["state"], "UNSUITABLE");
+    assert!(
+        listed["problem"]
+            .as_str()
+            .unwrap()
+            .contains("--served-model-name"),
+        "{listed}"
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn an_answer_of_another_dimension_is_discarded(pool: PgPool) {
+    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
+    let mut config = embedding_config(model(MODEL, &tei), &[&tei]);
+    // The fake's vectors have 256.
+    config.models[0].dimension = 1024;
+    let server = start_server_with(pool.clone(), tei.clone(), config).await;
+    server
+        .admin_api()
+        .await
+        .put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+
+    let error = eventually("the pump's error", async || {
+        listed(&server, &tei.url).await["lastError"]
+            .as_str()
+            .map(str::to_owned)
+    })
+    .await;
+
+    assert!(error.contains("256 dimensions"), "{error}");
+    let written: i64 = sqlx::query_scalar(
+        "select (select count(*) from chunk_embeddings) + (select count(*) from embedding_cache)",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(written, 0);
+}

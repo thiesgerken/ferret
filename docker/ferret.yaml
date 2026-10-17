@@ -4,6 +4,7 @@ embedding:
   models:
     - name: qwen3-embedding-0.6b
       model_id: Qwen/Qwen3-Embedding-0.6B
+      dimension: 1024
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       min_similarity: 0.42
   # tei-bulk is marked external like a laptop would be: it starts with queries off.

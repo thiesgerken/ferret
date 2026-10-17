@@ -4,7 +4,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -19,7 +19,7 @@ use crate::{
     config::{EmbeddingConfig, ModelConfig},
     tei,
     tei_load::{Load, TeiLoad},
-    tei_pool::{self, BATCH_TIMEOUT, Discovery, Switches, Tei, TeiState, Use},
+    tei_pool::{self, BATCH_TIMEOUT, Discovery, Tei, TeiState, Use},
 };
 
 const MAX_EMBEDDED_TITLE_CHARS: usize = 200;
@@ -39,53 +39,19 @@ const DISCOVERY_POLL: Duration = Duration::from_secs(10);
 
 pub struct Model {
     pub config: ModelConfig,
-    /// Known from the first embedding: TEI's `/info` doesn't report it.
-    dimension: OnceLock<usize>,
-    /// Creating the index for a new dimension, once.
-    index: tokio::sync::Mutex<()>,
 }
 
 impl Model {
-    fn new(config: ModelConfig) -> Self {
-        Self {
-            config,
-            dimension: OnceLock::new(),
-            index: tokio::sync::Mutex::new(()),
-        }
-    }
-
     pub fn name(&self) -> &str {
         &self.config.name
     }
 
-    /// `None` until something was embedded with the model.
-    pub fn dimension(&self) -> Option<usize> {
-        self.dimension.get().copied()
+    pub fn dimension(&self) -> usize {
+        self.config.dimension
     }
 
     fn index_name(&self) -> String {
         format!("chunk_embeddings_hnsw_{}", self.config.slug())
-    }
-
-    /// Checks a vector's dimension against the model's. The first one sets it and creates the
-    /// model's partial HNSW index, which needs it.
-    async fn accept_dimension(&self, pool: &PgPool, dimension: usize) -> Result<(), EmbedError> {
-        if self.dimension().is_none() {
-            let _creating = self.index.lock().await;
-            if self.dimension().is_none() {
-                create_index(pool, self, dimension).await?;
-                self.dimension
-                    .set(dimension)
-                    .expect("only set while locked");
-            }
-        }
-        match self.dimension() {
-            Some(known) if known != dimension => Err(EmbedError::Mismatch(format!(
-                "a vector of {dimension} dimensions, the model {} has {known}",
-                self.name()
-            ))),
-            _ => Ok(()),
-        }
     }
 }
 
@@ -93,11 +59,13 @@ pub struct Embedding {
     http: reqwest::Client,
     /// The default model first.
     models: Vec<Model>,
+    /// The models' configs in the same order, for discovery.
+    configs: Arc<Vec<ModelConfig>>,
     /// In config order.
     teis: Vec<Arc<Tei>>,
     tei_load: TeiLoad,
     /// Wakes the pump loops: new chunks, or a TEI that changed.
-    wake: watch::Sender<()>,
+    wake: Arc<watch::Sender<()>>,
 }
 
 #[derive(Debug)]
@@ -142,27 +110,33 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     configs.sort_by_key(|model| model.name != config.default);
     let mut models = Vec::new();
     for config in configs {
-        let model = Model::new(config);
-        let known = sqlx::query_scalar!(
+        let model = Model { config };
+        // Vectors of another dimension can't share the model's index.
+        let stored = sqlx::query_scalar!(
             r#"select vector_dims(embedding) as "dimension!" from embedding_cache
                where model = $1 limit 1"#,
             model.config.name,
         )
         .fetch_optional(pool)
         .await?;
-        if let Some(dimension) = known {
-            let dimension = usize::try_from(dimension).expect("dimensions are positive");
-            model
-                .accept_dimension(pool, dimension)
-                .await
-                .map_err(|error| format!("embedding model {}: {error}", model.config.name))?;
+        if let Some(stored) = stored
+            && usize::try_from(stored).ok() != Some(model.dimension())
+        {
+            return Err(format!(
+                "embedding model {} has embeddings of {stored} dimensions, the config says {}",
+                model.name(),
+                model.dimension()
+            )
+            .into());
         }
+        create_index(pool, &model).await?;
         models.push(model);
     }
     reset_removed_defaults(pool, &models).await?;
     tei_pool::sync_config(pool, &config.teis).await?;
     let embedding = Embedding {
         http: tei::client(),
+        configs: Arc::new(models.iter().map(|model| model.config.clone()).collect()),
         models,
         teis: config
             .teis
@@ -170,7 +144,7 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
             .map(|tei| Arc::new(Tei::new(tei)))
             .collect(),
         tei_load: TeiLoad::default(),
-        wake: watch::Sender::new(()),
+        wake: Arc::new(watch::Sender::new(())),
     };
     embedding.refresh(pool).await?;
     Ok(embedding)
@@ -270,7 +244,7 @@ async fn reset_removed_defaults(pool: &PgPool, models: &[Model]) -> Result<(), s
     Ok(())
 }
 
-async fn create_index(pool: &PgPool, model: &Model, dimension: usize) -> Result<(), sqlx::Error> {
+async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
     // Replicas starting together would race on the index name.
     sqlx::query!("select pg_advisory_xact_lock(hashtext('chunk_embeddings_hnsw'))")
@@ -279,9 +253,10 @@ async fn create_index(pool: &PgPool, model: &Model, dimension: usize) -> Result<
     // Validated names (config.rs) need no quoting, and DDL takes no bind parameters.
     sqlx::query(AssertSqlSafe(format!(
         "create index if not exists {} on chunk_embeddings
-             using hnsw ((embedding::halfvec({dimension})) halfvec_cosine_ops)
+             using hnsw ((embedding::halfvec({})) halfvec_cosine_ops)
              where model = '{}'",
         model.index_name(),
+        model.dimension(),
         model.config.name,
     )))
     .execute(&mut *tx)
@@ -313,7 +288,7 @@ pub struct ModelStatus {
     pub name: String,
     pub model_id: String,
     pub is_default: bool,
-    pub dimension: Option<usize>,
+    pub dimension: usize,
     /// Chunks still to embed per source, across users. Sources without any are left out.
     pub backlog: Vec<SourceBacklog>,
     /// Chunks with an embedding for this model, across users.
@@ -363,85 +338,34 @@ impl Embedding {
         })
     }
 
-    /// Reads the switches and asks every TEI which model it serves. Wakes the pump when anything
+    /// Asks every TEI which model it serves and reads the switches. Wakes the pump when anything
     /// changed.
     async fn refresh(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
-        let switches: HashMap<String, Switches> =
-            tei_pool::switches(pool).await?.into_iter().collect();
-        let configs: Arc<Vec<ModelConfig>> = Arc::new(
-            self.models
-                .iter()
-                .map(|model| model.config.clone())
-                .collect(),
-        );
         let mut discoveries = JoinSet::new();
-        for (index, tei) in self.teis.iter().enumerate() {
-            let (http, url, configs) = (self.http.clone(), tei.url.clone(), configs.clone());
+        for tei in &self.teis {
+            let (http, configs, tei) = (self.http.clone(), self.configs.clone(), tei.clone());
             discoveries.spawn(async move {
-                let discovery = tei_pool::discover(&http, &url, &configs, MAX_EMBEDDED_CHARS).await;
-                (index, discovery)
+                let discovery =
+                    tei_pool::discover(&http, &tei.url, &configs, MAX_EMBEDDED_CHARS).await;
+                (tei, discovery)
             });
         }
         let mut changed = false;
         while let Some(joined) = discoveries.join_next().await {
-            let (index, discovery) = joined.expect("discovery doesn't panic");
-            let tei = &self.teis[index];
-            let before = tei.state();
-            let state = TeiState {
-                // A TEI another replica's config removed keeps what it had.
-                switches: switches.get(&tei.url).copied().unwrap_or(before.switches),
-                discovery,
-            };
-            if before.discovery != state.discovery {
-                self.log_discovery(tei, &state.discovery);
+            let (tei, discovery) = joined.expect("discovery doesn't panic");
+            changed |= set_discovery(&self.configs, &tei, discovery);
+        }
+        // Read after the discovery, which may take seconds: closer to an admin's latest change.
+        for (url, stored) in tei_pool::switches(pool).await? {
+            // A TEI only another replica's config has isn't this server's business.
+            if let Some(tei) = self.teis.iter().find(|tei| tei.url == url) {
+                changed |= tei.apply_stored_switches(stored);
             }
-            changed |= tei.set_state(state);
         }
         if changed {
             self.wake.send_replace(());
         }
         Ok(())
-    }
-
-    /// Asks one TEI again, after it answered with something unexpected.
-    async fn rediscover(&self, tei: &Tei) {
-        let configs: Vec<ModelConfig> = self
-            .models
-            .iter()
-            .map(|model| model.config.clone())
-            .collect();
-        let discovery =
-            tei_pool::discover(&self.http, &tei.url, &configs, MAX_EMBEDDED_CHARS).await;
-        self.log_discovery(tei, &discovery);
-        if tei.set_discovery(discovery) {
-            self.wake.send_replace(());
-        }
-    }
-
-    fn log_discovery(&self, tei: &Tei, discovery: &Discovery) {
-        match discovery {
-            Discovery::Serving { model, .. } => {
-                tracing::info!(url = %tei.url, model = %self.models[*model].name(), "TEI serves a model")
-            }
-            other => {
-                let problem = self.problem(other).unwrap_or_default();
-                tracing::warn!(url = %tei.url, %problem, "TEI is of no use")
-            }
-        }
-    }
-
-    /// Why a TEI is of no use, `None` while it serves.
-    fn problem(&self, discovery: &Discovery) -> Option<String> {
-        match discovery {
-            Discovery::Serving { .. } => None,
-            Discovery::Pending => Some("not asked yet".to_owned()),
-            Discovery::Offline(error) => Some(error.clone()),
-            Discovery::Unused(info) => Some(format!(
-                "serves {}, which no configured model uses",
-                info.model_id
-            )),
-            Discovery::Unsuitable { problem, .. } => Some(problem.clone()),
-        }
     }
 
     /// Changes a TEI's switches (those given), on every replica within `DISCOVERY_POLL`, here at
@@ -462,8 +386,7 @@ impl Embedding {
         else {
             return Ok(None);
         };
-        let state = tei.state();
-        if tei.set_state(TeiState { switches, ..state }) {
+        if tei.update(|state| state.switches = switches) {
             self.wake.send_replace(());
         }
         let pending = self.pending_by_model(pool).await?;
@@ -505,7 +428,7 @@ impl Embedding {
             url: tei.url.clone(),
             external: tei.external,
             model: model.map(|model| self.models[model].name().to_owned()),
-            problem: self.problem(&state.discovery),
+            problem: state.discovery.problem(),
             last_error: tei_pool::last_error(pool, &tei.url).await?,
             busy: tei.is_busy(),
             pump_batch_size: embedding.then(|| tei.batch_size()),
@@ -589,7 +512,6 @@ impl Embedding {
     /// time, and its vectors must never mix with another model's.
     async fn embed_on(
         &self,
-        pool: &PgPool,
         tei: &Tei,
         model: &Model,
         served: &str,
@@ -610,8 +532,17 @@ impl Embedding {
                 embedded.vectors.len()
             )));
         }
-        for vector in &embedded.vectors {
-            model.accept_dimension(pool, vector.len()).await?;
+        if let Some(vector) = embedded
+            .vectors
+            .iter()
+            .find(|vector| vector.len() != model.dimension())
+        {
+            return Err(EmbedError::Mismatch(format!(
+                "answered with {} dimensions, the model {} has {}",
+                vector.len(),
+                model.name(),
+                model.dimension()
+            )));
         }
         Ok(embedded.vectors)
     }
@@ -639,11 +570,11 @@ impl Embedding {
             return Ok(hash);
         }
         let index = self.index_of(model);
-        let mut candidates: Vec<(&Tei, String)> = self
+        let mut candidates: Vec<(&Arc<Tei>, String)> = self
             .teis
             .iter()
             .filter_map(|tei| match tei.serving(Use::Queries) {
-                Some((served_model, served)) if served_model == index => Some((&**tei, served)),
+                Some((served_model, served)) if served_model == index => Some((tei, served)),
                 _ => None,
             })
             .collect();
@@ -660,10 +591,7 @@ impl Embedding {
                 break;
             }
             let texts = [text.clone()];
-            match self
-                .embed_on(pool, tei, model, &served, &texts, remaining)
-                .await
-            {
+            match self.embed_on(tei, model, &served, &texts, remaining).await {
                 Ok(vectors) => {
                     tei_pool::clear_error(pool, &tei.url).await;
                     sqlx::query!(
@@ -689,12 +617,24 @@ impl Embedding {
     }
 
     /// Records a TEI's failure, and asks it again which model it serves after an unexpected
-    /// answer.
-    async fn failed(&self, pool: &PgPool, tei: &Tei, error: &EmbedError) {
+    /// answer. In the background: a search falls through to the next TEI meanwhile.
+    async fn failed(&self, pool: &PgPool, tei: &Arc<Tei>, error: &EmbedError) {
         tracing::error!(url = %tei.url, %error, "TEI failed");
         tei_pool::record_error(pool, &tei.url, &error.to_string()).await;
         if matches!(error, EmbedError::Mismatch(_)) {
-            self.rediscover(tei).await;
+            let (http, configs, wake, tei) = (
+                self.http.clone(),
+                self.configs.clone(),
+                self.wake.clone(),
+                tei.clone(),
+            );
+            tokio::spawn(async move {
+                let discovery =
+                    tei_pool::discover(&http, &tei.url, &configs, MAX_EMBEDDED_CHARS).await;
+                if set_discovery(&configs, &tei, discovery) {
+                    wake.send_replace(());
+                }
+            });
         }
     }
 }
@@ -759,7 +699,7 @@ async fn pump(pool: PgPool, embedding: Arc<Embedding>, tei: Arc<Tei>) {
 
 impl Embedding {
     /// Embeds one batch on `tei` if it may embed, and returns whether it embedded something.
-    async fn pump_once(&self, pool: &PgPool, tei: &Tei) -> bool {
+    async fn pump_once(&self, pool: &PgPool, tei: &Arc<Tei>) -> bool {
         let Some((model, served)) = tei.serving(Use::Embedding) else {
             return false;
         };
@@ -777,6 +717,24 @@ impl Embedding {
             }
         }
     }
+}
+
+/// Takes what a TEI's `/info` said, logs a change, and returns whether there was one.
+fn set_discovery(configs: &[ModelConfig], tei: &Tei, discovery: Discovery) -> bool {
+    tei.update(|state| {
+        if state.discovery != discovery {
+            match &discovery {
+                Discovery::Serving { model, .. } => {
+                    tracing::info!(url = %tei.url, model = %configs[*model].name, "TEI serves a model")
+                }
+                other => {
+                    let problem = other.problem().unwrap_or_default();
+                    tracing::warn!(url = %tei.url, %problem, "TEI is of no use")
+                }
+            }
+        }
+        state.discovery = discovery;
+    })
 }
 
 async fn listen(pool: &PgPool) -> Result<PgListener, sqlx::Error> {
@@ -850,7 +808,7 @@ async fn embed_batch(
             missing.push((hash.clone(), text.clone()));
         }
     }
-    let rejected = cache_embeddings(&mut tx, pool, embedding, tei, model, served, missing).await?;
+    let rejected = cache_embeddings(&mut tx, embedding, tei, model, served, missing).await?;
     if !rejected.is_empty() {
         let rejected_chunks: Vec<_> = chunks
             .iter()
@@ -899,7 +857,6 @@ async fn embed_batch(
 /// took.
 async fn cache_embeddings(
     tx: &mut PgConnection,
-    pool: &PgPool,
     embedding: &Embedding,
     tei: &Tei,
     model: &Model,
@@ -916,7 +873,7 @@ async fn cache_embeddings(
         let texts = texts.to_vec();
         async move {
             embedding
-                .embed_on(pool, tei, model, served, &texts, BATCH_TIMEOUT)
+                .embed_on(tei, model, served, &texts, BATCH_TIMEOUT)
                 .await
         }
     };

@@ -11,5 +11,5 @@ create table teis (
     check ((last_error is null) = (last_error_at is null))
 );
 
--- Errors are per TEI now.
+-- Errors live in `teis.last_error`.
 drop table embedding_errors;

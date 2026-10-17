@@ -158,6 +158,7 @@ pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
     ModelConfig {
         name: name.to_owned(),
         model_id: tei.model_id(),
+        dimension: fake_tei::DIMENSION,
         query_prefix: QUERY_PREFIX.to_owned(),
         document_prefix: DOCUMENT_PREFIX.to_owned(),
         // The fake's vectors are never negative, so no candidate is dropped.

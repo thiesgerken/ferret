@@ -21,6 +21,7 @@ embedding:
   models:
     - name: qwen3-embedding-0.6b
       model_id: Qwen/Qwen3-Embedding-0.6B    # what a TEI serving it reports in /info
+      dimension: 1024                        # of its vectors
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
       min_similarity: 0.42                   # see Similarity cut-off
@@ -47,13 +48,16 @@ A laptop is listed once and helps with whatever model it has loaded.
   the other model with the next look. TEIs that are down don't keep the server from starting:
   searches answer by keyword until a TEI serves the model.
 - **Every answer is checked**: embeddings go through TEI's OpenAI-compatible `/v1/embeddings`,
-  whose answer names the model that computed them (TEI's `served_model_name`, the model id unless
-  TEI was started with `--served-model-name`). An answer from another model than discovered, with
-  another dimension than the model's, or with a vector missing is discarded, never written, and
-  the TEI is asked again at once. Vectors of two models can therefore never mix, however TEIs come
-  and go. The route normalizes like `/embed`.
-- **Dimension**: `/info` doesn't report it. The first embedding of a model sets it and creates the
-  model's partial HNSW index. At startup it is read from `embedding_cache`.
+  whose answer names the model that computed them (TEI's `served_model_name`). An answer from
+  another model than discovered, with another dimension than the model's, or with a vector missing
+  is discarded, never written, and the TEI is asked again in the background. A TEI started with
+  `--served-model-name` is unsuitable: under a fixed name, its answers couldn't show that it
+  loaded another model meanwhile. Vectors of two models therefore don't mix as TEIs come and go
+  (two models of one dimension under the same model id would, which no config allows). The route
+  normalizes like `/embed`.
+- **Dimension**: configured per model, since `/info` doesn't report it. The server creates the
+  model's partial HNSW index for it at startup, and refuses to start when the model's stored
+  embeddings have another one.
 - **Switches** (Admin, table `teis`): per TEI, on/off, queries, embedding. New TEIs of the
   deployment get all three, external ones (`external: true`) no queries, so searches don't depend
   on a laptop that may go to sleep. A change takes effect at once on the server that made it,
@@ -87,8 +91,8 @@ A laptop is listed once and helps with whatever model it has loaded.
   out. It compares them one to one with `max_input_length` tokens: Latin
   text never takes more than one token per character, so a model that accepts 2202 tokens takes
   every input.
-- **Adding a model**: once a TEI serves it, the pump backfills it, and the first embedding creates
-  its partial HNSW index.
+- **Adding a model**: the server creates its partial HNSW index, and once a TEI serves it, the
+  pump backfills it.
 - **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
 ## Storage
