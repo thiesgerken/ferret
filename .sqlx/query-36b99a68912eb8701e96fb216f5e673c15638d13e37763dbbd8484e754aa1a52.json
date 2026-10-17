@@ -1,0 +1,117 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update connections set config = $3, schedule = $4, enabled = $5, next_run_at = $6\n         where id = $1 and user_id = $2\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "plugin"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "config",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "schedule",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "schedule"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "next_run_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "next_run_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "36b99a68912eb8701e96fb216f5e673c15638d13e37763dbbd8484e754aa1a52"
+}

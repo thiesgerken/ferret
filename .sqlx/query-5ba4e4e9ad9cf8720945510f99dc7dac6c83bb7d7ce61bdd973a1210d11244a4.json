@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select name, config_schema from plugin_types order by name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugin_types",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "config_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugin_types",
+            "name": "config_schema"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5ba4e4e9ad9cf8720945510f99dc7dac6c83bb7d7ce61bdd973a1210d11244a4"
+}

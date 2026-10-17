@@ -1,12 +1,15 @@
 # ferret Helm chart
 
-Deploys [ferret](https://github.com/thiesgerken/ferret): server, frontend and ParadeDB.
+Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend and ParadeDB.
 
 ## Prerequisites
 
 - [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs and a Gateway to attach the `HTTPRoute` to
 - A ReadWriteOnce StorageClass for the database. Backups are the cluster's job: pick a class with
   CSI snapshots (e.g. for Velero), the chart takes none itself.
+- A CNI that enforces NetworkPolicies (Cilium, Calico, …). With `networkPolicy.enabled` (the
+  default) the chart restricts the server's internal port to the plugin workers. Without
+  enforcement, the worker secret is all that guards it.
 
 ## Install
 
@@ -33,6 +36,7 @@ set `secrets.existingSecret`:
 | `postgres-password` | the database user |
 | `bootstrap-password` | the first `admin`, at least 16 characters |
 | `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
+| `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 
 ## Uninstall
 
