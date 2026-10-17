@@ -142,6 +142,17 @@ pub struct SearchQuery {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub hits: Vec<Hit>,
+    /// Matching documents after the similarity cut-off, exclusions and collapsing, not only the
+    /// `k` returned.
+    pub total: u32,
+    /// `total` is a minimum: the keyword half filled its candidates, or the vector half didn't
+    /// reach the model's similarity cut-off within its candidates.
+    pub total_is_lower_bound: bool,
+    /// Documents the caller may read in the selected sources (all sources when none are
+    /// selected). The other filters don't narrow it.
+    pub documents_in_scope: u32,
+    /// The search's time on the server.
+    pub took_ms: u32,
     /// Why the semantic half didn't run (e.g. TEI is down), so the hits are keyword matches
     /// only. `None` when it ran.
     pub semantic_unavailable: Option<String>,
@@ -162,7 +173,11 @@ pub struct Hit {
     pub authors: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
-    pub score: f32,
+    /// The best BM25 score among the document's chunks, `None` when the keywords didn't match.
+    pub keyword_score: Option<f32>,
+    /// The best cosine similarity to the query among the document's chunks, `None` when no chunk
+    /// passed the model's `min_similarity` or the semantic half didn't run.
+    pub similarity: Option<f32>,
     /// How many more documents of the same thread matched and were folded into this hit.
     pub collapsed: u32,
     pub chunk: HitChunk,

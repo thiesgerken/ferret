@@ -43,7 +43,7 @@ async fn a_query_without_keyword_overlap_finds_a_semantic_match_once_embedded(po
     server.wait_for_embeddings(2).await;
     let hits = search(&api, query("vehicle")).await;
 
-    // The vector half has no cut-off, so the unrelated document trails.
+    // The test model's `min_similarity` is 0, so the unrelated document trails.
     assert_eq!(ids(&hits), ["car", "weather"]);
     assert!(hits[0].chunk.parts.iter().all(|part| !part.highlight));
 }
@@ -66,7 +66,9 @@ async fn keyword_and_semantic_matches_are_fused(pool: PgPool) {
     let hits = search(&api, query("vehicle")).await;
 
     assert_eq!(ids(&hits), ["both", "semantic", "unrelated"]);
-    assert!(hits[0].score > hits[1].score);
+    assert!(hits[0].keyword_score.is_some() && hits[0].similarity.is_some());
+    assert!(hits[1].keyword_score.is_none());
+    assert!(hits[1].similarity > hits[2].similarity);
 }
 
 #[sqlx::test(migrations = false)]
@@ -387,4 +389,59 @@ async fn long_titles_are_capped_in_the_embedded_input(pool: PgPool) {
         &title[..200]
     );
     assert!(server.tei.embedded().contains(&capped));
+}
+
+#[sqlx::test(migrations = false)]
+async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: PgPool) {
+    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
+    let mut strict = model(MODEL, &tei);
+    strict.min_similarity = 0.3;
+    let server = start_server_with(pool, tei, embedding_config(strict)).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    api.put_document(&document("notes", "weather", "Lovely weather today."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(2).await;
+
+    let response = api.search(&query("vehicle")).await.unwrap();
+
+    assert_eq!(ids(&response.hits), ["car"]);
+    assert!(
+        response.hits[0]
+            .similarity
+            .is_some_and(|similarity| similarity >= 0.3)
+    );
+    assert_eq!(response.total, 1);
+}
+
+#[sqlx::test(migrations = false)]
+async fn the_total_is_exact_only_once_a_neighbour_falls_below_the_cut_off(pool: PgPool) {
+    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
+    let mut strict = model(MODEL, &tei);
+    strict.min_similarity = 0.3;
+    let server = start_server_with(pool, tei, embedding_config(strict)).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+
+    let response = api.search(&query("vehicle")).await.unwrap();
+    assert_eq!(response.total, 1);
+    assert!(
+        response.total_is_lower_bound,
+        "nothing seen below the cut-off yet"
+    );
+
+    api.put_document(&document("notes", "weather", "Lovely weather today."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(2).await;
+
+    let response = api.search(&query("vehicle")).await.unwrap();
+    assert_eq!(response.total, 1);
+    assert!(!response.total_is_lower_bound);
 }
