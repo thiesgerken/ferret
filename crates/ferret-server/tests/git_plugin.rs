@@ -312,7 +312,19 @@ async fn later_runs_index_the_diff_unless_history_or_config_changed(pool: PgPool
     let rewritten = head(dir);
     std::fs::write(dir.join("c.txt"), "The invoice moved.").unwrap();
     git(dir, &["add", "-A"]);
-    git(dir, &["commit", "-q", "--amend", "--no-edit"]);
+    git(
+        dir,
+        &[
+            "-c",
+            "user.name=Grace",
+            "-c",
+            "user.email=a@example.com",
+            "commit",
+            "-q",
+            "--amend",
+            "--no-edit",
+        ],
+    );
     let runs = connection.run().await;
     assert!(
         log(&runs).contains(&format!(
