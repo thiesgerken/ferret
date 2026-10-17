@@ -21,13 +21,3 @@ export function relevanceBars(
         : 0;
   return 1 + Math.round(Math.min(Math.max(share, 0), 1) * (RELEVANCE_BARS - 1));
 }
-
-/** "53% similar · all words found (BM25 51.6)" */
-export function relevanceLabel(hit: { similarity?: number | null; keywordScore?: number | null }): string {
-  return [
-    hit.similarity != null && `${Math.round(hit.similarity * 100)}% similar`,
-    hit.keywordScore != null && `all words found (BM25 ${hit.keywordScore.toFixed(1)})`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}

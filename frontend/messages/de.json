@@ -1,0 +1,171 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "name": "Name",
+    "icon": "Symbol",
+    "openInOrigin": "Im Original öffnen",
+    "allSources": "allen Quellen",
+    "never": "nie"
+  },
+  "pages": {
+    "nav": "Seiten",
+    "search": { "title": "Suche" },
+    "explore": { "title": "Stöbern" },
+    "activity": { "title": "Aktivität", "description": "Was ferret gerade einliest und einbettet, live." },
+    "connections": { "title": "Verbindungen", "description": "Plugins, die eine Quelle nach Zeitplan mit ihrem Ursprung abgleichen." },
+    "settings": { "title": "Einstellungen", "description": "Dein Konto, die Schlüssel für deine Agenten und Skripte, das Modell für deine Suchen und die Sprache." },
+    "admin": { "title": "Admin", "description": "Benutzer, die Embedding-Pipeline und die Plugin-Worker." }
+  },
+  "app": {
+    "menu": "App-Menü",
+    "signedInAs": "Angemeldet als {name}",
+    "signOut": "Abmelden",
+    "failed": "Etwas ist schiefgelaufen: {message}"
+  },
+  "login": {
+    "username": "Benutzername",
+    "password": "Passwort",
+    "submit": "Anmelden",
+    "pending": "Anmeldung läuft…"
+  },
+  "home": {
+    "summary": "{chunks, plural, one {# Chunk} other {# Chunks}} · {documents, plural, one {# Dokument} other {# Dokumente}} · {sources, plural, one {# Quelle} other {# Quellen}}"
+  },
+  "search": {
+    "field": "Suchen",
+    "loading": "Lädt",
+    "semanticUnavailable": "Nur Stichworttreffer: {reason}.",
+    "noMatches": "Keine Dokumente zu „{q}“",
+    "filtersTooNarrow": "Vielleicht sind die Filter zu eng.",
+    "tryOtherWords": {
+      "hybrid": "Versuch es mit weniger oder anderen Wörtern: Entweder müssen alle Wörter vorkommen oder die Bedeutung muss nah dran sein.",
+      "keyword": "Versuch es mit weniger oder anderen Wörtern: Alle Wörter müssen vorkommen.",
+      "semantic": "Versuch es mit anderen Wörtern: Die Bedeutung muss nah dran sein."
+    },
+    "clearFilters": "Filter zurücksetzen",
+    "matches": {
+      "hybrid": "{count, number}{more} Treffer",
+      "keyword": "{count, number}{more} Stichworttreffer",
+      "semantic": "{count, plural, one {#{more} semantischer Treffer} other {#{more} semantische Treffer}}"
+    },
+    "stats": "{matches} · {documents, plural, one {# Dokument} other {# Dokumente}} in {scope} · {ms} ms",
+    "loadingMore": "Lädt weitere…",
+    "end": "Das war alles",
+    "endAtLimit": "Tiefer geht diese Suche nicht",
+    "hit": {
+      "moreInThread": "{count} weitere in diesem Thread",
+      "similar": "{similarity, number, percent} ähnlich",
+      "allWordsFound": "alle Wörter gefunden (BM25 {score, number, ::.0})",
+      "judge": "Richtiger Treffer für diese Suche",
+      "judged": "Als richtiger Treffer für diese Suche markiert",
+      "unjudged": "Als richtigen Treffer für diese Suche markieren"
+    },
+    "filters": {
+      "label": "Filter",
+      "matching": "Suchart",
+      "keyword": "Stichwörter",
+      "semantic": "Bedeutung",
+      "keywordHint": "Alle Wörter kommen im Dokument vor, sortiert nach BM25",
+      "semanticHint": "Die Bedeutung liegt nah an der Anfrage, gemessen an der Embedding-Ähnlichkeit",
+      "lastMatching": "Eine Suchart bleibt immer an",
+      "time": "Zeitraum",
+      "timeRange": "Zeitraum",
+      "ranges": {
+        "any": "Beliebig",
+        "day": "Letzter Tag",
+        "week": "Letzte Woche",
+        "month": "Letzter Monat",
+        "year": "Letztes Jahr"
+      },
+      "model": "Modell",
+      "embeddingModel": "Embedding-Modell",
+      "defaultModel": "Standardmodell",
+      "defaultModelRan": "Standardmodell ({model})",
+      "sources": "Quellen",
+      "allOfWriter": "Alle",
+      "authors": "Autoren"
+    }
+  },
+  "viewer": {
+    "noDocumentGiven": "Kein Dokument angegeben.",
+    "gone": "Dieses Dokument gibt es nicht (mehr).",
+    "untitled": "Ohne Titel",
+    "modified": "· geändert am {date, date, medium} um {date, time, short}",
+    "from": "Von",
+    "subject": "Betreff",
+    "date": "Datum",
+    "image": "Bild",
+    "thread": "Thread",
+    "previous": "Vorheriges im Thread",
+    "next": "Nächstes im Thread",
+    "exclude": "Aus dem Index nehmen:",
+    "excludeDocument": "Dieses Dokument",
+    "excludeThread": "Den ganzen Thread",
+    "confirmDocument": "Dieses Dokument aus ferret löschen und nicht wieder einlesen?",
+    "confirmThread": "Dieses Dokument und den Rest seines Threads aus ferret löschen und nicht wieder einlesen?",
+    "nothingExcluded": "Es wurde nichts ausgeschlossen.",
+    "removed": "{count, plural, one {# Dokument} other {# Dokumente}} aus dem Index entfernt.",
+    "remembered": "Seine Verbindung liest es nicht wieder ein. Rückgängig machen kannst du das auf der Seite Verbindungen.",
+    "notRemembered": "Keiner Verbindung gehört seine Quelle, also merkt sich das niemand: Was es dort abgelegt hat, kann es wieder ablegen.",
+    "backToSearch": "Zurück zur Suche"
+  },
+  "settings": {
+    "account": {
+      "title": "Konto",
+      "description": "Ein neues Passwort meldet dich überall sonst ab. Dieser Browser bleibt angemeldet.",
+      "current": "Aktuelles Passwort",
+      "new": "Neues Passwort (mindestens 12 Zeichen)",
+      "repeat": "Neues Passwort wiederholen",
+      "mismatch": "Die neuen Passwörter stimmen nicht überein.",
+      "changed": "Passwort geändert. Andere Sitzungen sind abgemeldet.",
+      "submit": "Passwort ändern"
+    },
+    "apiKeys": {
+      "title": "API-Schlüssel",
+      "description": "Für Agenten, Skripte und externe Einleser. Schick einen Schlüssel als <code>Authorization: Bearer fk_…</code>.",
+      "confirmRevoke": "„{name}“ widerrufen? Alles, was diesen Schlüssel nutzt, funktioniert dann nicht mehr.",
+      "none": "Noch keine API-Schlüssel.",
+      "editName": "{name} bearbeiten",
+      "revoke": "Widerrufen",
+      "lastUsed": "Zuletzt benutzt: {date}",
+      "neverExpires": "läuft nie ab",
+      "expires": "läuft am {date} ab",
+      "expired": "am {date} abgelaufen",
+      "notCreated": "Der Schlüssel wurde nicht erstellt.",
+      "new": "Neuer API-Schlüssel",
+      "namePlaceholder": "carapace-Such-Skill",
+      "scopes": "Berechtigungen",
+      "scope": {
+        "SEARCH": "Suche",
+        "INGEST": "Einlesen",
+        "ADMIN": "Admin"
+      },
+      "noAccess": "Kein Zugriff",
+      "read": "Lesen",
+      "readWrite": "Lesen und schreiben",
+      "sources": "Quellen (optional, beschränkt jede Berechtigung auf diese und alles darunter; nicht mit Admin-Berechtigungen)",
+      "expiresLabel": "Läuft ab am (optional)",
+      "create": "Schlüssel erstellen",
+      "copyNow": "Kopier den Schlüssel jetzt. Er wird nicht noch einmal angezeigt.",
+      "copy": "Schlüssel kopieren"
+    },
+    "models": {
+      "title": "Modelle",
+      "description": "Das Embedding-Modell für deine Suchen, in der Oberfläche und über deine API-Schlüssel. Du kannst ein Modell wählen, bevor es alles eingebettet hat: Bis dahin sind seine semantischen Treffer unvollständig.",
+      "legend": "Standardmodell",
+      "configuredDefault": "Konfigurierter Standard ({model})",
+      "noChunks": "noch keine Chunks",
+      "coverage": "{embedded, number} von {chunks, number} Chunks eingebettet ({share, number, percent})"
+    },
+    "language": {
+      "title": "Sprache",
+      "description": "Für diesen Browser. System folgt der Sprache des Browsers.",
+      "label": "Sprache",
+      "system": "System ({language})",
+      "en": "English",
+      "de": "Deutsch"
+    }
+  }
+}

@@ -27,6 +27,7 @@ const client = createGraphqlClient(async () =>
           })),
         },
       },
+      embeddingModels: [{ __typename: "EmbeddingModel", chunks: 52113 }],
     },
   }),
 );
@@ -43,7 +44,7 @@ test("the home page shows the logo, a search field that submits q to /, and the 
   const form = view.container.querySelector<HTMLFormElement>("form[role=search]");
   assert.equal(form?.getAttribute("action"), "/");
   assert.ok(form.querySelector("input[type=search][name=q]"));
-  assert.match(view.container.textContent ?? "", /18,945 documents · 3 sources/);
+  assert.match(view.container.textContent ?? "", /52,113 chunks · 18,945 documents · 3 sources/);
 
   await view.unmount();
 });

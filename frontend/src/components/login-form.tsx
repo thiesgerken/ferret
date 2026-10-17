@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 import { login } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ const inputClass = cn(
 );
 
 export function LoginForm({ onSignedIn }: { onSignedIn: () => void }) {
+  const t = useTranslations("login");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -39,13 +41,13 @@ export function LoginForm({ onSignedIn }: { onSignedIn: () => void }) {
         </h1>
         <div className="space-y-1.5">
           <label htmlFor="username" className="text-xs font-medium text-muted-foreground">
-            Username
+            {t("username")}
           </label>
           <input id="username" name="username" autoComplete="username" required autoFocus className={inputClass} />
         </div>
         <div className="space-y-1.5">
           <label htmlFor="password" className="text-xs font-medium text-muted-foreground">
-            Password
+            {t("password")}
           </label>
           <input
             id="password"
@@ -70,7 +72,7 @@ export function LoginForm({ onSignedIn }: { onSignedIn: () => void }) {
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >
-          {pending ? "Signing in…" : "Sign in"}
+          {pending ? t("pending") : t("submit")}
         </button>
       </form>
     </main>

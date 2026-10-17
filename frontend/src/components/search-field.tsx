@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ export function SearchField({
   onType?: (q: string) => void;
   className?: string;
 }) {
+  const t = useTranslations("search");
   const [value, setValue] = useState(defaultValue);
   const [shownDefault, setShownDefault] = useState(defaultValue);
   const typing = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -55,7 +57,7 @@ export function SearchField({
         <input
           type="search"
           name="q"
-          aria-label="Search"
+          aria-label={t("field")}
           value={value}
           onChange={(event) => handleChange(event.target.value)}
           autoFocus={!defaultValue}
