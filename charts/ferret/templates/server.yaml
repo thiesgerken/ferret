@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "ferret.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "ferret.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ferret.selectorLabels" (dict "root" . "component" "server") | nindent 8 }}
+      annotations:
+        # Rolls the pods when the models change: the server reads them only at startup.
+        checksum/config: {{ include "ferret.config" . | sha256sum }}
+    spec:
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "ferret.image" (dict "root" . "image" .Values.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: internal
+              containerPort: 8081
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.server.logLevel | quote }}
+            - name: FERRET_CONFIG_FILE
+              value: /etc/ferret/config.yaml
+            # The password travels separately (libpq's PGPASSWORD, read by sqlx), so it never
+            # needs URL-encoding.
+            - name: FERRET_DATABASE_URL
+              value: "postgres://{{ .Values.postgres.username }}@{{ .Release.Name }}-postgres:5432/{{ .Values.postgres.database }}"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: postgres-password
+            - name: FERRET_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: bootstrap-password
+            - name: FERRET_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: session-secret
+            - name: FERRET_WORKER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: worker-secret
+            - name: FERRET_CONFIG_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: config-key
+            {{- with .Values.server.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ferret
+              readOnly: true
+          # Startup covers migrations, Postgres and, on a fresh install, TEI downloading its model:
+          # the server waits up to 10 minutes for it before giving up.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 130
+          # TCP, not /healthz: health fails while the database is down, and restarting every
+          # server pod doesn't bring the database back.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "ferret.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    {{- include "ferret.selectorLabels" (dict "root" . "component" "server") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    # Not routed by the HTTPRoute. The NetworkPolicy admits only the plugin workers.
+    - name: internal
+      port: 8081
+      targetPort: internal

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: ferret
+description: Personal search index over notes, documents, mail, chats and agent memory
+type: application
+version: 0.0.0
+appVersion: "0.0.0"
+home: https://github.com/thiesgerken/ferret
+sources:
+  - https://github.com/thiesgerken/ferret
+maintainers:
+  - name: thiesgerken

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (\n               select 1 from exclusions e join connections c on c.id = e.connection_id\n               where c.user_id = $1 and e.source = $2\n                 and (e.external_id = $3 or e.thread = $4)\n           ) as \"excluded!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "excluded!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8aa1b189c21e745bb0d218351af9c86d44a1886f692f4245341bedab0d8b79ae"
+}

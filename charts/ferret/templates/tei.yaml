@@ -1,0 +1,113 @@
+{{- /* Per model a CPU TEI for queries and, with tei.gpu.enabled, a GPU TEI for the embed pump. */}}
+{{- $gpu := .Values.tei.gpu }}
+{{- $variants := list (dict "suffix" "" "image" .Values.tei.image "gpu" false) }}
+{{- if $gpu.enabled }}
+{{- $variants = append $variants (dict "suffix" "-gpu" "image" (merge (dict "tag" (required "tei.gpu.image.tag is required when tei.gpu.enabled, see values.yaml" $gpu.image.tag)) $gpu.image) "gpu" true) }}
+{{- end }}
+{{- $teiNames := dict }}
+{{- range $model := .Values.embedding.models }}
+{{- range $variant := $variants }}
+{{- $name := include "ferret.teiName" (dict "root" $ "model" $model "suffix" $variant.suffix) }}
+{{- if hasKey $teiNames $name }}
+{{- fail (printf "models %q and %q share the TEI name %q" (get $teiNames $name) $model.name $name) }}
+{{- end }}
+{{- $_ := set $teiNames $name $model.name }}
+{{- $component := trimPrefix (printf "%s-" $.Release.Name) $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 8 }}
+    spec:
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      # TEI's images are amd64 only. arm64 CPU nodes need TEI's cpu-arm64 tag instead.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        {{- if $variant.gpu }}
+        {{- with $gpu.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- if $variant.gpu }}
+      {{- with $gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: tei
+          image: {{ include "ferret.image" (dict "root" $ "image" $variant.image) }}
+          imagePullPolicy: {{ $variant.image.pullPolicy }}
+          args:
+            - --model-id
+            - {{ required "embedding.models[].modelId is required" $model.modelId | quote }}
+            # Explicit on every TEI: the default (16384) gets the warmup OOM-killed on small CPU
+            # nodes, a GPU takes it.
+            - --max-batch-tokens
+            {{- if $variant.gpu }}
+            - {{ required "tei.gpu.maxBatchTokens is required" $gpu.maxBatchTokens | quote }}
+            {{- else }}
+            - {{ required "embedding.models[].maxBatchTokens is required" $model.maxBatchTokens | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 80
+          {{- with (ternary $gpu.resources $model.resources $variant.gpu) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: models
+              mountPath: /data
+          # /info, not /health: TEI answers /health on the same thread as the embedding batches, so
+          # the pod would drop out of the Service while a backfill keeps it busy. /info answers
+          # from memory, and TEI only starts listening once the model is loaded and warmed up.
+          # The first start downloads the model.
+          startupProbe:
+            httpGet:
+              path: /info
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /info
+              port: http
+            periodSeconds: 10
+      volumes:
+        # ponytail: re-downloaded on every pod start. A PVC per model if restarts get slow.
+        - name: models
+          emptyDir:
+            sizeLimit: {{ required "embedding.models[].cacheSize is required" $model.cacheSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}
+{{- end }}

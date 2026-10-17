@@ -68,7 +68,7 @@ create table documents (
     authors       text[] not null,
     created_at    timestamptz not null,
     modified_at   timestamptz not null,
-    meta          jsonb not null default '{}',
+    meta          jsonb not null,
     text          text not null,
     content_hash  bytea not null,
     seen_at       timestamptz not null,    -- bumped on every PUT, even a no-op (see sync sweep)
@@ -83,6 +83,7 @@ create table chunks (
     source        text not null,
     content_type  text not null,
     ts            timestamptz not null,    -- the document's created_at
+    title         text,                    -- the document's, searched and embedded with the text
     ordinal       int not null,
     start_offset  int not null,            -- into the rendered document text
     end_offset    int not null,
@@ -102,9 +103,9 @@ create table syncs (
 Embeddings live in `chunk_embeddings`, one row per chunk and model, so several models can be live
 at once. See [embeddings.md](embeddings.md).
 
-Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
-`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at)` for
-thread navigation.
+Indexes: BM25 (`pg_search`) on `chunks.text` and `chunks.title`, one partial HNSW index per model
+on `chunk_embeddings`, `documents (user_id, source, thread, created_at, id)` (partial, where
+`thread` is set) for thread navigation.
 
 ## Sources
 
@@ -119,13 +120,22 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
 
 ```text
 PUT    /api/documents                           upsert by (source, external_id), idempotent
-DELETE /api/documents?source=&external_id=
+                                                -> {outcome: created | updated | unchanged, id}
+                                                   or {outcome: excluded}, nothing stored
+DELETE /api/documents?source=&external_id=      204, or 404 if there is no such document
 POST   /api/syncs                {source}      -> {sync_id}
-POST   /api/syncs/{id}/seen      {external_ids} mark existing documents as seen, without content
+POST   /api/syncs/{id}/seen      {source, external_ids}
+                                                mark existing documents as seen, without content
+                                                -> {seen: number of them that exist}, 409 if already committed
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
+                                                -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
-GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
+GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at, then id
+                                                -> {documents}, full documents as above
 ```
+
+`seen` names the source of its external ids: a sync over `carapace` covers `carapace/facts` and
+`carapace/sessions`, whose external ids may repeat. It must be the sync's source or below it.
 
 Source and external id travel in the body or query, never in the URL path: both may contain `/`
 (source paths, file paths), which path routing and proxies handle badly.
@@ -155,7 +165,13 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
 
 - `url` is optional. Without one, ferret's viewer is the origin (e.g. WhatsApp and Signal exports,
   which have no message deep links).
-- Missing required fields are a 4xx, never a silent default.
+- `url` must not use the `javascript:`, `data:` or `vbscript:` scheme (case-insensitive, leading
+  spaces and control characters and inner tabs or line breaks ignored, as browsers read it): a
+  `400`. A denylist rather than an allowlist, because origins use custom schemes (`obsidian:`,
+  `mid:`, `zotero:`). The UI applies the same rule before rendering any `url` as a link.
+- `title` and `thread` are optional too, `meta` defaults to `{}`. Everything else is required.
+- Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
+  default. `source` must be a well-formed path, `external_id` must not be empty.
 
 ### What a PUT does
 
@@ -163,8 +179,9 @@ All in one transaction:
 
 1. Hash the document (text plus metadata).
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
-3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding. New
-   chunks look up `embedding_cache` per configured model and are left to the embed pump on a miss.
+3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding
+   unless the title changed (it is part of the embedded input). New chunks are left to the embed
+   pump, which takes cached embeddings from `embedding_cache` and sends only misses to TEI.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
 Plugins can therefore resend everything on every run without cost.
@@ -176,8 +193,9 @@ Chat plugins cut conversations into segments, each a regular `plain` document wi
 
 ## Embedding models
 
-Several models can be live at the same time, each backfilled by the embed pump. Every user
-evaluates them on their own data and picks their own default. See [embeddings.md](embeddings.md).
+Several models can be live at the same time, each backfilled by the embed pump. Every user picks
+their own default in Settings. Evaluating the models on one's own data follows after v1 (#21).
+See [embeddings.md](embeddings.md).
 
 ## Removing stale content
 
@@ -193,46 +211,97 @@ Depends on whether a source knows its full state:
 ## Chunking
 
 Server-side, per content type. [`text-splitter`](https://crates.io/crates/text-splitter) does the
-token-aware and Markdown-aware splitting.
+Markdown-aware splitting. Chunks hold 1000 to 2000 characters: characters rather than model tokens,
+because ~2000 characters stay far below every embedding model's input limit, and counting tokens
+would tie the chunker to one model's tokenizer.
 
 | content type | strategy |
 |---|---|
-| `markdown` | by heading, then paragraph, capped by tokens |
-| `plain` | by paragraph, then line, capped by tokens |
+| `markdown` | by heading, then paragraph, capped at 2000 characters |
+| `plain` | by paragraph, then line, capped at 2000 characters |
 | `email` | like `plain`. The plugin strips quoted replies, the quoted mail is its own document |
 
-Every chunk keeps its offsets into the rendered text, so a hit shows both the localized snippet and,
-via `GET /api/documents/{id}`, the full context.
+Every chunk keeps its offsets into the document's text, counted in characters (Unicode scalar
+values), so a hit shows both the localized snippet and, via `GET /api/documents/{id}`, the full
+context.
+
+The document's title belongs to every chunk: Paperless titles, mail subjects and note headings
+often carry the most specific words, which the chunk's text may lack. A query word may match the
+title instead of the text (see Search), and the embedding model gets `{title}\n\n{text}` (after the
+model's prefix, the title capped at 200 characters) as input. The stored chunk text stays the text alone, so offsets and snippets
+don't change.
 
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&model=&k=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
 ```
 
-- **Hybrid**: BM25 top N and vector top N, fused with reciprocal rank fusion (k = 60) in one SQL
-  query. The vector half uses the user's default model unless `model=` says otherwise.
-- **Filters**: core columns plus equality on `meta` keys, `source` by path prefix. No query
-  language.
+- **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
+  rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
+  half takes the 100 nearest chunks and drops those less similar to the query than the model's
+  `min_similarity` ([embeddings.md](embeddings.md#similarity-cut-off)), so an unrelated document
+  doesn't "match a little". It uses the user's default model unless `model=` says otherwise.
+  Filters, `-word` and `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk
+  without an embedding yet (backfill) is found by keyword only. If the query can't be embedded
+  within 5 s (TEI down, stuck or broken), the search answers with the keyword half alone and says
+  so: `semantic_unavailable` (REST) and `semanticUnavailable` (GraphQL) carry the reason, `null`
+  when the semantic half ran, the UI shows a notice above the hits, and the server logs a warning.
+  Keyword search is complete on its own, a restarting TEI shouldn't make ferret useless.
+- **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No query language.
+  Equality filters on `meta` keys (`meta.<key>=<value>`, with a GIN index on `documents.meta`)
+  are post-v1 (#21).
 - **Filtered vector search** needs pgvector's iterative index scans
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
-  Author and `meta` filters are rare and selective and stay a join.
-- **Languages**: German and English, often mixed in one text. Chunk text is indexed three times in
-  `pg_search`: German-stemmed, English-stemmed, and ngram (for compounds: "Versicherung" must find
-  "Kfz-Versicherungsbeitrag", and typos). Queries search all three fields. No language detection.
-- **Query syntax**: `"exact phrase"` and `-word` go into the BM25 half, the vector half gets the
-  query without operators. Filters are not part of the query text, the UI sets them as chips.
+  The author filter is rare and selective and stays a join.
+- **Languages**: German and English, often mixed in one text. Chunk text and the document's title
+  are each indexed three times in `pg_search`: German-stemmed, English-stemmed, and trigrams (for
+  compounds: "Versicherung" must find "Kfz-Versicherungsbeitrag"). Every query word must match the
+  chunk's text or title in at least one of the three: German or English stem, or all of its
+  trigrams. So the words of one query may match in different fields: `Versicherung Rechnungen`
+  finds "Kfz-Versicherungsbeitrag … Rechnung", and `Versicherung 312` finds a bill titled
+  "HUK Kfz-Versicherung Beitragsrechnung" whose text says "312 Euro". No
+  language detection. No typo tolerance in v1: the trigram match needs all trigrams, so a
+  misspelled word doesn't match (follow-up in #21).
+- **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as a
+  substring, ignoring case and whitespace differences (so it also matches inside longer words).
+  `-word` drops every document containing it in its text or title, compounds included. Phrases
+  are matched on the chunk's text only. All
+  three go into the BM25 half, the vector half gets the words without operators. Filters are not
+  part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
-  document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
-  the document level.
-- **Time filter**: `from`/`to` filter on `created_at`. `modified_at` is shown in the hit.
+  document by its best chunk, which is shown as the highlighted snippet. The model evaluation
+  after v1 (#21) counts recall@10 and MRR at the document level.
+- **Time filter**: `from`/`to` filter on `created_at`, `from` inclusive, `to` exclusive.
+  `created_at` is shown in the hit, so the date matches what the filter works on. The UI's presets
+  ("Past week") go to GraphQL as `range`, resolved against the server's clock.
+- **Repeated filters**: `source=`, `content_type=` and `author=` may repeat, a document matches any
+  of them.
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
-  authors, timestamps, `url`, `thread`.
+  authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
+  or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
+  word, share its German or English stem, or contain it (compounds, for query words of three or
+  more characters). Each hit carries the best BM25 score among the document's chunks in the keyword
+  candidates (`keyword_score`) and the best cosine similarity to the query among its chunks in the
+  vector candidates above the cut-off (`similarity`), each null when none of its chunks is (or
+  without the semantic half). The fused score stays internal. Next to the hits, `model`
+  names the embedding model the semantic half used (or would have, when `semantic_unavailable`
+  says it couldn't run).
+- **Counts and timing**: `total` counts the matching documents after the cut-off, exclusions and
+  collapsing, not only the `k` returned. `total_is_lower_bound` says it may be short: the keyword
+  half filled its 1000 candidates, or all of the 100 nearest chunks passed the cut-off while the
+  scope holds more embedded chunks than came back (HNSW is approximate and may return fewer
+  neighbours, so their number alone doesn't tell). False means no sign of more, not a guarantee:
+  the approximate, `relaxed_order` vector search may miss a chunk above the cut-off.
+  `documents_in_scope` counts the caller's documents in the selected sources (all when none are
+  selected), regardless of the other filters. `took_ms` is the search's time on the server.
+- **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
-  email stripping and consecutive chat segments. The API returns the collapsed count, and
-  `collapse=false` turns it off.
+  email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing
+  happens before `k`, so `k` counts threads. The hit's `collapsed` says how many more documents of
+  its thread matched, and `collapse=false` turns it off.
 
 ## Users
 
@@ -285,12 +354,12 @@ the roadmap. Details in [plugins.md](plugins.md).
 
 - **Default: Qwen3-Embedding-0.6B** (June 2025, Apache 2.0, 1024 dimensions, 32k context,
   multilingual, query instruction required).
-- **A second model from day one**, so the evaluation has something to compare against. Candidates
-  to check when the TEI deployment is set up (license, German quality, TEI support):
-  jina-embeddings-v5-text-small, Granite Embedding Multilingual R2, DenseOn (all 2026). bge-m3
-  (January 2024) is the fallback if none of them runs in TEI.
+- **A second model after v1**, for the model evaluation (#21) to compare against. Candidates to
+  check (license, German quality, TEI support): jina-embeddings-v5-text-small, Granite Embedding
+  Multilingual R2, DenseOn (all 2026). bge-m3 (January 2024) is the fallback if none of them runs
+  in TEI.
 - **Hardware**: CPU for queries and incremental ingest, a temporarily added GPU node (gaming PC)
-  for backfills ([embeddings.md](embeddings.md#models)).
+  for backfills, wired through the chart's `tei.gpu.enabled` ([embeddings.md](embeddings.md#models)).
 
 ## v1 scope
 
@@ -299,16 +368,17 @@ the roadmap. Details in [plugins.md](plugins.md).
   by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
   API.
 - **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
-  change, switching the default is a Settings dropdown.
+  change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).
 - **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
-  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account,
-  API keys, default model with coverage), Admin (users, workers, backlog).
+  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account:
+  change your own password (#54), API keys, default model with coverage), Admin (users, workers, backlog).
 - **Ops**: Helm chart, docker-compose for development, CI and releases as in carapace (images
   `ferret`, `ferret-plugins`, `ferret-frontend`, chart as OCI on ghcr). Structured JSON logs, no
   `/metrics` endpoint.
-- **Follow-up issues, opened as part of v1**: model evaluation (recall@10 and MRR per model from
-  the judgments, in Settings), and UI i18n (German and English).
+- **Follow-up issues (#21)**: model evaluation (recall@10 and MRR per model from the judgments in
+  Settings), UI i18n (German and English), model removal (dropping a removed model's index and
+  embeddings), a host allowlist for plugin targets, and typo tolerance in keyword search.
 
 ## Sizing
 
@@ -334,6 +404,7 @@ None for v1 at the moment. Plugin-specific details are settled when the plugin i
 
 ## Naming
 
-The binary and CLI are `ferret`. The crate name `ferret` is taken on crates.io and FerretDB
-occupies the name in the self-hosting world, so crate and container image need a qualified name
-(`ferret-search`, to be checked).
+The binary and CLI are `ferret`, the images `ferret`, `ferret-plugins` and `ferret-frontend` on
+ghcr, under the repository owner's namespace. The crates (`ferret-server`, `ferret-plugins`,
+`ferret-api`) are not published, so the taken `ferret` on crates.io doesn't matter. FerretDB shares
+the name in the self-hosting world, the owner namespace keeps the images apart.

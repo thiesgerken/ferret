@@ -1,0 +1,9 @@
+# The server's configuration in docker-compose.yml. Secrets come from the environment.
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - name: qwen3-embedding-0.6b
+      url: http://tei:80
+      bulk_url: http://tei-bulk:80
+      query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
+      min_similarity: 0.42

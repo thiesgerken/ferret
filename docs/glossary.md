@@ -69,11 +69,12 @@ A document returned by a search, shown with its best-matching chunk.
 _Avoid_: result, match
 
 **Judgment**:
-A user's statement that a document is the right hit for a query.
+A user's statement that a document is a right hit for a search. A search may have several.
 _Avoid_: label, rating, vote
 
 **Eval set**:
-All judgments of a user, used to measure how well an embedding model retrieves on their data.
+All judgments of a user, to measure how well an embedding model retrieves on their data (the
+evaluation follows after v1, #21).
 _Avoid_: test set, benchmark
 
 **Embedding model**:
@@ -83,3 +84,6 @@ _Avoid_: encoder, model (unqualified)
 **Default model**:
 The embedding model a user's searches use unless a search asks for another one.
 _Avoid_: active model, primary model
+
+**Configured default**:
+The model the config names as `embedding.default`, used by every user who chose no default model.

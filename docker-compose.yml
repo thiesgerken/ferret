@@ -1,0 +1,109 @@
+# Development only. The deployment is the Helm chart.
+services:
+  server:
+    build: .
+    ports:
+      # Host ports off the defaults (here and for ParadeDB), so ferret runs next to other
+      # stacks that already hold 8080 and 5432.
+      - "127.0.0.1:8380:8080"
+    depends_on:
+      paradedb:
+        condition: service_healthy
+      # The server reads the model's limits from TEI at startup.
+      tei:
+        condition: service_healthy
+    environment:
+      FERRET_CONFIG_FILE: /etc/ferret/config.yaml
+      FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
+      # Development values. Sign in as `admin` with the bootstrap password.
+      FERRET_SESSION_SECRET: development session secret, not for production
+      FERRET_BOOTSTRAP_PASSWORD: ferret-development
+      FERRET_WORKER_SECRET: &worker-secret development worker secret, not for production
+      # base64 of "development config key, not prod"
+      FERRET_CONFIG_KEY: ZGV2ZWxvcG1lbnQgY29uZmlnIGtleSwgbm90IHByb2Q=
+    volumes:
+      - ./docker/ferret.yaml:/etc/ferret/config.yaml:ro
+
+  plugins:
+    build:
+      context: .
+      target: plugins
+    depends_on:
+      - server
+    environment:
+      FERRET_INTERNAL_URL: http://server:8081
+      FERRET_SERVER_URL: http://server:8080
+      FERRET_WORKER_SECRET: *worker-secret
+
+  frontend:
+    build: ./frontend
+
+  # The UI at http://127.0.0.1:3380, routed like the cluster's HTTPRoute (docker/traefik-dynamic.yml).
+  proxy:
+    image: traefik:v3.7@sha256:575fa15b135078fe5e50aa847987d96dbddd7b093c172429618404df73f3fa7c
+    command:
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--entrypoints.web.address=:80"
+    depends_on:
+      - server
+      - frontend
+    ports:
+      - "127.0.0.1:3380:80"
+    volumes:
+      - ./docker/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
+
+  paradedb:
+    image: paradedb/paradedb:0.26.2-pg18@sha256:c552094b6b68dcb0a4e7a3969963d801eaec02490db4d2dd032dcb096bc86cf8
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ferret
+      POSTGRES_USER: ferret
+      POSTGRES_PASSWORD: ferret
+    ports:
+      # For `cargo test` and `cargo run` on the host, see .cargo/config.toml.
+      - "127.0.0.1:5439:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferret -d ferret"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Queries. The embed pump has its own TEI (tei-bulk, the model's bulk_url): a query that queues
+  # behind a backfill batch, about 30 s on CPU, runs into the server's 5 s query timeout.
+  tei: &tei
+    # amd64 only. On Apple Silicon use the native build instead of emulation:
+    # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d}
+    restart: unless-stopped
+    # The default batch budget (16k tokens) makes the warmup allocate attention for a 16k-token
+    # sequence, which gets TEI OOM-killed in a typical Docker Desktop VM. 4096 still clears the
+    # chunker's 2000-character cap (and caps TEI's max_input_length at 4096).
+    command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B", "--max-batch-tokens", "4096"]
+    volumes:
+      - tei-models:/data
+    # /info, not /health: TEI answers /health on the same thread as the embedding batches, so it
+    # times out while a backfill keeps TEI busy. /info answers from memory, and TEI only starts
+    # listening once the model is loaded and warmed up.
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost/info"]
+      interval: 5s
+      timeout: 3s
+      # The first start downloads the model.
+      start_period: 10m
+    # Four times tei-bulk's weight: when both want the CPU, a query gets most of it. A weight, not a
+    # limit, so the pump still uses every core that queries leave idle.
+    cpu_shares: 4096
+
+  tei-bulk:
+    <<: *tei
+    depends_on:
+      # Both share the model cache, so the first start downloads it once, in tei.
+      tei:
+        condition: service_healthy
+    cpu_shares: 1024
+
+volumes:
+  pgdata:
+  tei-models:

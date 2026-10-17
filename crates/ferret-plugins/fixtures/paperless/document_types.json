@@ -1,0 +1,9 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "all": [3],
+  "results": [
+    {"id": 3, "slug": "rechnung", "name": "Rechnung", "match": "", "matching_algorithm": 6, "is_insensitive": true, "document_count": 31, "owner": 1, "user_can_change": true}
+  ]
+}

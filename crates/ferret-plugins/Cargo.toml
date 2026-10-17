@@ -1,0 +1,24 @@
+[package]
+name = "ferret-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+chrono = { workspace = true, features = ["std"] }
+ferret-api.workspace = true
+globset.workspace = true
+percent-encoding.workspace = true
+reqwest.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde-saphyr.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["fs", "process"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true

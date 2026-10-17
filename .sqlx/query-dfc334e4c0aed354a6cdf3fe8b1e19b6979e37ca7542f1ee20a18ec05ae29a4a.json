@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into connections\n             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)\n         values ($1, $2, $3, $4, $5, $6, $7, now(), now())\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "plugin"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "config",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "schedule",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "schedule"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "next_run_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "next_run_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dfc334e4c0aed354a6cdf3fe8b1e19b6979e37ca7542f1ee20a18ec05ae29a4a"
+}

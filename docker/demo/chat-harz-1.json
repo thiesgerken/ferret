@@ -1,0 +1,12 @@
+{
+  "source": "demo/chat",
+  "external_id": "harz-trip/1",
+  "content_type": "plain",
+  "text": "Shall we do the Harz again in October? Same cabin as last year?",
+  "thread": "harz-trip",
+  "authors": [
+    "Anna"
+  ],
+  "created_at": "2026-08-03T19:02:00Z",
+  "modified_at": "2026-08-03T19:02:00Z"
+}

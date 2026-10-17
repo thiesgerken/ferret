@@ -14,11 +14,14 @@ identity provider (e.g. Keycloak) later:
 
 All state lives in ferret's Postgres. The server itself is stateless.
 
-Each API accepts exactly one kind of credential:
+The path decides the credential, each API accepts exactly one kind (`/auth/password` is the
+exception, it needs the session cookie and the current password):
 
 | API | Credential |
 |---|---|
 | GraphQL `/graphql` (UI) | session cookie |
+| `/auth/...` (login, logout) | username and password, exchanged for the session cookie; logout reads the cookie to end its session |
+| `/auth/password` | session cookie plus the current password |
 | REST `/api/...` | API key or plugin run token, as bearer |
 | REST `/internal/...` (own port) | worker PSK, as bearer |
 
@@ -43,14 +46,29 @@ create table users (
 Every owned record (`documents`, `syncs`, `api_keys`, `sessions`) has a non-null `user_id`. Records
 without an owner are invalid.
 
-Admins manage users in the UI (create, change password, enable or disable). There is no separate
-admin portal.
+Admins manage users in the UI's Admin section (GraphQL `users`, `createUser`, `setUserPassword`,
+`updateUser`, all refused with `FORBIDDEN` for non-admins). There is no separate admin portal.
+
+- **Create**: username, optional display name, password, admin or not. Usernames are trimmed,
+  lowercased and limited to letters, digits, `.`, `_` and `-`, as the login reads them.
+- **Passwords** an admin sets need at least 12 characters (the bootstrap's needs 16, nobody types
+  it). Setting one bumps `token_version`, so the user's sessions end.
+- **Admin and enabled** are toggles. A disabled user can't sign in, their sessions and API keys
+  stop working, and their connections don't run (claims skip them).
+- **The last enabled admin** can't be demoted or disabled: the update locks every enabled admin,
+  so two admins demoting each other can't both succeed. Users aren't deleted in v1, disabling is
+  the way to lock someone out.
 
 ## Bootstrap
 
 If no enabled admin exists at startup, the server creates `admin` with the password from
 `FERRET_BOOTSTRAP_PASSWORD`. If the variable is missing or shorter than 16 characters while the
 bootstrap is needed, the server exits with an error. Once an admin exists, the variable is ignored.
+If a user `admin` exists but isn't an enabled admin, the bootstrap turns it back into one with the
+variable's password: locked out of every admin account, setting the variable is the way back in.
+Admin refuses to leave no enabled admin, so that state only comes from manual database changes.
+For those, the bootstrap is the recovery path: the Helm chart always provides the variable, so in
+the cluster a server restart restores `admin` with the generated password and ends its sessions.
 
 The Helm chart takes the password from a Secret (`existingSecret`, or generated once and kept
 across upgrades via `lookup`, like carapace's Postgres password).
@@ -59,15 +77,41 @@ across upgrades via `lookup`, like carapace's Postgres password).
 
 Same flow as carapace:
 
-1. `POST /api/auth/login` verifies the password and creates a `sessions` row.
-2. The response sets the `ferret_session` HttpOnly, `Secure`, `SameSite=Lax` cookie holding an
-   HS256 JWT: `iss`, `aud`, `typ = session`, `sub` (user id), `sid`, `iat`, `exp`, `ver`
-   (`token_version`).
-3. Every request verifies the signature, then checks that the session row exists and that the user
-   is enabled and its `token_version` matches `ver`. Logout and disabling a user take effect
-   immediately, not at cookie expiry.
-4. `POST /api/auth/logout` deletes the session row and the cookie.
-5. Changing a password increments `token_version`, which invalidates all of the user's cookies.
+1. `POST /auth/login` with `{"username", "password"}` verifies the password and creates a
+   `sessions` row. The username is trimmed and lowercased. An unknown user, a wrong password and a
+   disabled user all get the same `401 {"error": "invalid username or password"}`, and an unknown
+   user still costs a password hash, so neither answer nor timing reveals which usernames exist.
+2. The `204` response sets the `ferret_session` cookie (`HttpOnly; Secure; SameSite=Lax; Path=/`)
+   holding an HS256 JWT: `iss = ferret`, `aud = ferret-web`, `typ = session`, `sub` (user id),
+   `sid`, `iat`, `exp`, `ver` (`token_version`). It has no body: the UI reads the user from
+   GraphQL's `me`, so there is one user shape.
+3. Sessions last 14 days from login, fixed: no sliding renewal, no setting. The cookie's `Max-Age`
+   and the row's `expires_at` match.
+4. Every GraphQL request verifies the signature, then checks that the session row exists and hasn't
+   expired, and that the user is enabled and its `token_version` matches `ver`. Logout and disabling
+   a user take effect immediately, not at cookie expiry. Without a valid session the answer is HTTP
+   `401`, not a GraphQL error, so the UI can key off the status.
+5. `POST /auth/logout` deletes the session row, if the cookie names one, and clears the cookie
+   (`Max-Age=0`). It always answers `204`.
+6. Changing a password increments `token_version`, which invalidates all of the user's cookies.
+7. `POST /auth/password` with `{"current_password", "new_password"}` lets the signed-in user change
+   their own password (Settings → Account), e.g. the bootstrap admin replacing the generated one.
+   The new one follows the 12-character policy (`400` otherwise). A wrong current password gets
+   `403 {"error": "the current password is wrong"}` after a full hash check, like a login. The
+   `token_version` bump ends every other session, and the `204` re-issues this session's cookie
+   under the new version with its expiry unchanged, so the browser stays signed in. The change only
+   applies if no other change bumped the version meanwhile (`401` otherwise). API keys and run
+   tokens stay valid: they don't depend on the password.
+
+**CSRF**: `/graphql` takes `POST` only, and `/graphql`, `/auth/login` and `/auth/password` accept
+only `Content-Type: application/json` (anything else is a `415`). Cross-site HTML forms can't send
+JSON without a CORS preflight, and `SameSite=Lax` keeps the cookie off cross-site `POST`s anyway.
+`GET` is excluded because `Lax` cookies do ride along on cross-site top-level navigations.
+
+**Errors**: `/auth` and REST rejections, including a malformed body (`400`, `415`, `422`), are
+answered with `{"error": "<message>"}`. `/graphql` answers a missing session with that `401` and
+everything else in GraphQL's own shape (`{"errors": [...]}`, `400` for a query that doesn't parse or
+validate). Unknown routes and methods get axum's bare `404` and `405`.
 
 ```sql
 create table sessions (
@@ -79,7 +123,7 @@ create table sessions (
 ```
 
 The signing secret comes from `FERRET_SESSION_SECRET` (Helm: generated once and kept via `lookup`,
-or `existingSecret`). The server refuses to start without it. Rotating it logs everyone out, which
+or `existingSecret`). The server refuses to start without it, or with one shorter than 32 bytes. Rotating it logs everyone out, which
 is the intended effect.
 
 The JWT is redundant with the session lookup today. It stays because the claims (`iss`, `aud`,
@@ -97,7 +141,9 @@ Same format and storage as carapace's `ck_` keys:
 - Validation looks the row up by prefix, compares hashes in constant time, and hashes even when the
   prefix is unknown, so timing doesn't reveal valid prefixes.
 - Shown once at creation. `last_used_at` is updated at most once a minute per key.
-- Sent as `Authorization: Bearer fk_...`.
+- Sent as `Authorization: Bearer fk_...`. A missing, unknown, revoked or expired key, or one whose
+  owner is disabled, gets `401`. A valid key without the needed scope gets `403`.
+- Revoking deletes the key. An expired key stays listed until its owner revokes it.
 
 ```sql
 create table api_keys (
@@ -105,7 +151,7 @@ create table api_keys (
     user_id       uuid not null references users on delete cascade,
     name          text not null,               -- 'paperless plugin', 'carapace search skill'
     prefix        text not null unique,
-    secret_hash   text not null,
+    secret_hash   bytea not null,              -- sha256 of the part after the dot
     scopes        text[] not null,             -- e.g. {'search:read', 'ingest:write'}
     sources       text[],                      -- restricts every scope to these source paths and below, null = all
     created_at    timestamptz not null,
@@ -120,13 +166,14 @@ create table api_keys (
 
 | scope | read | write |
 |---|---|---|
-| `search` | search, `GET /documents/{id}`, conversation views | |
-| `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
-| `admin` | list users | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
+| `search` | `GET /api/search`, `GET /api/documents/{id}`, thread listing (`GET /api/documents?source=&thread=`) | |
+| `ingest` | `GET /api/documents/{id}` and thread listing | `PUT` and `DELETE /api/documents`, start, `seen` and commit syncs |
+| `admin` | list users (`GET /api/users`). Requires `is_admin` on the owner, and stops working as soon as the owner loses it | no REST endpoint yet: users are managed in the UI's Admin section (GraphQL) |
 
 `sources` restricts a key to source paths and everything below them, for reading, searching and
-writing alike, enforced by the server. A leaked key for one ingester can't overwrite or sweep
-chats, and an agent's key only finds what it was given. Sources owned by a connection are off-limits to API keys
+writing alike, enforced by the server. Admin scopes act on users, which have no source, so a key
+with an admin scope can't have `sources`: the server refuses the combination at creation. A leaked key for one ingester can't overwrite or sweep
+chats, and an agent's key only finds what it was given. API keys can't write below a connection's root
 ([architecture.md](architecture.md#source-ownership)).
 
 Typical keys:
@@ -140,13 +187,16 @@ A key acts as its owner: it only ever sees and writes that user's documents.
 ## Plugin run tokens
 
 Built-in plugins don't use API keys. When a worker claims a run ([architecture.md](architecture.md#plugin-orchestration)),
-the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `typ = plugin_run`, `sub` (the
-connection's user), `run` (run id), `source` (the connection's source root), `exp` (run timeout).
+the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `iss = ferret`,
+`aud = ferret-run` (so a session JWT can't pass as one, or the other way round), `typ = plugin_run`,
+`sub` (the connection's user), `run` (run id), `source` (the connection's source root), `iat`, and
+`exp` 24 hours later as an upper bound. Runs have no timeout of their own.
 
 - It grants `ingest:write` on that source root and everything below it, for that user, nothing
   else.
-- On every request the server also checks that the run is still `running`. Finishing or losing a
-  run ends the token immediately.
+- On every request the server also checks that the run is still `running` and sent a heartbeat
+  within the two-minute lease. Finishing or losing a run ends the token immediately, a worker that
+  went silent ends it within the lease.
 - Users never see or manage these tokens. Activating a plugin in the UI is all it takes.
 
 ## Worker PSK
@@ -167,7 +217,8 @@ mounted into server and workers from the same Secret (generated once by Helm via
 
 ferret is Kubernetes-native: a Helm chart is the deployment, docker-compose exists for development
 only. All auth secrets (`FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`,
-`FERRET_WORKER_SECRET`) come from Secrets generated once via `lookup`, or from `existingSecret`.
+`FERRET_WORKER_SECRET`) and the plugin credentials' `FERRET_CONFIG_KEY` come from Secrets generated
+once via `lookup`, or from `existingSecret`.
 A fresh install needs no manual step: log in as `admin`, add connections.
 
 ## Later

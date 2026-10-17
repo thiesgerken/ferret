@@ -33,27 +33,66 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone (token write-only) |
+| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule and whether the connection is enabled) needs it entered again, and so does a database restored without its `FERRET_CONFIG_KEY` |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
-| `content_types` | glob to content type, default `*.md` → `markdown`, others `plain` |
-| `url_template` | deep link, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
+| `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
+| `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
 
-- One document per file, `external_id = {path}`, `title` from the first heading or the file name,
-  `authors` from the last commit touching the file, `created_at` from the first.
+- One document per file, `external_id = {path}`, `title` from the first `# ` heading of a
+  Markdown file (deeper ones don't count), else the file name, `authors` from the last commit
+  touching the file, `created_at` from the first.
+- Only regular files: symlinks and submodules are skipped (a symlink could point at the worker's
+  own files), so are files above 1 MiB and files that aren't UTF-8 text. Each skip is a line in
+  the run log.
+- Remotes are limited to HTTPS, so a connection can't reach the worker's filesystem or plain-HTTP
+  services in the cluster. The worker's `FERRET_GIT_PROTOCOLS` (colon-separated, as git's
+  `GIT_ALLOW_PROTOCOL` takes them, default `https`) widens that per deployment, e.g. to
+  `https:file` for the compose demo's local repository. It applies to every user's connections
+  on that worker, so with `file` any connection can read any repository the worker can. A git
+  command that runs longer than 30 minutes fails the run.
 - First run: full ingest inside a sync, commit at the end. Later runs:
-  `git diff --name-status <cursor>..HEAD`, `PUT` changed files, `DELETE` removed ones, renames are
-  both. Cursor = `HEAD`.
-- If the cursor is no longer reachable (force push), the plugin falls back to a full sync.
+  `git diff --name-status --no-renames <cursor> HEAD`, `PUT` changed files, `DELETE` removed ones
+  (and files that can't be indexed any more), renames are both. The state stores the cursor
+  (`HEAD` of the last successful run) and the indexing settings (remote, branch, globs,
+  `url_template`).
+- Full sync instead when the cursor is no longer in the branch's history (force push) or the
+  indexing settings changed, since files the diff doesn't mention may now be in or out.
+- With `{commit}` in `url_template`, an unchanged file keeps the URL of the commit it was last
+  indexed at. That commit shows the same content, so the link stays right.
 
 ### Paperless
 
-- One document per Paperless document, source `paperless`, `content_type = plain` with the OCR
-  text from `content`.
-- `meta`: correspondent, document type, tags, archive serial number. `created_at` = Paperless'
-  `created` date. `url` = `{paperless}/documents/{id}/details`.
+- One document per Paperless document in the connection's root (e.g. `paperless`),
+  `external_id` = Paperless id, `content_type = plain` with the OCR text from `content`.
+- `meta`: correspondent, document type, tags (by name), archive serial number. `authors` = the
+  correspondent. `created_at` = Paperless' `created` date at noon UTC (Paperless keeps only the
+  date; noon keeps it in every time zone from UTC-11 to UTC+11). `url` =
+  `{public_url}/documents/{id}/details`, `public_url` being the address people open (`url` when
+  left out).
 - Every run: a sync, list all ids (`/api/documents/?fields=id,modified`), `seen` for all of them,
-  `PUT` the ones modified after the cursor, commit. Deleted documents disappear with the sweep.
-- Auth: a Paperless API token (write-only config field).
+  fetch the ones modified after the cursor (`id__in`, 100 at a time) and `PUT` them, commit.
+  Deleted documents disappear with the sweep. Cursor = the newest `modified`, minus 10 minutes on
+  the next run: Paperless sets `modified` before its save commits, so a save may commit after a
+  listing with an older timestamp.
+- Every list is paged `ordering=id`. Paperless's default order (`-created`, a date) has ties, and
+  paging over ties can skip a document, which the sweep would then delete for good. A listing
+  whose count changes between pages, or with an id twice, fails the run.
+- The state stores the cursor and `url`/`public_url`. When they change, every document is fetched
+  again, so links follow.
+- Renaming a tag, correspondent or document type doesn't change a document's `modified`, so its
+  documents keep the old name until they change otherwise.
+- Requires Paperless-ngx 3.0 or later: requests pin API version 10, the newest 3.3 accepts
+  (checked against v3.3.2's source). In 3.x, versions of a document stay out of the list, its
+  `content` is the latest version's, and a new version bumps its `modified`.
+- Auth: a Paperless API token (write-only config field, `Authorization: Token …`). Objects the
+  token's user can't see are left out of `meta` with a line in the run log.
+- The URL must reach Paperless directly, e.g. the in-cluster service
+  (`http://paperless.apps-paperless.svc:8000`). A public hostname behind a login proxy answers
+  with a redirect (302), which fails the run with that hint instead of being followed.
+- Unlike git remotes, `url` may be any plain-HTTP address in the cluster, checked for neither
+  scheme nor host. A user can point the worker at another in-cluster service, and the run log then
+  tells which statuses it answers (never its bodies). Accepted for a household in v1. An
+  admin-configured host allowlist for plugin targets is post-v1 (#21).
 
 ### carapace
 
@@ -67,7 +106,8 @@ carapace itself.
 - Body sections by heading: abstract (prose under the title), `## Outcomes`, `## Open loops`,
   `## On my mind`, `## Facts` with one `### <category>` per category, `## Friction`, `## Tags`.
 - Fact lines: `- **<subject>**: <statement> _(<source_kind> · <confidence> confidence ·
-  <durability or "dated until <date>"> · #<seq> ...)_`.
+  <durability or "dated until <date>"> · #<seq> ...)_`. render.py prints "dated until" whenever a
+  fact has a `valid_until`, so a durable fact with one reads as dated. v2 fixes that.
 
 This couples the plugin to carapace's render format. Parser tests run against fixtures rendered
 by carapace, and a line that doesn't parse fails the run instead of being skipped.
@@ -81,21 +121,39 @@ change its rendering freely.
 | `carapace/sessions` | one per session | `{session_id}` | abstract, outcomes, open loops, on my mind |
 | `carapace/facts` | one per fact | `{session_id}/{hash of subject and statement}` | the fact, plus subject and category |
 | `carapace/digests` | one per week and month | `{level}:{period_key}` | summary, highlights, open loops |
-| `carapace/files` | everything else in the repo (skills, workspace notes) | `{path}` | as in the git plugin |
+| `carapace/files` | the repo's other Markdown files (skills, workspace notes, research) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
-  `session_id`. Session and digest `meta`: week and month keys, provenance.
-- `memory/facts/*.md` is ignored: it repeats the facts of the session files.
+  `session_id`. Session `meta`: `week_key`, `month_key`,
+  `provenance`. Digest `meta`: `level`, `period_key`, `provenance`.
+- `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
+  record, the only timestamp the mirror has. A re-extraction moves it.
+- A fact that appears twice in one session (under two categories, say) is indexed once.
+- `memory/facts/*.md` is ignored: it repeats the facts of the session files. So is every file
+  other than Markdown: skills' code, lockfiles and configuration, and carapace's raw session dumps
+  (`conversation.json`), which the sessions and facts distill.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
-- Incremental like the git plugin. A changed session file can lose facts: the plugin compares the
-  fact ids of the old version (`git show <cursor>:<path>`) with the new one and deletes the missing
-  ones.
+- Incremental like the git plugin. The state stores the indexed commit and the indexing settings
+  (`carapace_url` and the rule for files). A run diffs against that commit and puts the changed
+  files' documents. A changed session file can lose facts, so the plugin also reads every changed or
+  deleted file's version at the cursor (`git show <cursor>:<path>`) and deletes whatever that
+  version held but the new one doesn't. This assumes a document comes from one path only: a session
+  copied to a second file whose old copy is deleted in a later commit loses its documents until the
+  next full sync.
+- Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the first
+  run, after a force push, when the indexing settings changed (a new `carapace_url` changes every
+  link, a new rule for files must sweep what the old one let in), and when an old version doesn't
+  parse (a render format this plugin no longer reads).
+- Config: `remote`, `branch`, `token` (write-only) like the git plugin, and `carapace_url`, the web
+  UI that documents link to.
 - `url` (relative to the configured carapace base URL): sessions
   `/memory/sessions?session={session_id}`, facts link to their session, digests
   `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.
-- The git and carapace plugins share the repository handling (clone, fetch, diff) in one module.
+- The git and carapace plugins share the repository handling in one module (`repo.rs`): a fresh
+  full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
+  a commit.
 
 ## Roadmap
 

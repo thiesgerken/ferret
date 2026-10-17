@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select source, external_id, thread from documents\n         where id = $1 and user_id = $2\n         for update",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "thread",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "thread"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2fa9153c97ccf72fc6c2b8ad860c3bbd0f5bec130b2aedfc9995448b74759abc"
+}
