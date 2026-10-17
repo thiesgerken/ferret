@@ -94,6 +94,8 @@ pub struct Document {
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
     pub meta: Map<String, Value>,
+    /// The connection or API key that put it, `None` for one from before writers were recorded.
+    pub writer: Option<Writer>,
 }
 
 /// The parameters of `GET /api/documents?source=&thread=`.

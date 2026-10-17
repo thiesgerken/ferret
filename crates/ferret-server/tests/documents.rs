@@ -95,8 +95,14 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
     let id = api.put_document(&note).await.unwrap().id().unwrap();
     let stored = api.document(id).await.unwrap();
 
+    let mut stored = serde_json::to_value(&stored).unwrap();
+    let writer = stored.as_object_mut().unwrap().remove("writer").unwrap();
     assert_eq!(
-        serde_json::to_value(&stored).unwrap(),
+        (&writer["kind"], &writer["name"]),
+        (&json!("api_key"), &json!("test key"))
+    );
+    assert_eq!(
+        stored,
         json!({
             "id": id,
             "source": "notes/work",
