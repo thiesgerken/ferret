@@ -25,7 +25,9 @@ async fn main() -> Result<(), StartupError> {
         public_url: required_env("FERRET_SERVER_URL")?,
         // Informational, so the pod's name is good enough.
         name: env::var("HOSTNAME").unwrap_or_else(|_| "ferret-plugins".to_owned()),
-        options: PluginOptions::default(),
+        options: env::var("FERRET_GIT_PROTOCOLS")
+            .map(|git_protocols| PluginOptions { git_protocols })
+            .unwrap_or_default(),
     };
     worker.work().await
 }
