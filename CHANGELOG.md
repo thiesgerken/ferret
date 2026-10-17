@@ -1,6 +1,70 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #102 from thiesgerken/writer-on-documents
+  ([`228cc0d`](https://github.com/thiesgerken/ferret/commit/228cc0d612b723c44b99aa952b7dd2fd51d50341))
+
+- Merge pull request #99 from thiesgerken/87-activity
+  ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
+
+- Merge remote-tracking branch 'origin/main' into 87-activity
+  ([`ab8adbb`](https://github.com/thiesgerken/ferret/commit/ab8adbb485aa7a2ca4c0d4b245440a7ad170fbf2))
+
+- Merge branch '85-origins' into 87-activity
+  ([`82f5433`](https://github.com/thiesgerken/ferret/commit/82f5433a1d8ab245faa2d5d5b5216fa88604e8e5))
+
+### ✨ Features
+
+
+- ✨ feat(server): documents and Explore's rows carry their writer
+  ([`228cc0d`](https://github.com/thiesgerken/ferret/commit/228cc0d612b723c44b99aa952b7dd2fd51d50341))
+
+- ✨ feat(server): documents and Explore's rows carry their writer
+  ([`6a5eb68`](https://github.com/thiesgerken/ferret/commit/6a5eb68ca62152220dbc2e1f81b4a5da0009cacb))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): an activity feed and embedding progress with TEI load
+  ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
+
+- ✨ feat(server): an activity feed and embedding progress with TEI load
+  ([`343f473`](https://github.com/thiesgerken/ferret/commit/343f473687ac71a2e7a2a8eb3448844791d46ae8))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): count what runs and API keys write as it arrives
+  ([`1900671`](https://github.com/thiesgerken/ferret/commit/1900671fe3caabaff78526311fdbe8a08bed0a7f))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): activity keyset paging, one backlog per request, TEI restarts
+  ([`228bae2`](https://github.com/thiesgerken/ferret/commit/228bae20d9d14f9e2b3daaae321d45d88ab41f39))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.4.1 (2026-10-17)
 
 
