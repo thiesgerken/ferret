@@ -170,7 +170,7 @@ Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing wi
 | `server` | e.g. `imap.zoho.eu`, with `:port` unless it's 993 |
 | `tls` | default on. Off sends the password in plain text: only for a server next to the worker (the compose Dovecot, tests) |
 | `username`, `password` | `password` is write-only, an app password where the provider has them |
-| `exclude_folders` | by name, default Trash, Spam, Junk, Drafts. Folders the server marks `\Trash`, `\Junk` or `\Drafts` (RFC 6154) are always left out, whatever their name |
+| `exclude_folders` | by name, default Trash, Spam, Junk, Drafts, compared case-insensitively with the last segment of a folder's path (`INBOX.Trash` is `Trash`), decoded from IMAP's modified UTF-7 (`Entwürfe`, not `Entw&APw-rfe`). Folders the server marks `\Trash`, `\Junk` or `\Drafts` (RFC 6154) are always left out, whatever their name |
 | `url_template` | deep link with `{message_id}` (percent-encoded, `@` kept), e.g. `mid:{message_id}` (RFC 2392). Without one, ferret's viewer is the origin |
 
 **Identity**
@@ -199,10 +199,13 @@ Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing wi
   the cursor and its Message-ID is in no indexed UID of any folder: a mail moved or copied into
   another folder gets a new UID there, but isn't fetched again. A changed `UIDVALIDITY` (a folder
   recreated under the same name) makes all of that folder's mails new.
-- New mails are fetched 50 at a time (`BODY.PEEK[]`, so they stay unread), oldest arrival first:
-  the thread diff needs a thread's earlier mails indexed before its later ones.
+- New mails are fetched 50 at a time (`BODY.PEEK[]`, so they stay unread), in the order they were
+  written (`Date` from the envelope, else when they arrived): the thread diff needs a thread's
+  earlier mails indexed before its later ones, by the same date it compares.
 - The state stores the cursors and the indexing settings (server, username, `url_template`, the
   quote rule). When those change, every mail is fetched again.
+- The cursors are stored only with a successful run: a first sync that fails at 90% starts over.
+  It fetches every mail again, the `PUT`s then come back unchanged, so it costs time, not data.
 - No noise filter: unwanted mails get deleted at the origin.
 
 **Stripping quoted text**, in this order:
@@ -221,11 +224,13 @@ Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing wi
    Diffing against the whole thread, not just the parent, also catches the parent's quote of the
    grandparent. Runs of 3 protect short lines like "Thanks!" that parent and reply happen to
    share. Top-posting and inline replies both work, only matching runs go. A thread's first mail
-   skips this step.
+   skips this step. A run asks ferret once per thread and keeps the mails it puts itself.
 
-Forwards (subject `Fwd:`, `Fw:`, `WG:`) skip steps 1 and 2: the forwarded mail is new to me. An
-older mail that turns up after its replies (moved in from elsewhere) doesn't retroactively strip
-them. Accepted, it's a heuristic. Leftover duplicates are caught at search time by collapsing hits
+Forwards (subject `Fwd:`, `Fw:`, `WG:`) skip steps 1 and 2: the forwarded mail is new to me. A
+mail's text depends on which earlier mails of its thread ferret holds when it's put: an older mail
+that turns up after its replies (moved in from elsewhere) doesn't retroactively strip them. A
+refetch (a new `UIDVALIDITY`, new indexing settings) diffs a mail again against the thread as it
+is then, so a reply first indexed whole can come back stripped. Accepted, it's a heuristic. Leftover duplicates are caught at search time by collapsing hits
 per thread ([README](README.md#search)).
 
 Tests run against the Dovecot of `docker-compose.yml` (and CI) with the fixture mails in
