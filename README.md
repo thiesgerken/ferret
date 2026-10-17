@@ -29,7 +29,8 @@
 Your notes, documents, mail, chats and your agent's memory already live somewhere: Paperless, git,
 a mailbox, carapace. ferret doesn't replace any of them. It is an **index** over all of them: one
 search that finds what you wrote, shows the passage that matched, and links you straight back to
-where it lives. Your agents get the same search through the same API.
+where it lives. Your agents get the same search through the same API, so they ask once instead of
+guessing which tool's search to try first.
 
 ## ✨ Highlights
 
@@ -41,7 +42,8 @@ where it lives. Your agents get the same search through the same API.
   it, never to become the place you read it.
 - 🔌 **Plugins for your systems, a REST API for everything else.** git, Paperless and carapace sync
   on a schedule; IMAP and AFFiNE are coming. Anything else sends documents with a plain HTTP `PUT`.
-- 🤖 **One API for you and your agents.** The search your agents call is the one you use. API keys
+- 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
+  recipe and the note about your home bar in the same query. It's the search you use too. API keys
   are scoped to sources and to read or write, so an agent sees exactly what you hand it.
 - ⚡ **Embeddings on your own hardware.** A pool of TEI servers, in the cluster and on your
   laptop's GPU for big backfills, switched on and off live from Admin. Activity shows the progress.
@@ -50,11 +52,18 @@ where it lives. Your agents get the same search through the same API.
 
 ## 💡 Motivation
 
-My data is already sorted: notes in Obsidian and AFFiNE, documents in Paperless, repos in git, mail,
-chats, and my agent's memory in carapace. What I was missing was finding things: one search over all
-of it that tells me what I wrote, and where it lives. The keyword half is probably the more valuable
-one, but being able to search all of "me" semantically is the fun part. And my agents should search
-the same index I do.
+My personal agent ([carapace](https://github.com/thiesgerken/carapace)) often spends considerable
+amounts of time, tokens and tool calls just to find out *where* to find stuff. And sometimes it
+doesn't find it at all, even if the info is there. Sure, it has access to my recipes, DMs,
+documents, emails, … and each of those has some kind of search function that might be good or not.
+Mostly not. And even if: searching all of those in parallel is neither efficient nor what the agent
+usually does. It either stops after the first okay-ish search result or finds nothing after
+searching the wrong sources.
+
+Example: searching for cocktail ideas, it goes immediately into my recipe tool, but does not think
+about checking the document that says what I like and what is in my home bar. Sure, I can add a
+skill or put explicit instructions into the agent's system prompt, but that is also not efficient,
+cumbersome, and only works after I got frustrated at least once.
 
 ## 📸 Screenshots
 
