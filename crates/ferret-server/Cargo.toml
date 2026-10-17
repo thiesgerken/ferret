@@ -23,7 +23,9 @@ jsonschema.workspace = true
 jsonwebtoken.workspace = true
 juniper.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+rmcp = { workspace = true, features = ["macros", "server", "transport-streamable-http-server"] }
 rust-stemmers.workspace = true
+schemars = { workspace = true, features = ["chrono04", "uuid1"] }
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
@@ -37,5 +39,6 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 ferret-plugins = { path = "../ferret-plugins" }
 tempfile.workspace = true

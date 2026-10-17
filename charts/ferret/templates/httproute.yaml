@@ -22,6 +22,9 @@ spec:
             type: Exact
             value: /graphql
         - path:
+            type: Exact
+            value: /mcp
+        - path:
             type: PathPrefix
             value: /api
         - path:

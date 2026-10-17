@@ -18,13 +18,14 @@ coordination goes through Postgres (`SKIP LOCKED` and advisory locks, `LISTEN/NO
 
 ```text
                          ┌──────────────── Ingress ─────────────────┐
-                         │ /           /graphql, /api, /auth        │
+                         │ /           /graphql, /mcp, /api, /auth  │
                          ▼                   ▼                      │
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
- browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (carapace skill)
+ browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (MCP, skills)
                     │ (Next.js)│      │  :8080 public        │
                     └──────────┘      │    GraphQL (UI)      │ ──────► TEI (per model)
                                       │    REST (machines)   │          embeddings
+                                      │    MCP (agents)      │
                                       │  :8081 internal      │
                                       │    worker API        │ ──────► Postgres
                                       │  embed pump          │          (ParadeDB + pgvector)
@@ -56,7 +57,7 @@ git, parsers) never end up in the server.
 
 ## APIs
 
-Three APIs plus the login endpoints. The path decides the credential, each accepts exactly one
+Four APIs plus the login endpoints. The path decides the credential, each accepts exactly one
 (details in [auth.md](auth.md)):
 
 | API | Port | Consumers | Auth |
@@ -65,6 +66,7 @@ Three APIs plus the login endpoints. The path decides the credential, each accep
 | `/auth/login`, `/auth/logout` | public | the frontend | password, exchanged for the session cookie |
 | `/auth/password` | public | the frontend | session cookie plus the current password |
 | REST `/api/...` | public | plugins, external ingesters, agents | API key or plugin run token (bearer) |
+| MCP `/mcp` | public | agents (MCP clients) | API key with `search:read` (bearer) |
 | REST `/internal/...` | internal | plugin workers | worker PSK |
 
 - **GraphQL for the UI.** The UI reads nested, filtered data (connections with their runs and logs,
@@ -76,11 +78,21 @@ Three APIs plus the login endpoints. The path decides the credential, each accep
   `frontend/schema.graphql`, codegen runs against that file, and CI fails when it's out of date.
 - **REST for machines.** Ingest is a natural `PUT` of a document by id, agents call search with a
   plain `GET`, and scopes map one-to-one onto routes. A third-party ingester needs nothing but curl.
+- **MCP for agents.** An agent with an MCP client needs no skill or wrapper script: it connects to
+  `/mcp` and gets three tools whose descriptions tell it what ferret is and when to use it.
+  `search` takes a query, sources, mode, model, limit and a cursor, and answers with hits (title,
+  writer, source, best-matching chunk, scores, origin `url`, document id), the total and the next
+  cursor. `get_document` returns one document's whole text and metadata. `list_sources` lists
+  the sources the key may read, with document counts and writers. The server uses the official
+  Rust SDK (`rmcp`) over Streamable HTTP, stateless and with JSON responses: every request stands
+  alone, so any replica answers it and no session needs to be shared. Host validation is off: it
+  guards local servers without credentials against DNS rebinding, and every request here carries
+  a key.
 - **The internal API is HTTP like the others.** It listens on its own port, which the Ingress
   doesn't expose and a NetworkPolicy restricts to the worker pods. Running workers elsewhere (over
   the internet) works, it is just not the default.
 
-Search and document reads exist in both GraphQL and REST. Both call the same service functions, the
+Search and document reads exist in GraphQL, REST and MCP. All call the same service functions, the
 API layers stay thin.
 
 ## Plugin orchestration
@@ -266,7 +278,7 @@ without it.
 ## Frontend
 
 Next.js with carapace's stack and look and feel (React, Tailwind, shadcn-style components). In
-production the HTTPRoute sends `/graphql`, `/api` and `/auth` to the server and everything else to
+production the HTTPRoute sends `/graphql`, `/mcp`, `/api` and `/auth` to the server and everything else to
 the frontend. In development Next rewrites those paths to the local server, as in carapace.
 
 | Section | Contents |

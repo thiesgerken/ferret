@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -21,7 +22,7 @@ pub struct User {
 pub mod internal;
 
 /// How the server chunks a document's text and how the viewer renders it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentType {
     Markdown,
@@ -30,7 +31,7 @@ pub enum ContentType {
 }
 
 /// Which halves of a search run.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SearchMode {
     /// Both, fused. Without the embedding model, the keyword half alone, and the response says so.

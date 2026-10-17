@@ -11,6 +11,7 @@ if (process.env.NODE_ENV === "development") {
   const serverUrl = (process.env.FERRET_SERVER_URL?.trim() || "http://127.0.0.1:8380").replace(/\/$/, "");
   nextConfig.rewrites = async () => [
     { source: "/graphql", destination: `${serverUrl}/graphql` },
+    { source: "/mcp", destination: `${serverUrl}/mcp` },
     { source: "/api/:path*", destination: `${serverUrl}/api/:path*` },
     { source: "/auth/:path*", destination: `${serverUrl}/auth/:path*` },
   ];

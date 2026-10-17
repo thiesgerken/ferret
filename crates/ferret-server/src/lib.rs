@@ -28,6 +28,7 @@ pub mod graphql;
 mod highlight;
 mod icons;
 mod judgments;
+mod mcp;
 mod runs;
 mod search;
 mod search_query;
@@ -124,7 +125,7 @@ pub fn internal_router(state: AppState) -> Router {
 }
 
 /// The path decides the credential: `/graphql` takes the session cookie, `/auth` exchanges a
-/// password for it, `/api` takes bearer credentials (`api_auth::ApiCaller`).
+/// password for it, `/api` and `/mcp` take bearer credentials (`api_auth::ApiCaller`).
 pub fn router(state: AppState) -> Router {
     Router::new()
         // Outside /api, whose routes all take a bearer credential. Probes hit the pod directly.
@@ -145,6 +146,14 @@ pub fn router(state: AppState) -> Router {
         .route("/api/syncs", post(syncs::start))
         .route("/api/syncs/{id}/seen", post(syncs::seen))
         .route("/api/syncs/{id}/commit", post(syncs::commit))
+        .merge(
+            Router::new()
+                .route_service("/mcp", mcp::service(state.clone()))
+                .route_layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    mcp::authenticate,
+                )),
+        )
         .with_state(state)
 }
 

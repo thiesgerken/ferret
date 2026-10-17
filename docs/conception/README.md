@@ -360,8 +360,10 @@ deployment, as in carapace. docker-compose exists for local development only. De
   arrive (no worker change), a finished run shows its worker's stats. Users see their own, admins
   may ask for everyone's. Next to it the embedding progress per model
   ([embeddings.md](embeddings.md#progress)).
-- **carapace**: a search skill in the knowledge repo that calls the search API with an API key
-  restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
+- **Agents** connect to the MCP server at `/mcp` ([architecture.md](architecture.md#apis)) with an
+  API key restricted to the sources they may see.
+- **carapace**: the MCP server, or a search skill in the knowledge repo that calls the search API,
+  with an API key restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
   the key comes from the password manager, the sentinel gates the call. No carapace code.
 
 ## Privacy and security
