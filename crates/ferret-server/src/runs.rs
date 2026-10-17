@@ -466,7 +466,7 @@ pub async fn authenticate(
             claims.sub,
             vec![Scope::IngestWrite],
             Some(vec![claims.source]),
-            CallerKind::PluginRun,
+            CallerKind::PluginRun(claims.run),
         )
     }))
 }
