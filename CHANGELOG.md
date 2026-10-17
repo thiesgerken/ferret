@@ -1,6 +1,99 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #120 from thiesgerken/117-tei-pool
+  ([`89f6dba`](https://github.com/thiesgerken/ferret/commit/89f6dba502157c9f6116ee7ec659d86ccc76791f))
+
+- Merge pull request #122 from thiesgerken/117-tei-pool-ui
+  ([`59e2b74`](https://github.com/thiesgerken/ferret/commit/59e2b740e9c184f18893a0085c8f4ee2dd0c24cd))
+
+- Merge pull request #121 from thiesgerken/117-tei-pool-ui
+  ([`1535067`](https://github.com/thiesgerken/ferret/commit/15350670e73057628a86cd7c6de997d4b4b71d49))
+
+- 📝 docs: the TEI pool
+  ([`349895b`](https://github.com/thiesgerken/ferret/commit/349895b279d7482aa71537ff5cef108ba3198da2))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ✨ Features
+
+
+- ✨ feat(server): a TEI pool instead of TEIs per model
+  ([`89f6dba`](https://github.com/thiesgerken/ferret/commit/89f6dba502157c9f6116ee7ec659d86ccc76791f))
+
+- ✨ feat(frontend): the TEI pool in Admin and on Activity
+  ([`1535067`](https://github.com/thiesgerken/ferret/commit/15350670e73057628a86cd7c6de997d4b4b71d49))
+
+- ✨ feat(frontend): the TEI pool in Admin and on Activity
+  ([`1c6343b`](https://github.com/thiesgerken/ferret/commit/1c6343bb1cd0e167a69ad3a81ae8eea48c8b2b4d))
+
+  Admin groups the pool's TEIs under the model each serves, with "Unused (model)" and "Offline" groups for the rest. Each TEI has switches for on, queries and embedding, its state and problem, and its figures. A model says when no enabled TEI answers its queries or embeds its chunks. Activity shows the same TEI cards per model for admins, and every user sees whether a model's queries and embedding are served.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✨ feat(chart): internal TEIs and externalTeis form the TEI pool
+  ([`59583f8`](https://github.com/thiesgerken/ferret/commit/59583f80684dbeb520920fe0dffa974e3aa802c4))
+
+  tei.internal.enabled deploys one CPU TEI per model, externalTeis lists TEIs outside the chart. tei.gpu and the models' bulkUrl are gone, and the chart refuses to render while they're set.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): a pool of TEIs that serve whichever model they have
+  ([`474cb19`](https://github.com/thiesgerken/ferret/commit/474cb19f4d8c4e808d62360fd1224f022ecca4a3))
+
+  The config lists TEIs without a model. The server asks each one's /info every 10 seconds which model it serves and assigns it to the configured model with that model_id. Embeddings go through /v1/embeddings, and an answer from another model or dimension is discarded and the TEI asked again. Admins switch each TEI on or off, for queries and for the pump (stored in the new teis table). The pump runs one loop per TEI, with short batches on TEIs that also answer queries, and queries go to an idle query TEI first. Replaces url and bulk_url per model.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(frontend): a model's dimension is always there
+  ([`59e2b74`](https://github.com/thiesgerken/ferret/commit/59e2b740e9c184f18893a0085c8f4ee2dd0c24cd))
+
+- ♻️ refactor(frontend): a model's dimension is always there
+  ([`ce1ae5b`](https://github.com/thiesgerken/ferret/commit/ce1ae5beb96e7f0e030f7f3610599d98b34eef52))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): configured model dimensions, checked TEI names and race-free switches
+  ([`277af1e`](https://github.com/thiesgerken/ferret/commit/277af1e41df35d052e79fb8ba3c152d026c13c8d))
+
+  Every model's dimension is configured: the index is built for it at startup, a mismatch with stored embeddings stops the server, and answers of another dimension are discarded. A TEI serving its model under another name than its model id is unsuitable, since its answers couldn't show a model switch. Discovery and switches update a TEI's state under one lock, and switches from the database apply only when they changed there, so a poll can't undo an admin's change. Rediscovery after a mismatch runs in the background.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🔧 Configuration
+
+
+- 🔧 chore(compose): tei and tei-bulk as a TEI pool
+  ([`d0e956b`](https://github.com/thiesgerken/ferret/commit/d0e956bcf6ca12702f0ffc3b02cd34c5b69980b4))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.9.1 (2026-10-17)
 
 
