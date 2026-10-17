@@ -2,19 +2,52 @@
 
 use std::time::Duration;
 
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
-struct Info {
-    max_input_length: usize,
+/// What a TEI says about itself.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct Info {
+    /// The Hugging Face model it serves.
+    pub model_id: String,
+    /// The name its embeddings come back under, the model id unless TEI was started with
+    /// `--served-model-name`. TEIs before 1.7 don't report it and answer with the model id.
+    #[serde(default)]
+    served_model_name: Option<String>,
+    /// In tokens.
+    pub max_input_length: usize,
+    /// Inputs per request at most.
+    pub max_client_batch_size: usize,
+}
+
+impl Info {
+    pub fn served_model_name(&self) -> &str {
+        self.served_model_name.as_deref().unwrap_or(&self.model_id)
+    }
 }
 
 #[derive(Serialize)]
-struct EmbedRequest<'a> {
-    inputs: &'a [String],
-    normalize: bool,
-    /// TEI truncates over-long inputs by default, which would embed a chunk's beginning only.
-    truncate: bool,
+struct EmbeddingsRequest<'a> {
+    input: &'a [String],
+}
+
+#[derive(Deserialize)]
+struct EmbeddingsResponse {
+    data: Vec<EmbeddingData>,
+    model: String,
+}
+
+#[derive(Deserialize)]
+struct EmbeddingData {
+    embedding: Vec<f32>,
+    index: usize,
+}
+
+/// Embeddings as TEI answered them, and the model it says it computed them with.
+pub struct Embedded {
+    pub model: String,
+    /// In the order of the inputs.
+    pub vectors: Vec<Vec<f32>>,
 }
 
 /// A client for every TEI. Requests set their own total timeout: a TEI that accepts connections
@@ -26,55 +59,52 @@ pub fn client() -> reqwest::Client {
         .expect("an HTTP client with a connect timeout builds")
 }
 
-/// The longest input in tokens the TEI at `url` accepts.
-pub async fn max_input_length(
+pub async fn info(
     http: &reqwest::Client,
     url: &str,
     timeout: Duration,
-) -> Result<usize, reqwest::Error> {
-    let info: Info = http
-        .get(format!("{url}/info"))
+) -> Result<Info, reqwest::Error> {
+    http.get(format!("{url}/info"))
         .timeout(timeout)
         .send()
         .await?
         .error_for_status()?
         .json()
-        .await?;
-    Ok(info.max_input_length)
+        .await
 }
 
-/// Normalized embeddings of `texts`, in order. An over-long text fails the whole request with a
-/// 4xx.
+/// Normalized embeddings of `texts` from the OpenAI-compatible route, whose answer names the
+/// model that computed them. TEI started without `--auto-truncate` rejects an over-long text with
+/// a 413, failing the whole request.
 pub async fn embed(
     http: &reqwest::Client,
     url: &str,
     texts: &[String],
     timeout: Duration,
-) -> Result<Vec<Vec<f32>>, reqwest::Error> {
-    http.post(format!("{url}/embed"))
+) -> Result<Embedded, reqwest::Error> {
+    let response: EmbeddingsResponse = http
+        .post(format!("{url}/v1/embeddings"))
         .timeout(timeout)
-        .json(&EmbedRequest {
-            inputs: texts,
-            normalize: true,
-            truncate: false,
-        })
+        .json(&EmbeddingsRequest { input: texts })
         .send()
         .await?
         .error_for_status()?
         .json()
-        .await
+        .await?;
+    let mut data = response.data;
+    data.sort_by_key(|data| data.index);
+    Ok(Embedded {
+        model: response.model,
+        vectors: data.into_iter().map(|data| data.embedding).collect(),
+    })
 }
 
-/// Whether the TEI at `url` answers within `timeout`. Asks `/info`, not `/health`: TEI runs its
-/// health check on the thread that runs the embedding batches, so a TEI busy with a backfill
-/// would look offline. TEI only listens once its model is loaded, and a stuck one shows up as
-/// the embed pump's last error.
-pub async fn healthy(http: &reqwest::Client, url: &str, timeout: Duration) -> bool {
-    http.get(format!("{url}/info"))
-        .timeout(timeout)
-        .send()
-        .await
-        .is_ok_and(|response| response.status().is_success())
+/// TEI refused the inputs themselves (too long, untokenizable), as opposed to failing, being
+/// overloaded or serving no embedding model.
+pub fn is_rejection(error: &reqwest::Error) -> bool {
+    error.status().is_some_and(|status| {
+        status == StatusCode::PAYLOAD_TOO_LARGE || status == StatusCode::UNPROCESSABLE_ENTITY
+    })
 }
 
 /// The counters and gauges of TEI's Prometheus metrics that its load is read from.

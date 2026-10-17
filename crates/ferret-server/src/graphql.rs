@@ -32,6 +32,7 @@ use crate::{
     explore::{self, ExploreError, ExploreFilter, Order, Page},
     judgments, runs,
     search::{self, RelativeRange, SearchError},
+    tei_pool::{Discovery, Use},
     users::{self, User, UserError},
 };
 
@@ -132,7 +133,18 @@ impl Query {
             .collect())
     }
 
-    /// Each embedding model's TEI health and backlog, the default first. Admins only.
+    /// Every TEI of the pool, in config order. Admins only.
+    async fn teis(context: &Context) -> FieldResult<Vec<Tei>> {
+        require_admin(context)?;
+        let statuses = context
+            .embedding
+            .tei_statuses(&context.pool)
+            .await
+            .map_err(internal)?;
+        Ok(statuses.into_iter().map(Tei::from).collect())
+    }
+
+    /// Each embedding model's backlog, the default first. Admins only.
     async fn embedding_status(context: &Context) -> FieldResult<Vec<ModelStatus>> {
         require_admin(context)?;
         let statuses = context
@@ -237,7 +249,6 @@ impl Query {
                 min_similarity: model.config.min_similarity,
                 backlog: OnceCell::new(),
                 rate: OnceCell::new(),
-                health: OnceCell::new(),
             })
             .collect()
     }
@@ -944,7 +955,6 @@ struct EmbeddingModel {
     // Each worked out once per request, however many fields need it: the Activity page polls.
     backlog: OnceCell<(i64, i64)>,
     rate: OnceCell<f64>,
-    health: OnceCell<(bool, Option<bool>)>,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -1006,20 +1016,19 @@ impl EmbeddingModel {
         Ok(embeddings::eta_seconds(pending, rate).map(count))
     }
 
-    /// Chunks per pump batch in the answering server process, 1 to 32: it shrinks on a TEI that
-    /// is too slow for full batches.
-    fn batch_size(&self, context: &Context) -> i32 {
-        count(self.model(context).batch_size() as i64)
+    /// Whether an enabled TEI serves the model for search queries, as of the server's last look
+    /// (every 10 seconds).
+    fn online(&self, context: &Context) -> bool {
+        context
+            .embedding
+            .is_served(self.model(context), Use::Queries)
     }
 
-    /// Whether the TEI for search queries answers.
-    async fn online(&self, context: &Context) -> bool {
-        self.health(context).await.0
-    }
-
-    /// Whether the pump's TEI answers, null when it's the same as for queries.
-    async fn bulk_online(&self, context: &Context) -> Option<bool> {
-        self.health(context).await.1
+    /// Whether an enabled TEI embeds the model's chunks. Without one, `pending` stays.
+    fn embedding(&self, context: &Context) -> bool {
+        context
+            .embedding
+            .is_served(self.model(context), Use::Embedding)
     }
 }
 
@@ -1040,13 +1049,6 @@ impl EmbeddingModel {
             .await
             .copied()
             .map_err(internal)
-    }
-
-    async fn health(&self, context: &Context) -> (bool, Option<bool>) {
-        *self
-            .health
-            .get_or_init(|| context.embedding.health(self.model(context)))
-            .await
     }
 
     fn model<'a>(&self, context: &'a Context) -> &'a embeddings::Model {
@@ -1448,6 +1450,25 @@ impl Mutation {
         }
     }
 
+    /// Switches a TEI of the pool on or off, for queries or the embed pump. Takes effect at once
+    /// on the answering server process, within 10 seconds on the others. Admins only.
+    async fn update_tei(context: &Context, url: String, input: TeiUpdate) -> FieldResult<Tei> {
+        require_admin(context)?;
+        let status = context
+            .embedding
+            .update_tei(
+                &context.pool,
+                &url,
+                input.enabled,
+                input.queries,
+                input.embedding,
+            )
+            .await
+            .map_err(internal)?
+            .ok_or_else(|| invalid_input(format!("no TEI {url:?} is configured")))?;
+        Ok(Tei::from(status))
+    }
+
     /// Renames one of the signed-in user's keys or changes its icon.
     async fn update_api_key(
         context: &Context,
@@ -1721,14 +1742,11 @@ struct Worker {
 #[derive(GraphQLObject)]
 struct ModelStatus {
     name: String,
+    /// The Hugging Face model a TEI must serve to work for it.
+    model_id: String,
     is_default: bool,
-    /// Whether the TEI that embeds search queries answers.
-    online: bool,
-    /// Whether the TEI the embed pump uses answers. Null when it's the same as for queries.
-    bulk_online: Option<bool>,
-    /// The embed pump's last failure, until its next success.
-    last_error: Option<String>,
-    last_error_at: Option<DateTime<Utc>>,
+    /// Of its vectors, from the config.
+    dimension: i32,
     /// Chunks still to embed, per source and across users. Empty when everything is embedded.
     backlog: Vec<SourceBacklog>,
     /// Chunks with an embedding for this model, across users.
@@ -1740,27 +1758,49 @@ struct ModelStatus {
     /// Seconds until the whole backlog is embedded at that rate, null when it's empty or the
     /// rate is 0.
     eta_seconds: Option<i32>,
-    /// Chunks per pump batch in the answering server process.
-    batch_size: i32,
-    /// The TEI for queries, and the pump's if that's another one, from their `/metrics`.
-    teis: Vec<TeiStatus>,
 }
 
 #[derive(GraphQLEnum)]
-enum TeiRole {
-    Queries,
-    Pump,
-    /// Queries and the pump: no separate TEI for the pump is configured.
-    Both,
+enum TeiState {
+    /// Serves a configured model.
+    Online,
+    /// Its `/info` doesn't answer.
+    Offline,
+    /// Serves a model no configured one uses.
+    Unused,
+    /// Serves a configured model, but can't be used for it (see `problem`).
+    Unsuitable,
 }
 
-/// A TEI's figures, read from its `/metrics`. Null while they don't answer. The rates average the
-/// last minute and are null until two readings a few seconds apart exist.
+/// A TEI of the pool. Which model it serves is asked every 10 seconds. The figures from its
+/// `/metrics` are null while they don't answer, the rates average the last minute and are null
+/// until two readings a few seconds apart exist.
 #[derive(GraphQLObject)]
-struct TeiStatus {
-    role: TeiRole,
+struct Tei {
     url: String,
-    online: bool,
+    /// Not part of the deployment (config): starts with queries off.
+    external: bool,
+    enabled: bool,
+    /// Whether it may embed search queries.
+    queries: bool,
+    /// Whether the embed pump may use it.
+    embedding: bool,
+    state: TeiState,
+    /// Why it's offline, unused or unsuitable.
+    problem: Option<String>,
+    /// The model id from its `/info`, null while it doesn't answer.
+    served_model: Option<String>,
+    /// The configured model it serves.
+    model: Option<String>,
+    /// Its last failure (pump batch or query), until its next success.
+    last_error: Option<String>,
+    last_error_at: Option<DateTime<Utc>>,
+    /// A pump batch of the answering server process is in flight.
+    busy: bool,
+    /// Chunks per pump batch in the answering server process, null while it may not embed. It
+    /// shrinks on a TEI too slow for full batches, and stays short on one that also answers
+    /// queries.
+    pump_batch_size: Option<i32>,
     /// Inputs waiting in TEI's queue.
     queue_size: Option<i32>,
     /// Average inputs per inference batch.
@@ -1772,8 +1812,53 @@ struct TeiStatus {
     /// Share of the last minute TEI spent in inference, a CPU proxy. Can exceed 1 with batches
     /// in parallel.
     load: Option<f64>,
-    /// Pump TEIs only: seconds until the backlog is embedded at this throughput.
+    /// While it may embed: seconds until its model's backlog is embedded at its throughput.
     eta_seconds: Option<i32>,
+}
+
+/// Switches to change, the others stay.
+#[derive(GraphQLInputObject)]
+struct TeiUpdate {
+    enabled: Option<bool>,
+    queries: Option<bool>,
+    embedding: Option<bool>,
+}
+
+impl From<embeddings::TeiStatus> for Tei {
+    fn from(status: embeddings::TeiStatus) -> Self {
+        let (last_error, last_error_at) = status.last_error.unzip();
+        let switches = status.state.switches;
+        let (state, served_model) = match &status.state.discovery {
+            Discovery::Serving { info, .. } => (TeiState::Online, Some(info.model_id.clone())),
+            Discovery::Unused(info) => (TeiState::Unused, Some(info.model_id.clone())),
+            Discovery::Unsuitable { info, .. } => {
+                (TeiState::Unsuitable, Some(info.model_id.clone()))
+            }
+            Discovery::Offline(_) | Discovery::Pending => (TeiState::Offline, None),
+        };
+        let load = status.load.as_ref();
+        Self {
+            url: status.url,
+            external: status.external,
+            enabled: switches.enabled,
+            queries: switches.queries,
+            embedding: switches.embedding,
+            state,
+            problem: status.problem,
+            served_model,
+            model: status.model,
+            last_error,
+            last_error_at,
+            busy: status.busy,
+            pump_batch_size: status.pump_batch_size.map(|size| count(size as i64)),
+            queue_size: load.map(|load| load.queue_size as i32),
+            batch_size: load.and_then(|load| load.batch_size),
+            throughput_per_minute: load.and_then(|load| load.throughput_per_minute),
+            failures: load.map(|load| load.failures as i32),
+            load: load.and_then(|load| load.load),
+            eta_seconds: status.eta_seconds.map(count),
+        }
+    }
 }
 
 #[derive(GraphQLObject)]
@@ -1787,14 +1872,11 @@ struct SourceBacklog {
 
 impl From<embeddings::ModelStatus> for ModelStatus {
     fn from(status: embeddings::ModelStatus) -> Self {
-        let (last_error, last_error_at) = status.last_error.unzip();
         Self {
             name: status.name,
+            model_id: status.model_id,
             is_default: status.is_default,
-            online: status.online,
-            bulk_online: status.bulk_online,
-            last_error,
-            last_error_at,
+            dimension: count(status.dimension as i64),
             backlog: status
                 .backlog
                 .into_iter()
@@ -1808,29 +1890,6 @@ impl From<embeddings::ModelStatus> for ModelStatus {
             chunks: count(status.chunks),
             rate_per_minute: status.rate_per_minute,
             eta_seconds: status.eta_seconds.map(count),
-            batch_size: count(status.batch_size as i64),
-            teis: status
-                .teis
-                .into_iter()
-                .map(|tei| TeiStatus {
-                    role: match tei.role {
-                        embeddings::TeiRole::Queries => TeiRole::Queries,
-                        embeddings::TeiRole::Pump => TeiRole::Pump,
-                        embeddings::TeiRole::Both => TeiRole::Both,
-                    },
-                    url: tei.url,
-                    online: tei.online,
-                    queue_size: tei.load.as_ref().map(|load| load.queue_size as i32),
-                    batch_size: tei.load.as_ref().and_then(|load| load.batch_size),
-                    throughput_per_minute: tei
-                        .load
-                        .as_ref()
-                        .and_then(|load| load.throughput_per_minute),
-                    failures: tei.load.as_ref().map(|load| load.failures as i32),
-                    load: tei.load.as_ref().and_then(|load| load.load),
-                    eta_seconds: tei.eta_seconds.map(count),
-                })
-                .collect(),
         }
     }
 }

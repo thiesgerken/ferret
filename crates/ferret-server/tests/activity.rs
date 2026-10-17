@@ -171,8 +171,8 @@ async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgP
         .graphql(
             &cookie,
             "{
-                embeddingModels { pending failed ratePerMinute etaSeconds batchSize online bulkOnline }
-                embeddingStatus { ratePerMinute batchSize teis { role online queueSize load } }
+                embeddingModels { pending failed ratePerMinute etaSeconds online embedding }
+                teis { state model busy pumpBatchSize queueSize load }
             }",
             json!({}),
         )
@@ -185,15 +185,17 @@ async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgP
         (&json!(0), &json!(0), &Value::Null)
     );
     assert!(model["ratePerMinute"].as_f64().unwrap() > 0.0, "{model}");
-    assert_eq!(model["batchSize"], 32);
     assert_eq!(
-        (&model["online"], &model["bulkOnline"]),
-        (&json!(true), &Value::Null)
+        (&model["online"], &model["embedding"]),
+        (&json!(true), &json!(true))
     );
     // The fake TEI has no /metrics.
     assert_eq!(
-        body["data"]["embeddingStatus"][0]["teis"],
-        json!([{"role": "BOTH", "online": true, "queueSize": null, "load": null}])
+        body["data"]["teis"],
+        json!([{
+            "state": "ONLINE", "model": common::MODEL, "busy": false, "pumpBatchSize": 32,
+            "queueSize": null, "load": null,
+        }])
     );
 }
 

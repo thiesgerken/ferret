@@ -19,8 +19,9 @@ server:
   # -- Extra environment variables for the server container
   extraEnv: []
 
-# -- Embedding models for semantic search. Each gets its own CPU TEI Deployment. The server reads
-# their limits at startup and doesn't start while one is unreachable or too small.
+# -- Embedding models for semantic search. With tei.internal.enabled, each gets its own CPU TEI
+# Deployment. Any TEI of the pool (internal or externalTeis) works for whichever of these models
+# it serves: the server asks every TEI for its model and matches `modelId`.
 embedding:
   # -- The model searches use by default, one of the names below
   default: qwen3-embedding-0.6b
@@ -28,8 +29,12 @@ embedding:
     # -- name: stored with every embedding, [a-z0-9][a-z0-9._-]*. Renaming a model re-embeds
     # everything under the new name.
     - name: qwen3-embedding-0.6b
-      # -- Hugging Face model TEI serves
+      # -- Hugging Face model id: the internal TEI serves it, and a TEI reporting it in /info works
+      # for this model. Two models can't share one.
       modelId: Qwen/Qwen3-Embedding-0.6B
+      # -- Of the model's vectors. TEI doesn't report it: every answer is checked against it, and
+      # the model's index is built for it.
+      dimension: 1024
       queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       documentPrefix: ""
       # -- Semantic candidates less similar to the query are dropped (cosine similarity, 0 to 1).
@@ -41,10 +46,6 @@ embedding:
       maxBatchTokens: 4096
       # -- Room for the downloaded model. A full cache evicts only this pod.
       cacheSize: 4Gi
-      # -- An external TEI with the same model for a backfill, e.g. one on a laptop's GPU in the
-      # LAN (`http://192.168.1.20:8080`). The embed pump then uses only it, like with
-      # tei.gpu.enabled, which it excludes. Remove it once the backfill is done.
-      bulkUrl: ""
       # -- The request is the RSS measured after warmup (1.93 GiB).
       resources:
         requests:
@@ -59,36 +60,16 @@ tei:
     repository: huggingface/text-embeddings-inference
     tag: "cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
     pullPolicy: IfNotPresent
-  # -- A second TEI per model on a GPU node that joins the cluster for backfills. Each model's
-  # bulk_url points at it, and the embed pump then uses only the GPU: while no GPU node is there,
-  # the pump reports errors and the backlog grows instead of falling back to the CPU. Queries
-  # always use the CPU TEI. Disable it again once the backfill is done.
-  gpu:
-    enabled: false
-    image:
-      registry: ghcr.io
-      repository: huggingface/text-embeddings-inference
-      # -- Required when enabled. TEI builds one image per GPU generation: turing-1.9.4 (T4,
-      # RTX 20xx), 1.9.4 (A100, A30), 86-1.9.4 (A10, A40, RTX 30xx), 89-1.9.4 (L4, L40, RTX 40xx),
-      # hopper-1.9.4 (H100). Pin it with a digest.
-      tag: ""
-      pullPolicy: IfNotPresent
-    # -- TEI's batch budget in tokens: a GPU's memory takes TEI's default.
-    maxBatchTokens: 16384
-    # -- e.g. {nvidia.com/gpu.present: "true"}
-    nodeSelector: {}
-    # -- GPU nodes are usually tainted like this (node pools, NVIDIA's device plugin)
-    tolerations:
-      - key: nvidia.com/gpu
-        operator: Exists
-        effect: NoSchedule
-    # -- Replaces the model's resources for the GPU TEI. The memory request covers the model and
-    # TEI's buffers.
-    resources:
-      requests:
-        memory: 4Gi
-      limits:
-        nvidia.com/gpu: 1
+  internal:
+    # -- One CPU TEI per model in the cluster, which answers queries and embeds. Off only when
+    # externalTeis serve every model.
+    enabled: true
+
+# -- TEIs outside this chart, as URLs, e.g. a laptop's GPU in the LAN for a backfill
+# (`http://192.168.1.20:8080`) or a GPU TEI deployed separately. Each works for whichever
+# configured model it serves, and starts with queries off: Admin switches each TEI on and off, for
+# queries and for the embed pump. Remove one that's gone for good.
+externalTeis: []
 
 # -- Plugin workers: claim runs from the server's internal API and ingest through the public one.
 plugins:

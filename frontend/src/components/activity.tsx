@@ -40,9 +40,8 @@ const ActivityOverviewQueryDocument = graphql(`
       failed
       ratePerMinute
       etaSeconds
-      batchSize
       online
-      bulkOnline
+      embedding
     }
     connections {
       id
@@ -67,19 +66,11 @@ const EmbedderStatusQueryDocument = graphql(`
       embedded
       chunks
       etaSeconds
-      lastError
-      lastErrorAt
-      teis {
-        role
-        url
-        online
-        queueSize
-        batchSize
-        throughputPerMinute
-        failures
-        load
-        etaSeconds
-      }
+    }
+    teis {
+      url
+      model
+      ...TeiCardFields
     }
   }
 `);
@@ -141,7 +132,7 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
         <Tile icon={<Database />} label="Embedded" value={defaultModel ? `${Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100)}%` : "–"} />
       </div>
       <Section title="Embedding" icon={<Brain />} description="How far each model has embedded your chunks, and how fast it goes.">
-        <Embedders models={data.embeddingModels} global={embedders?.embeddingStatus} />
+        <Embedders models={data.embeddingModels} global={embedders && { models: embedders.embeddingStatus, teis: embedders.teis }} />
       </Section>
       {data.connections.length > 0 && (
         <Section title="Connections" icon={<ListTree />} description="Each connection's last runs, newest on the right, and its next one.">

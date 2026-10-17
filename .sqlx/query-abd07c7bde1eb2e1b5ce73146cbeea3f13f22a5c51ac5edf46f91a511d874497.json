@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update teis set last_error = null, last_error_at = null\n         where url = $1 and last_error is not null",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "abd07c7bde1eb2e1b5ce73146cbeea3f13f22a5c51ac5edf46f91a511d874497"
+}

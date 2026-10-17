@@ -54,9 +54,8 @@ function overview(isAdmin: boolean) {
         failed: 2,
         ratePerMinute: 42.4,
         etaSeconds: 540,
-        batchSize: 16,
         online: true,
-        bulkOnline: true,
+        embedding: true,
       },
     ],
     connections: [
@@ -77,29 +76,28 @@ function overview(isAdmin: boolean) {
 }
 
 const EMBEDDERS = {
-  embeddingStatus: [
+  embeddingStatus: [{ __typename: "ModelStatus", name: "qwen3", embedded: 5000, chunks: 20000, etaSeconds: 7200 }],
+  teis: [
     {
-      __typename: "ModelStatus",
-      name: "qwen3",
-      embedded: 5000,
-      chunks: 20000,
-      etaSeconds: 7200,
+      __typename: "Tei",
+      url: "http://tei-bulk:80",
+      model: "qwen3",
+      external: false,
+      enabled: true,
+      queries: false,
+      embedding: true,
+      state: "ONLINE",
+      problem: null,
       lastError: null,
       lastErrorAt: null,
-      teis: [
-        {
-          __typename: "TeiStatus",
-          role: "PUMP",
-          url: "http://tei-bulk:80",
-          online: true,
-          queueSize: 3,
-          batchSize: 7.5,
-          throughputPerMinute: 120,
-          failures: 0,
-          load: 0.93,
-          etaSeconds: 7200,
-        },
-      ],
+      busy: true,
+      pumpBatchSize: 16,
+      queueSize: 3,
+      batchSize: 7.5,
+      throughputPerMinute: 120,
+      failures: 0,
+      load: 0.93,
+      etaSeconds: 7200,
     },
   ],
 };
@@ -158,9 +156,10 @@ test("admins see every TEI's load, queue and throughput", async () => {
 
   assert.ok(operations.some((operation) => operation.operationName === "EmbedderStatus"));
   assert.match(text(), /All users: 5,000 of 20,000 chunks embedded, done in about 2 h/);
-  assert.match(text(), /PumpOnline/);
+  assert.match(text(), /Queries onlineEmbedding online/, "the model's health");
+  assert.match(text(), /http:\/\/tei-bulk:80OnlineEmbedding/);
   assert.match(text(), /Load93%/);
-  assert.match(text(), /Queue3Batch7\.5Throughput120 \/ minFailures0/);
+  assert.match(text(), /Queue3Batch7\.5Throughput120 \/ minFailures0Pump batch16 · busyBacklog done in2 h/);
   await view.unmount();
 });
 

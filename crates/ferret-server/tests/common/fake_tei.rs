@@ -1,6 +1,7 @@
-//! A stand-in for text-embeddings-inference with real TEI's API shape: `/info` reports the
-//! maximum input length but no dimension, `/embed` takes `inputs`, `normalize` and `truncate`,
-//! and rejects over-long inputs and oversized batches with a 422.
+//! A stand-in for text-embeddings-inference with real TEI's API shape: `/info` reports the model
+//! and the maximum input length but no dimension, `/v1/embeddings` (OpenAI's shape) names the model
+//! in its answer, rejects over-long inputs with a 413 like TEI without `--auto-truncate`, and
+//! inputs it can't tokenize with a 422.
 
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +17,8 @@ use tokio::net::TcpListener;
 
 pub const DIMENSION: usize = 256;
 pub const MAX_INPUT_LENGTH: usize = 4096;
+/// What [`FakeTei::start`] serves.
+pub const FAKE_MODEL_ID: &str = "fake/fake-embedding";
 const MAX_CLIENT_BATCH_SIZE: usize = 32;
 /// TEI rejects every batch with an input containing this word, like one it can't tokenize.
 pub const UNEMBEDDABLE: &str = "unembeddable";
@@ -31,9 +34,9 @@ const CONCEPTS: &[&[&str]] = &[
 #[derive(Clone, Copy)]
 enum Health {
     Up,
-    /// Fails every embed request with a 503, like a TEI that is restarting.
+    /// Fails every request with a 503, like a TEI that is restarting.
     Down,
-    /// Never answers an embed request, like a TEI that is stuck.
+    /// Never answers, like a TEI that is stuck.
     Hanging,
 }
 
@@ -41,119 +44,160 @@ enum Health {
 #[derive(Clone)]
 pub struct FakeTei {
     pub url: String,
-    embedded: Arc<Mutex<Vec<String>>>,
-    health: Arc<Mutex<Health>>,
+    state: Arc<Mutex<FakeState>>,
 }
 
-#[derive(Clone)]
-struct Fake {
+struct FakeState {
+    model_id: String,
+    /// `--served-model-name`, the model id when `None`.
+    served_name: Option<String>,
+    /// The model embeddings come back under, when it isn't the one `/info` reports.
+    answers_as: Option<String>,
     max_input_length: usize,
-    embedded: Arc<Mutex<Vec<String>>>,
-    health: Arc<Mutex<Health>>,
+    embedded: Vec<String>,
+    health: Health,
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum Inputs {
+enum Input {
     One(String),
     Many(Vec<String>),
 }
 
 #[derive(Deserialize)]
-struct EmbedRequest {
-    inputs: Inputs,
-    #[serde(default)]
-    truncate: Option<bool>,
+struct EmbeddingsRequest {
+    input: Input,
 }
 
 impl FakeTei {
+    /// A TEI serving [`FAKE_MODEL_ID`].
     pub async fn start(max_input_length: usize) -> Self {
-        let embedded = Arc::new(Mutex::new(Vec::new()));
-        let health = Arc::new(Mutex::new(Health::Up));
-        let fake = Fake {
+        Self::serving(FAKE_MODEL_ID, max_input_length).await
+    }
+
+    pub async fn serving(model_id: &str, max_input_length: usize) -> Self {
+        let state = Arc::new(Mutex::new(FakeState {
+            model_id: model_id.to_owned(),
+            served_name: None,
+            answers_as: None,
             max_input_length,
-            embedded: embedded.clone(),
-            health: health.clone(),
-        };
+            embedded: Vec::new(),
+            health: Health::Up,
+        }));
         let app = Router::new()
             .route("/info", get(info))
-            .route("/embed", post(embed))
-            .with_state(fake);
+            .route("/v1/embeddings", post(embeddings))
+            .with_state(state.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self {
-            url,
-            embedded,
-            health,
-        }
+        Self { url, state }
     }
 
-    /// From now on, every embed request fails with a 503, like a TEI that is restarting.
+    pub fn model_id(&self) -> String {
+        self.state.lock().unwrap().model_id.clone()
+    }
+
+    /// Loads another model, like a laptop's TEI restarted with it.
+    pub fn serve(&self, model_id: &str) {
+        self.state.lock().unwrap().model_id = model_id.to_owned();
+    }
+
+    /// Serves its model under `name`, like TEI started with `--served-model-name`.
+    pub fn serve_as(&self, name: &str) {
+        self.state.lock().unwrap().served_name = Some(name.to_owned());
+    }
+
+    /// From now on, embeddings come back under `model`, while `/info` still reports the old one:
+    /// like a TEI that switched models between two of the server's looks.
+    pub fn answer_as(&self, model: &str) {
+        self.state.lock().unwrap().answers_as = Some(model.to_owned());
+    }
+
+    /// From now on, every request fails with a 503, like a TEI that is restarting.
     pub fn break_down(&self) {
-        *self.health.lock().unwrap() = Health::Down;
+        self.state.lock().unwrap().health = Health::Down;
     }
 
-    /// From now on, no embed request gets an answer, like a TEI that is stuck.
+    /// From now on, no request gets an answer, like a TEI that is stuck.
     pub fn hang(&self) {
-        *self.health.lock().unwrap() = Health::Hanging;
+        self.state.lock().unwrap().health = Health::Hanging;
     }
 
     /// Every text embedded so far, in order.
     pub fn embedded(&self) -> Vec<String> {
-        self.embedded.lock().unwrap().clone()
+        self.state.lock().unwrap().embedded.clone()
     }
 }
 
-/// Like the embed requests: fine, a 503, or no answer.
-async fn info(State(fake): State<Fake>) -> Result<Json<Value>, StatusCode> {
-    let health = *fake.health.lock().unwrap();
+async fn wait_unless_up(state: &Mutex<FakeState>) -> Result<(), StatusCode> {
+    let health = state.lock().unwrap().health;
     match health {
-        Health::Up => {}
-        Health::Down => return Err(StatusCode::SERVICE_UNAVAILABLE),
+        Health::Up => Ok(()),
+        Health::Down => Err(StatusCode::SERVICE_UNAVAILABLE),
         Health::Hanging => std::future::pending().await,
     }
+}
+
+async fn info(State(state): State<Arc<Mutex<FakeState>>>) -> Result<Json<Value>, StatusCode> {
+    wait_unless_up(&state).await?;
+    let state = state.lock().unwrap();
     Ok(Json(json!({
-        "model_id": "fake/fake-embedding",
+        "model_id": state.model_id,
+        "served_model_name": state.served_name.as_ref().unwrap_or(&state.model_id),
         "model_type": {"embedding": {"pooling": "last_token"}},
-        "max_input_length": fake.max_input_length,
+        "max_input_length": state.max_input_length,
         "max_client_batch_size": MAX_CLIENT_BATCH_SIZE,
-        "auto_truncate": true,
+        "auto_truncate": false,
     })))
 }
 
-async fn embed(
-    State(fake): State<Fake>,
-    Json(request): Json<EmbedRequest>,
-) -> Result<Json<Vec<Vec<f32>>>, (StatusCode, Json<Value>)> {
-    let health = *fake.health.lock().unwrap();
-    match health {
-        Health::Up => {}
-        Health::Down => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "model is overloaded", "error_type": "Overloaded"})),
-            ));
-        }
-        Health::Hanging => std::future::pending().await,
-    }
-    let inputs = match request.inputs {
-        Inputs::One(input) => vec![input],
-        Inputs::Many(inputs) => inputs,
+async fn embeddings(
+    State(state): State<Arc<Mutex<FakeState>>>,
+    Json(request): Json<EmbeddingsRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    wait_unless_up(&state).await.map_err(|status| {
+        (
+            status,
+            Json(json!({"message": "model is overloaded", "type": "unhealthy"})),
+        )
+    })?;
+    let inputs = match request.input {
+        Input::One(input) => vec![input],
+        Input::Many(inputs) => inputs,
     };
+    let mut state = state.lock().unwrap();
     // Words for tokens, close enough for a fake.
-    let too_long = |input: &String| words(input).count() > fake.max_input_length;
-    if inputs.len() > MAX_CLIENT_BATCH_SIZE
-        || inputs.iter().any(|input| input.contains(UNEMBEDDABLE))
-        || (request.truncate == Some(false) && inputs.iter().any(too_long))
-    {
+    let too_long = |input: &String| words(input).count() > state.max_input_length;
+    if inputs.len() > MAX_CLIENT_BATCH_SIZE || inputs.iter().any(too_long) {
         return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "Input validation error", "error_type": "Validation"})),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"message": "Input validation error", "type": "validation"})),
         ));
     }
-    fake.embedded.lock().unwrap().extend(inputs.iter().cloned());
-    Ok(Json(inputs.iter().map(|input| vector(input)).collect()))
+    if inputs.iter().any(|input| input.contains(UNEMBEDDABLE)) {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message": "Tokenization error", "type": "tokenizer"})),
+        ));
+    }
+    state.embedded.extend(inputs.iter().cloned());
+    let model = (state.answers_as.as_ref())
+        .or(state.served_name.as_ref())
+        .unwrap_or(&state.model_id)
+        .clone();
+    let data: Vec<Value> = inputs
+        .iter()
+        .enumerate()
+        .map(|(index, input)| json!({"object": "embedding", "embedding": vector(input), "index": index}))
+        .collect();
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+        "model": model,
+        "usage": {"prompt_tokens": 0, "total_tokens": 0},
+    })))
 }
 
 fn vector(text: &str) -> Vec<f32> {

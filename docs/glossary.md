@@ -100,3 +100,12 @@ _Avoid_: active model, primary model
 
 **Configured default**:
 The model the config names as `embedding.default`, used by every user who chose no default model.
+
+**TEI**:
+A text-embeddings-inference server that computes embeddings for one embedding model at a time.
+_Avoid_: embedder, embedding server
+
+**TEI pool**:
+The TEIs ferret embeds with. Each works for whichever configured embedding model it serves,
+which the server discovers. An external TEI is one outside the deployment, e.g. a laptop's GPU.
+_Avoid_: bulk TEI, GPU TEI (as a role)
