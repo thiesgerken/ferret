@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/graphql";
 import { PAGE_SIZE, monthRange, type ExploreState } from "@/lib/explore-url";
 import { toggle } from "@/lib/search-url";
 import { cn } from "@/lib/utils";
+import { viewerHref } from "@/lib/viewer-url";
 
 const ExploreDocumentsQueryDocument = graphql(`
   query ExploreDocuments($input: ExploreInput!) {
@@ -238,7 +239,7 @@ function DocumentTable({
           <tr key={document.id}>
             <td className="max-w-xs truncate px-2 py-2">
               <Link
-                href={`/view?${new URLSearchParams({ id: document.id })}`}
+                href={viewerHref(document.id)}
                 className="text-brand hover:underline"
               >
                 {document.title || document.externalId}
