@@ -1,7 +1,7 @@
 mod common;
 
 use common::{day, document, json_body, start_server};
-use ferret_api::{ContentType, PutOutcome};
+use ferret_api::{ContentType, PutResponse};
 use reqwest::{Method, StatusCode, header};
 use serde_json::json;
 use sqlx::PgPool;
@@ -30,11 +30,10 @@ async fn a_put_creates_then_skips_unchanged_then_updates(pool: PgPool) {
     note.title = Some("A new title".to_owned());
     let updated = api.put_document(&note).await.unwrap();
 
-    assert_eq!(created.outcome, PutOutcome::Created);
-    assert_eq!(unchanged.outcome, PutOutcome::Unchanged);
-    assert_eq!(updated.outcome, PutOutcome::Updated);
-    assert_eq!(created.id, unchanged.id);
-    assert_eq!(created.id, updated.id);
+    let id = created.id().unwrap();
+    assert_eq!(created, PutResponse::Created { id });
+    assert_eq!(unchanged, PutResponse::Unchanged { id });
+    assert_eq!(updated, PutResponse::Updated { id });
     let seen_after_unchanged: chrono::DateTime<chrono::Utc> =
         sqlx::query_scalar("select seen_at from documents")
             .fetch_one(&pool)
@@ -42,7 +41,7 @@ async fn a_put_creates_then_skips_unchanged_then_updates(pool: PgPool) {
             .unwrap();
     assert!(seen_after_unchanged > seen_after_create);
     assert_eq!(
-        api.document(created.id).await.unwrap().title.unwrap(),
+        api.document(id).await.unwrap().title.unwrap(),
         "A new title"
     );
 }
@@ -93,7 +92,7 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
     note.meta = json!({"tags": ["work"]}).as_object().unwrap().clone();
     note.modified_at = day(2);
 
-    let id = api.put_document(&note).await.unwrap().id;
+    let id = api.put_document(&note).await.unwrap().id().unwrap();
     let stored = api.document(id).await.unwrap();
 
     assert_eq!(
@@ -123,7 +122,8 @@ async fn delete_removes_the_document_and_its_chunks(pool: PgPool) {
         .put_document(&document("notes", "a.md", "Some text."))
         .await
         .unwrap()
-        .id;
+        .id()
+        .unwrap();
 
     api.delete_document("notes", "a.md").await.unwrap();
 
@@ -220,7 +220,8 @@ async fn a_keys_sources_restrict_writing_and_reading(pool: PgPool) {
         .put_document(&document("notes", "a.md", "Text."))
         .await
         .unwrap()
-        .id;
+        .id()
+        .unwrap();
     let paperless = server.api_with_key(
         &server
             .create_api_key(&["INGEST_WRITE", "SEARCH_READ"], Some(&["paperless"]))
@@ -241,9 +242,13 @@ async fn a_keys_sources_restrict_writing_and_reading(pool: PgPool) {
         .unwrap_err();
     let read_outside = paperless.document(note).await.unwrap_err();
 
-    assert_eq!(inside.outcome, PutOutcome::Created);
+    assert!(matches!(inside, PutResponse::Created { .. }));
     assert_eq!(
-        paperless.document(inside.id).await.unwrap().source,
+        paperless
+            .document(inside.id().unwrap())
+            .await
+            .unwrap()
+            .source,
         "paperless/inbox"
     );
     assert_eq!(write_outside.status(), Some(StatusCode::FORBIDDEN));
@@ -268,8 +273,8 @@ async fn urls_with_scripting_schemes_are_rejected(pool: PgPool) {
     }
     let mut note = document("notes", "a.md", "Text.");
     note.url = Some("obsidian://open?vault=main&file=a".to_owned());
-    assert_eq!(
-        api.put_document(&note).await.unwrap().outcome,
-        PutOutcome::Created
-    );
+    assert!(matches!(
+        api.put_document(&note).await.unwrap(),
+        PutResponse::Created { .. }
+    ));
 }

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select c.id from exclusions e join connections c on c.id = e.connection_id\n         where e.id = $1 and c.user_id = $2\n         for update of c",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "762565012a5c47b2b4764de69ab9be67a63a3140d8a388059cf845bd6ec14061"
+}

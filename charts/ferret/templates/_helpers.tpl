@@ -20,10 +20,10 @@ app.kubernetes.io/component: {{ .component }}
 {{- .Values.secrets.existingSecret | default (printf "%s-secrets" .Release.Name) -}}
 {{- end }}
 
-{{/* The name of a model's TEI Deployment and Service; pass (dict "root" $ "model" .). Kubernetes
-names allow no dots or underscores. */}}
+{{/* The name of a model's TEI Deployment and Service; pass (dict "root" $ "model" . "suffix" "")
+with suffix "-gpu" for the GPU TEI. Kubernetes names allow no dots or underscores. */}}
 {{- define "ferret.teiName" -}}
-{{- $name := printf "%s-tei-%s" .root.Release.Name (.model.name | replace "." "-" | replace "_" "-") -}}
+{{- $name := printf "%s-tei-%s%s" .root.Release.Name (.model.name | replace "." "-" | replace "_" "-") .suffix -}}
 {{- if not (regexMatch "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$" $name) -}}
 {{- fail (printf "model %q: %q is no valid Kubernetes name (DNS-1035 label of at most 63 characters)" .model.name $name) -}}
 {{- end -}}
@@ -37,7 +37,10 @@ embedding:
   models:
     {{- range .Values.embedding.models }}
     - name: {{ .name | quote }}
-      url: "http://{{ include "ferret.teiName" (dict "root" $ "model" .) }}:80"
+      url: "http://{{ include "ferret.teiName" (dict "root" $ "model" . "suffix" "") }}:80"
+      {{- if $.Values.tei.gpu.enabled }}
+      bulk_url: "http://{{ include "ferret.teiName" (dict "root" $ "model" . "suffix" "-gpu") }}:80"
+      {{- end }}
       {{- with .queryPrefix }}
       query_prefix: {{ . | quote }}
       {{- end }}

@@ -51,6 +51,36 @@ tei:
     repository: huggingface/text-embeddings-inference
     tag: "cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
     pullPolicy: IfNotPresent
+  # -- A second TEI per model on a GPU node that joins the cluster for backfills. Each model's
+  # bulk_url points at it, and the embed pump then uses only the GPU: while no GPU node is there,
+  # the pump reports errors and the backlog grows instead of falling back to the CPU. Queries
+  # always use the CPU TEI. Disable it again once the backfill is done.
+  gpu:
+    enabled: false
+    image:
+      registry: ghcr.io
+      repository: huggingface/text-embeddings-inference
+      # -- Required when enabled. TEI builds one image per GPU generation: turing-1.9.4 (T4,
+      # RTX 20xx), 1.9.4 (A100, A30), 86-1.9.4 (A10, A40, RTX 30xx), 89-1.9.4 (L4, L40, RTX 40xx),
+      # hopper-1.9.4 (H100). Pin it with a digest.
+      tag: ""
+      pullPolicy: IfNotPresent
+    # -- TEI's batch budget in tokens: a GPU's memory takes TEI's default.
+    maxBatchTokens: 16384
+    # -- e.g. {nvidia.com/gpu.present: "true"}
+    nodeSelector: {}
+    # -- GPU nodes are usually tainted like this (node pools, NVIDIA's device plugin)
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+    # -- Replaces the model's resources for the GPU TEI. The memory request covers the model and
+    # TEI's buffers.
+    resources:
+      requests:
+        memory: 4Gi
+      limits:
+        nvidia.com/gpu: 1
 
 # -- Plugin workers: claim runs from the server's internal API and ingest through the public one.
 plugins:
@@ -102,8 +132,8 @@ ingress:
 # a new Postgres password the initialized database doesn't know, and a new session secret that
 # logs everyone out. Under GitOps, use existingSecret.
 secrets:
-  # -- Existing Secret with the keys postgres-password, bootstrap-password (at least 16
-  # characters) and session-secret (at least 32 bytes).
+  # -- Existing Secret with the keys postgres-password, bootstrap-password, session-secret,
+  # worker-secret and config-key (see the chart's README).
   existingSecret: ""
 
 # -- ParadeDB (Postgres with pg_search and pgvector), single instance with its own PVC. Backups are

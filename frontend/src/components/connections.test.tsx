@@ -41,6 +41,9 @@ const CONNECTION = {
       error: "git clone failed: repository not found",
     },
   ],
+  exclusions: [
+    { __typename: "Exclusion", id: "exclusion-1", source: "notes", externalId: null, thread: "lunch" },
+  ],
 };
 
 /** Renders the page against a fake server that records every operation and answers mutations with `respond`. */
@@ -202,5 +205,21 @@ test("deletes only once the source is typed", async () => {
 
   const remove = operations.find((operation) => operation.operationName === "DeleteConnection");
   assert.deepEqual(remove?.variables, { id: "connection-1", confirmSource: "notes" });
+  await view.unmount();
+});
+
+test("lists the exclusions and includes one again", async () => {
+  const { view, operations, button } = await renderConnections(() =>
+    Response.json({ data: { removeExclusion: "exclusion-1" } }),
+  );
+  assert.match(view.container.textContent ?? "", /Excluded from the index \(1\).*Thread lunch in notes/);
+
+  await act(async () => {
+    button("Include again").click();
+  });
+  await settle();
+
+  const remove = operations.find((operation) => operation.operationName === "RemoveExclusion");
+  assert.deepEqual(remove?.variables, { id: "exclusion-1" });
   await view.unmount();
 });

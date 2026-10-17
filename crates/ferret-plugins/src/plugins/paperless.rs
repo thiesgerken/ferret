@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
-use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
+use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use schemars::JsonSchema;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, json};
@@ -152,9 +152,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
                 .await?;
             for document in documents {
                 let put = to_document(document, &names, links, &run.source, &run.log);
-                match run.api.put_document(&put).await?.outcome {
-                    PutOutcome::Unchanged => stats.unchanged += 1,
-                    PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+                match run.api.put_document(&put).await? {
+                    PutResponse::Unchanged { .. } => stats.unchanged += 1,
+                    PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+                    // The user excluded it: as if Paperless didn't have it.
+                    PutResponse::Excluded => {}
                 }
             }
         }
