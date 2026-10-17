@@ -153,6 +153,26 @@ async fn every_word_may_match_in_another_field(pool: PgPool) {
     assert_eq!(ids(&search(&api, "Versicherung Rechnungen").await), ["kfz"]);
 }
 
+/// The case from test protocol 4: the specific word is only in the Paperless title.
+#[sqlx::test(migrations = false)]
+async fn every_word_may_match_the_title_instead(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let mut bill = document("paperless", "huk", "Der Beitrag für 2026 beträgt 312 Euro.");
+    bill.title = Some("HUK Kfz-Versicherung Beitragsrechnung".to_owned());
+    api.put_document(&bill).await.unwrap();
+    let mut renamed = document("paperless", "renamed", "Hausrat 2026");
+    renamed.title = Some("Versicherung".to_owned());
+    api.put_document(&renamed).await.unwrap();
+    renamed.title = Some("Hausrat".to_owned());
+    api.put_document(&renamed).await.unwrap();
+
+    assert_eq!(ids(&search(&api, "Versicherung").await), ["huk"]);
+    assert_eq!(ids(&search(&api, "Versicherungen 312").await), ["huk"]);
+    assert_eq!(ids(&search(&api, "Kfz Hausrat").await), Vec::<&str>::new());
+    assert_eq!(ids(&search(&api, "2026 -Versicherung").await), ["renamed"]);
+}
+
 #[sqlx::test(migrations = false)]
 async fn excluded_words_also_drop_compounds(pool: PgPool) {
     let server = start_server(pool).await;

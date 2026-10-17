@@ -23,7 +23,10 @@ const DEFAULT_K: u32 = 10;
 const MAX_K: u32 = 100;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
 // ranks below these limits in both halves can't be a hit, which matters only when k approaches
-// them. The vector half is smaller, HNSW gets slower with every extra neighbour.
+// them. The vector half is smaller, HNSW gets slower with every extra neighbour. Titles are on
+// every chunk, so a common title word matches all chunks of long documents and can fill the
+// keyword candidates (BM25's document frequency counts those chunks, too). #21's evaluation
+// shows whether that bites.
 const KEYWORD_CANDIDATES: i64 = 1000;
 const SEMANTIC_CANDIDATES: i64 = 100;
 
@@ -185,13 +188,8 @@ pub async fn find(
     // Every word must match in at least one field, so a compound and an inflected word can
     // match the same chunk in different fields.
     for word in &query.words {
-        sql.push(" and (c.text &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_en') &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word)
-            .push(")");
+        sql.push(" and ");
+        push_word_match(&mut sql, "c.", word);
     }
     sql.push(" order by score desc limit ")
         .push_bind(KEYWORD_CANDIDATES)
@@ -324,13 +322,9 @@ impl Filters<'_> {
                 " and {table}.document_id not in (select document_id from chunks where user_id = "
             ))
             .push_bind(self.user_id)
-            .push(" and (text &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_en') &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word.clone())
-            .push("))");
+            .push(" and ");
+            push_word_match(sql, "", word);
+            sql.push(")");
         }
         if let Some(roots) = &self.roots {
             sql.push(" and exists (select 1 from unnest(")
@@ -365,6 +359,30 @@ impl Filters<'_> {
                 .push(")) > 0");
         }
     }
+}
+
+/// `word` matches a chunk's text or its document's title in any of the BM25 index's fields.
+/// `table` qualifies the columns, e.g. `c.`.
+fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
+    sql.push("(");
+    for (index, field) in [
+        "text",
+        "text::pdb.alias('text_en')",
+        "text::pdb.alias('text_ngram')",
+        "title",
+        "title::pdb.alias('title_en')",
+        "title::pdb.alias('title_ngram')",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index > 0 {
+            sql.push(" or ");
+        }
+        sql.push(format!("{table}{field} &&& "))
+            .push_bind(word.to_owned());
+    }
+    sql.push(")");
 }
 
 #[derive(sqlx::FromRow)]

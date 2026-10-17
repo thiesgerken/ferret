@@ -20,6 +20,11 @@ use crate::{
 
 /// Chunks per pump transaction, within TEI's default client batch size (32).
 const BATCH_SIZE: i64 = 32;
+const MAX_EMBEDDED_TITLE_CHARS: usize = 200;
+const TITLE_SEPARATOR: &str = "\n\n";
+/// The longest embedded input, without the model's document prefix. Every model must take it.
+const MAX_EMBEDDED_CHARS: usize =
+    MAX_EMBEDDED_TITLE_CHARS + TITLE_SEPARATOR.len() + MAX_CHUNK_CHARS;
 /// A search waits this long for its query embedding, then answers by keyword only. A CPU TEI
 /// that's busy with pump batches answers slower than an idle one.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -101,10 +106,10 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
         let max_input_length = wait_for_tei(&http, &config).await?;
         // Tokens against characters, one to one: Latin text practically never takes more than
         // one token per character.
-        if max_input_length < MAX_CHUNK_CHARS {
+        if max_input_length < MAX_EMBEDDED_CHARS {
             return Err(format!(
-                "embedding model {name} takes at most {max_input_length} tokens, chunks have up \
-                 to {MAX_CHUNK_CHARS} characters"
+                "embedding model {name} takes at most {max_input_length} tokens, embedded inputs \
+                 (title and chunk) have up to {MAX_EMBEDDED_CHARS} characters"
             )
             .into());
         }
@@ -262,8 +267,8 @@ async fn embed_batch(
     // No outer `order by`: sorting would try the lock of every candidate before the limit,
     // leaving a second pump nothing to claim.
     let chunks = sqlx::query!(
-        "select id, text from (
-             select c.id, c.text from chunks c
+        "select id, text, title from (
+             select c.id, c.text, c.title from chunks c
              where not exists (
                  select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
              )
@@ -287,7 +292,13 @@ async fn embed_batch(
 
     let texts: Vec<String> = chunks
         .iter()
-        .map(|chunk| format!("{}{}", model.config.document_prefix, chunk.text))
+        .map(|chunk| {
+            embedded_input(
+                &model.config.document_prefix,
+                chunk.title.as_deref(),
+                &chunk.text,
+            )
+        })
         .collect();
     let hashes: Vec<Vec<u8>> = texts.iter().map(|text| text_hash(text)).collect();
     let cached: HashSet<Vec<u8>> = sqlx::query_scalar!(
@@ -437,7 +448,20 @@ async fn clear_error(pool: &PgPool, model: &Model) {
     }
 }
 
-/// The cache key of a prefixed text.
+/// What the model embeds for a chunk: the title gives every chunk of a document its context,
+/// e.g. a Paperless title naming the insurance a bill is for. Capped, so a garbage title can't
+/// push the input over the model's limit. Keyword search sees the whole title.
+fn embedded_input(prefix: &str, title: Option<&str>, text: &str) -> String {
+    match title {
+        Some(title) => {
+            let title: String = title.chars().take(MAX_EMBEDDED_TITLE_CHARS).collect();
+            format!("{prefix}{title}{TITLE_SEPARATOR}{text}")
+        }
+        None => format!("{prefix}{text}"),
+    }
+}
+
+/// The cache key of an embedded input or a prefixed query.
 fn text_hash(prefixed: &str) -> Vec<u8> {
     Sha256::digest(prefixed).to_vec()
 }
