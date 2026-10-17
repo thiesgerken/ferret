@@ -54,11 +54,14 @@ export function Count({ change, value }: { change: "put" | "unchanged" | "delete
   );
 }
 
-/** "took 3 min", or "for 3 min" while it's still running. */
-export function RunDuration({ startedAt, finishedAt, now }: { startedAt: string; finishedAt: string | null; now: Date }) {
+/**
+ * "took 3 min", or "for 3 min" while it's still running. The status decides, not `finishedAt`: an
+ * API key's burst of writes has its last write as `finishedAt` and still runs until it goes quiet.
+ */
+export function RunDuration({ run, now }: { run: { status: RunStatus; startedAt: string; finishedAt: string | null }; now: Date }) {
   const t = useTranslations("runs");
   const locale = useLocale();
-  const end = finishedAt ? new Date(finishedAt) : now;
-  const duration = formatDuration((end.getTime() - new Date(startedAt).getTime()) / 1000, locale);
-  return finishedAt ? t("took", { duration }) : t("for", { duration });
+  const end = run.finishedAt ? new Date(run.finishedAt) : now;
+  const duration = formatDuration((end.getTime() - new Date(run.startedAt).getTime()) / 1000, locale);
+  return run.status === "RUNNING" ? t("for", { duration }) : t("took", { duration });
 }

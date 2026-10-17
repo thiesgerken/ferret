@@ -328,7 +328,7 @@ function RunFacts({ connection, now }: { connection: Connection; now: Date }) {
             <>
               {timeAgo(lastRun.startedAt, now, locale)}
               <span className="block text-xs font-normal text-muted-foreground">
-                <RunDuration startedAt={lastRun.startedAt} finishedAt={lastRun.finishedAt} now={now} />
+                <RunDuration run={lastRun} now={now} />
               </span>
             </>
           ) : (
