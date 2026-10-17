@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into embedding_failures (chunk_id, model, error, at)\n             select chunk_id, $1, error, now() from unnest($2::uuid[], $3::text[]) as f(chunk_id, error)\n             on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "UuidArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7e41e8514a710139315a34d8cac710da4a6d2d671a2fe8b2ffc423d90b90655"
+}

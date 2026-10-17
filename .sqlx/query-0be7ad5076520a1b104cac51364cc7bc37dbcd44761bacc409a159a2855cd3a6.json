@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into chunk_embeddings\n             (chunk_id, model, document_id, user_id, source, content_type, ts, embedding)\n         select c.id, $1, c.document_id, c.user_id, c.source, c.content_type, c.ts, cache.embedding\n         from unnest($2::uuid[], $3::bytea[]) as batch(chunk_id, text_hash)\n         join chunks c on c.id = batch.chunk_id\n         join embedding_cache cache on cache.text_hash = batch.text_hash and cache.model = $1\n         for share of c",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "UuidArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0be7ad5076520a1b104cac51364cc7bc37dbcd44761bacc409a159a2855cd3a6"
+}

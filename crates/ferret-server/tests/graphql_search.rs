@@ -8,8 +8,11 @@ use sqlx::PgPool;
 
 const SEARCH: &str = "query ($input: SearchInput!) {
     search(input: $input) {
-        documentId externalId source contentType title url thread authors createdAt modifiedAt
-        chunk { startOffset endOffset parts { text highlight } }
+        hits {
+            documentId externalId source contentType title url thread authors createdAt modifiedAt
+            chunk { startOffset endOffset parts { text highlight } }
+        }
+        semanticUnavailable
     }
 }";
 
@@ -42,7 +45,8 @@ async fn graphql_hits(server: &TestServer, cookie: &str, input: Value) -> Vec<Va
         .graphql(cookie, SEARCH, json!({"input": input}))
         .await;
     assert_eq!(body["errors"], Value::Null, "{body}");
-    body["data"]["search"]
+    assert_eq!(body["data"]["search"]["semanticUnavailable"], Value::Null);
+    body["data"]["search"]["hits"]
         .as_array()
         .unwrap()
         .iter()

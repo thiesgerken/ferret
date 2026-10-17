@@ -24,6 +24,7 @@ use crate::{
     connections::{self, Connection, ConnectionError, PluginRun, PluginType},
     credentials::ConfigKey,
     documents,
+    embeddings::Embedding,
     error::ApiError,
     search::{self, SearchError},
     users::User,
@@ -46,6 +47,7 @@ pub fn sdl() -> String {
 pub struct Context {
     user: User,
     pool: PgPool,
+    embedding: Arc<Embedding>,
     config_key: Arc<ConfigKey>,
 }
 
@@ -69,7 +71,7 @@ impl Query {
 
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
-    async fn search(context: &Context, input: SearchInput) -> FieldResult<Vec<Hit>> {
+    async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
         let request = ferret_api::SearchQuery {
             q: input.q,
             sources: input.sources.unwrap_or_default(),
@@ -85,8 +87,19 @@ impl Query {
             // A negative k becomes 0, which the search rejects like any k out of range.
             k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
         };
-        match search::find(&context.pool, context.user.id, None, &request).await {
-            Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
+        match search::find(
+            &context.pool,
+            &context.embedding,
+            context.user.id,
+            None,
+            &request,
+        )
+        .await
+        {
+            Ok(response) => Ok(SearchResult {
+                hits: response.hits.into_iter().map(Hit::from).collect(),
+                semantic_unavailable: response.semantic_unavailable,
+            }),
             Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
             Err(SearchError::Database(error)) => Err(internal(error)),
         }
@@ -315,6 +328,15 @@ impl From<ferret_api::ContentType> for ContentType {
             ferret_api::ContentType::Email => Self::Email,
         }
     }
+}
+
+/// The hits of a search, and whether its semantic half ran.
+#[derive(GraphQLObject)]
+struct SearchResult {
+    hits: Vec<Hit>,
+    /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    /// keyword matches only. Null when it ran.
+    semantic_unavailable: Option<String>,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -651,6 +673,7 @@ pub async fn handle(
     let context = Context {
         user,
         pool: state.pool.clone(),
+        embedding: state.embedding.clone(),
         config_key: state.config_key.clone(),
     };
     let response = request.execute(&state.schema, &context).await;

@@ -22,8 +22,10 @@ getrandom.workspace = true
 jsonschema.workspace = true
 jsonwebtoken.workspace = true
 juniper.workspace = true
+reqwest = { workspace = true, features = ["json"] }
 rust-stemmers.workspace = true
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
@@ -37,4 +39,3 @@ uuid.workspace = true
 [dev-dependencies]
 ferret-plugins = { path = "../ferret-plugins" }
 tempfile.workspace = true
-reqwest = { workspace = true, features = ["json"] }
