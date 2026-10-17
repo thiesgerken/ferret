@@ -11,14 +11,14 @@ use axum::{
     },
 };
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 
 use crate::{AppState, StartupError, error::ApiError, users};
 
 const COOKIE_NAME: &str = "ferret_session";
 const SESSION_TTL: Duration = Duration::from_secs(14 * 24 * 60 * 60);
-const ISSUER: &str = "ferret";
+pub(crate) const ISSUER: &str = "ferret";
 const AUDIENCE: &str = "ferret-web";
 const TOKEN_TYPE: &str = "session";
 const SECRET_MIN_BYTES: usize = 32;
@@ -60,8 +60,27 @@ impl SessionKey {
     }
 
     fn sign(&self, claims: &Claims) -> String {
+        self.sign_claims(claims)
+    }
+
+    /// Signs other tokens under the same secret (plugin run tokens). Their claims must carry
+    /// `iss`, `aud` and `exp` like a session's.
+    pub(crate) fn sign_claims<T: Serialize>(&self, claims: &T) -> String {
         jsonwebtoken::encode(&Header::new(Algorithm::HS256), claims, &self.encoding)
             .expect("HS256 signing of plain claims succeeds")
+    }
+
+    /// The claims of a correctly signed, unexpired token for `audience`, `None` for anything else.
+    pub(crate) fn verify_claims<T: DeserializeOwned>(
+        &self,
+        token: &str,
+        audience: &str,
+    ) -> Option<T> {
+        let mut validation = self.validation.clone();
+        validation.set_audience(&[audience]);
+        jsonwebtoken::decode::<T>(token, &self.decoding, &validation)
+            .ok()
+            .map(|data| data.claims)
     }
 
     /// The claims of a correctly signed, unexpired session token, `None` for anything else.

@@ -25,11 +25,12 @@ embedding:
       document_prefix: ""
 ```
 
-The configuration is a YAML file the server reads from `FERRET_CONFIG` (Helm: a ConfigMap). At
+The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap). At
 startup the server reads each model's `max_input_length` from TEI's `/info` and its dimension from
-embedding a probe text, since `/info` doesn't report it. A model that isn't reachable stops the
-startup. Model names end up in index names and SQL literals, so they are limited to
-`[a-z0-9][a-z0-9._-]*`.
+embedding a probe text, since `/info` doesn't report it. The server waits up to 10 minutes for an
+unreachable model (TEI downloads its model on first start), then stops. Model names end up in index
+names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`, ending in a letter or digit,
+at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
 
 - **No silent truncation**: every embed request sets `truncate: false`, so TEI rejects an
   over-long text instead of embedding its beginning.
@@ -50,8 +51,7 @@ startup. Model names end up in index names and SQL literals, so they are limited
   and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
   than one token per character, so a model that accepts 2000 tokens takes every chunk.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
-- **Removing a model**: the server drops its index and its rows. User preferences pointing to it
-  are reset to the default at startup, logged as a warning.
+- **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
 ## Storage
 
@@ -61,6 +61,7 @@ create table chunk_embeddings (
     model         text not null,
     -- Denormalized from chunks: pgvector's iterative scans only filter on columns of the table
     -- that holds the vector.
+    document_id   uuid not null,                -- for -word
     user_id       uuid not null,
     source        text not null,
     content_type  text not null,
@@ -99,27 +100,37 @@ storage simple. The consequences:
 The queue is "chunks without an embedding for model X":
 
 ```sql
-select c.id, c.text from chunks c
-where not exists (
-    select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
-)
-order by c.ts desc
-limit 64
-for update of c skip locked;
+select id, text from (
+    select c.id, c.text from chunks c
+    where not exists (
+        select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
+    )
+    and not exists (
+        select 1 from embedding_failures f where f.chunk_id = c.id and f.model = $1
+    )
+    order by c.ts desc
+    limit 256
+) candidates
+where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
+limit 32;  -- TEI's max_client_batch_size
 ```
 
 - The pump serves the default model first, then the others. Within a model, newest chunks first.
 - Each batch: look up `embedding_cache`, send the misses to that model's TEI, write
   `chunk_embeddings` and `embedding_cache` in one transaction.
 - `LISTEN chunks_pending` wakes the pump after an ingest. Several pumps share the queue through
-  `SKIP LOCKED`.
+  the advisory locks.
 - A statement trigger on `chunks` sends the notification, delivered when the ingest commits. The
   pump also polls every 30 s, which picks up after outages.
 - A failed batch is logged and stored in `embedding_errors` (model, error, time) until the model's
   next successful batch, for Admin. The pump keeps retrying, an unreachable `bulk_url` therefore
   shows as an error and a growing backlog.
-- The claimed chunks stay locked while TEI works on them, so a `PUT` that changes one of them
-  waits for that batch.
+- TEI rejecting a batch (4xx) makes the pump retry its texts one by one. Texts TEI rejects alone
+  (more tokens than characters, e.g. emoji or CJK) land in `embedding_failures` (chunk, model,
+  error) and leave the queue. A changed text is a new chunk, so it gets another chance.
+- Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
+  The final insert locks the chunks `for share` and skips those deleted meanwhile.
+- Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
 
 ## Per-user model choice
 

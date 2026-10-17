@@ -25,6 +25,16 @@ create table embedding_cache (
     primary key (text_hash, model)
 );
 
+-- Chunks TEI refused to embed (a 4xx, e.g. too long for the model). The pump leaves them out, so
+-- one bad chunk can't keep the others from being embedded. A changed text is a new chunk row.
+create table embedding_failures (
+    chunk_id  uuid not null references chunks on delete cascade,
+    model     text not null,
+    error     text not null,
+    at        timestamptz not null,
+    primary key (chunk_id, model)
+);
+
 -- The embed pump's last failure per model, until its next success.
 create table embedding_errors (
     model  text primary key,

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from documents where user_id = $1 and source_covers($2, source)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c8ef04be4e2fb50ed633d3e8021c4612132037d07dc41f519c18eff0e2a14346"
+}

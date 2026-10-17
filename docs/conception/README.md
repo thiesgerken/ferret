@@ -228,10 +228,11 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
   rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
-  half only counts neighbours with a positive cosine similarity, and uses the user's default model
-  unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
+  half always contributes its 100 nearest chunks, however distant (a calibrated per-model cut-off
+  is part of the model evaluation in #21), and uses the user's default model unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
   `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding
-  yet (backfill) is found by keyword only. If the query can't be embedded (TEI down or broken), the
+  yet (backfill) is found by keyword only. If the query can't be embedded within 5 s (TEI down,
+  stuck or broken), the
   search answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
   `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
   a notice above the hits, and the server logs a warning. Keyword search is complete on its own,

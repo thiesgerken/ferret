@@ -1,10 +1,15 @@
 //! Embedding models: their setup at startup, query embeddings, and the embed pump that fills
 //! `chunk_embeddings` in the background, so ingest never waits for a model.
 
-use std::{collections::HashSet, fmt, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    sync::Arc,
+    time::Duration,
+};
 
 use sha2::{Digest, Sha256};
-use sqlx::{AssertSqlSafe, PgPool, postgres::PgListener};
+use sqlx::{AssertSqlSafe, PgConnection, PgPool, postgres::PgListener};
 
 use crate::{
     StartupError,
@@ -15,6 +20,15 @@ use crate::{
 
 /// Chunks per pump transaction, within TEI's default client batch size (32).
 const BATCH_SIZE: i64 = 32;
+/// A search waits this long for its query embedding, then answers by keyword only. A CPU TEI
+/// that's busy with pump batches answers slower than an idle one.
+const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+/// A pump batch of up to 32 chunks may take this long on a CPU.
+const BATCH_TIMEOUT: Duration = Duration::from_secs(60);
+/// `/info` and the probe embedding at startup.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// How the claim query looks ahead for chunks no other pump has locked.
+const CLAIM_CANDIDATES: i64 = 256;
 /// How long the startup waits for a TEI that doesn't accept connections yet.
 const TEI_STARTUP_WAIT: Duration = Duration::from_secs(600);
 /// The pump also looks for work this often without a notification, e.g. after an outage.
@@ -34,10 +48,7 @@ impl Model {
     }
 
     fn index_name(&self) -> String {
-        format!(
-            "chunk_embeddings_hnsw_{}",
-            self.config.name.replace(['.', '-'], "_")
-        )
+        format!("chunk_embeddings_hnsw_{}", self.config.slug())
     }
 }
 
@@ -80,7 +91,7 @@ impl From<sqlx::Error> for EmbedError {
 /// when a TEI is unreachable or a model can't take the chunker's longest chunk.
 pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding, StartupError> {
     config.validate()?;
-    let http = reqwest::Client::new();
+    let http = tei::client();
     let mut configs = config.models;
     configs.sort_by_key(|model| model.name != config.default);
 
@@ -101,6 +112,7 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
             &http,
             &config.url,
             &[format!("{}probe", config.document_prefix)],
+            STARTUP_TIMEOUT,
         )
         .await
         .map_err(|error| format!("embedding model {name}: {error}"))?;
@@ -120,7 +132,7 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
 async fn wait_for_tei(http: &reqwest::Client, config: &ModelConfig) -> Result<usize, StartupError> {
     let deadline = tokio::time::Instant::now() + TEI_STARTUP_WAIT;
     loop {
-        match tei::max_input_length(http, &config.url).await {
+        match tei::max_input_length(http, &config.url, STARTUP_TIMEOUT).await {
             Ok(length) => return Ok(length),
             Err(error) if error.is_connect() && tokio::time::Instant::now() < deadline => {
                 tracing::warn!(model = %config.name, url = %config.url, "waiting for TEI");
@@ -175,7 +187,7 @@ impl Embedding {
         .fetch_one(pool)
         .await?;
         if !cached {
-            let vectors = tei::embed(&self.http, &model.config.url, &[text]).await?;
+            let vectors = tei::embed(&self.http, &model.config.url, &[text], QUERY_TIMEOUT).await?;
             sqlx::query!(
                 "insert into embedding_cache (text_hash, model, embedding)
                  values ($1, $2, $3::text::halfvec)
@@ -237,24 +249,34 @@ async fn listen(pool: &PgPool) -> Result<PgListener, sqlx::Error> {
     Ok(listener)
 }
 
-/// Embeds the newest chunks `model` has no embedding for yet. Returns how many.
+/// Embeds the newest chunks `model` has no embedding for yet. Returns how many it claimed.
 async fn embed_batch(
     pool: &PgPool,
     http: &reqwest::Client,
     model: &Model,
 ) -> Result<usize, EmbedError> {
     let mut tx = pool.begin().await?;
-    // ponytail: the claimed chunks stay locked while TEI works, so a PUT that changes one of
-    // them waits for the batch (seconds on CPU). A claim table would avoid that if it hurts.
+    // Advisory locks rather than row locks: other pumps skip what this one works on, but an
+    // ingest that changes or deletes one of these chunks never waits for TEI. The lock is tried
+    // on a bounded set of candidates only, so a transaction never collects thousands of them.
+    // No outer `order by`: sorting would try the lock of every candidate before the limit,
+    // leaving a second pump nothing to claim.
     let chunks = sqlx::query!(
-        "select c.id, c.text from chunks c
-         where not exists (
-             select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
-         )
-         order by c.ts desc
-         limit $2
-         for update of c skip locked",
+        "select id, text from (
+             select c.id, c.text from chunks c
+             where not exists (
+                 select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
+             )
+             and not exists (
+                 select 1 from embedding_failures f where f.chunk_id = c.id and f.model = $1
+             )
+             order by c.ts desc
+             limit $2
+         ) candidates
+         where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
+         limit $3",
         model.config.name,
+        CLAIM_CANDIDATES,
         BATCH_SIZE,
     )
     .fetch_all(&mut *tx)
@@ -283,34 +305,39 @@ async fn embed_batch(
             missing.push((hash.clone(), text.clone()));
         }
     }
-    if !missing.is_empty() {
-        let (missing_hashes, missing_texts): (Vec<_>, Vec<_>) = missing.into_iter().unzip();
-        let vectors = tei::embed(http, model.pump_url(), &missing_texts).await?;
-        let literals: Vec<String> = vectors
+    let rejected = cache_embeddings(&mut tx, http, model, missing).await?;
+    if !rejected.is_empty() {
+        let rejected_chunks: Vec<_> = chunks
             .iter()
-            .map(|vector| vector_literal(vector))
+            .zip(&hashes)
+            .filter_map(|(chunk, hash)| rejected.get(hash).map(|error| (chunk.id, error.clone())))
             .collect();
+        let (ids, errors): (Vec<_>, Vec<_>) = rejected_chunks.into_iter().unzip();
+        tracing::error!(model = %model.config.name, chunks = ?ids, "TEI rejected chunks, they stay without an embedding");
         sqlx::query!(
-            "insert into embedding_cache (text_hash, model, embedding)
-             select text_hash, $1, embedding::halfvec
-             from unnest($2::bytea[], $3::text[]) as new(text_hash, embedding)
+            "insert into embedding_failures (chunk_id, model, error, at)
+             select chunk_id, $1, error, now() from unnest($2::uuid[], $3::text[]) as f(chunk_id, error)
              on conflict do nothing",
             model.config.name,
-            &missing_hashes,
-            &literals,
+            &ids,
+            &errors,
         )
         .execute(&mut *tx)
         .await?;
     }
 
     let ids: Vec<_> = chunks.iter().map(|chunk| chunk.id).collect();
+    // `for share` waits for an ingest that is changing one of these chunks right now and then
+    // reads its new values, so the denormalized columns never go stale. Chunks deleted since
+    // the claim drop out of the join.
     sqlx::query!(
         "insert into chunk_embeddings
              (chunk_id, model, document_id, user_id, source, content_type, ts, embedding)
          select c.id, $1, c.document_id, c.user_id, c.source, c.content_type, c.ts, cache.embedding
          from unnest($2::uuid[], $3::bytea[]) as batch(chunk_id, text_hash)
          join chunks c on c.id = batch.chunk_id
-         join embedding_cache cache on cache.text_hash = batch.text_hash and cache.model = $1",
+         join embedding_cache cache on cache.text_hash = batch.text_hash and cache.model = $1
+         for share of c",
         model.config.name,
         &ids,
         &hashes,
@@ -319,6 +346,67 @@ async fn embed_batch(
     .await?;
     tx.commit().await?;
     Ok(chunks.len())
+}
+
+/// Embeds `missing` texts and caches their vectors. Returns the texts TEI rejected (a 4xx, e.g.
+/// too long for the model) with TEI's answer: one bad text must not keep the others, and every
+/// newer chunk, from ever being embedded.
+async fn cache_embeddings(
+    tx: &mut PgConnection,
+    http: &reqwest::Client,
+    model: &Model,
+    missing: Vec<(Vec<u8>, String)>,
+) -> Result<HashMap<Vec<u8>, String>, EmbedError> {
+    let mut rejected = HashMap::new();
+    if missing.is_empty() {
+        return Ok(rejected);
+    }
+    let (hashes, texts): (Vec<_>, Vec<_>) = missing.into_iter().unzip();
+    let (hashes, vectors) = match tei::embed(http, model.pump_url(), &texts, BATCH_TIMEOUT).await {
+        Ok(vectors) => (hashes, vectors),
+        Err(error) if is_rejection(&error) => {
+            // Find the culprits one by one.
+            let mut embedded_hashes = Vec::new();
+            let mut vectors = Vec::new();
+            for (hash, text) in hashes.into_iter().zip(texts) {
+                match tei::embed(http, model.pump_url(), &[text], BATCH_TIMEOUT).await {
+                    Ok(mut vector) => {
+                        embedded_hashes.push(hash);
+                        vectors.push(vector.remove(0));
+                    }
+                    Err(error) if is_rejection(&error) => {
+                        rejected.insert(hash, error.to_string());
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            (embedded_hashes, vectors)
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let literals: Vec<String> = vectors
+        .iter()
+        .map(|vector| vector_literal(vector))
+        .collect();
+    sqlx::query!(
+        "insert into embedding_cache (text_hash, model, embedding)
+         select text_hash, $1, embedding::halfvec
+         from unnest($2::bytea[], $3::text[]) as new(text_hash, embedding)
+         on conflict do nothing",
+        model.config.name,
+        &hashes,
+        &literals,
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(rejected)
+}
+
+/// TEI refused the input itself, as opposed to failing or being unreachable.
+fn is_rejection(error: &reqwest::Error) -> bool {
+    error
+        .status()
+        .is_some_and(|status| status.is_client_error())
 }
 
 /// Shown in Admin until the model's next successful batch. The pump keeps retrying.

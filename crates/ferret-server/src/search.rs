@@ -229,8 +229,6 @@ pub async fn find(
     })
 }
 
-/// The filters both halves apply, on the denormalized chunk columns of `chunks` or
-/// `chunk_embeddings` (which pgvector's iterative scans need).
 /// The vector half: the nearest chunks to the cached query embedding, ranked.
 fn push_semantic(
     sql: &mut QueryBuilder<Postgres>,
@@ -261,13 +259,11 @@ fn push_semantic(
     filters.push(sql, "e");
     sql.push(" order by distance limit ")
         .push_bind(SEMANTIC_CANDIDATES)
-        .push(
-            ") s
-             -- No similarity at all is no hit, however few neighbours there are.
-             where distance < 1",
-        );
+        .push(") s");
 }
 
+/// The filters both halves apply, on the denormalized chunk columns of `chunks` or
+/// `chunk_embeddings` (which pgvector's iterative scans need).
 struct Filters<'a> {
     user_id: Uuid,
     roots: Option<Vec<String>>,

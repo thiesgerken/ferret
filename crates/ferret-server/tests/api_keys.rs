@@ -104,7 +104,7 @@ async fn missing_malformed_wrong_revoked_and_expired_keys_are_rejected(pool: PgP
     assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         missing.json::<Value>().await.unwrap(),
-        json!({"error": "missing or invalid API key"})
+        json!({"error": "missing or invalid API key or run token"})
     );
     for bad in [
         "not a key",

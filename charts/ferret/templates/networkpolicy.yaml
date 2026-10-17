@@ -1,0 +1,26 @@
+{{- if .Values.networkPolicy.enabled }}
+# The public port is open to anyone who reaches the pod (the Gateway, probes), the internal port
+# only to the plugin workers: a claimed run hands out plugin credentials.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "ferret.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ferret.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "ferret.selectorLabels" (dict "root" . "component" "plugins") | nindent 14 }}
+      ports:
+        - port: 8081
+{{- end }}

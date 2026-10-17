@@ -35,6 +35,9 @@ embedding:
       # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on
       # small CPU nodes. It also caps the input length, which must stay at 2000 or more.
       maxBatchTokens: 4096
+      # -- Room for the downloaded model. A full cache evicts only this pod.
+      cacheSize: 4Gi
+      # -- The request is the RSS measured after warmup (1.93 GiB).
       resources:
         requests:
           cpu: 500m
@@ -48,6 +51,26 @@ tei:
     repository: huggingface/text-embeddings-inference
     tag: "cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
     pullPolicy: IfNotPresent
+
+# -- Plugin workers: claim runs from the server's internal API and ingest through the public one.
+plugins:
+  image:
+    registry: ghcr.io
+    repository: thiesgerken/ferret-plugins
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 512Mi
+
+# -- Restricts the server's internal port (8081) to the plugin workers. Needs a CNI that enforces
+# NetworkPolicy; without one, the worker secret is the only protection.
+networkPolicy:
+  enabled: true
 
 frontend:
   image:

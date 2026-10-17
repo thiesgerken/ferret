@@ -13,13 +13,25 @@ services:
       tei:
         condition: service_healthy
     environment:
-      FERRET_CONFIG: /etc/ferret/config.yaml
+      FERRET_CONFIG_FILE: /etc/ferret/config.yaml
       FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
       # Development values. Sign in as `admin` with the bootstrap password.
       FERRET_SESSION_SECRET: development session secret, not for production
       FERRET_BOOTSTRAP_PASSWORD: ferret-development
+      FERRET_WORKER_SECRET: &worker-secret development worker secret, not for production
     volumes:
       - ./docker/ferret.yaml:/etc/ferret/config.yaml:ro
+
+  plugins:
+    build:
+      context: .
+      target: plugins
+    depends_on:
+      - server
+    environment:
+      FERRET_INTERNAL_URL: http://server:8081
+      FERRET_SERVER_URL: http://server:8080
+      FERRET_WORKER_SECRET: *worker-secret
 
   frontend:
     build: ./frontend
