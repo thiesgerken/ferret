@@ -213,12 +213,28 @@ pub async fn find(
                     c.document_id, c.text, c.start_offset, c.end_offset, f.score
              from fused f join chunks c on c.id = f.id
              order by c.document_id, f.score desc
+         ),
+         hits as (
+             select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
+                    d.authors, d.created_at, d.modified_at,
+                    b.score, b.text as chunk_text, b.start_offset, b.end_offset,
+                    row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
+                    -- Unordered: with an order, count(*) would count only up to the current row.
+                    count(*) over thread_hits - 1 as collapsed
+             from best b join documents d on d.id = b.document_id
+             window thread_hits as (partition by ",
+    )
+    // A document without a thread is a group of its own.
+    .push(if request.collapse.unwrap_or(true) {
+        "d.source, d.thread, case when d.thread is null then d.id end"
+    } else {
+        "d.id"
+    })
+    .push(
+        ")
          )
-         select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                d.authors, d.created_at, d.modified_at,
-                b.score, b.text as chunk_text, b.start_offset, b.end_offset
-         from best b join documents d on d.id = b.document_id
-         order by b.score desc
+         select * from hits where thread_rank = 1
+         order by score desc
          limit ",
     )
     .push_bind(i64::from(k));
@@ -250,6 +266,8 @@ pub async fn find(
             created_at: row.created_at,
             modified_at: row.modified_at,
             score: row.score,
+            collapsed: u32::try_from(row.collapsed)
+                .expect("at most KEYWORD_CANDIDATES + SEMANTIC_CANDIDATES hits collapse"),
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),
@@ -398,6 +416,7 @@ struct HitRow {
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     score: f32,
+    collapsed: i64,
     chunk_text: String,
     start_offset: i32,
     end_offset: i32,
