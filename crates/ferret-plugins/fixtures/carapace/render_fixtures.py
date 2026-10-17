@@ -8,8 +8,9 @@ it with carapace's locked dependencies, but in a throwaway environment, so carap
         uv run --frozen --project <carapace checkout> python render_fixtures.py <this directory>
 
 The records cover what the parser has to handle: facts with and without a subject, dated facts,
-several source refs, a statement that contains the meta separators, prose with escaped block
-markers, sessions with empty sections, and a week and a month digest.
+several source refs, a statement that contains the meta separators, a fact repeated under another
+category, a tag with a space, prose with escaped block markers, sessions with empty sections, and
+a week and a month digest.
 """
 
 from __future__ import annotations
@@ -104,9 +105,19 @@ TALOS = ExtractionRecord(
                 confidence="high",
                 durability="durable",
             ),
+            # The same fact again, under another category: valid output that ferret keeps once.
+            Fact(
+                category="surroundings",
+                statement="Anna helps with the cluster now and then.",
+                subject="Anna",
+                source_seqs=[8],
+                source_kind="user_said",
+                confidence="medium",
+                durability="durable",
+            ),
         ],
         friction=["The upgrade docs were hard to find."],
-        tags=["homelab", "talos"],
+        tags=["homelab", "talos", "home lab"],
     ),
 )
 

@@ -3,15 +3,17 @@
 
 mod mirror;
 
+use std::collections::HashSet;
+
 use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    Outcome, PluginError, Run, git,
+    Log, Outcome, PluginError, Run, git,
     repo::{Checkout, FileHistory},
 };
 use mirror::{Digest, Fact, Session};
@@ -68,6 +70,8 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         }
         let text = match checkout.text(path, mode).await? {
             Ok(text) => text,
+            // Skipping a session or digest would let the sweep delete what it held.
+            Err(skipped) if kind != Kind::File => return Err(format!("{path}: {skipped}").into()),
             Err(skipped) => {
                 run.log.line(format!("skipped {path}: {skipped}"));
                 continue;
@@ -75,9 +79,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         };
         let in_file = |error: PluginError| format!("{path}: {error}");
         let documents = match kind {
-            Kind::Session => {
-                session_documents(&mirror::parse_session(&text).map_err(in_file)?, &target)
-            }
+            Kind::Session => session_documents(
+                &mirror::parse_session(&text).map_err(in_file)?,
+                &target,
+                &run.log,
+            ),
             Kind::Digest => vec![digest_document(
                 &mirror::parse_digest(&text).map_err(in_file)?,
                 &target,
@@ -149,13 +155,21 @@ impl Target<'_> {
         format!(
             "{}{path}?{key}={}",
             self.carapace_url,
-            utf8_percent_encode(value, NON_ALPHANUMERIC)
+            utf8_percent_encode(value, QUERY_VALUE)
         )
     }
 }
 
-/// The session's document and one document per fact.
-fn session_documents(session: &Session, target: &Target) -> Vec<DocumentPut> {
+/// RFC 3986's unreserved characters stay as they are, like in carapace's own URLs.
+const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+/// The session's document and one document per fact. A fact carapace extracted twice (under
+/// different categories, say) has the same id, so only its first occurrence counts.
+fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<DocumentPut> {
     let url = target.url("/memory/sessions", "session", &session.session_id);
     let mut text = session.abstract_text.clone();
     push_section(&mut text, "Outcomes", &session.outcomes);
@@ -178,10 +192,19 @@ fn session_documents(session: &Session, target: &Target) -> Vec<DocumentPut> {
         modified_at: session.created_at,
         meta,
     }];
-    documents.extend(session.facts.iter().map(|fact| {
-        DocumentPut {
+    let mut seen = HashSet::new();
+    for fact in &session.facts {
+        let external_id = format!("{}/{}", session.session_id, fact_id(fact));
+        if !seen.insert(external_id.clone()) {
+            log.line(format!(
+                "{}: skipped a repeated fact: {}",
+                session.session_id, fact.statement
+            ));
+            continue;
+        }
+        documents.push(DocumentPut {
             source: target.source("facts"),
-            external_id: format!("{}/{}", session.session_id, fact_id(fact)),
+            external_id,
             content_type: ContentType::Plain,
             title: Some(
                 fact.subject
@@ -195,8 +218,8 @@ fn session_documents(session: &Session, target: &Target) -> Vec<DocumentPut> {
             created_at: session.created_at,
             modified_at: session.created_at,
             meta: fact_meta(fact, &session.session_id),
-        }
-    }));
+        });
+    }
     documents
 }
 
@@ -319,7 +342,11 @@ mod tests {
 
     #[test]
     fn a_session_becomes_its_document_and_one_per_fact() {
-        let documents = session_documents(&mirror::parse_session(TALOS).unwrap(), &TARGET);
+        let documents = session_documents(
+            &mirror::parse_session(TALOS).unwrap(),
+            &TARGET,
+            &Log::default(),
+        );
 
         let session = &documents[0];
         assert_eq!(
@@ -328,7 +355,7 @@ mod tests {
         );
         assert_eq!(
             session.url.as_deref(),
-            Some("https://carapace.example/memory/sessions?session=s%2Dtalos")
+            Some("https://carapace.example/memory/sessions?session=s-talos")
         );
         assert!(
             session
@@ -374,6 +401,26 @@ mod tests {
     }
 
     #[test]
+    fn a_fact_repeated_in_a_session_becomes_one_document() {
+        let session = mirror::parse_session(TALOS).unwrap();
+        let log = Log::default();
+
+        let documents = session_documents(&session, &TARGET, &log);
+
+        assert_eq!(session.facts.len(), 5, "the fixture repeats a fact");
+        let anna: Vec<_> = documents
+            .iter()
+            .filter(|document| document.text.starts_with("Anna helps"))
+            .collect();
+        assert_eq!(anna.len(), 1);
+        assert_eq!(anna[0].meta["category"], "social", "the first one counts");
+        assert_eq!(
+            log.take(),
+            ["s-talos: skipped a repeated fact: Anna helps with the cluster now and then."]
+        );
+    }
+
+    #[test]
     fn a_fact_id_changes_with_its_wording_only() {
         let session = mirror::parse_session(TALOS).unwrap();
         let mut reworded = mirror::parse_session(TALOS).unwrap();
@@ -395,7 +442,7 @@ mod tests {
         );
         assert_eq!(
             document.url.as_deref(),
-            Some("https://carapace.example/memory/timeline?period=2026%2DW36")
+            Some("https://carapace.example/memory/timeline?period=2026-W36")
         );
         assert_eq!(
             document.text,

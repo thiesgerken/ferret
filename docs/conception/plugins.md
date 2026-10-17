@@ -78,7 +78,8 @@ carapace itself.
 - Body sections by heading: abstract (prose under the title), `## Outcomes`, `## Open loops`,
   `## On my mind`, `## Facts` with one `### <category>` per category, `## Friction`, `## Tags`.
 - Fact lines: `- **<subject>**: <statement> _(<source_kind> · <confidence> confidence ·
-  <durability or "dated until <date>"> · #<seq> ...)_`.
+  <durability or "dated until <date>"> · #<seq> ...)_`. render.py prints "dated until" whenever a
+  fact has a `valid_until`, so a durable fact with one reads as dated. v2 fixes that.
 
 This couples the plugin to carapace's render format. Parser tests run against fixtures rendered
 by carapace, and a line that doesn't parse fails the run instead of being skipped.
@@ -96,6 +97,9 @@ change its rendering freely.
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
   `session_id`. Session and digest `meta`: week and month keys, provenance.
+- `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
+  record, the only timestamp the mirror has. A re-extraction moves it.
+- A fact that appears twice in one session (under two categories, say) is indexed once.
 - `memory/facts/*.md` is ignored: it repeats the facts of the session files.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded

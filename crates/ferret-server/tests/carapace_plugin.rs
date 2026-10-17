@@ -131,7 +131,7 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
     assert_eq!(latest_run(&server, &cookie).await["status"], "SUCCEEDED");
-    // Two sessions with 4 + 1 facts, a week and a month, the mirror's README and the skill. The
+    // Two sessions with 4 + 1 distinct facts, a week and a month, the mirror's README and the skill. The
     // per-category facts files repeat the session facts and stay out.
     assert_eq!(
         documents_per_source(&pool).await,
@@ -149,17 +149,18 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
             .unwrap();
     assert_eq!(
         skill_url,
-        "https://carapace.example/knowledge?path=skills%2Fbrag%2FSKILL%2Emd"
+        "https://carapace.example/knowledge?path=skills%2Fbrag%2FSKILL.md"
     );
 
-    // carapace re-renders the session without one of its facts.
+    // carapace re-renders the session without one of its facts (listed under two categories).
     let talos = repo.path().join(TALOS);
     let rendered = std::fs::read_to_string(&talos).unwrap();
-    let dropped = rendered
+    let without_anna: String = rendered
         .lines()
-        .find(|line| line.contains("**Anna**: Anna helps"))
-        .unwrap();
-    std::fs::write(&talos, rendered.replace(&format!("{dropped}\n"), "")).unwrap();
+        .filter(|line| !line.contains("**Anna**: Anna helps"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    std::fs::write(&talos, without_anna).unwrap();
     commit(repo.path(), "re-render");
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
@@ -191,6 +192,18 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
             .unwrap()
             .starts_with(&format!("{TALOS}: Facts: body line ")),
         "{failed}"
+    );
+    assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
+
+    // Nor does a session file the plugin can't read.
+    std::fs::write(&talos, "binary\0").unwrap();
+    commit(repo.path(), "corrupt");
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    assert_eq!(
+        latest_run(&server, &cookie).await["error"],
+        format!("{TALOS}: not text")
     );
     assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
 }

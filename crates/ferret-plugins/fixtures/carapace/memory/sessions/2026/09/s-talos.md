@@ -52,6 +52,7 @@ The user planned the Talos upgrade of the home cluster.
 ### Surroundings
 
 - **home cluster**: The home cluster runs Talos 1.10. _(observed · high confidence · dated until 2026-10-01 · #4)_
+- **Anna**: Anna helps with the cluster now and then. _(user_said · medium confidence · durable · #8)_
 
 ## Friction
 
@@ -59,4 +60,4 @@ The user planned the Talos upgrade of the home cluster.
 
 ## Tags
 
-`homelab` `talos`
+`homelab` `talos` `home lab`

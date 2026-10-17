@@ -246,13 +246,12 @@ impl Section {
     fn tags(&self) -> Result<Vec<String>, PluginError> {
         let mut tags = Vec::new();
         for (number, line) in self.content() {
-            for tag in line.split(' ') {
-                let tag = tag
-                    .strip_prefix('`')
-                    .and_then(|tag| tag.strip_suffix('`'))
-                    .ok_or_else(|| self.error(*number, line, "`tag` words"))?;
-                tags.push(tag.to_owned());
-            }
+            // Tags may contain spaces (`home lab`), so split between the backticks.
+            let inner = line
+                .strip_prefix('`')
+                .and_then(|line| line.strip_suffix('`'))
+                .ok_or_else(|| self.error(*number, line, "`tag` words"))?;
+            tags.extend(inner.split("` `").map(str::to_owned));
         }
         Ok(tags)
     }
@@ -283,6 +282,9 @@ fn parse_fact(line: &str, category: &'static str) -> Option<Fact> {
         .next()?
         .strip_suffix(" confidence")
         .filter(|confidence| ["low", "medium", "high"].contains(confidence))?;
+    // render.py prints `dated until <date>` whenever a fact has a valid_until, whatever its
+    // durability, so a durable fact with one reads as dated here. The Markdown can't tell them
+    // apart; v2's JSON sidecars carry both fields.
     let (durability, valid_until) = match meta.next()? {
         "durable" => ("durable", None),
         "dated" => ("dated", None),
@@ -380,7 +382,7 @@ mod tests {
             ["upgrading the home cluster to Talos 1.11"]
         );
         assert_eq!(session.friction, ["The upgrade docs were hard to find."]);
-        assert_eq!(session.tags, ["homelab", "talos"]);
+        assert_eq!(session.tags, ["homelab", "talos", "home lab"]);
         assert_eq!(
             session.facts,
             [
@@ -409,6 +411,14 @@ mod tests {
                         "surroundings",
                         Some("home cluster"),
                         "The home cluster runs Talos 1.10."
+                    )
+                },
+                Fact {
+                    confidence: "medium".to_owned(),
+                    ..fact(
+                        "surroundings",
+                        Some("Anna"),
+                        "Anna helps with the cluster now and then."
                     )
                 },
             ]
