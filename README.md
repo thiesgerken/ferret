@@ -43,8 +43,9 @@ guessing which tool's search to try first.
 - 🔌 **Plugins for your systems, a REST API for everything else.** git, Paperless and carapace sync
   on a schedule; IMAP and AFFiNE are coming. Anything else sends documents with a plain HTTP `PUT`.
 - 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
-  recipe and the note about your home bar in the same query. It's the search you use too. API keys
-  are scoped to sources and to read or write, so an agent sees exactly what you hand it.
+  recipe and the note about your home bar in the same query, and the agent knows where to dig
+  deeper with that source's own tools. It's the search you use too. API keys are scoped to sources
+  and to read or write, so an agent sees exactly what you hand it.
 - ⚡ **Embeddings on your own hardware.** A pool of TEI servers, in the cluster and on your
   laptop's GPU for big backfills, switched on and off live from Admin. Activity shows the progress.
 - ☸️ **Self-hosted, Kubernetes-native.** A Helm chart, Postgres (ParadeDB and pgvector) as the only
@@ -64,6 +65,10 @@ Example: searching for cocktail ideas, it goes immediately into my recipe tool, 
 about checking the document that says what I like and what is in my home bar. Sure, I can add a
 skill or put explicit instructions into the agent's system prompt, but that is also not efficient,
 cumbersome, and only works after I got frustrated at least once.
+
+What I wanted was a "discovery tool": the agent gets a quick overview of what I already have
+scattered around about a topic, and then uses dedicated skills to fetch more information from the
+respective sources.
 
 ## 📸 Screenshots
 
