@@ -9,10 +9,12 @@ use serde::Serialize;
 use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
 
-use crate::content_type;
+use crate::{content_type, search::RelativeRange};
 
 /// A search's filters as stored: sorted and without duplicates, so chip order doesn't make two
 /// searches different. `k` isn't part of it, it limits a search without changing what it asks.
+/// A relative range is stored instead of the `from` it resolved to, replay anchors it at the
+/// judgment's `created_at`.
 #[derive(Serialize)]
 struct Filters<'a> {
     sources: Vec<&'a str>,
@@ -20,10 +22,11 @@ struct Filters<'a> {
     content_types: Vec<&'static str>,
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
+    range: Option<&'static str>,
 }
 
 impl<'a> Filters<'a> {
-    fn of(search: &'a SearchQuery) -> Self {
+    fn of(search: &'a SearchQuery, range: Option<RelativeRange>) -> Self {
         fn canonical<T: Ord>(mut values: Vec<T>) -> Vec<T> {
             values.sort();
             values.dedup();
@@ -39,18 +42,25 @@ impl<'a> Filters<'a> {
                     .map(|content_type| content_type::as_str(*content_type))
                     .collect(),
             ),
-            from: search.from,
+            from: if range.is_some() { None } else { search.from },
             to: search.to,
+            range: range.map(RelativeRange::as_str),
         }
     }
 }
 
-/// Judges `user_id`'s document as the right hit for `search` (`judged`), or takes that back.
-/// `false` when the user has no such document.
+/// The query as stored: whitespace doesn't make two searches different.
+fn canonical_query(q: &str) -> String {
+    q.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Judges `user_id`'s document as a right hit for `search` within `range` (`judged`), or takes
+/// that back. `false` when the user has no such document.
 pub async fn set(
     pool: &PgPool,
     user_id: Uuid,
     search: &SearchQuery,
+    range: Option<RelativeRange>,
     document_id: Uuid,
     judged: bool,
 ) -> Result<bool, sqlx::Error> {
@@ -64,8 +74,8 @@ pub async fn set(
     if !owned {
         return Ok(false);
     }
-    let query = search.q.trim();
-    let filters = Json(Filters::of(search));
+    let query = canonical_query(&search.q);
+    let filters = Json(Filters::of(search, range));
     if judged {
         sqlx::query!(
             "insert into relevance_judgments (id, user_id, query, filters, document_id, created_at)
@@ -98,13 +108,14 @@ pub async fn judged_documents(
     pool: &PgPool,
     user_id: Uuid,
     search: &SearchQuery,
+    range: Option<RelativeRange>,
 ) -> Result<HashSet<Uuid>, sqlx::Error> {
     let documents = sqlx::query_scalar!(
         "select document_id from relevance_judgments
          where user_id = $1 and query = $2 and filters = $3",
         user_id,
-        search.q.trim(),
-        Json(Filters::of(search)) as _,
+        canonical_query(&search.q),
+        Json(Filters::of(search, range)) as _,
     )
     .fetch_all(pool)
     .await?;

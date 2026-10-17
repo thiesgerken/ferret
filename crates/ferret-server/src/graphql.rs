@@ -26,7 +26,7 @@ use crate::{
     embeddings::Embedding,
     error::ApiError,
     judgments,
-    search::{self, SearchError},
+    search::{self, RelativeRange, SearchError},
     users::User,
 };
 
@@ -71,7 +71,7 @@ impl Query {
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
     async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
-        let request = ferret_api::SearchQuery::from(input);
+        let (request, range) = input.resolve(Utc::now())?;
         let response = match search::find(
             &context.pool,
             &context.embedding,
@@ -85,7 +85,7 @@ impl Query {
             Err(SearchError::Invalid(message)) => return Err(invalid_input(message)),
             Err(SearchError::Database(error)) => return Err(internal(error)),
         };
-        let judged = judgments::judged_documents(&context.pool, context.user.id, &request)
+        let judged = judgments::judged_documents(&context.pool, context.user.id, &request, range)
             .await
             .map_err(internal)?;
         Ok(SearchResult {
@@ -294,27 +294,58 @@ struct SearchInput {
     from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
     to: Option<DateTime<Utc>>,
+    /// Only documents created within this range up to now. Instead of `from`.
+    range: Option<TimeRange>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
 }
 
-impl From<SearchInput> for ferret_api::SearchQuery {
-    fn from(input: SearchInput) -> Self {
-        Self {
-            q: input.q,
-            sources: input.sources.unwrap_or_default(),
-            authors: input.authors.unwrap_or_default(),
-            content_types: input
+/// A time range up to now.
+#[derive(GraphQLEnum, Clone, Copy)]
+enum TimeRange {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl From<TimeRange> for RelativeRange {
+    fn from(range: TimeRange) -> Self {
+        match range {
+            TimeRange::Day => Self::Day,
+            TimeRange::Week => Self::Week,
+            TimeRange::Month => Self::Month,
+            TimeRange::Year => Self::Year,
+        }
+    }
+}
+
+impl SearchInput {
+    /// The search to run, with a relative `range` resolved against `now`, and that range.
+    fn resolve(
+        self,
+        now: DateTime<Utc>,
+    ) -> FieldResult<(ferret_api::SearchQuery, Option<RelativeRange>)> {
+        let range = self.range.map(RelativeRange::from);
+        if range.is_some() && self.from.is_some() {
+            return Err(invalid_input("set either from or range".to_owned()));
+        }
+        let query = ferret_api::SearchQuery {
+            q: self.q,
+            sources: self.sources.unwrap_or_default(),
+            authors: self.authors.unwrap_or_default(),
+            content_types: self
                 .content_types
                 .unwrap_or_default()
                 .into_iter()
                 .map(ferret_api::ContentType::from)
                 .collect(),
-            from: input.from,
-            to: input.to,
+            from: range.map(|range| range.start(now)).or(self.from),
+            to: self.to,
             // A negative k becomes 0, which the search rejects like any k out of range.
-            k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
-        }
+            k: self.k.map(|k| u32::try_from(k).unwrap_or(0)),
+        };
+        Ok((query, range))
     }
 }
 
@@ -498,11 +529,17 @@ impl Mutation {
             .document_id
             .parse::<Uuid>()
             .map_err(|_| invalid_input("no such document".to_owned()))?;
-        let search = ferret_api::SearchQuery::from(input.search);
+        let (search, range) = input.search.resolve(Utc::now())?;
+        // A search `search` rejects could never be replayed.
+        search::validate(&search).map_err(|error| match error {
+            SearchError::Invalid(message) => invalid_input(message),
+            SearchError::Database(error) => internal(error),
+        })?;
         let owned = judgments::set(
             &context.pool,
             context.user.id,
             &search,
+            range,
             document_id,
             input.judged,
         )

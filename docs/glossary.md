@@ -69,7 +69,7 @@ A document returned by a search, shown with its best-matching chunk.
 _Avoid_: result, match
 
 **Judgment**:
-A user's statement that a document is the right hit for a query.
+A user's statement that a document is a right hit for a search. A search may have several.
 _Avoid_: label, rating, vote
 
 **Eval set**:

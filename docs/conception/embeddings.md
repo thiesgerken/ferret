@@ -149,13 +149,18 @@ switching to it needs nothing but the Settings dropdown once its backfill is don
 ### Collecting judgments
 
 A ✓ on a hit records an explicit judgment. It carries its own query, so there is no search log.
+A search may have several right hits, each its own judgment: recall@10 and MRR handle that.
 
 - GraphQL only (`setJudgment(input: {search, documentId, judged})`, and `judged` on every hit of
   `search`): agents don't judge. An explicit set rather than a toggle, so a double click can't
   flip it twice.
-- `query` is the query as typed, trimmed. `filters` is the search's filters in canonical form:
-  sources, authors and content types sorted without duplicates, `from`/`to` as absolute times.
-  The same search in another chip order is the same judgment, `k` isn't part of it.
+- `query` is the query as typed, with whitespace collapsed. `filters` is the search's filters in
+  canonical form: sources, authors and content types sorted without duplicates, `from`/`to` as
+  absolute times. The same search in another chip order is the same judgment, `k` isn't part of
+  it. A search `search` would reject can't be judged.
+- A relative time range ("Past week", `range` in GraphQL's `SearchInput`) is stored as its preset
+  instead of the `from` it resolved to, so the same search tomorrow still shows its ✓ and a
+  second ✓ doesn't add a row. Replay anchors the preset at the judgment's `created_at`.
 
 ```sql
 create table relevance_judgments (

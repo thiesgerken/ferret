@@ -157,3 +157,110 @@ async fn only_ones_own_documents_can_be_judged(pool: PgPool) {
     }
     assert_eq!(judgments(&pool).await, 0);
 }
+
+/// Another user's judgment of the same search and document neither shows nor goes away.
+#[sqlx::test(migrations = false)]
+async fn judgments_are_per_user(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let id = api
+        .put_document(&document("notes", "a", "An invoice."))
+        .await
+        .unwrap()
+        .id;
+    // No user management yet, so the other user and their judgment come straight from SQL.
+    sqlx::query(
+        r#"with bob as (
+               insert into users (id, username, password_hash, created_at, password_changed_at)
+               values (uuidv7(), 'bob', 'unused', now(), now())
+               returning id
+           )
+           insert into relevance_judgments (id, user_id, query, filters, document_id, created_at)
+           select uuidv7(), bob.id, 'invoice',
+                  '{"sources": [], "authors": [], "content_types": [], "from": null, "to": null, "range": null}',
+                  $1, now()
+           from bob"#,
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let cookie = server.sign_in().await;
+    let search = json!({"q": "invoice"});
+
+    assert_eq!(
+        judged(&server, &cookie, search.clone()).await,
+        [(id.to_string(), false)]
+    );
+    set_judgment(&server, &cookie, search.clone(), &id.to_string(), false).await;
+    assert_eq!(judgments(&pool).await, 1, "bob's judgment stays");
+    set_judgment(&server, &cookie, search.clone(), &id.to_string(), true).await;
+    assert_eq!(judgments(&pool).await, 2);
+    assert_eq!(
+        judged(&server, &cookie, search).await,
+        [(id.to_string(), true)]
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn whitespace_doesnt_split_a_search_and_unanswerable_searches_are_refused(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let id = api
+        .put_document(&document("notes", "a", "A paid invoice."))
+        .await
+        .unwrap()
+        .id
+        .to_string();
+    let cookie = server.sign_in().await;
+
+    set_judgment(&server, &cookie, json!({"q": "paid  invoice"}), &id, true).await;
+    let refused = set_judgment(&server, &cookie, json!({"q": "-invoice"}), &id, true).await;
+
+    assert_eq!(
+        judged(&server, &cookie, json!({"q": " paid invoice"})).await,
+        [(id.clone(), true)]
+    );
+    assert_eq!(
+        refused["errors"][0]["message"],
+        "the query needs at least one word that isn't excluded"
+    );
+    assert_eq!(judgments(&pool).await, 1);
+}
+
+/// "Past week" resolves to a different `from` every moment. The judgment stores the preset, so
+/// the same search later still finds it and a second ✓ doesn't add a row.
+#[sqlx::test(migrations = false)]
+async fn relative_ranges_are_judged_as_presets(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let mut recent = document("notes", "a", "A recent invoice.");
+    recent.created_at = chrono::Utc::now();
+    let id = api.put_document(&recent).await.unwrap().id.to_string();
+    let cookie = server.sign_in().await;
+    let past_week = json!({"q": "invoice", "range": "WEEK"});
+
+    set_judgment(&server, &cookie, past_week.clone(), &id, true).await;
+    set_judgment(&server, &cookie, past_week.clone(), &id, true).await;
+    let both = set_judgment(
+        &server,
+        &cookie,
+        json!({"q": "invoice", "range": "WEEK", "from": "2026-01-01T00:00:00Z"}),
+        &id,
+        true,
+    )
+    .await;
+
+    let filters: Value = sqlx::query_scalar("select filters from relevance_judgments")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(filters["range"], "week");
+    assert_eq!(filters["from"], Value::Null, "no moment-dependent from");
+    assert_eq!(judgments(&pool).await, 1);
+    assert_eq!(
+        judged(&server, &cookie, past_week).await,
+        [(id.clone(), true)]
+    );
+    assert_eq!(both["errors"][0]["message"], "set either from or range");
+}

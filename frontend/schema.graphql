@@ -28,6 +28,14 @@ enum RunStatus {
   "The worker stopped sending heartbeats." LOST
 }
 
+"A time range up to now."
+enum TimeRange {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
 input ConnectionUpdate {
   config: String!
   schedule: String!
@@ -65,6 +73,7 @@ input SearchInput {
   "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
   "Only documents created at or after this time." from: DateTime
   "Only documents created before this time." to: DateTime
+  "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
 }
 

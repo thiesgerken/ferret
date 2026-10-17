@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
-import { rangeStart, TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { snippet } from "@/lib/snippet";
 import { cn } from "@/lib/utils";
 
@@ -49,15 +49,14 @@ type Hit = SearchHitsQuery["search"]["hits"][number];
 const MAX_AUTHOR_CHIPS = 8;
 
 export function SearchResults({ state, onChange }: { state: SearchState; onChange: (state: SearchState) => void }) {
-  const from = useMemo(() => rangeStart(state.range, new Date()), [state.range]);
   const input = useMemo(
     () => ({
       q: state.q,
       sources: state.sources.length > 0 ? state.sources : null,
       authors: state.authors.length > 0 ? state.authors : null,
-      from,
+      range: TIME_RANGES[state.range].preset,
     }),
-    [state.q, state.sources, state.authors, from],
+    [state.q, state.sources, state.authors, state.range],
   );
   const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
   const hits = data?.search.hits ?? [];
