@@ -32,13 +32,17 @@ const URL_SEGMENT: &AsciiSet = &CONTROLS
     .add(b'}');
 
 /// Indexes the files of a git repository.
-// ponytail: no `token` for private repositories yet, it needs encrypted credentials (#11).
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "git")]
 pub struct GitConfig {
     /// The repository to clone, e.g. `https://github.com/owner/notes.git`.
     remote: String,
+    /// A token for a private repository over HTTPS, e.g. a GitHub fine-grained token that may read
+    /// the repository's contents.
+    #[serde(default)]
+    #[schemars(extend("writeOnly" = true))]
+    token: Option<String>,
     /// The branch to index. The repository's default branch when left out.
     #[serde(default)]
     branch: Option<String>,
@@ -82,6 +86,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let checkout = Checkout::clone(
         &config.remote,
         config.branch.as_deref(),
+        config.token.as_deref(),
         &run.options.git_protocols,
     )
     .await?;

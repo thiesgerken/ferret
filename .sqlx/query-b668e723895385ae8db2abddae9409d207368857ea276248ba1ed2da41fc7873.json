@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into plugin_runs\n                 (id, connection_id, worker_id, status, started_at, heartbeat_at, finished_at, error)\n             values (uuidv7(), $1, $2, 'failed', now(), now(), now(), $3)\n             returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugin_runs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b668e723895385ae8db2abddae9409d207368857ea276248ba1ed2da41fc7873"
+}

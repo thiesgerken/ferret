@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, path::Path, time::Duration};
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
 use tokio::process::Command;
@@ -41,10 +42,12 @@ pub struct Checkout {
 
 impl Checkout {
     /// Clones `branch` of `remote` (its default branch if `None`), with the whole history so that
-    /// diffs against earlier runs' commits work.
+    /// diffs against earlier runs' commits work. A `token` goes along as HTTP basic auth with the
+    /// user `x-access-token`, which GitHub, GitLab and Gitea accept.
     pub async fn clone(
         remote: &str,
         branch: Option<&str>,
+        token: Option<&str>,
         protocols: &str,
     ) -> Result<Self, PluginError> {
         let dir = tempfile::tempdir()?;
@@ -59,6 +62,18 @@ impl Checkout {
             clone.args(["--branch", branch]);
         }
         clone.args(["--".as_ref(), remote.as_ref(), checkout.path().as_os_str()]);
+        if let Some(token) = token {
+            // Through the environment rather than `-c`, which would show the token in process
+            // listings. The clone itself doesn't keep it, and later git commands are local.
+            let credentials = STANDARD.encode(format!("x-access-token:{token}"));
+            clone
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+                .env(
+                    "GIT_CONFIG_VALUE_0",
+                    format!("Authorization: Basic {credentials}"),
+                );
+        }
         output(&mut clone, "git clone").await?;
         checkout.head = checkout
             .git(&["rev-parse", "HEAD"])
@@ -324,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn remotes_are_limited_to_the_allowed_protocols() {
-        let error = Checkout::clone("http://127.0.0.1:9/repo.git", None, "https")
+        let error = Checkout::clone("http://127.0.0.1:9/repo.git", None, None, "https")
             .await
             .err()
             .unwrap();
