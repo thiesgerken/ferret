@@ -33,7 +33,7 @@ export function LoginForm({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <h1 className="flex items-baseline justify-center gap-2 text-4xl font-semibold tracking-tight text-brand select-none">
+        <h1 className="flex items-baseline justify-center gap-2 font-wordmark text-4xl font-bold text-brand select-none">
           <BrandMark className="h-[0.8em] w-auto" />
           ferret
         </h1>
