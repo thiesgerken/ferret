@@ -226,7 +226,7 @@ Settings → Models, per configured model:
 - **recall@10** and **MRR** (post-v1, #21) over the user's judgments, each for vector-only and for
   hybrid search. The server replays every judged query against the model and checks where the
   judged document lands. Runs on demand, results are kept until the next run.
-- **Similarity cut-off**: see below. Once judgments exist, the same replays can check it.
+- **Similarity cut-off**: see [above](#similarity-cut-off). Once judgments exist, the same replays can check it.
 
 Plus the model switch in the search UI, to compare result lists of two models by eye.
 

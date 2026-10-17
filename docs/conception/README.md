@@ -242,12 +242,12 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   half takes the 100 nearest chunks and drops those less similar to the query than the model's
   `min_similarity` ([embeddings.md](embeddings.md#similarity-cut-off)), so an unrelated document
   doesn't "match a little". It uses the user's default model unless `model=` says otherwise.
-  Filters, `-word` and `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding yet (backfill) is found by
-  keyword only. If the query can't be embedded within 5 s (TEI down, stuck or broken), the search
-  answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
-  `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
-  a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
-  a restarting TEI shouldn't make ferret useless.
+  Filters, `-word` and `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk
+  without an embedding yet (backfill) is found by keyword only. If the query can't be embedded
+  within 5 s (TEI down, stuck or broken), the search answers with the keyword half alone and says
+  so: `semantic_unavailable` (REST) and `semanticUnavailable` (GraphQL) carry the reason, `null`
+  when the semantic half ran, the UI shows a notice above the hits, and the server logs a warning.
+  Keyword search is complete on its own, a restarting TEI shouldn't make ferret useless.
 - **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No query language.
   Equality filters on `meta` keys (`meta.<key>=<value>`, with a GIN index on `documents.meta`)
   are post-v1 (#21).
