@@ -183,20 +183,28 @@ as a user and turns each doc's Yjs state into Markdown itself.
   - GraphQL `recentlyUpdatedDocs`, newest first, finds the docs the server changed after the cursor.
     Those are fetched (`GET /api/workspaces/{ws}/docs/{doc}`) and `PUT`. It pages with
     `updatedAt < after`, so each page asks up to and including the last one's time, and repeats are
-    dropped: ties at a page's end are never skipped.
+    dropped: ties at a page's end are never skipped. A full page of docs with one and the same time
+    can't be paged past and fails the run.
   - A doc the root doc lists but the server has no content for yet (no client synced it) is
-    skipped with a log line.
-- Cursor = the newest `updatedAt`, minus 10 minutes on the next run. The state also stores the
-  settings (`url`, `public_url`, `workspace_id`), whose change fetches every doc again, and the
-  trashed doc ids: leaving the trash doesn't change a doc on the server, so a restored doc makes the
-  run fetch every doc.
+    skipped. A full fetch logs how many.
+- Cursor = the newest `updatedAt`, minus 10 minutes on the next run: a save during the last
+  listing, and AFFiNE's merge lag (`updatedAt` is the newest merged update's time, visible once the
+  server merged it). The state also stores the settings (`url`, `public_url`, `workspace_id`),
+  whose change fetches every doc again, and the trashed doc ids: leaving the trash doesn't change a
+  doc on the server, so a doc that left it is fetched by itself (`workspace.doc(docId)` for its
+  `updatedAt`).
+- What only the root doc knows doesn't change a doc on the server, so it shows on the doc's next
+  edit (or a full fetch): a linked doc's new title in the docs that link to it. For the same reason
+  the documents carry no `meta`: AFFiNE's tags and a doc's mode (page or edgeless) live in the root
+  doc too, and would go stale the same way.
 - Yjs → Markdown (`affine/markdown.rs`, on `yrs`): paragraphs (text, headings, quotes), lists
   (bulleted, numbered, todo, toggle, nested), code, dividers, tables, databases (title, then a table
   of the rows with their cells, select options by name), equations, images by caption, attachments
   by name, bookmarks and embeds as links. Linked docs, inline references and synced docs become
   `[title](link)`. Inline bold, italic, strike, code and links keep their Markdown. Canvas-only
   elements of edgeless docs (shapes, connectors, frames) are left out, their notes read like a page.
-  A block type the plugin doesn't know keeps its text, and the run log names it.
+  A block type the plugin doesn't know keeps its text, and the run log names it. A block among its
+  own descendants (a corrupt doc, or two moves merged into a cycle) renders once.
 - Not AFFiNE's own converter (`affine_doc_loader`): it's AGPL-3.0-only, and ferret is MIT.
 
 ## Roadmap
