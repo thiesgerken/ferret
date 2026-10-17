@@ -9,9 +9,6 @@ services:
     depends_on:
       paradedb:
         condition: service_healthy
-      # The server reads the model's limits from TEI at startup.
-      tei:
-        condition: service_healthy
     environment:
       FERRET_CONFIG_FILE: /etc/ferret/config.yaml
       FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
@@ -85,8 +82,8 @@ services:
     volumes:
       - ./docker/dovecot-test.conf:/etc/dovecot/conf.d/ferret-test.conf:ro
 
-  # Queries. The embed pump has its own TEI (tei-bulk, the model's bulk_url): a query that queues
-  # behind a backfill batch, about 30 s on CPU, runs into the server's 5 s query timeout.
+  # The TEI pool (docker/ferret.yaml): tei answers queries and embeds in short batches, tei-bulk
+  # stands in for a TEI outside the deployment (a laptop in the LAN), which only embeds.
   tei: &tei
     # amd64 only. On Apple Silicon use the native build instead of emulation:
     # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4

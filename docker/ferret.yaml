@@ -3,7 +3,12 @@ embedding:
   default: qwen3-embedding-0.6b
   models:
     - name: qwen3-embedding-0.6b
-      url: http://tei:80
-      bulk_url: http://tei-bulk:80
+      model_id: Qwen/Qwen3-Embedding-0.6B
+      dimension: 1024
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       min_similarity: 0.42
+  # tei-bulk is marked external like a laptop would be: it starts with queries off.
+  teis:
+    - url: http://tei:80
+    - url: http://tei-bulk:80
+      external: true

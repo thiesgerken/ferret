@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
@@ -57,9 +58,9 @@ type Access = "" | "READ" | "WRITE";
 
 // Write implies read on the server, so each scope gets one choice instead of two checkboxes.
 const SCOPES = [
-  { scope: "SEARCH", label: "Search", accesses: ["READ"], adminOnly: false },
-  { scope: "INGEST", label: "Ingest", accesses: ["READ", "WRITE"], adminOnly: false },
-  { scope: "ADMIN", label: "Admin", accesses: ["READ", "WRITE"], adminOnly: true },
+  { scope: "SEARCH", accesses: ["READ"], adminOnly: false },
+  { scope: "INGEST", accesses: ["READ", "WRITE"], adminOnly: false },
+  { scope: "ADMIN", accesses: ["READ", "WRITE"], adminOnly: true },
 ] as const;
 
 const SCOPE_LABELS: Record<ApiKeyScope, string> = {
@@ -71,13 +72,14 @@ const SCOPE_LABELS: Record<ApiKeyScope, string> = {
 };
 
 export function ApiKeysSettings() {
+  const t = useTranslations("settings.apiKeys");
   const [{ data, error }, refetch] = useQuery({ query: ApiKeysQueryDocument });
   const [, revoke] = useMutation(RevokeApiKeyMutation);
   const [revokeError, setRevokeError] = useState("");
   const reload = () => refetch({ requestPolicy: "network-only" });
 
   async function handleRevoke(id: string, name: string) {
-    if (!window.confirm(`Revoke "${name}"? Anything using this key stops working.`)) {
+    if (!window.confirm(t("confirmRevoke", { name }))) {
       return;
     }
     const result = await revoke({ id });
@@ -101,7 +103,7 @@ export function ApiKeysSettings() {
         </p>
       )}
       {data.apiKeys.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No API keys yet.</p>
+        <p className="text-sm text-muted-foreground">{t("none")}</p>
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border">
           {data.apiKeys.map((key) => (
@@ -116,6 +118,14 @@ export function ApiKeysSettings() {
 type ApiKey = ApiKeysQuery["apiKeys"][number];
 
 function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => void }) {
+  const t = useTranslations();
+  const format = useFormatter();
+  const date = (iso: string) => format.dateTime(new Date(iso), { dateStyle: "medium" });
+  const expiry = !key.expiresAt
+    ? t("settings.apiKeys.neverExpires")
+    : new Date(key.expiresAt) <= new Date()
+      ? t("settings.apiKeys.expired", { date: date(key.expiresAt) })
+      : t("settings.apiKeys.expires", { date: date(key.expiresAt) });
   const [{ fetching }, update] = useMutation(UpdateApiKeyMutation);
   const [editing, setEditing] = useState(false);
   const [icon, setIcon] = useState(key.icon);
@@ -144,17 +154,17 @@ function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => 
             <IconPicker value={icon} onChange={setIcon} />
             <input
               name="name"
-              aria-label="Name"
+              aria-label={t("common.name")}
               required
               pattern=".*\S.*"
               defaultValue={key.name}
               className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm"
             />
             <button type="submit" disabled={fetching} className="rounded-md px-2 py-1 hover:bg-accent disabled:opacity-50">
-              Save
+              {t("common.save")}
             </button>
             <button type="button" onClick={() => setEditing(false)} className="rounded-md px-2 py-1 hover:bg-accent">
-              Cancel
+              {t("common.cancel")}
             </button>
           </form>
         ) : (
@@ -168,10 +178,10 @@ function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => 
           </p>
         )}
         <p className="text-muted-foreground">
-          {key.scopes.map((scope) => SCOPE_LABELS[scope]).join(", ")} · {key.sources?.join(", ") ?? "all sources"}
+          {key.scopes.map((scope) => SCOPE_LABELS[scope]).join(", ")} · {key.sources?.join(", ") ?? t("common.allSources")}
         </p>
         <p className="text-xs text-muted-foreground">
-          Last used {key.lastUsedAt ? formatDate(key.lastUsedAt) : "never"} · {expiryText(key.expiresAt)}
+          {t("settings.apiKeys.lastUsed", { date: key.lastUsedAt ? date(key.lastUsedAt) : t("common.never") })} · {expiry}
         </p>
       </div>
       <div className="flex gap-1">
@@ -182,14 +192,14 @@ function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => 
               setIcon(key.icon);
               setEditing(true);
             }}
-            aria-label={`Edit ${key.name}`}
+            aria-label={t("settings.apiKeys.editName", { name: key.name })}
             className="rounded-md px-2 py-1 text-sm hover:bg-accent"
           >
-            Edit
+            {t("common.edit")}
           </button>
         )}
         <button type="button" onClick={onRevoke} className="rounded-md px-2 py-1 text-sm text-destructive hover:bg-accent">
-          Revoke
+          {t("settings.apiKeys.revoke")}
         </button>
       </div>
     </li>
@@ -197,6 +207,7 @@ function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => 
 }
 
 function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated: () => void }) {
+  const t = useTranslations();
   const [, create] = useMutation(CreateApiKeyMutation);
   const [icon, setIcon] = useState(DEFAULT_API_KEY_ICON);
   const [error, setError] = useState("");
@@ -224,7 +235,7 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
       },
     });
     if (result.error || !result.data) {
-      setError(result.error ? errorMessage(result.error) : "The key wasn't created.");
+      setError(result.error ? errorMessage(result.error) : t("settings.apiKeys.notCreated"));
       return;
     }
     setError("");
@@ -242,29 +253,36 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border p-4">
-      <h3 className="text-sm font-medium">New API key</h3>
+      <h3 className="text-sm font-medium">{t("settings.apiKeys.new")}</h3>
       <div className="flex items-end gap-3">
         <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted-foreground">Icon</span>
+          <span className="block text-xs font-medium text-muted-foreground">{t("common.icon")}</span>
           <IconPicker value={icon} onChange={setIcon} />
         </div>
         <div className="min-w-0 flex-1 space-y-1.5">
           <label htmlFor="key-name" className="text-xs font-medium text-muted-foreground">
-            Name
+            {t("common.name")}
           </label>
-          <input id="key-name" name="name" required pattern=".*\S.*" placeholder="carapace search skill" className={fieldClass} />
+          <input
+            id="key-name"
+            name="name"
+            required
+            pattern=".*\S.*"
+            placeholder={t("settings.apiKeys.namePlaceholder")}
+            className={fieldClass}
+          />
         </div>
       </div>
       <fieldset className="grid gap-3 sm:grid-cols-3">
-        <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Scopes</legend>
-        {SCOPES.filter(({ adminOnly }) => isAdmin || !adminOnly).map(({ scope, label, accesses }) => (
+        <legend className="mb-1.5 text-xs font-medium text-muted-foreground">{t("settings.apiKeys.scopes")}</legend>
+        {SCOPES.filter(({ adminOnly }) => isAdmin || !adminOnly).map(({ scope, accesses }) => (
           <label key={scope} className="space-y-1.5 text-sm">
-            <span>{label}</span>
+            <span>{t(`settings.apiKeys.scope.${scope}`)}</span>
             <select name={scope} defaultValue="" className={fieldClass}>
-              <option value="">No access</option>
+              <option value="">{t("settings.apiKeys.noAccess")}</option>
               {accesses.map((access) => (
                 <option key={access} value={access}>
-                  {access === "READ" ? "Read" : "Read and write"}
+                  {access === "READ" ? t("settings.apiKeys.read") : t("settings.apiKeys.readWrite")}
                 </option>
               ))}
             </select>
@@ -273,13 +291,13 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
       </fieldset>
       <div className="space-y-1.5">
         <label htmlFor="key-sources" className="text-xs font-medium text-muted-foreground">
-          Sources (optional, restricts every scope to these and below; not with admin scopes)
+          {t("settings.apiKeys.sources")}
         </label>
         <input id="key-sources" name="sources" placeholder="notes, paperless" className={fieldClass} />
       </div>
       <div className="space-y-1.5">
         <label htmlFor="key-expires" className="text-xs font-medium text-muted-foreground">
-          Expires (optional)
+          {t("settings.apiKeys.expiresLabel")}
         </label>
         <input id="key-expires" name="expires" type="date" className={fieldClass} />
       </div>
@@ -292,11 +310,11 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
         type="submit"
         className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
       >
-        Create key
+        {t("settings.apiKeys.create")}
       </button>
       {createdKey && (
         <div className="space-y-2 rounded-lg bg-muted p-3 text-sm">
-          <p>Copy the key now. It won&apos;t be shown again.</p>
+          <p>{t("settings.apiKeys.copyNow")}</p>
           <div className="flex items-center gap-2">
             <code id="created-key" className="min-w-0 flex-1 break-all font-mono text-xs">
               {createdKey}
@@ -304,7 +322,7 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
             <button
               type="button"
               onClick={copy}
-              aria-label="Copy key"
+              aria-label={t("settings.apiKeys.copy")}
               className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             >
               {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
@@ -314,15 +332,4 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
       )}
     </form>
   );
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
-}
-
-function expiryText(expiresAt: string | null | undefined): string {
-  if (!expiresAt) {
-    return "never expires";
-  }
-  return new Date(expiresAt) <= new Date() ? `expired ${formatDate(expiresAt)}` : `expires ${formatDate(expiresAt)}`;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, CircleDashed } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Fragment, type ReactNode } from "react";
 import type { SearchHitsQuery } from "@/gql/graphql";
 import { NamedIcon } from "@/components/named-icon";
@@ -35,6 +36,7 @@ export function SearchFilters({
   ranModel: string | undefined;
   onChange: (state: SearchState) => void;
 }) {
+  const t = useTranslations("search.filters");
   // Selected values stay even when nothing matches them anymore, so they can be unselected.
   const sourceFacets = facets?.sources ?? [];
   const writerOf = (source: string) => sourceFacets.find((facet) => facet.value === source)?.writer ?? null;
@@ -44,10 +46,10 @@ export function SearchFilters({
 
   return (
     <nav
-      aria-label="Filters"
+      aria-label={t("label")}
       className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] lg:mx-0 lg:flex-col lg:items-stretch lg:gap-7 lg:overflow-visible lg:px-0"
     >
-      <FilterGroup title="Matching">
+      <FilterGroup title={t("matching")}>
         {(["keyword", "semantic"] as const).map((matching) => {
           const on = matchingOn(state.mode, matching);
           // The only one left can't go off: a search with neither would match nothing.
@@ -55,8 +57,8 @@ export function SearchFilters({
           return (
             <FilterButton
               key={matching}
-              label={matching === "keyword" ? "Keyword" : "Semantic"}
-              title={last ? "At least one kind of matching stays on" : MATCHING_HINTS[matching]}
+              label={t(matching)}
+              title={last ? t("lastMatching") : t(`${matching}Hint`)}
               count={null}
               pressed={on}
               disabled={last}
@@ -65,16 +67,16 @@ export function SearchFilters({
           );
         })}
       </FilterGroup>
-      <FilterGroup title="Time">
+      <FilterGroup title={t("time")}>
         <select
-          aria-label="Time range"
+          aria-label={t("timeRange")}
           value={state.range}
           onChange={(event) => onChange({ ...state, range: event.target.value as TimeRange })}
           className={selectClass(state.range !== "any")}
         >
-          {Object.entries(TIME_RANGES).map(([range, { label }]) => (
+          {(Object.keys(TIME_RANGES) as TimeRange[]).map((range) => (
             <option key={range} value={range}>
-              {label}
+              {t(`ranges.${range}`)}
             </option>
           ))}
         </select>
@@ -82,14 +84,14 @@ export function SearchFilters({
       {/* With one model there's nothing to choose, and keyword matching uses none. The default
           option names the model that ran. */}
       {models.length > 1 && state.mode !== "keyword" && (
-        <FilterGroup title="Model">
+        <FilterGroup title={t("model")}>
           <select
-            aria-label="Embedding model"
+            aria-label={t("embeddingModel")}
             value={state.model ?? ""}
             onChange={(event) => onChange({ ...state, model: event.target.value || null })}
             className={selectClass(state.model !== null)}
           >
-            <option value="">{!state.model && ranModel ? `Default model (${ranModel})` : "Default model"}</option>
+            <option value="">{!state.model && ranModel ? t("defaultModelRan", { model: ranModel }) : t("defaultModel")}</option>
             {models.map((model) => (
               <option key={model} value={model}>
                 {model}
@@ -99,7 +101,7 @@ export function SearchFilters({
         </FilterGroup>
       )}
       {groups.length > 0 && (
-        <FilterGroup title="Sources">
+        <FilterGroup title={t("sources")}>
           {groups.map(({ writer, sources }) => {
             // A writer with several sources gets a heading in the column, and its sources read as
             // the path below it. The chip row has no headings, so chips keep the full label.
@@ -118,7 +120,7 @@ export function SearchFilters({
                     <FilterButton
                       key={value}
                       label={label}
-                      short={grouped ? label.text.slice(writer.name.length + " › ".length) || "All" : undefined}
+                      short={grouped ? label.text.slice(writer.name.length + " › ".length) || t("allOfWriter") : undefined}
                       title={value}
                       count={counted(count)}
                       pressed={state.sources.includes(value)}
@@ -132,7 +134,7 @@ export function SearchFilters({
         </FilterGroup>
       )}
       {authors.length > 0 && (
-        <FilterGroup title="Authors">
+        <FilterGroup title={t("authors")}>
           {authors.map(({ value, count }) => (
             <FilterButton
               key={value}
@@ -147,11 +149,6 @@ export function SearchFilters({
     </nav>
   );
 }
-
-const MATCHING_HINTS = {
-  keyword: "Every word found in the document, ranked by BM25",
-  semantic: "The meaning close to the query, by embedding similarity",
-};
 
 /** On narrow screens the group dissolves into the chip row, so only wide screens see its title. */
 function FilterGroup({ title, children }: { title: string; children: ReactNode }) {

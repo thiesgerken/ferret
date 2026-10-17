@@ -18,7 +18,7 @@ export function BrandMark({ className }: { className?: string }) {
 /** "ferret" with the mark, linking home: the top-left of every page with a header. */
 export function HomeLink() {
   return (
-    <Link href="/" className="inline-flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight text-brand select-none">
+    <Link href="/" className="inline-flex items-baseline gap-1.5 font-wordmark text-2xl font-semibold text-brand select-none">
       <BrandMark className="h-[0.8em] w-auto" />
       ferret
     </Link>

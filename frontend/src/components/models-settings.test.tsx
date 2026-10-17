@@ -5,16 +5,16 @@ import { Provider } from "urql";
 
 import { renderReact, settle } from "../../test/react-test-utils";
 import { createGraphqlClient } from "@/lib/graphql";
-import { coverage, ModelsSettings } from "./models-settings";
+import { ModelsSettings } from "./models-settings";
 
 type Operation = { operationName: string; variables: Record<string, unknown> };
 
-const model = (name: string, configuredDefault: boolean, embedded: number) => ({
+const model = (name: string, configuredDefault: boolean, embedded: number, chunks = 1200) => ({
   __typename: "EmbeddingModel",
   name,
   configuredDefault,
   embedded,
-  chunks: 1200,
+  chunks,
 });
 
 test("lists the models' coverage and sets the default", async () => {
@@ -46,8 +46,8 @@ test("lists the models' coverage and sets the default", async () => {
     [...view.container.querySelectorAll("label")].map((label) => label.textContent),
     [
       "Configured default (qwen3)",
-      "qwen31,200 of 1,200 chunks embedded (100 %)",
-      "e5300 of 1,200 chunks embedded (25 %)",
+      "qwen31,200 of 1,200 chunks embedded (100%)",
+      "e5300 of 1,200 chunks embedded (25%)",
     ],
   );
   assert.deepEqual(radios().map((radio) => radio.checked), [true, false, false]);
@@ -59,6 +59,18 @@ test("lists the models' coverage and sets the default", async () => {
   await view.unmount();
 });
 
-test("coverage without chunks", () => {
-  assert.equal(coverage(0, 0), "no chunks yet");
+test("coverage without chunks", async () => {
+  const client = createGraphqlClient(async () =>
+    Response.json({
+      data: { me: { __typename: "User", defaultEmbeddingModel: null }, embeddingModels: [model("qwen3", true, 0, 0)] },
+    }),
+  );
+  const view = await renderReact(
+    <Provider value={client}>
+      <ModelsSettings />
+    </Provider>,
+  );
+  await settle();
+  assert.match(view.container.textContent ?? "", /qwen3no chunks yet/);
+  await view.unmount();
 });

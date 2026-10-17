@@ -2,12 +2,13 @@
 
 import { Check, CircleDashed, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 import { useMutation } from "urql";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { NamedIcon } from "@/components/named-icon";
-import { RELEVANCE_BARS, relevanceBars, relevanceLabel } from "@/lib/relevance";
+import { RELEVANCE_BARS, relevanceBars } from "@/lib/relevance";
 import type { SourceLabel } from "@/lib/source-label";
 import { linkableUrl } from "@/lib/safe-url";
 import { plainMarkdown, snippet } from "@/lib/snippet";
@@ -41,10 +42,12 @@ export function HitItem({
   /** Null until the cut-off of the model that ran is known: the hit shows without bars. */
   relevance: RelevanceContext | null;
 }) {
+  const t = useTranslations();
+  const format = useFormatter();
   const originUrl = linkableUrl(hit.url);
   const meta = [
     hit.authors.join(", "),
-    new Date(hit.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }),
+    format.dateTime(new Date(hit.createdAt), { day: "numeric", month: "short", year: "numeric" }),
   ].filter(Boolean);
 
   return (
@@ -71,8 +74,8 @@ export function HitItem({
           {originUrl && (
             <a
               href={originUrl}
-              aria-label="Open in origin"
-              title="Open in origin"
+              aria-label={t("common.openInOrigin")}
+              title={t("common.openInOrigin")}
               className={cn("rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground", onHover)}
             >
               <ExternalLink className="size-3.5" aria-hidden />
@@ -93,7 +96,7 @@ export function HitItem({
       </p>
       {hit.collapsed > 0 && (
         <p className="mt-1 text-xs text-muted-foreground">
-          {hit.collapsed} more in this thread
+          {t("search.hit.moreInThread", { count: hit.collapsed })}
         </p>
       )}
     </article>
@@ -106,8 +109,15 @@ export function HitItem({
  * The exact values are in the tooltip.
  */
 function RelevanceBars({ hit, context }: { hit: Hit; context: RelevanceContext }) {
+  const t = useTranslations("search.hit");
   const filled = relevanceBars(hit, context);
-  const label = relevanceLabel(hit);
+  // "53% similar · all words found (BM25 51.6)"
+  const label = [
+    hit.similarity != null && t("similar", { similarity: hit.similarity }),
+    hit.keywordScore != null && t("allWordsFound", { score: hit.keywordScore }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <span
       tabIndex={0}
@@ -145,6 +155,7 @@ function SourceIcon({ icon }: { icon: string | null }) {
 
 /** ✓ marks the hit as the right one for this search, for evaluating embedding models. */
 function JudgeButton({ documentId, judged: initial, search }: { documentId: string; judged: boolean; search: SearchInput }) {
+  const t = useTranslations("search.hit");
   const [judged, setJudged] = useState(initial);
   const [{ fetching, error }, setJudgment] = useMutation(SetJudgmentMutation);
 
@@ -158,8 +169,8 @@ function JudgeButton({ documentId, judged: initial, search }: { documentId: stri
       <button
         type="button"
         aria-pressed={judged}
-        aria-label="Right hit for this search"
-        title={judged ? "Marked as the right hit for this search" : "Mark as the right hit for this search"}
+        aria-label={t("judge")}
+        title={judged ? t("judged") : t("unjudged")}
         disabled={fetching}
         onClick={toggle}
         className={cn(

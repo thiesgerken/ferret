@@ -2,7 +2,8 @@ import { Activity, Cable, Compass, Search, Settings, ShieldCheck, type LucideIco
 
 export type Page = {
   href: string;
-  label: string;
+  /** Its messages: `pages.{key}.title` and `.description`. */
+  key: "search" | "explore" | "activity" | "connections" | "settings" | "admin";
   icon: LucideIcon;
   /** Pages that set ferret up or watch it share one layout with a page list; searching and
    * exploring don't. */
@@ -12,10 +13,10 @@ export type Page = {
 
 /** The app's pages, as the app menu and the settings pages' navigation list them. */
 export const PAGES: Page[] = [
-  { href: "/", label: "Search", icon: Search, manage: false, adminOnly: false },
-  { href: "/explore", label: "Explore", icon: Compass, manage: false, adminOnly: false },
-  { href: "/activity", label: "Activity", icon: Activity, manage: true, adminOnly: false },
-  { href: "/connections", label: "Connections", icon: Cable, manage: true, adminOnly: false },
-  { href: "/settings", label: "Settings", icon: Settings, manage: true, adminOnly: false },
-  { href: "/admin", label: "Admin", icon: ShieldCheck, manage: true, adminOnly: true },
+  { href: "/", key: "search", icon: Search, manage: false, adminOnly: false },
+  { href: "/explore", key: "explore", icon: Compass, manage: false, adminOnly: false },
+  { href: "/activity", key: "activity", icon: Activity, manage: true, adminOnly: false },
+  { href: "/connections", key: "connections", icon: Cable, manage: true, adminOnly: false },
+  { href: "/settings", key: "settings", icon: Settings, manage: true, adminOnly: false },
+  { href: "/admin", key: "admin", icon: ShieldCheck, manage: true, adminOnly: true },
 ];

@@ -18,6 +18,18 @@ pub struct EmbeddingConfig {
     /// The model searches use unless they ask for another one.
     pub default: String,
     pub models: Vec<ModelConfig>,
+    /// The TEI pool: every TEI works for whichever model it serves, which the server discovers.
+    pub teis: Vec<TeiConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TeiConfig {
+    pub url: String,
+    /// Not part of the deployment, e.g. a laptop in the LAN: it starts with queries off, so
+    /// searches don't depend on it. Admins switch that in the UI.
+    #[serde(default)]
+    pub external: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -26,10 +38,11 @@ pub struct ModelConfig {
     /// Stored with every embedding and part of its index name: `[a-z0-9][a-z0-9._-]*`, ending in
     /// a letter or digit, at most 40 characters.
     pub name: String,
-    /// TEI for queries, and for the embed pump unless `bulk_url` is set.
-    pub url: String,
-    /// TEI for the embed pump only, e.g. a GPU node that joins for backfills.
-    pub bulk_url: Option<String>,
+    /// The Hugging Face model id a TEI reports in `/info` when it serves this model.
+    pub model_id: String,
+    /// Of its vectors. TEI doesn't report it, and the model's index needs it: every answer is
+    /// checked against it.
+    pub dimension: usize,
     /// Asymmetric models expect an instruction or marker in front of queries and documents.
     #[serde(default)]
     pub query_prefix: String,
@@ -54,6 +67,7 @@ impl Config {
 impl EmbeddingConfig {
     pub fn validate(&self) -> Result<(), StartupError> {
         let mut names = HashSet::new();
+        let mut model_ids = HashSet::new();
         let mut slugs = HashSet::new();
         for model in &self.models {
             if !is_valid_name(&model.name) {
@@ -74,6 +88,21 @@ impl EmbeddingConfig {
             if !names.insert(model.name.as_str()) {
                 return Err(format!("embedding model {:?} is configured twice", model.name).into());
             }
+            if model.dimension == 0 {
+                return Err(format!(
+                    "embedding model {:?}: dimension must be positive",
+                    model.name
+                )
+                .into());
+            }
+            if !model_ids.insert(model.model_id.as_str()) {
+                return Err(format!(
+                    "embedding models share the model id {:?}: a TEI serving it couldn't tell \
+                     which one it works for",
+                    model.model_id
+                )
+                .into());
+            }
             if !slugs.insert(model.slug()) {
                 return Err(format!(
                     "embedding model {:?} differs from another one only in `.`, `-` or `_`, \
@@ -89,6 +118,13 @@ impl EmbeddingConfig {
                 self.default
             )
             .into());
+        }
+        if self.teis.is_empty() {
+            return Err("no TEI is configured (embedding.teis)".into());
+        }
+        let mut urls = HashSet::new();
+        if let Some(tei) = self.teis.iter().find(|tei| !urls.insert(tei.url.as_str())) {
+            return Err(format!("the TEI {:?} is configured twice", tei.url).into());
         }
         Ok(())
     }
@@ -127,13 +163,17 @@ mod tests {
                 .iter()
                 .map(|name| ModelConfig {
                     name: name.to_string(),
-                    url: "http://tei".to_owned(),
-                    bulk_url: None,
+                    model_id: format!("org/{name}"),
+                    dimension: 1024,
                     query_prefix: String::new(),
                     document_prefix: String::new(),
                     min_similarity: 0.5,
                 })
                 .collect(),
+            teis: vec![TeiConfig {
+                url: "http://tei".to_owned(),
+                external: false,
+            }],
         }
     }
 
@@ -145,20 +185,25 @@ embedding:
   default: qwen3-embedding-0.6b
   models:
     - name: qwen3-embedding-0.6b
-      url: http://ferret-tei-qwen3:80
-      bulk_url: http://ferret-tei-qwen3-gpu:80
+      model_id: Qwen/Qwen3-Embedding-0.6B
+      dimension: 1024
       query_prefix: "Instruct: Given a search query\nQuery: "
       min_similarity: 0.4
+  teis:
+    - url: http://ferret-tei-qwen3:80
+    - url: http://192.168.1.20:8080
+      external: true
 "#,
         )
         .unwrap();
 
         config.embedding.validate().unwrap();
         let model = &config.embedding.models[0];
-        assert_eq!(
-            model.bulk_url.as_deref(),
-            Some("http://ferret-tei-qwen3-gpu:80")
-        );
+        assert_eq!(model.model_id, "Qwen/Qwen3-Embedding-0.6B");
+        assert_eq!(model.dimension, 1024);
+        let teis = &config.embedding.teis;
+        assert!(!teis[0].external);
+        assert!(teis[1].external);
         assert_eq!(
             model.query_prefix,
             "Instruct: Given a search query\nQuery: "
@@ -189,6 +234,21 @@ embedding:
                 "{names:?} {default}"
             );
         }
+    }
+
+    #[test]
+    fn rejects_no_teis_a_tei_twice_and_a_model_id_twice() {
+        let mut config = models(&["a"], "a");
+        config.teis.clear();
+        assert!(config.validate().is_err());
+
+        let mut config = models(&["a"], "a");
+        config.teis.push(config.teis[0].clone());
+        assert!(config.validate().is_err());
+
+        let mut config = models(&["a", "b"], "a");
+        config.models[1].model_id = config.models[0].model_id.clone();
+        assert!(config.validate().is_err());
     }
 
     #[test]

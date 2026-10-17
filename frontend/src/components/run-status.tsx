@@ -1,27 +1,35 @@
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import type { RunStatus } from "@/gql/graphql";
+import { formatDuration } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-export type PillStyle = { label: string; className: string };
+/** A run's status, or a connection's when it's disabled or hasn't run yet. */
+export type PillStatus = RunStatus | "DISABLED" | "NEW";
 
-export const STATUS_STYLES: Record<RunStatus, PillStyle> = {
-  RUNNING: { label: "Running", className: "bg-brand/15 text-brand" },
-  SUCCEEDED: { label: "OK", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  FAILED: { label: "Failed", className: "bg-destructive/15 text-destructive" },
-  LOST: { label: "Lost", className: "bg-warning/20 text-warning-foreground dark:text-warning" },
+const PILL_CLASSES: Record<PillStatus, string> = {
+  RUNNING: "bg-brand/15 text-brand",
+  SUCCEEDED: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  FAILED: "bg-destructive/15 text-destructive",
+  LOST: "bg-warning/20 text-warning-foreground dark:text-warning",
+  DISABLED: "bg-muted text-muted-foreground",
+  NEW: "bg-muted text-muted-foreground",
 };
 
-export function Pill({ label, className }: PillStyle) {
-  return <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", className)}>{label}</span>;
+export function Pill({ status }: { status: PillStatus }) {
+  const t = useTranslations("runs.status");
+  return <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", PILL_CLASSES[status])}>{t(status)}</span>;
 }
 
 /** Runs as dots, oldest left, given newest first as the server lists them. */
 export function RunDots({ runs }: { runs: { id: string; status: RunStatus; startedAt: string }[] }) {
+  const t = useTranslations("runs");
+  const format = useFormatter();
   return (
-    <span className="flex shrink-0 items-end gap-1" aria-label={`Last ${runs.length} runs`}>
+    <span className="flex shrink-0 items-end gap-1" aria-label={t("last", { count: runs.length })}>
       {[...runs].reverse().map((run) => (
         <span
           key={run.id}
-          title={`${STATUS_STYLES[run.status].label} ${new Date(run.startedAt).toLocaleString()}`}
+          title={`${t(`status.${run.status}`)} ${format.dateTime(new Date(run.startedAt), { dateStyle: "short", timeStyle: "medium" })}`}
           className={cn(
             "size-2.5 rounded-full",
             run.status === "SUCCEEDED" && "bg-emerald-500",
@@ -35,10 +43,25 @@ export function RunDots({ runs }: { runs: { id: string; status: RunStatus; start
   );
 }
 
-export function Count({ label, value }: { label: string; value: number }) {
+/** What a run did to the documents, e.g. "12 put". */
+export function Count({ change, value }: { change: "put" | "unchanged" | "deleted"; value: number }) {
+  const t = useTranslations("runs.changes");
+  const format = useFormatter();
   return (
     <span className={cn(value === 0 && "opacity-50")}>
-      <span className="font-medium text-foreground">{value.toLocaleString()}</span> {label}
+      <span className="font-medium text-foreground">{format.number(value)}</span> {t(change)}
     </span>
   );
+}
+
+/**
+ * "took 3 min", or "for 3 min" while it's still running. The status decides, not `finishedAt`: an
+ * API key's burst of writes has its last write as `finishedAt` and still runs until it goes quiet.
+ */
+export function RunDuration({ run, now }: { run: { status: RunStatus; startedAt: string; finishedAt: string | null }; now: Date }) {
+  const t = useTranslations("runs");
+  const locale = useLocale();
+  const end = run.finishedAt ? new Date(run.finishedAt) : now;
+  const duration = formatDuration((end.getTime() - new Date(run.startedAt).getTime()) / 1000, locale);
+  return run.status === "RUNNING" ? t("for", { duration }) : t("took", { duration });
 }

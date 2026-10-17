@@ -246,16 +246,16 @@ without it.
 
 ## Embedding orchestration
 
-- **TEI** runs as its own Deployment per configured model, one CPU replica each
-  ([embeddings.md](embeddings.md#models)). Backfills speed up by pointing the model's `bulk_url` at
-  a GPU TEI (`tei.gpu.enabled` in the chart).
+- **TEI** runs as its own Deployment per configured model, one CPU replica each, plus any TEIs
+  outside the chart, e.g. a laptop's GPU for backfills. They form a pool: each works for whichever
+  model it serves, which the server discovers ([embeddings.md](embeddings.md#the-tei-pool)).
 - **The embed pump** is a tokio task in ferret-server. `LISTEN chunks_pending` wakes it (polling as
-  fallback). It claims up to 32 chunks a model hasn't embedded yet, newest first, under
-  transaction-scoped advisory locks, sends them to that model's TEI (its `bulk_url` if set), and
-  writes `chunk_embeddings` and `embedding_cache` in one transaction. Default model first. Chunks
+  fallback). It runs one loop per TEI that may embed: each claims up to 32 chunks the
+  TEI's model hasn't embedded yet, newest first, under transaction-scoped advisory locks, sends them
+  to the TEI, and writes `chunk_embeddings` and `embedding_cache` in one transaction. Chunks
   TEI rejects (a 4xx) go to `embedding_failures` and are skipped from then on, so one bad chunk
   can't block the rest.
-- **Several pumps** (one per server replica) share the queue through those advisory locks: they
+- **Several pumps** (one per TEI and server replica) share the queue through those advisory locks: they
   skip each other's chunks, and an ingest never waits for a pump's TEI call. No worker protocol:
   routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
@@ -274,10 +274,17 @@ the frontend. In development Next rewrites those paths to the local server, as i
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top and searches as you type (after a 250 ms pause; the first pause after a submitted query adds a history entry, later ones replace it), a stats line (matches, documents in the selected sources, server time), filter chips (source, time range, author), model switch, snippets with highlighting, each hit's similarity and keyword match, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, the 20 most frequent authors plus the selected ones, month in UTC), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, excluded documents and threads with "Include again", disable, delete. Document count and embedding backlog per card are post-v1 (#21) |
-| **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21) |
+| **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21), Language |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen. A restarted worker registers anew, so it shows as a new row while its old one stays offline |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
+
+**Languages.** The UI speaks German and English (next-intl, catalogues in `frontend/messages/`, as
+in carapace). It follows the browser's languages until the user picks one in Settings. The choice is
+stored per browser, like the theme: the static export has no locale routes, and the sign-in page
+needs the language before there's an account to ask. Dates and numbers format with the active
+locale. Server error messages and the plugins' config descriptions (from their JSON Schemas) stay
+English and are shown verbatim.
 
 **The viewer** is shared by Search and Explore. It renders a document by content type (Markdown,
 plain text, email with headers), scrolled to the hit. Documents with a `thread` get previous and
@@ -297,10 +304,8 @@ The Helm chart, modelled on carapace's:
 - `ferret-plugins` Deployment, without a service account token: runs read files from repositories
   they don't control.
 - `frontend` Deployment.
-- One TEI Deployment per configured embedding model, on CPU.
-- Optionally (`tei.gpu.enabled`) a GPU TEI Deployment per model for backfills, pinned to a tainted
-  GPU node that joins the cluster temporarily. It sets the model's `bulk_url`. The image tag
-  depends on the GPU architecture and is a value.
+- With `tei.internal.enabled`, one TEI Deployment per configured embedding model, on CPU.
+  `externalTeis` lists TEIs outside the chart, e.g. a GPU for backfills.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
 - Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.

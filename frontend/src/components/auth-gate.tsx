@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "urql";
 import { AppMenu } from "@/components/app-menu";
@@ -17,6 +18,7 @@ const MeQuery = graphql(`
 
 /** Shows the login form in place of any page while signed out, so deep links survive a sign-in. */
 export function AuthGate({ children }: { children: ReactNode }) {
+  const t = useTranslations("app");
   const [{ data, error }] = useQuery({ query: MeQuery });
   const [sessionEnded, setSessionEnded] = useState(false);
 
@@ -32,7 +34,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return <LoginForm onSignedIn={() => window.location.reload()} />;
   }
   if (error) {
-    return <p className="p-8 text-center text-sm text-destructive">Something went wrong: {error.message}</p>;
+    return <p className="p-8 text-center text-sm text-destructive">{t("failed", { message: error.message })}</p>;
   }
   if (!data) {
     return null;

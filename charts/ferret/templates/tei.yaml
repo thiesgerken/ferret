@@ -1,13 +1,9 @@
-{{- /* Per model a CPU TEI for queries and, with tei.gpu.enabled, a GPU TEI for the embed pump. */}}
-{{- $gpu := .Values.tei.gpu }}
-{{- $variants := list (dict "suffix" "" "image" .Values.tei.image "gpu" false) }}
-{{- if $gpu.enabled }}
-{{- $variants = append $variants (dict "suffix" "-gpu" "image" (merge (dict "tag" (required "tei.gpu.image.tag is required when tei.gpu.enabled, see values.yaml" $gpu.image.tag)) $gpu.image) "gpu" true) }}
-{{- end }}
+{{- /* With tei.internal.enabled, a CPU TEI per model. The server finds out itself which model a TEI
+serves, the chart only lists them in its config. */}}
+{{- if .Values.tei.internal.enabled }}
 {{- $teiNames := dict }}
 {{- range $model := .Values.embedding.models }}
-{{- range $variant := $variants }}
-{{- $name := include "ferret.teiName" (dict "root" $ "model" $model "suffix" $variant.suffix) }}
+{{- $name := include "ferret.teiName" (dict "root" $ "model" $model) }}
 {{- if hasKey $teiNames $name }}
 {{- fail (printf "models %q and %q share the TEI name %q" (get $teiNames $name) $model.name $name) }}
 {{- end }}
@@ -38,36 +34,20 @@ spec:
       # TEI's images are amd64 only. arm64 CPU nodes need TEI's cpu-arm64 tag instead.
       nodeSelector:
         kubernetes.io/arch: amd64
-        {{- if $variant.gpu }}
-        {{- with $gpu.nodeSelector }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- end }}
-      {{- if $variant.gpu }}
-      {{- with $gpu.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- end }}
       containers:
         - name: tei
-          image: {{ include "ferret.image" (dict "root" $ "image" $variant.image) }}
-          imagePullPolicy: {{ $variant.image.pullPolicy }}
+          image: {{ include "ferret.image" (dict "root" $ "image" $.Values.tei.image) }}
+          imagePullPolicy: {{ $.Values.tei.image.pullPolicy }}
           args:
             - --model-id
             - {{ required "embedding.models[].modelId is required" $model.modelId | quote }}
-            # Explicit on every TEI: the default (16384) gets the warmup OOM-killed on small CPU
-            # nodes, a GPU takes it.
+            # Explicit: the default (16384) gets the warmup OOM-killed on small CPU nodes.
             - --max-batch-tokens
-            {{- if $variant.gpu }}
-            - {{ required "tei.gpu.maxBatchTokens is required" $gpu.maxBatchTokens | quote }}
-            {{- else }}
             - {{ required "embedding.models[].maxBatchTokens is required" $model.maxBatchTokens | quote }}
-            {{- end }}
           ports:
             - name: http
               containerPort: 80
-          {{- with (ternary $gpu.resources $model.resources $variant.gpu) }}
+          {{- with $model.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}

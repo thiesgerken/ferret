@@ -1,8 +1,10 @@
 "use client";
 
 import { Brain, Server, Users2 } from "lucide-react";
+import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 import { Section } from "@/components/page-shell";
+import { TeiPool } from "@/components/tei-pool";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { AdminQuery as AdminData } from "@/gql/graphql";
@@ -29,16 +31,24 @@ const AdminQuery = graphql(`
     }
     embeddingStatus {
       name
+      modelId
       isDefault
-      online
-      bulkOnline
-      lastError
-      lastErrorAt
+      dimension
       backlog {
         source
         pending
         failed
       }
+    }
+    teis {
+      url
+      model
+      servedModel
+      state
+      enabled
+      queries
+      embedding
+      ...TeiCardFields
     }
   }
 `);
@@ -68,15 +78,15 @@ const SetUserPasswordMutation = graphql(`
 `);
 
 type User = AdminData["users"][number];
-type Model = AdminData["embeddingStatus"][number];
-
 /** Health and backlog change on their own, so the page keeps them current. */
 const POLL_MS = 10_000;
 
 const tableClass = "w-full text-left text-sm";
 const headClass = "border-b border-border text-xs text-muted-foreground";
+const DATE_TIME = { dateStyle: "medium", timeStyle: "short" } as const;
 
 export function Admin() {
+  const t = useTranslations("admin");
   const [{ data, error }, refetch] = useQuery({ query: AdminQuery });
   const reload = () => refetch({ requestPolicy: "network-only" });
 
@@ -97,20 +107,20 @@ export function Admin() {
 
   return (
     <div className="space-y-8">
-      <Section title="Users" icon={<Users2 />} description="Who can sign in, and who administers ferret.">
+      <Section title={t("users")} icon={<Users2 />} description={t("usersHint")}>
         <div className="space-y-5">
           <Users users={data.users} onChanged={reload} />
           <NewUserForm onCreated={reload} />
         </div>
       </Section>
-      <Section title="Embedding" icon={<Brain />} description="Each model's TEI health and what's still waiting to be embedded.">
-        <div className="space-y-4">
-          {data.embeddingStatus.map((model) => (
-            <ModelCard key={model.name} model={model} />
-          ))}
-        </div>
+      <Section
+        title={t("embedding")}
+        icon={<Brain />}
+        description={t("embeddingHint")}
+      >
+        <TeiPool models={data.embeddingStatus} teis={data.teis} onChanged={reload} />
       </Section>
-      <Section title="Plugin workers" icon={<Server />} description="The workers that ran plugins in the last day.">
+      <Section title={t("workers")} icon={<Server />} description={t("workersHint")}>
         <Workers workers={data.workers} />
       </Section>
     </div>
@@ -118,6 +128,8 @@ export function Admin() {
 }
 
 function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
+  const t = useTranslations();
+  const format = useFormatter();
   const [, update] = useMutation(UpdateUserMutation);
   const [error, setError] = useState("");
   const [passwordFor, setPasswordFor] = useState<string | null>(null);
@@ -141,12 +153,12 @@ function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
         <table className={tableClass}>
           <thead className={headClass}>
             <tr>
-              <th className="py-2 pr-3 font-medium">User</th>
-              <th className="py-2 pr-3 font-medium">Last sign-in</th>
-              <th className="py-2 pr-3 font-medium">Admin</th>
-              <th className="py-2 pr-3 font-medium">Enabled</th>
+              <th className="py-2 pr-3 font-medium">{t("admin.user")}</th>
+              <th className="py-2 pr-3 font-medium">{t("admin.lastSignIn")}</th>
+              <th className="py-2 pr-3 font-medium">{t("admin.admin")}</th>
+              <th className="py-2 pr-3 font-medium">{t("admin.enabled")}</th>
               <th className="py-2 font-medium">
-                <span className="sr-only">Password</span>
+                <span className="sr-only">{t("admin.password")}</span>
               </th>
             </tr>
           </thead>
@@ -157,11 +169,11 @@ function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
                   <span className="font-medium">{user.username}</span>
                   {user.displayName && <span className="text-muted-foreground"> · {user.displayName}</span>}
                 </td>
-                <td className="py-2 pr-3">{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "never"}</td>
+                <td className="py-2 pr-3">{user.lastLoginAt ? format.dateTime(new Date(user.lastLoginAt), DATE_TIME) : t("common.never")}</td>
                 <td className="py-2 pr-3">
                   <input
                     type="checkbox"
-                    aria-label={`${user.username} is an admin`}
+                    aria-label={t("admin.isAdmin", { user: user.username })}
                     checked={user.isAdmin}
                     onChange={(event) => change(user, { isAdmin: event.target.checked })}
                   />
@@ -169,7 +181,7 @@ function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
                 <td className="py-2 pr-3">
                   <input
                     type="checkbox"
-                    aria-label={`${user.username} can sign in`}
+                    aria-label={t("admin.canSignIn", { user: user.username })}
                     checked={user.enabled}
                     onChange={(event) => change(user, { enabled: event.target.checked })}
                   />
@@ -180,7 +192,7 @@ function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
                     onClick={() => setPasswordFor(passwordFor === user.id ? null : user.id)}
                     className="rounded-md px-2 py-1 hover:bg-accent"
                   >
-                    Set password
+                    {t("admin.setPassword")}
                   </button>
                 </td>
               </tr>
@@ -205,6 +217,7 @@ function Users({ users, onChanged }: { users: User[]; onChanged: () => void }) {
 }
 
 function SetPasswordForm({ user, onDone }: { user: User; onDone: () => void }) {
+  const t = useTranslations("admin");
   const [, setPassword] = useMutation(SetUserPasswordMutation);
   const [error, setError] = useState("");
 
@@ -222,7 +235,7 @@ function SetPasswordForm({ user, onDone }: { user: User; onDone: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border p-4">
       <label htmlFor="new-password" className="block text-xs font-medium text-muted-foreground">
-        New password for {user.username} (signs them out everywhere)
+        {t("newPasswordFor", { user: user.username })}
       </label>
       <div className="flex gap-2">
         <input
@@ -235,7 +248,7 @@ function SetPasswordForm({ user, onDone }: { user: User; onDone: () => void }) {
           className={fieldClass}
         />
         <button type="submit" className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background">
-          Set
+          {t("set")}
         </button>
       </div>
       {error && (
@@ -248,6 +261,7 @@ function SetPasswordForm({ user, onDone }: { user: User; onDone: () => void }) {
 }
 
 function NewUserForm({ onCreated }: { onCreated: () => void }) {
+  const t = useTranslations("admin");
   const [, create] = useMutation(CreateUserMutation);
   const [error, setError] = useState("");
 
@@ -274,24 +288,24 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border p-4">
-      <h3 className="text-sm font-medium">New user</h3>
+      <h3 className="text-sm font-medium">{t("newUser")}</h3>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-          <span>Username</span>
+          <span>{t("username")}</span>
           <input name="username" required autoComplete="off" className={fieldClass} />
         </label>
         <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-          <span>Display name (optional)</span>
+          <span>{t("displayName")}</span>
           <input name="displayName" className={fieldClass} />
         </label>
         <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-          <span>Password (12+ characters)</span>
+          <span>{t("newPassword")}</span>
           <input name="password" type="password" autoComplete="new-password" required minLength={12} className={fieldClass} />
         </label>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input name="isAdmin" type="checkbox" />
-        Admin
+        {t("admin")}
       </label>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -302,79 +316,26 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
         type="submit"
         className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
       >
-        Create user
+        {t("createUser")}
       </button>
     </form>
   );
 }
 
-function ModelCard({ model }: { model: Model }) {
-  return (
-    <div className="space-y-3 rounded-xl border border-border p-4 text-sm">
-      <p className="font-medium">
-        {model.name}
-        {model.isDefault && <span className="text-xs font-normal text-muted-foreground"> · default</span>}
-      </p>
-      <p>
-        <Health label="Queries" online={model.online} />
-        {model.bulkOnline !== null && model.bulkOnline !== undefined && (
-          <>
-            {" · "}
-            <Health label="Bulk" online={model.bulkOnline} />
-          </>
-        )}
-      </p>
-      {model.lastError && (
-        <p className="text-destructive">
-          Last error{model.lastErrorAt && ` (${formatDateTime(model.lastErrorAt)})`}: {model.lastError}
-        </p>
-      )}
-      {model.backlog.length === 0 ? (
-        <p className="text-muted-foreground">Everything is embedded.</p>
-      ) : (
-        <table className={tableClass}>
-          <thead className={headClass}>
-            <tr>
-              <th className="py-1.5 pr-3 font-medium">Source</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Pending</th>
-              <th className="py-1.5 text-right font-medium">Refused by TEI</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {model.backlog.map((row) => (
-              <tr key={row.source}>
-                <td className="py-1.5 pr-3">{row.source}</td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{row.pending}</td>
-                <td className="py-1.5 text-right tabular-nums">{row.failed}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function Health({ label, online }: { label: string; online: boolean }) {
-  return (
-    <span className={online ? "text-foreground" : "text-destructive"}>
-      {label}: {online ? "online" : "offline"}
-    </span>
-  );
-}
-
 function Workers({ workers }: { workers: AdminData["workers"] }) {
+  const t = useTranslations();
+  const format = useFormatter();
   if (workers.length === 0) {
-    return <p className="text-sm text-muted-foreground">No worker asked for a run in the last day.</p>;
+    return <p className="text-sm text-muted-foreground">{t("admin.noWorkers")}</p>;
   }
   return (
     <table className={tableClass}>
       <thead className={headClass}>
         <tr>
-          <th className="py-2 pr-3 font-medium">Worker</th>
-          <th className="py-2 pr-3 font-medium">Plugins</th>
-          <th className="py-2 pr-3 font-medium">Status</th>
-          <th className="py-2 font-medium">Last seen</th>
+          <th className="py-2 pr-3 font-medium">{t("admin.worker")}</th>
+          <th className="py-2 pr-3 font-medium">{t("admin.plugins")}</th>
+          <th className="py-2 pr-3 font-medium">{t("admin.status")}</th>
+          <th className="py-2 font-medium">{t("admin.lastSeen")}</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
@@ -382,15 +343,11 @@ function Workers({ workers }: { workers: AdminData["workers"] }) {
           <tr key={worker.id} className={cn(!worker.online && "text-muted-foreground")}>
             <td className="py-2 pr-3 font-mono text-xs">{worker.name}</td>
             <td className="py-2 pr-3">{worker.plugins.join(", ")}</td>
-            <td className="py-2 pr-3">{worker.online ? "online" : "offline"}</td>
-            <td className="py-2">{formatDateTime(worker.lastSeenAt)}</td>
+            <td className="py-2 pr-3">{worker.online ? t("common.online") : t("common.offline")}</td>
+            <td className="py-2">{format.dateTime(new Date(worker.lastSeenAt), DATE_TIME)}</td>
           </tr>
         ))}
       </tbody>
     </table>
   );
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

@@ -2,7 +2,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{TestServer, document, start_server};
+use common::{TestServer, document, eventually, start_server};
 use ferret_api::{
     Client, PutResponse,
     internal::{PluginRegistration, RunFinish, RunResult, RunStats, WorkerRegistration},
@@ -68,6 +68,24 @@ async fn put(api: &Client, external_id: &str, thread: Option<&str>) -> PutRespon
     let mut note = document("notes/chat", external_id, "Lunch at noon?");
     note.thread = thread.map(str::to_owned);
     api.put_document(&note).await.unwrap()
+}
+
+/// Waits until a statement in this test's database waits for a lock of `kind`, a wait event of
+/// `pg_stat_activity`.
+async fn wait_for_a_lock_wait(pool: &PgPool, kind: &str) {
+    eventually(&format!("a wait for a {kind} lock"), async || {
+        let waiting: bool = sqlx::query_scalar(
+            "select exists (select 1 from pg_stat_activity
+                            where datname = current_database()
+                              and wait_event_type = 'Lock' and wait_event = $1)",
+        )
+        .bind(kind)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        waiting.then_some(())
+    })
+    .await
 }
 
 async fn exclude(server: &TestServer, id: Uuid, whole_thread: bool) -> Value {
@@ -206,11 +224,13 @@ async fn a_put_racing_an_exclusion_of_its_document_stays_out(pool: PgPool) {
     let (excluded, raced, ()) = tokio::join!(
         exclude(&server, single, false),
         async {
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            // The exclusion holds the source lock and waits for the row.
+            wait_for_a_lock_wait(&pool, "transactionid").await;
             put(&run.api, "single", None).await
         },
         async {
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            // The PUT waits for the source lock.
+            wait_for_a_lock_wait(&pool, "advisory").await;
             holder.commit().await.unwrap();
         },
     );

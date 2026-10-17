@@ -35,6 +35,7 @@ mod sources;
 mod syncs;
 mod tei;
 mod tei_load;
+mod tei_pool;
 mod users;
 mod writers;
 

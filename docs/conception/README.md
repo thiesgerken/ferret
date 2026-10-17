@@ -397,8 +397,8 @@ and saved articles are on the roadmap. Details in [plugins.md](plugins.md).
   check (license, German quality, TEI support): jina-embeddings-v5-text-small, Granite Embedding
   Multilingual R2, DenseOn (all 2026). bge-m3 (January 2024) is the fallback if none of them runs
   in TEI.
-- **Hardware**: CPU for queries and incremental ingest, a temporarily added GPU node (gaming PC)
-  for backfills, wired through the chart's `tei.gpu.enabled` ([embeddings.md](embeddings.md#models)).
+- **Hardware**: CPU for queries and incremental ingest, a GPU (gaming PC, laptop) for backfills,
+  listed in the chart's `externalTeis` ([embeddings.md](embeddings.md#the-tei-pool)).
 
 ## v1 scope
 

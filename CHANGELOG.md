@@ -1,6 +1,422 @@
 # CHANGELOG
 
 
+## v0.12.5 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #127 from thiesgerken/readme
+  ([`aa4b653`](https://github.com/thiesgerken/ferret/commit/aa4b653845f75df3e05103e4c351fa392c7f57eb))
+
+  📝 docs: a README that says what ferret is for
+
+- 📝 docs: an agents-first README intro, with IMAP, AFFiNE and MCP
+  ([`3f28aae`](https://github.com/thiesgerken/ferret/commit/3f28aae6dc9cdbce987461be8fdd11519eac3044))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: ferret as the discovery layer in the README's intro
+  ([`d5aeaab`](https://github.com/thiesgerken/ferret/commit/d5aeaab80d2f2abcfd82b1778e95162a7d8a9495))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's build badge follows the release workflow on main
+  ([`03d42ba`](https://github.com/thiesgerken/ferret/commit/03d42ba9d4d88136fb3d19374a6bc4a63206af70))
+
+  ci.yml only runs on pull requests, so its badge showed whichever PR ran last.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's screenshots in dark mode too
+  ([`4a8a11a`](https://github.com/thiesgerken/ferret/commit/4a8a11a6b3c753247ec3ccb408dd4d359f3b8a76))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: ferret as the agent's discovery tool
+  ([`5c79f33`](https://github.com/thiesgerken/ferret/commit/5c79f330d084510bd1dc7d53976c242c598ca039))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: Thies' motivation, and the highlights tied to it
+  ([`ee512cb`](https://github.com/thiesgerken/ferret/commit/ee512cbdfd109095911b983f369e66837b4c7fac))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's logo without a heading rule
+  ([`da8c760`](https://github.com/thiesgerken/ferret/commit/da8c760eb78c55e59ecf6b69ab422a5c51755832))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: a README that says what ferret is for
+  ([`e020af1`](https://github.com/thiesgerken/ferret/commit/e020af1768be7e1994b1b50116154f35068f3dc9))
+
+  The lockup on top, highlights, motivation, screenshots, sources, getting started and a docs table, in carapace's shape. Development details move to docs/development.md.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🔧 Configuration
+
+
+- 🔧 chore(demo): the Harz chat is Thies and Anna only
+  ([`6216425`](https://github.com/thiesgerken/ferret/commit/62164255619cecb68f8d67dcd5263d4fc2282570))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 💄 UI/UX
+
+
+- 💄 style(brand): an outlined wordmark and mark-and-wordmark lockups
+  ([`283a984`](https://github.com/thiesgerken/ferret/commit/283a984ec96749453e2fe7c1bf8e1883c2cd052c))
+
+  GitHub can't load Alegreya, so the wordmark ships as outlines: wordmark.py shapes "ferret" in Alegreya SemiBold with HarfBuzz and writes it as SVG paths, alone and next to the mark in light and dark.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+## v0.12.4 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #130 from thiesgerken/pump-wake-followup
+  ([`6075288`](https://github.com/thiesgerken/ferret/commit/6075288d7837ff1202597b807be9db16c8aaa3ec))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): the pump looks again after a lost notification and frees a returned claim at once
+  ([`6075288`](https://github.com/thiesgerken/ferret/commit/6075288d7837ff1202597b807be9db16c8aaa3ec))
+
+- 🐛 fix(server): the pump looks again after a lost notification and frees a returned claim at once
+  ([`77ee66e`](https://github.com/thiesgerken/ferret/commit/77ee66e6375e27ba9ec08c204078f9d216f221aa))
+
+  PgListener::recv reconnects by itself and drops the notifications sent in between without telling anyone: the pumps are now woken whenever the listener (re)connects. A claim returned because the TEI was switched off is rolled back before the other pumps are woken, instead of on drop, which only queued the rollback and could leave them finding the chunks locked.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.12.3 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #129 from thiesgerken/fix-flaky-tests
+  ([`8af33eb`](https://github.com/thiesgerken/ferret/commit/8af33eb4058544e53a855a783274600985a01da7))
+
+- ✅ test(server): order the racing tests by observed state, not by sleeps
+  ([`7cdef94`](https://github.com/thiesgerken/ferret/commit/7cdef944f19977894745b4a33f9235c93ea81179))
+
+  The exclusion race test waits for the lock waits in pg_stat_activity instead of sleeping. The model-switch test's fake TEI switches models with the embedding request, so periodic discovery can't see the new model first, and the test waits for the recorded error too.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): the pump hears every new chunk and honours a TEI switched off mid-claim
+  ([`8af33eb`](https://github.com/thiesgerken/ferret/commit/8af33eb4058544e53a855a783274600985a01da7))
+
+- 🐛 fix(server): the pump hears every new chunk and honours a TEI switched off mid-claim
+  ([`b748361`](https://github.com/thiesgerken/ferret/commit/b748361b1eaa599ba42f55d548c58aa7a1d9e270))
+
+  The pump started claiming before it listened for chunks_pending, so a chunk ingested in between waited for the idle poll. A pump that checked its TEI's switch before an admin turned embedding off could still claim chunks ingested after that; it now checks again after the claim and hands them to the other TEIs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.12.2 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #126 from thiesgerken/fix-run-duration
+  ([`b63a034`](https://github.com/thiesgerken/ferret/commit/b63a0346a446fe17c7c60cb3c415392cdd306aac))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): an API key's running burst reads "for", not "took"
+  ([`b63a034`](https://github.com/thiesgerken/ferret/commit/b63a0346a446fe17c7c60cb3c415392cdd306aac))
+
+- 🐛 fix(frontend): an API key's running burst reads "for", not "took"
+  ([`29973d9`](https://github.com/thiesgerken/ferret/commit/29973d91f1fb10ee26d8fe2c29a27f1e8e6004df))
+
+  RunDuration chose its wording by whether the run had an end, but an API key's burst has its last write as finishedAt while it's still running, so Activity showed "Running · took 0 sec". The status decides again, as in the feed before #124.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+## v0.12.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #125 from thiesgerken/explore-table
+  ([`1f17d0b`](https://github.com/thiesgerken/ferret/commit/1f17d0b3f145e4ad95caed1669579681c98c3fdc))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): Explore's table fits the page instead of scrolling sideways
+  ([`1f17d0b`](https://github.com/thiesgerken/ferret/commit/1f17d0b3f145e4ad95caed1669579681c98c3fdc))
+
+- 💄 style(frontend): Explore's table fits the page instead of scrolling sideways
+  ([`1ea2904`](https://github.com/thiesgerken/ferret/commit/1ea2904a33ad6c41e96378b78544573a1d594208))
+
+  A fixed table layout with truncated cells; narrower screens drop type, authors and the modified date. The page is a bit wider, like a table page can be.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+## v0.12.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #124 from thiesgerken/58-i18n-manage
+  ([`07f3875`](https://github.com/thiesgerken/ferret/commit/07f3875f733d22b77baf7696f1232ac79f4aefbd))
+
+### ✨ Features
+
+
+- ✨ feat(frontend): German UI for Activity, Connections, Admin and Explore
+  ([`07f3875`](https://github.com/thiesgerken/ferret/commit/07f3875f733d22b77baf7696f1232ac79f4aefbd))
+
+- ✨ feat(frontend): German UI for Activity, Connections, Admin and Explore
+  ([`35b2d2e`](https://github.com/thiesgerken/ferret/commit/35b2d2e3cce0350c571edaad26b2c24f04ddf186))
+
+  The rest of the UI moves to the message catalogues. Durations format with Intl.DurationFormat and relative times with the active locale; Explore's months read as "January 2026" / "Januar 2026".
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+## v0.11.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #123 from thiesgerken/58-i18n
+  ([`99351fb`](https://github.com/thiesgerken/ferret/commit/99351fbbb65bdeda7d7d964e71d62ad72a1e658d))
+
+### ✨ Features
+
+
+- ✨ feat(frontend): German UI for search, viewer, sign-in and settings
+  ([`99351fb`](https://github.com/thiesgerken/ferret/commit/99351fbbb65bdeda7d7d964e71d62ad72a1e658d))
+
+- ✨ feat(frontend): German UI for search, viewer, sign-in and settings
+  ([`978e07f`](https://github.com/thiesgerken/ferret/commit/978e07fae8600b8e5fc1de458be4b78c51c38238))
+
+  The UI follows the browser's languages until the user picks one in Settings, stored per browser. next-intl with catalogues in frontend/messages, as in carapace; a test fails when a key is missing in either. Dates and numbers format with the active locale.
+
+  The home page drops its tagline and counts chunks too, largest first.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+## v0.10.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #120 from thiesgerken/117-tei-pool
+  ([`89f6dba`](https://github.com/thiesgerken/ferret/commit/89f6dba502157c9f6116ee7ec659d86ccc76791f))
+
+- Merge pull request #122 from thiesgerken/117-tei-pool-ui
+  ([`59e2b74`](https://github.com/thiesgerken/ferret/commit/59e2b740e9c184f18893a0085c8f4ee2dd0c24cd))
+
+- Merge pull request #121 from thiesgerken/117-tei-pool-ui
+  ([`1535067`](https://github.com/thiesgerken/ferret/commit/15350670e73057628a86cd7c6de997d4b4b71d49))
+
+- 📝 docs: the TEI pool
+  ([`349895b`](https://github.com/thiesgerken/ferret/commit/349895b279d7482aa71537ff5cef108ba3198da2))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ✨ Features
+
+
+- ✨ feat(server): a TEI pool instead of TEIs per model
+  ([`89f6dba`](https://github.com/thiesgerken/ferret/commit/89f6dba502157c9f6116ee7ec659d86ccc76791f))
+
+- ✨ feat(frontend): the TEI pool in Admin and on Activity
+  ([`1535067`](https://github.com/thiesgerken/ferret/commit/15350670e73057628a86cd7c6de997d4b4b71d49))
+
+- ✨ feat(frontend): the TEI pool in Admin and on Activity
+  ([`1c6343b`](https://github.com/thiesgerken/ferret/commit/1c6343bb1cd0e167a69ad3a81ae8eea48c8b2b4d))
+
+  Admin groups the pool's TEIs under the model each serves, with "Unused (model)" and "Offline" groups for the rest. Each TEI has switches for on, queries and embedding, its state and problem, and its figures. A model says when no enabled TEI answers its queries or embeds its chunks. Activity shows the same TEI cards per model for admins, and every user sees whether a model's queries and embedding are served.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✨ feat(chart): internal TEIs and externalTeis form the TEI pool
+  ([`59583f8`](https://github.com/thiesgerken/ferret/commit/59583f80684dbeb520920fe0dffa974e3aa802c4))
+
+  tei.internal.enabled deploys one CPU TEI per model, externalTeis lists TEIs outside the chart. tei.gpu and the models' bulkUrl are gone, and the chart refuses to render while they're set.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): a pool of TEIs that serve whichever model they have
+  ([`474cb19`](https://github.com/thiesgerken/ferret/commit/474cb19f4d8c4e808d62360fd1224f022ecca4a3))
+
+  The config lists TEIs without a model. The server asks each one's /info every 10 seconds which model it serves and assigns it to the configured model with that model_id. Embeddings go through /v1/embeddings, and an answer from another model or dimension is discarded and the TEI asked again. Admins switch each TEI on or off, for queries and for the pump (stored in the new teis table). The pump runs one loop per TEI, with short batches on TEIs that also answer queries, and queries go to an idle query TEI first. Replaces url and bulk_url per model.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(frontend): a model's dimension is always there
+  ([`59e2b74`](https://github.com/thiesgerken/ferret/commit/59e2b740e9c184f18893a0085c8f4ee2dd0c24cd))
+
+- ♻️ refactor(frontend): a model's dimension is always there
+  ([`ce1ae5b`](https://github.com/thiesgerken/ferret/commit/ce1ae5beb96e7f0e030f7f3610599d98b34eef52))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): configured model dimensions, checked TEI names and race-free switches
+  ([`277af1e`](https://github.com/thiesgerken/ferret/commit/277af1e41df35d052e79fb8ba3c152d026c13c8d))
+
+  Every model's dimension is configured: the index is built for it at startup, a mismatch with stored embeddings stops the server, and answers of another dimension are discarded. A TEI serving its model under another name than its model id is unsuitable, since its answers couldn't show a model switch. Discovery and switches update a TEI's state under one lock, and switches from the database apply only when they changed there, so a poll can't undo an admin's change. Rediscovery after a mismatch runs in the background.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🔧 Configuration
+
+
+- 🔧 chore(compose): tei and tei-bulk as a TEI pool
+  ([`d0e956b`](https://github.com/thiesgerken/ferret/commit/d0e956bcf6ca12702f0ffc3b02cd34c5b69980b4))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.9.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #119 from thiesgerken/wordmark-alegreya
+  ([`f0b74d8`](https://github.com/thiesgerken/ferret/commit/f0b74d8cefdca1584e19793e02a4672f2f9e407c))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): set the wordmark in Alegreya SemiBold
+  ([`f0b74d8`](https://github.com/thiesgerken/ferret/commit/f0b74d8cefdca1584e19793e02a4672f2f9e407c))
+
+- 💄 style(frontend): set the wordmark in Alegreya SemiBold
+  ([`6d923a4`](https://github.com/thiesgerken/ferret/commit/6d923a4b1e331a447bc319bdb00562fafd636149))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UpMJXTPNdGsxLCBbn59gv9
+
+- 💄 style(frontend): set the wordmark in Alegreya Bold
+  ([`9cf4e83`](https://github.com/thiesgerken/ferret/commit/9cf4e831dcc3025310ce03ae2c48d5dc0f87ce39))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UpMJXTPNdGsxLCBbn59gv9
+
+## v0.9.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #115 from thiesgerken/chart-bulk-url
+  ([`ebe4d48`](https://github.com/thiesgerken/ferret/commit/ebe4d48606e8b6ccd9807690c7fb5d5818467312))
+
+### ✨ Features
+
+
+- ✨ feat(chart): an external TEI per model for backfills
+  ([`ebe4d48`](https://github.com/thiesgerken/ferret/commit/ebe4d48606e8b6ccd9807690c7fb5d5818467312))
+
+- ✨ feat(chart): an external TEI per model for backfills
+  ([`8e08a0a`](https://github.com/thiesgerken/ferret/commit/8e08a0a68b25b5de2f91215c90f74b8cbaa35db1))
+
+  A model's bulkUrl renders into the config's bulk_url, so the embed pump can use a TEI outside the cluster (e.g. a laptop's GPU in the LAN) for a backfill. The render fails when it is set together with tei.gpu.enabled.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.8.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #114 from thiesgerken/source-help-text
+  ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): explain what a connection's source is for
+  ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
+
+- 💄 style(frontend): explain what a connection's source is for
+  ([`b1bd587`](https://github.com/thiesgerken/ferret/commit/b1bd58700b7dc059fdcee58b145e2bfa9ddfd747))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.8.0 (2026-10-17)
 
 

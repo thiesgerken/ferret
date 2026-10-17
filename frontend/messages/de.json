@@ -1,0 +1,403 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "name": "Name",
+    "icon": "Symbol",
+    "openInOrigin": "Im Original öffnen",
+    "allSources": "allen Quellen",
+    "never": "nie",
+    "delete": "Löschen",
+    "optional": "(optional)",
+    "default": "Standard",
+    "online": "online",
+    "offline": "offline"
+  },
+  "pages": {
+    "nav": "Seiten",
+    "search": {
+      "title": "Suche"
+    },
+    "explore": {
+      "title": "Stöbern"
+    },
+    "activity": {
+      "title": "Aktivität",
+      "description": "Was ferret gerade einliest und einbettet, live."
+    },
+    "connections": {
+      "title": "Verbindungen",
+      "description": "Plugins, die eine Quelle nach Zeitplan mit ihrem Ursprung abgleichen."
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "description": "Dein Konto, die Schlüssel für deine Agenten und Skripte, das Modell für deine Suchen und die Sprache."
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Benutzer, die Embedding-Pipeline und die Plugin-Worker."
+    }
+  },
+  "app": {
+    "menu": "App-Menü",
+    "signedInAs": "Angemeldet als {name}",
+    "signOut": "Abmelden",
+    "failed": "Etwas ist schiefgelaufen: {message}"
+  },
+  "login": {
+    "username": "Benutzername",
+    "password": "Passwort",
+    "submit": "Anmelden",
+    "pending": "Anmeldung läuft…"
+  },
+  "home": {
+    "summary": "{chunks, plural, one {# Chunk} other {# Chunks}} · {documents, plural, one {# Dokument} other {# Dokumente}} · {sources, plural, one {# Quelle} other {# Quellen}}"
+  },
+  "search": {
+    "field": "Suchen",
+    "loading": "Lädt",
+    "semanticUnavailable": "Nur Stichworttreffer: {reason}.",
+    "noMatches": "Keine Dokumente zu „{q}“",
+    "filtersTooNarrow": "Vielleicht sind die Filter zu eng.",
+    "tryOtherWords": {
+      "hybrid": "Versuch es mit weniger oder anderen Wörtern: Entweder müssen alle Wörter vorkommen oder die Bedeutung muss nah dran sein.",
+      "keyword": "Versuch es mit weniger oder anderen Wörtern: Alle Wörter müssen vorkommen.",
+      "semantic": "Versuch es mit anderen Wörtern: Die Bedeutung muss nah dran sein."
+    },
+    "clearFilters": "Filter zurücksetzen",
+    "matches": {
+      "hybrid": "{count, number}{more} Treffer",
+      "keyword": "{count, number}{more} Stichworttreffer",
+      "semantic": "{count, plural, one {#{more} semantischer Treffer} other {#{more} semantische Treffer}}"
+    },
+    "stats": "{matches} · {documents, plural, one {# Dokument} other {# Dokumente}} in {scope} · {ms} ms",
+    "loadingMore": "Lädt weitere…",
+    "end": "Das war alles",
+    "endAtLimit": "Tiefer geht diese Suche nicht",
+    "hit": {
+      "moreInThread": "{count} weitere in diesem Thread",
+      "similar": "{similarity, number, percent} ähnlich",
+      "allWordsFound": "alle Wörter gefunden (BM25 {score, number, ::.0})",
+      "judge": "Richtiger Treffer für diese Suche",
+      "judged": "Als richtiger Treffer für diese Suche markiert",
+      "unjudged": "Als richtigen Treffer für diese Suche markieren"
+    },
+    "filters": {
+      "label": "Filter",
+      "matching": "Suchart",
+      "keyword": "Stichwörter",
+      "semantic": "Bedeutung",
+      "keywordHint": "Alle Wörter kommen im Dokument vor, sortiert nach BM25",
+      "semanticHint": "Die Bedeutung liegt nah an der Anfrage, gemessen an der Embedding-Ähnlichkeit",
+      "lastMatching": "Eine Suchart bleibt immer an",
+      "time": "Zeitraum",
+      "timeRange": "Zeitraum",
+      "ranges": {
+        "any": "Beliebig",
+        "day": "Letzter Tag",
+        "week": "Letzte Woche",
+        "month": "Letzter Monat",
+        "year": "Letztes Jahr"
+      },
+      "model": "Modell",
+      "embeddingModel": "Embedding-Modell",
+      "defaultModel": "Standardmodell",
+      "defaultModelRan": "Standardmodell ({model})",
+      "sources": "Quellen",
+      "allOfWriter": "Alle",
+      "authors": "Autoren"
+    }
+  },
+  "viewer": {
+    "noDocumentGiven": "Kein Dokument angegeben.",
+    "gone": "Dieses Dokument gibt es nicht (mehr).",
+    "untitled": "Ohne Titel",
+    "modified": "· geändert am {date, date, medium} um {date, time, short}",
+    "from": "Von",
+    "subject": "Betreff",
+    "date": "Datum",
+    "image": "Bild",
+    "thread": "Thread",
+    "previous": "Vorheriges im Thread",
+    "next": "Nächstes im Thread",
+    "exclude": "Aus dem Index nehmen:",
+    "excludeDocument": "Dieses Dokument",
+    "excludeThread": "Den ganzen Thread",
+    "confirmDocument": "Dieses Dokument aus ferret löschen und nicht wieder einlesen?",
+    "confirmThread": "Dieses Dokument und den Rest seines Threads aus ferret löschen und nicht wieder einlesen?",
+    "nothingExcluded": "Es wurde nichts ausgeschlossen.",
+    "removed": "{count, plural, one {# Dokument} other {# Dokumente}} aus dem Index entfernt.",
+    "remembered": "Seine Verbindung liest es nicht wieder ein. Rückgängig machen kannst du das auf der Seite Verbindungen.",
+    "notRemembered": "Keiner Verbindung gehört seine Quelle, also merkt sich das niemand: Was es dort abgelegt hat, kann es wieder ablegen.",
+    "backToSearch": "Zurück zur Suche"
+  },
+  "settings": {
+    "account": {
+      "title": "Konto",
+      "description": "Ein neues Passwort meldet dich überall sonst ab. Dieser Browser bleibt angemeldet.",
+      "current": "Aktuelles Passwort",
+      "new": "Neues Passwort (mindestens 12 Zeichen)",
+      "repeat": "Neues Passwort wiederholen",
+      "mismatch": "Die neuen Passwörter stimmen nicht überein.",
+      "changed": "Passwort geändert. Andere Sitzungen sind abgemeldet.",
+      "submit": "Passwort ändern"
+    },
+    "apiKeys": {
+      "title": "API-Schlüssel",
+      "description": "Für Agenten, Skripte und externe Einleser. Schick einen Schlüssel als <code>Authorization: Bearer fk_…</code>.",
+      "confirmRevoke": "„{name}“ widerrufen? Alles, was diesen Schlüssel nutzt, funktioniert dann nicht mehr.",
+      "none": "Noch keine API-Schlüssel.",
+      "editName": "{name} bearbeiten",
+      "revoke": "Widerrufen",
+      "lastUsed": "Zuletzt benutzt: {date}",
+      "neverExpires": "läuft nie ab",
+      "expires": "läuft am {date} ab",
+      "expired": "am {date} abgelaufen",
+      "notCreated": "Der Schlüssel wurde nicht erstellt.",
+      "new": "Neuer API-Schlüssel",
+      "namePlaceholder": "carapace-Such-Skill",
+      "scopes": "Berechtigungen",
+      "scope": {
+        "SEARCH": "Suche",
+        "INGEST": "Einlesen",
+        "ADMIN": "Admin"
+      },
+      "noAccess": "Kein Zugriff",
+      "read": "Lesen",
+      "readWrite": "Lesen und schreiben",
+      "sources": "Quellen (optional, beschränkt jede Berechtigung auf diese und alles darunter; nicht mit Admin-Berechtigungen)",
+      "expiresLabel": "Läuft ab am (optional)",
+      "create": "Schlüssel erstellen",
+      "copyNow": "Kopier den Schlüssel jetzt. Er wird nicht noch einmal angezeigt.",
+      "copy": "Schlüssel kopieren"
+    },
+    "models": {
+      "title": "Modelle",
+      "description": "Das Embedding-Modell für deine Suchen, in der Oberfläche und über deine API-Schlüssel. Du kannst ein Modell wählen, bevor es alles eingebettet hat: Bis dahin sind seine semantischen Treffer unvollständig.",
+      "legend": "Standardmodell",
+      "configuredDefault": "Konfigurierter Standard ({model})",
+      "noChunks": "noch keine Chunks",
+      "coverage": "{embedded, number} von {chunks, number} Chunks eingebettet ({share, number, percent})"
+    },
+    "language": {
+      "title": "Sprache",
+      "description": "Für diesen Browser. System folgt der Sprache des Browsers.",
+      "label": "Sprache",
+      "system": "System ({language})",
+      "en": "English",
+      "de": "Deutsch"
+    }
+  },
+  "runs": {
+    "status": {
+      "RUNNING": "Läuft",
+      "SUCCEEDED": "OK",
+      "FAILED": "Fehlgeschlagen",
+      "LOST": "Verloren",
+      "DISABLED": "Deaktiviert",
+      "NEW": "Neu"
+    },
+    "last": "{count, plural, one {Letzter Lauf} other {Letzte # Läufe}}",
+    "changes": {
+      "put": "geschrieben",
+      "unchanged": "unverändert",
+      "deleted": "gelöscht"
+    },
+    "took": "dauerte {duration}",
+    "for": "läuft seit {duration}"
+  },
+  "connections": {
+    "new": "Neue Verbindung",
+    "noWorker": "Noch hat sich kein Plugin-Worker gemeldet, also gibt es nichts zu verbinden.",
+    "count": "{count, plural, one {# Verbindung} other {# Verbindungen}}",
+    "none": "Noch keine Verbindungen",
+    "noneHint": "Eine Verbindung hält eine Quelle mit dem Ort ihrer Dokumente abgeglichen, etwa einem Git-Repository oder Paperless.",
+    "runNow": "Jetzt ausführen",
+    "runNowLabel": "{source} jetzt ausführen",
+    "editLabel": "{source} bearbeiten",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "enableLabel": "{source} aktivieren",
+    "disableLabel": "{source} deaktivieren",
+    "deleteLabel": "{source} löschen",
+    "toActivity": "Läufe und Logs unter Aktivität",
+    "lastRun": "Letzter Lauf",
+    "never": "Nie",
+    "changes": "Änderungen",
+    "nextRun": "Nächster Lauf",
+    "disabled": "Deaktiviert",
+    "history": "Verlauf",
+    "excluded": "Aus dem Index ausgeschlossen ({count})",
+    "excludedHint": "Die Verbindung verwirft diese, wann immer sie sie findet. Entfernst du eine, fängt der nächste Lauf von vorn an und liest sie wieder ein.",
+    "thread": "Thread {thread}",
+    "inSource": "in {source}",
+    "includeAgain": "Wieder aufnehmen",
+    "includeAgainLabel": "{what} wieder aufnehmen",
+    "form": {
+      "title": "Neue Verbindung",
+      "description": "Ein Plugin, das eine Quelle in ferret mit dem Ort ihrer Dokumente abgleicht.",
+      "pluginAndSource": "Plugin und Quelle",
+      "pluginAndSourceHint": "Was die Dokumente holt und wo sie in ferret landen.",
+      "plugin": "Plugin",
+      "source": "Quelle",
+      "sourceHelp": "Wo die Dokumente dieser Verbindung in ferret liegen, etwa `notes` oder `mail/work`. Suchen lassen sich darauf eingrenzen, API-Schlüssel darauf beschränken. Das Plugin kann Quellen darunter anlegen, etwa `carapace/facts`. Nur diese Verbindung schreibt hierhin: Verschwindet etwas am Ursprung, entfernt ferret es, ohne irgendetwas anderes anzufassen.",
+      "create": "Verbindung erstellen",
+      "deleteWarning": "Das löscht die Verbindung und jedes Dokument unter <code>{source}</code>. Dokumente, die der Ursprung nicht mehr hat, gibt es nur noch in ferret, und sie sind endgültig weg.",
+      "confirm": "Gib <code>{source}</code> ein, um zu bestätigen",
+      "deleteAll": "Verbindung und Dokumente löschen",
+      "pluginGone": "Kein Worker bietet das Plugin „{plugin}“ mehr an.",
+      "identity": "Name und Symbol",
+      "identityHint": "Wie die Verbindung in den Suchfiltern und unter Aktivität erscheint.",
+      "namePlaceholder": "Meine Notizen",
+      "schedule": "Zeitplan",
+      "scheduleHint": "Wann sie abgleicht, als Cron-Ausdruck in UTC.",
+      "cron": "Cron",
+      "cronHelp": "Minute, Stunde, Tag im Monat, Monat und Wochentag: `0 * * * *` läuft zu jeder vollen Stunde.",
+      "presets": {
+        "quarterHourly": "Alle 15 Minuten",
+        "hourly": "Stündlich",
+        "nightly": "Nachts"
+      },
+      "configuration": "Konfiguration",
+      "configurationHint": "Was das Plugin <plugin>{plugin}</plugin> braucht, um den Ursprung zu erreichen.",
+      "secretsHint": "Änderst du sie (nicht den Zeitplan), musst du jedes gespeicherte Geheimnis neu eingeben, damit eine Änderung sie nicht woandershin schicken kann.",
+      "noConfiguration": "Dieses Plugin braucht keine Konfiguration.",
+      "keepSecret": "Leer lassen, um das gespeicherte zu behalten, außer die Konfiguration ändert sich",
+      "onePerLine": "Eins pro Zeile."
+    }
+  },
+  "activity": {
+    "documents": "Dokumente",
+    "sources": "Quellen",
+    "chunks": "Chunks",
+    "embedded": "Eingebettet",
+    "embedding": "Einbettung",
+    "embeddingHint": "Wie weit jedes Modell deine Chunks eingebettet hat und wie schnell es vorangeht.",
+    "connections": "Verbindungen",
+    "connectionsHint": "Die letzten Läufe jeder Verbindung, die neuesten rechts, und ihr nächster.",
+    "ingests": "Einlesevorgänge",
+    "oneWriter": "Ein Schreiber",
+    "everyUser": "Alle Benutzer",
+    "last": "zuletzt {time}",
+    "neverRan": "nie gelaufen",
+    "next": "nächster {time}",
+    "disabled": "deaktiviert",
+    "nothingYet": "Noch nichts eingelesen.",
+    "showOlder": "Ältere zeigen",
+    "unknownWriter": "Unbekannter Schreiber",
+    "run": "Lauf",
+    "apiWrites": "API-Schreibvorgänge"
+  },
+  "embedders": {
+    "queries": "Anfragen",
+    "embedding": "Einbettung",
+    "progressLabel": "{model} eingebettet",
+    "coverage": "{embedded, number} von {chunks, number} Chunks eingebettet ({share, number, percent})",
+    "pending": "{pending, number} ausstehend",
+    "pendingEta": "{pending, number} ausstehend, fertig in etwa {duration}",
+    "allEmbedded": "Alles ist eingebettet",
+    "rate": "Tempo",
+    "perMinute": "{rate, number} / min",
+    "rateHint": "Über alle Benutzer: Die Pumpe ist geteilt.",
+    "pendingLabel": "Ausstehend",
+    "refused": "Abgelehnt",
+    "refusedHint": "Chunks, die TEI abgelehnt hat. Die Pumpe lässt sie aus.",
+    "allUsers": "Alle Benutzer: {embedded, number} von {chunks, number} Chunks eingebettet",
+    "allUsersEta": "Alle Benutzer: {embedded, number} von {chunks, number} Chunks eingebettet, fertig in etwa {duration}"
+  },
+  "tei": {
+    "state": {
+      "ONLINE": "Online",
+      "OFFLINE": "Offline",
+      "UNUSED": "Ungenutzt",
+      "UNSUITABLE": "Ungeeignet"
+    },
+    "external": "Extern",
+    "switchedOff": "Ausgeschaltet",
+    "unused": "Weder Anfragen noch Einbettung",
+    "queries": "Anfragen",
+    "embedding": "Einbettung",
+    "load": "Last",
+    "loadHint": "Anteil der letzten Minute, den TEI mit Inferenz verbracht hat, als Ersatz für seine CPU-Last. Mit parallelen Batches kann er über 100 % liegen. Die echte CPU-Nutzung misst der Cluster (metrics-server, Prometheus). Hinter einem Service mit mehreren Pods ist das der ganze Service.",
+    "loadInfo": "Was Last bedeutet",
+    "queue": "Warteschlange",
+    "batch": "Batch",
+    "throughput": "Durchsatz",
+    "failures": "Fehler",
+    "pumpBatch": "Pumpen-Batch",
+    "busy": "beschäftigt",
+    "backlogDoneIn": "Rückstand fertig in",
+    "lastError": "Letzter Fehler ({date, date, short} {date, time, medium}): {error}",
+    "lastErrorUndated": "Letzter Fehler: {error}",
+    "pool": {
+      "unusedGroup": "Ungenutzt ({model})",
+      "offlineGroup": "Offline",
+      "noQueries": "Kein aktiver TEI beantwortet die Anfragen dieses Modells: Suchen damit finden nur Stichworttreffer.",
+      "noEmbedding": "Kein aktiver TEI bettet die Chunks dieses Modells ein: Sein Rückstand bewegt sich nicht.",
+      "dimensions": "{dimension, number} Dimensionen",
+      "noTei": "Kein TEI bedient dieses Modell.",
+      "allEmbedded": "Alles ist eingebettet.",
+      "source": "Quelle",
+      "pending": "Ausstehend",
+      "refused": "Von TEI abgelehnt",
+      "on": "An"
+    }
+  },
+  "admin": {
+    "users": "Benutzer",
+    "usersHint": "Wer sich anmelden kann und wer ferret verwaltet.",
+    "embedding": "Einbettung",
+    "embeddingHint": "Die TEIs nach dem Modell, das sie bedienen, und was noch auf Einbettung wartet. Schalter greifen innerhalb von 10 Sekunden.",
+    "workers": "Plugin-Worker",
+    "workersHint": "Die Worker, die am letzten Tag Plugins ausgeführt haben.",
+    "user": "Benutzer",
+    "lastSignIn": "Letzte Anmeldung",
+    "admin": "Admin",
+    "enabled": "Aktiv",
+    "password": "Passwort",
+    "isAdmin": "{user} ist Admin",
+    "canSignIn": "{user} kann sich anmelden",
+    "setPassword": "Passwort setzen",
+    "newPasswordFor": "Neues Passwort für {user} (meldet überall ab)",
+    "set": "Setzen",
+    "newUser": "Neuer Benutzer",
+    "username": "Benutzername",
+    "displayName": "Anzeigename (optional)",
+    "newPassword": "Passwort (mindestens 12 Zeichen)",
+    "createUser": "Benutzer anlegen",
+    "noWorkers": "Am letzten Tag hat kein Worker nach einem Lauf gefragt.",
+    "worker": "Worker",
+    "plugins": "Plugins",
+    "status": "Status",
+    "lastSeen": "Zuletzt gesehen"
+  },
+  "explore": {
+    "contentType": {
+      "MARKDOWN": "Markdown",
+      "PLAIN": "Text",
+      "EMAIL": "E-Mail"
+    },
+    "sources": "Quellen",
+    "type": "Typ",
+    "authors": "Autoren",
+    "month": "Monat",
+    "title": "Titel",
+    "source": "Quelle",
+    "created": "Erstellt",
+    "modified": "Geändert",
+    "noMatches": "Keine passenden Dokumente.",
+    "range": "{first, number}–{last, number} von {total, plural, one {# Dokument} other {# Dokumenten}}",
+    "empty": "0 Dokumente",
+    "previous": "Zurück",
+    "next": "Weiter"
+  },
+  "icons": {
+    "label": "Symbol",
+    "loading": "Symbole laden…",
+    "search": "Symbole suchen",
+    "searchPlaceholder": "Alle Symbole durchsuchen",
+    "list": "Symbole",
+    "noMatch": "Kein passendes Symbol."
+  }
+}

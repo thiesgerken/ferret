@@ -212,33 +212,29 @@ async fn admins_see_workers_tei_health_and_the_backlog_per_source(pool: PgPool) 
     }
     const STATUS: &str = "{
         workers { name plugins }
-        embeddingStatus { name isDefault online bulkOnline lastError backlog { source pending failed } }
+        embeddingStatus { name modelId isDefault dimension backlog { source pending failed } }
     }";
 
-    let up = graphql_ok(&server, &admin, STATUS, json!({})).await;
-    server.tei.break_down();
-    let down = graphql_ok(&server, &admin, STATUS, json!({})).await;
+    let status = graphql_ok(&server, &admin, STATUS, json!({})).await;
 
     assert_eq!(
-        up["workers"],
+        status["workers"],
         json!([{"name": "ferret-plugins-0", "plugins": ["git"]}])
     );
     // The pump doesn't run in these tests, so every chunk is still pending.
     assert_eq!(
-        up["embeddingStatus"],
+        status["embeddingStatus"],
         json!([{
             "name": common::MODEL,
+            "modelId": common::fake_tei::FAKE_MODEL_ID,
             "isDefault": true,
-            "online": true,
-            "bulkOnline": null,
-            "lastError": null,
+            "dimension": common::fake_tei::DIMENSION,
             "backlog": [
                 {"source": "mail", "pending": 1, "failed": 0},
                 {"source": "notes", "pending": 2, "failed": 0},
             ],
         }])
     );
-    assert_eq!(down["embeddingStatus"][0]["online"], false);
 }
 
 #[sqlx::test(migrations = false)]

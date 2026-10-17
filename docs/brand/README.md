@@ -12,6 +12,8 @@ curious, not fierce.
 | `mark-light.svg` / `mark-dark.svg` | the same mark with fixed colours |
 | `mark-mono.svg` | one colour via `currentColor`; the mask is a hole, the eye a dot |
 | `mark-512.png` | raster export of the light mark |
+| `logo-light.svg` / `logo-dark.svg` | mark and wordmark side by side, with fixed colours (the README's header) |
+| `wordmark.svg` | the wordmark alone, outlined, in `currentColor` |
 
 The favicon set is in `frontend/src/app/` (`icon.svg`, `favicon.ico` with 16/32/48 frames,
 `apple-icon.png` 180×180), where Next.js picks it up by filename.
@@ -26,6 +28,21 @@ The favicon set is in `frontend/src/app/` (`icon.svg`, `favicon.ico` with 16/32/
 | apple icon | tile `#885629`, ferret `#f3ece2`, mask and pupil as above | — |
 
 The body colour is the UI's `--brand`.
+
+## Wordmark
+
+"ferret" is set in Alegreya SemiBold, lowercase, in `--brand` (Tailwind's `font-wordmark`). Next to the
+mark it sits on the mark's flat base, with the mark at 0.8 em.
+
+Outside the UI the font isn't there (GitHub can't load it), so `wordmark.svg` and the `logo-*.svg`
+lockups hold the letters as outlines. [`wordmark.py`](wordmark.py) makes them from Alegreya
+(version 2.009, SIL Open Font License 1.1, the variable `Alegreya[wght].ttf` from
+[google/fonts](https://github.com/google/fonts/tree/main/ofl/alegreya)) at weight 600, shaped with
+HarfBuzz so the kerning matches the browser's:
+
+```sh
+uv run --with fonttools --with uharfbuzz docs/brand/wordmark.py 'Alegreya[wght].ttf'
+```
 
 ## Using it
 

@@ -3,7 +3,7 @@ import { PageShell } from "@/components/page-shell";
 
 export default function AdminPage() {
   return (
-    <PageShell href="/admin" description="Users, the embedding pipeline and the plugin workers.">
+    <PageShell href="/admin">
       <Admin />
     </PageShell>
   );

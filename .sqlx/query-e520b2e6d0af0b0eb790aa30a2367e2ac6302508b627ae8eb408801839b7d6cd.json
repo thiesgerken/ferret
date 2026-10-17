@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update teis set enabled = coalesce($2, enabled), queries = coalesce($3, queries),\n                         embedding = coalesce($4, embedding)\n         where url = $1\n         returning enabled, queries, embedding",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "queries",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "queries"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "embedding",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "embedding"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e520b2e6d0af0b0eb790aa30a2367e2ac6302508b627ae8eb408801839b7d6cd"
+}
