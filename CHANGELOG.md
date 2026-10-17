@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #116 from thiesgerken/112-imap
+  ([`9842058`](https://github.com/thiesgerken/ferret/commit/9842058ffcfdd48b0708945bb364841407ea5fe4))
+
+- 🔀 Merge main into 112-imap, with AFFiNE next to IMAP
+  ([`28d4b1b`](https://github.com/thiesgerken/ferret/commit/28d4b1bcc34080fe221f00aac032bc84a15c7a39))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index a mailbox over IMAP
+  ([`9842058`](https://github.com/thiesgerken/ferret/commit/9842058ffcfdd48b0708945bb364841407ea5fe4))
+
 ## v0.13.0 (2026-10-17)
 
 
@@ -21,6 +43,13 @@
   ([`e97ca41`](https://github.com/thiesgerken/ferret/commit/e97ca4110e0c2156daca5c33574d05fa477193ea))
 
   Pages of three with a tie across a page's end, the cursor and its overlap, trash and restore, a doc without content, a page of one modification time, and a login proxy in front of AFFiNE.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 🔀 Merge main into 112-imap, with the test Dovecot in docs/development.md
+  ([`d29765e`](https://github.com/thiesgerken/ferret/commit/d29765e9f959f842e1eab62cbf076218272dd449))
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
@@ -465,6 +494,13 @@
 - Merge pull request #114 from thiesgerken/source-help-text
   ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
 
+- 📝 docs(plugins): IMAP folder matching, ordering and refetches
+  ([`56bdd1d`](https://github.com/thiesgerken/ferret/commit/56bdd1da7a0a93d629120460a70aab900f75550d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ### 💄 UI/UX
 
 
@@ -477,6 +513,56 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🔧 Configuration
+
+
+- 🔧 chore(compose): scale the test Dovecot to 0 by default
+  ([`c06fd65`](https://github.com/thiesgerken/ferret/commit/c06fd65db7928c34007c311f385076c82f1b0b27))
+
+  The Dovecot is only for testing the IMAP plugin, so a plain `docker compose up` leaves it out. CI and the docs start it with `--scale dovecot=1`.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): match excluded folders by name segment and order mails by Date
+  ([`5105909`](https://github.com/thiesgerken/ferret/commit/510590916ccf5790ad777dcf6d14fde4f61060f7))
+
+  Excluded folders compare with the last segment of a folder's path, decoded from modified UTF-7, so INBOX.Trash and Entwürfe match. New mails are put in the order of their Date (else arrival), the date the thread diff compares, and each thread is asked from ferret once per run.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🔒 Security
+
+
+- 🔒 fix(plugins): keep async-imap's command traces out of the logs
+  ([`865116d`](https://github.com/thiesgerken/ferret/commit/865116dabcad19e13913cb139eb2eb585069296e))
+
+  async-imap traces every command it sends, including LOGIN with the password, and RUST_LOG=trace would put it into the worker's logs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index a mailbox over IMAP
+  ([`2e32564`](https://github.com/thiesgerken/ferret/commit/2e325647b8ecd06c1400846e4b6465c2d8d7f543))
+
+  One document per mail, identified by its Message-ID, in the connection's root (e.g. mail/zoho). Every run is a sync over the account's folders, fetching only mails no earlier run indexed; moves and copies aren't fetched again, a new UIDVALIDITY refetches its folder. Quoted text is stripped by HTML containers, text markers and a diff against the thread's earlier mails. Tests run against a throwaway Dovecot.
+
+  Fixes #112
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ## v0.8.0 (2026-10-17)
 
