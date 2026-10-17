@@ -7,12 +7,13 @@ export type SearchState = {
   range: TimeRange;
 };
 
+/** The server resolves a range against its own clock, and judgments keep the preset. */
 export const TIME_RANGES = {
-  any: { label: "Any time", days: null },
-  day: { label: "Past day", days: 1 },
-  week: { label: "Past week", days: 7 },
-  month: { label: "Past month", days: 31 },
-  year: { label: "Past year", days: 366 },
+  any: { label: "Any time", preset: null },
+  day: { label: "Past day", preset: "DAY" },
+  week: { label: "Past week", preset: "WEEK" },
+  month: { label: "Past month", preset: "MONTH" },
+  year: { label: "Past year", preset: "YEAR" },
 } as const;
 
 export type TimeRange = keyof typeof TIME_RANGES;
@@ -38,14 +39,4 @@ export function searchHref(state: SearchState): string {
 /** Adds `value` to `values`, or removes it if it's there. */
 export function toggle(values: string[], value: string): string[] {
   return values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
-}
-
-/** The start of `range` relative to `now`, rounded down to the hour so it stays stable while the
- * page is open (it's part of the query's variables). */
-export function rangeStart(range: TimeRange, now: Date): string | null {
-  const days = TIME_RANGES[range].days;
-  if (days === null) return null;
-  const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  start.setMinutes(0, 0, 0);
-  return start.toISOString();
 }

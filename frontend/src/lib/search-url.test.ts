@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseSearch, rangeStart, searchHref, toggle } from "./search-url";
+import { parseSearch, searchHref, toggle } from "./search-url";
 
 test("search state round-trips through the URL", () => {
   const state = { q: "invoice 2026", sources: ["paperless", "mail/zoho"], authors: ["Allianz"], range: "month" as const };
@@ -17,9 +17,4 @@ test("unknown ranges fall back to any time", () => {
 test("toggle adds and removes", () => {
   assert.deepEqual(toggle(["a"], "b"), ["a", "b"]);
   assert.deepEqual(toggle(["a", "b"], "a"), ["b"]);
-});
-
-test("range starts are rounded down to the hour", () => {
-  assert.equal(rangeStart("any", new Date()), null);
-  assert.equal(rangeStart("day", new Date("2026-10-17T12:34:56Z")), "2026-10-16T12:00:00.000Z");
 });

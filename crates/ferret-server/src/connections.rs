@@ -5,11 +5,16 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
-use crate::{api_auth::ApiCaller, error::ApiError, sources};
+use crate::{
+    api_auth::ApiCaller,
+    credentials::{self, ConfigKey, Owner},
+    error::ApiError,
+    sources,
+};
 
 /// The channel that wakes waiting claims: a connection became due (run now, a new or changed
 /// connection). Every server replica listens, so a claim waiting on any of them wakes.
@@ -24,6 +29,7 @@ pub struct Connection {
     pub id: Uuid,
     pub plugin: String,
     pub source: String,
+    /// Without the credentials, which never leave the server except to a claimed run.
     pub config: Value,
     pub schedule: String,
     pub enabled: bool,
@@ -109,6 +115,7 @@ pub async fn find(
 /// Creates a connection that runs right away, then on its schedule.
 pub async fn create(
     pool: &PgPool,
+    config_key: &ConfigKey,
     user_id: Uuid,
     new: NewConnection,
 ) -> Result<Connection, ConnectionError> {
@@ -119,7 +126,15 @@ pub async fn create(
         ));
     }
     next_slot(&new.schedule, Utc::now())?;
-    validate_config(pool, &new.plugin, &new.config).await?;
+    let schema = config_schema(pool, &new.plugin).await?;
+    validate_config(&schema, &new.config)?;
+    let (config, mut credentials) = credentials::split(&schema, new.config);
+    credentials.retain(|_, value| !value.is_null());
+    // From here rather than the database: the credentials are sealed for this id.
+    let owner = Owner {
+        user_id,
+        connection_id: Uuid::now_v7(),
+    };
     let mut tx = pool.begin().await?;
     // Serializes creations per user, so two overlapping roots can't slip in side by side.
     sqlx::query!("select id from users where id = $1 for update", user_id)
@@ -154,13 +169,16 @@ pub async fn create(
     }
     let connection = sqlx::query_as!(
         Connection,
-        "insert into connections (id, user_id, plugin, source, config, schedule, next_run_at, created_at)
-         values (uuidv7(), $1, $2, $3, $4, $5, now(), now())
+        "insert into connections
+             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7, now(), now())
          returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+        owner.connection_id,
         user_id,
         new.plugin,
         new.source,
-        new.config,
+        config,
+        seal(config_key, &credentials, owner),
         new.schedule,
     )
     .fetch_one(&mut *tx)
@@ -171,8 +189,15 @@ pub async fn create(
 }
 
 /// Changes config, schedule and whether the connection runs. A new schedule takes effect from now.
+///
+/// Stored credentials survive only an update that leaves the rest of the config as it is
+/// (schedule and enabled may change). Any other change needs every stored credential entered
+/// again: otherwise whoever holds a session could point a connection elsewhere, say at their own
+/// git server, and its next run would send the stored token there. A credential set to `null`
+/// is removed.
 pub async fn update(
     pool: &PgPool,
+    config_key: &ConfigKey,
     user_id: Uuid,
     id: Uuid,
     update: ConnectionUpdate,
@@ -185,16 +210,38 @@ pub async fn update(
     } else {
         next_slot(&update.schedule, Utc::now())?
     };
-    validate_config(pool, &current.plugin, &update.config).await?;
+    let schema = config_schema(pool, &current.plugin).await?;
+    let owner = Owner {
+        user_id,
+        connection_id: id,
+    };
+    let (config, entered) = credentials::split(&schema, update.config);
+    let sealed = sqlx::query_scalar!("select credentials from connections where id = $1", id)
+        .fetch_one(pool)
+        .await?;
+    let credentials = updated_credentials(
+        config_key,
+        owner,
+        &schema,
+        sealed.as_deref(),
+        config == current.config,
+        entered,
+    )?;
+    validate_config(
+        &schema,
+        &credentials::merge(config.clone(), credentials.clone()),
+    )?;
     let mut tx = pool.begin().await?;
     let connection = sqlx::query_as!(
         Connection,
-        "update connections set config = $3, schedule = $4, enabled = $5, next_run_at = $6
+        "update connections
+         set config = $3, credentials = $4, schedule = $5, enabled = $6, next_run_at = $7
          where id = $1 and user_id = $2
          returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
         id,
         user_id,
-        update.config,
+        config,
+        seal(config_key, &credentials, owner),
         update.schedule,
         update.enabled,
         next_run_at,
@@ -287,33 +334,102 @@ pub fn next_slot(schedule: &str, after: DateTime<Utc>) -> Result<DateTime<Utc>, 
         .map_err(|error| ConnectionError::Invalid(format!("{schedule:?} never runs: {error}")))
 }
 
-async fn validate_config(
-    pool: &PgPool,
-    plugin: &str,
-    config: &Value,
-) -> Result<(), ConnectionError> {
-    let Some(schema) = sqlx::query_scalar!(
+async fn config_schema(pool: &PgPool, plugin: &str) -> Result<Value, ConnectionError> {
+    match sqlx::query_scalar!(
         "select config_schema from plugin_types where name = $1",
         plugin
     )
     .fetch_optional(pool)
     .await?
-    else {
-        return invalid(format!("no worker offers the plugin {plugin:?}"));
-    };
-    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+    {
+        Some(schema) => Ok(schema),
+        None => invalid(format!("no worker offers the plugin {plugin:?}")),
+    }
+}
+
+fn validate_config(schema: &Value, config: &Value) -> Result<(), ConnectionError> {
+    let validator = jsonschema::validator_for(schema).map_err(|error| {
         ConnectionError::Invalid(format!("the plugin's config schema is broken: {error}"))
     })?;
-    if let Some(error) = validator.iter_errors(config).next() {
-        let path = error.instance_path().to_string();
-        let at = if path.is_empty() {
-            String::new()
-        } else {
-            format!(" at {path}")
-        };
-        return invalid(format!("invalid config{at}: {error}"));
+    let Some(error) = validator.iter_errors(config).next() else {
+        return Ok(());
+    };
+    let path = error.instance_path().to_string();
+    let at = if path.is_empty() {
+        String::new()
+    } else {
+        format!(" at {path}")
+    };
+    // jsonschema's messages quote the values they reject, and the config may hold stored
+    // credentials, which the API never returns. Then only the path is said.
+    let secret_fields = credentials::secret_fields(schema);
+    let under_secret = secret_fields
+        .iter()
+        .any(|name| path == format!("/{name}") || path.starts_with(&format!("/{name}/")));
+    let message = error.to_string();
+    let quotes_secret = secret_fields
+        .iter()
+        .filter_map(|name| config.get(*name))
+        .map(|value| {
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned)
+        })
+        .any(|secret| !secret.is_empty() && message.contains(&secret));
+    if under_secret || quotes_secret {
+        return invalid(format!("invalid config{at}"));
     }
-    Ok(())
+    invalid(format!("invalid config{at}: {message}"))
+}
+
+fn seal(config_key: &ConfigKey, credentials: &Map<String, Value>, owner: Owner) -> Option<Vec<u8>> {
+    (!credentials.is_empty()).then(|| config_key.seal(credentials, owner))
+}
+
+/// The credentials an update stores: the `entered` ones, on top of the stored ones while the
+/// config stays the same. Fails when a credential has to be entered again but wasn't: after a
+/// config change, or when the stored ones can't be opened (the database was restored without
+/// its key). `null` removes a credential.
+fn updated_credentials(
+    config_key: &ConfigKey,
+    owner: Owner,
+    schema: &Value,
+    sealed: Option<&[u8]>,
+    config_unchanged: bool,
+    entered: Map<String, Value>,
+) -> Result<Map<String, Value>, ConnectionError> {
+    let mut credentials = Map::new();
+    if let Some(sealed) = sealed {
+        let (required, reason): (Vec<String>, _) = match config_key.open(sealed, owner) {
+            Ok(stored) if config_unchanged => {
+                credentials = stored;
+                (Vec::new(), "")
+            }
+            Ok(stored) => (
+                stored.into_iter().map(|(name, _)| name).collect(),
+                "a changed configuration needs its credentials again",
+            ),
+            // Which ones were stored is sealed too, so all of them.
+            Err(_) => (
+                credentials::secret_fields(schema)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                "the stored credentials can't be decrypted with FERRET_CONFIG_KEY",
+            ),
+        };
+        let missing: Vec<&str> = required
+            .iter()
+            .filter(|name| !entered.contains_key(*name))
+            .map(String::as_str)
+            .collect();
+        if !missing.is_empty() {
+            return invalid(format!("{reason}: enter {}", missing.join(", ")));
+        }
+    }
+    credentials.extend(entered);
+    credentials.retain(|_, value| !value.is_null());
+    Ok(credentials)
 }
 
 /// Wakes waiting claims on every server replica once the transaction commits.

@@ -251,17 +251,20 @@ function parseConfigSchema(
   }
 }
 
-/** The config's inputs, filled from `values` (a stored config) or else left to the plugin's defaults. */
+/**
+ * The config's inputs, filled from `stored` (a connection's config, which never holds its secrets)
+ * or else left to the plugin's defaults.
+ */
 function ConfigFieldset({
   idPrefix,
   fields,
   schemaError,
-  values = {},
+  stored,
 }: {
   idPrefix: string;
   fields: ConfigField[];
   schemaError: string;
-  values?: Record<string, unknown>;
+  stored?: Record<string, unknown>;
 }) {
   if (schemaError) {
     return (
@@ -274,13 +277,30 @@ function ConfigFieldset({
     <fieldset className="space-y-4">
       <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Configuration</legend>
       {fields.map((field) => (
-        <ConfigInput key={field.name} id={`${idPrefix}-${field.name}`} field={field} value={values[field.name]} />
+        <ConfigInput
+          key={field.name}
+          id={`${idPrefix}-${field.name}`}
+          field={field}
+          value={stored?.[field.name]}
+          keepsStoredSecret={stored !== undefined && field.secret}
+        />
       ))}
     </fieldset>
   );
 }
 
-function ConfigInput({ id, field, value }: { id: string; field: ConfigField; value: unknown }) {
+function ConfigInput({
+  id,
+  field,
+  value,
+  keepsStoredSecret,
+}: {
+  id: string;
+  field: ConfigField;
+  value: unknown;
+  /** An empty secret field keeps the stored secret, so it's never required. */
+  keepsStoredSecret: boolean;
+}) {
   const name = configInputName(field);
   const label = field.name.replaceAll("_", " ");
   if (field.kind === "checkbox") {
@@ -300,11 +320,13 @@ function ConfigInput({ id, field, value }: { id: string; field: ConfigField; val
       </label>
     );
   }
-  const placeholder = Array.isArray(field.default)
-    ? field.default.join("\n")
-    : typeof field.default === "string"
-      ? field.default
-      : undefined;
+  const placeholder = keepsStoredSecret
+    ? "Leave empty to keep the stored one, unless the configuration changes"
+    : Array.isArray(field.default)
+      ? field.default.join("\n")
+      : typeof field.default === "string"
+        ? field.default
+        : undefined;
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-sm">
@@ -329,7 +351,10 @@ function ConfigInput({ id, field, value }: { id: string; field: ConfigField; val
         <input
           id={id}
           name={name}
-          required={field.required}
+          type={field.secret ? "password" : "text"}
+          // Not the browser's saved ferret password.
+          autoComplete={field.secret ? "new-password" : undefined}
+          required={field.required && !keepsStoredSecret}
           defaultValue={typeof value === "string" ? value : undefined}
           placeholder={placeholder}
           className={fieldClass}
@@ -525,11 +550,17 @@ function EditConnectionForm({
           className={cn(fieldClass, "font-mono")}
         />
       </div>
+      {fields.some((field) => field.secret) && (
+        <p className="text-xs text-muted-foreground">
+          Changing the configuration (not the schedule) needs every stored secret entered again, so
+          an edit can&apos;t send them somewhere new.
+        </p>
+      )}
       <ConfigFieldset
         idPrefix={`edit-${connection.id}`}
         fields={fields}
         schemaError={schemaError}
-        values={JSON.parse(connection.config) as Record<string, unknown>}
+        stored={JSON.parse(connection.config) as Record<string, unknown>}
       />
       {error && (
         <p role="alert" className="text-destructive">
