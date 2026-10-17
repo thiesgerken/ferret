@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Fills the compose dev setup with demo data: the documents in docker/demo, a git connection to
+# ferret's own docs and, with CARAPACE_KNOWLEDGE_DIR set, a carapace connection to the repository
+# docker-compose.demo.yml mounts. Re-running it updates the documents and skips existing
+# connections.
+set -euo pipefail
+
+url=${FERRET_URL:-http://127.0.0.1:3380}
+demo=$(cd "$(dirname "$0")/../docker/demo" && pwd)
+
+# The session cookie is `Secure`, which curl's cookie jar won't send over plain http.
+cookie=$(curl -fsS -o /dev/null -D - "$url/auth/login" -H 'content-type: application/json' \
+  -d "$(jq -n --arg password "${FERRET_PASSWORD:-ferret-development}" \
+    '{username: "admin", password: $password}')" |
+  grep -i '^set-cookie:' | sed 's/^[^:]*: *//; s/;.*//')
+
+graphql() { # query, variables
+  curl -sS --fail-with-body "$url/graphql" -H "cookie: $cookie" -H 'content-type: application/json' \
+    -d "$(jq -n --arg query "$1" --argjson variables "$2" '{$query, $variables}')" |
+    jq -e 'if .errors then error(.errors | map(.message) | join("; ")) else .data end'
+}
+
+# The machine API takes only API keys, so the documents go in with one that lives for this run.
+created=$(graphql 'mutation($input: NewApiKey!) { createApiKey(input: $input) { key apiKey { id } } }' \
+  '{"input": {"name": "demo seed", "scopes": ["INGEST_WRITE"], "sources": ["demo"]}}')
+key=$(jq -r .createApiKey.key <<<"$created")
+revoke_key() {
+  graphql 'mutation($id: ID!) { revokeApiKey(id: $id) }' \
+    "$(jq '{id: .createApiKey.apiKey.id}' <<<"$created")" >/dev/null
+}
+trap revoke_key EXIT
+
+for document in "$demo"/*.json; do
+  curl -sS --fail-with-body -X PUT "$url/api/documents" -H "authorization: Bearer $key" \
+    -H 'content-type: application/json' --data @"$document" |
+    jq -r --arg file "${document##*/}" '"\($file): \(.outcome)"'
+done
+
+existing=$(graphql '{ connections { source } }' '{}' | jq -r '.connections[].source')
+connect() { # plugin, source, config
+  if grep -qx "$2" <<<"$existing"; then
+    echo "connection $2: exists"
+    return
+  fi
+  graphql 'mutation($input: NewConnection!) { createConnection(input: $input) { id } }' \
+    "$(jq -n --arg plugin "$1" --arg source "$2" --argjson config "$3" \
+      '{input: {$plugin, $source, config: ($config | tojson), schedule: "0 * * * *"}}')" >/dev/null
+  echo "connection $2: created, first run starts now"
+}
+
+connect git ferret '{
+  "remote": "https://github.com/thiesgerken/ferret.git",
+  "include": ["README.md", "docs/**"],
+  "url_template": "https://github.com/thiesgerken/ferret/blob/{commit}/{path}"
+}'
+if [[ -n ${CARAPACE_KNOWLEDGE_DIR:-} ]]; then
+  connect carapace carapace '{"remote": "file:///demo/carapace", "carapace_url": "http://127.0.0.1:3001"}'
+fi

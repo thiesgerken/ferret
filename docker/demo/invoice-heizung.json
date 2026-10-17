@@ -1,0 +1,12 @@
+{
+  "source": "demo/invoices",
+  "external_id": "2026-0412",
+  "content_type": "plain",
+  "title": "Rechnung 2026-0412: Wartung Gastherme",
+  "text": "Haustechnik Meyer GmbH, Lindenstraße 8, 28195 Bremen\n\nRechnung Nr. 2026-0412\nRechnungsdatum: 12.04.2026\nKundennummer: 10734\n\nPos. 1  Wartung Gas-Brennwerttherme inkl. Abgasmessung   1 Std.   89,00 EUR\nPos. 2  Dichtungssatz Brenner                             1 Stk.   24,50 EUR\nPos. 3  Anfahrtspauschale                                         15,00 EUR\n\nNettobetrag                                                      128,50 EUR\nzzgl. 19 % USt.                                                   24,42 EUR\nRechnungsbetrag                                                  152,92 EUR\n\nDavon Arbeitslohn (§ 35a EStG): 104,00 EUR netto.\nZahlbar innerhalb von 14 Tagen ohne Abzug auf DE12 2905 0101 0001 2345 67.\n",
+  "authors": [
+    "Haustechnik Meyer GmbH"
+  ],
+  "created_at": "2026-04-12T10:00:00Z",
+  "modified_at": "2026-04-12T10:00:00Z"
+}

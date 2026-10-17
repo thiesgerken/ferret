@@ -30,6 +30,22 @@ docker compose up -d paradedb
 cargo test --workspace
 ```
 
+### Demo data
+
+```sh
+scripts/demo-seed.sh
+```
+
+ingests the sample documents in [docker/demo](docker/demo) (needs `jq`) and adds a git connection
+to ferret's own docs. To index a local carapace knowledge repository as well, start compose with
+the demo overlay and seed with the same variable:
+
+```sh
+export CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up
+scripts/demo-seed.sh
+```
+
 More commands and conventions in [AGENTS.md](AGENTS.md).
 
 ## Docs
