@@ -435,9 +435,13 @@ pub async fn authenticate(
     };
     let live = sqlx::query_scalar!(
         r#"select exists (
-               select 1 from plugin_runs r join connections c on c.id = r.connection_id
+               select 1 from plugin_runs r
+               join connections c on c.id = r.connection_id
+               join users u on u.id = c.user_id
                where r.id = $1 and c.user_id = $2 and c.source = $3 and r.status = 'running'
                  and r.heartbeat_at >= now() - make_interval(secs => $4)
+                 -- A run in flight stops ingesting when its owner is disabled.
+                 and u.enabled
            ) as "live!""#,
         claims.run,
         claims.sub,

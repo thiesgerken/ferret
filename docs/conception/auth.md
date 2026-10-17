@@ -158,7 +158,7 @@ create table api_keys (
 |---|---|---|
 | `search` | search, `GET /documents/{id}`, conversation views | |
 | `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
-| `admin` | list users (`GET /api/users`) | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
+| `admin` | list users (`GET /api/users`). Requires `is_admin` on the owner, and stops working as soon as the owner loses it | no REST endpoint yet: users are managed in the UI's Admin section (GraphQL) |
 
 `sources` restricts a key to source paths and everything below them, for reading, searching and
 writing alike, enforced by the server. Admin scopes act on users, which have no source, so a key

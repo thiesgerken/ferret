@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (\n               select 1 from plugin_runs r\n               join connections c on c.id = r.connection_id\n               join users u on u.id = c.user_id\n               where r.id = $1 and c.user_id = $2 and c.source = $3 and r.status = 'running'\n                 and r.heartbeat_at >= now() - make_interval(secs => $4)\n                 -- A run in flight stops ingesting when its owner is disabled.\n                 and u.enabled\n           ) as \"live!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a1b823b872349f51b078ee93641bbf7820f43873367be8b3b6d8755dd00bb4a1"
+}

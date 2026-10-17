@@ -79,7 +79,10 @@ export function Admin() {
   const reload = () => refetch({ requestPolicy: "network-only" });
 
   useEffect(() => {
-    const timer = setInterval(() => refetch({ requestPolicy: "network-only" }), POLL_MS);
+    // A tab in the background would count every chunk every 10 s for nothing.
+    const timer = setInterval(() => {
+      if (!document.hidden) refetch({ requestPolicy: "network-only" });
+    }, POLL_MS);
     return () => clearInterval(timer);
   }, [refetch]);
 

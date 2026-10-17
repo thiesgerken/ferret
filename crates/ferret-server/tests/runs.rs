@@ -197,7 +197,16 @@ async fn a_disabled_users_connections_dont_run(pool: PgPool) {
     assert!(waited.is_none(), "the due connection isn't claimed");
 
     set_enabled(true).await;
-    assert!(claim_now(&internal, worker).await.is_some());
+    let run = claim_now(&internal, worker).await.unwrap();
+    let token = server.api_with_key(&run.token);
+    assert_eq!(put_status(&token, "notes").await, StatusCode::OK);
+
+    set_enabled(false).await;
+    assert_eq!(
+        put_status(&token, "notes").await,
+        StatusCode::UNAUTHORIZED,
+        "the run in flight stops ingesting"
+    );
 }
 
 #[sqlx::test(migrations = false)]

@@ -256,18 +256,29 @@ impl Embedding {
     // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
     // running counts if the Admin page gets slow.
     pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
+        // Every health check at once, so TEIs that are down cost one timeout, not one each.
+        let check = |url: &str| {
+            let (http, url) = (self.http.clone(), url.to_owned());
+            tokio::spawn(async move { tei::healthy(&http, &url, HEALTH_TIMEOUT).await })
+        };
+        let checks: Vec<_> = self
+            .models
+            .iter()
+            .map(|model| {
+                (
+                    check(&model.config.url),
+                    model.config.bulk_url.as_deref().map(check),
+                )
+            })
+            .collect();
         let mut statuses = Vec::new();
-        for (index, model) in self.models.iter().enumerate() {
+        for ((index, model), (online, bulk_online)) in self.models.iter().enumerate().zip(checks) {
             let name = model.name();
-            let (online, bulk_online) = tokio::join!(
-                tei::healthy(&self.http, &model.config.url, HEALTH_TIMEOUT),
-                async {
-                    match &model.config.bulk_url {
-                        Some(url) => Some(tei::healthy(&self.http, url, HEALTH_TIMEOUT).await),
-                        None => None,
-                    }
-                },
-            );
+            let online = online.await.expect("a health check doesn't panic");
+            let bulk_online = match bulk_online {
+                Some(check) => Some(check.await.expect("a health check doesn't panic")),
+                None => None,
+            };
             let last_error = sqlx::query!(
                 "select error, at from embedding_errors where model = $1",
                 name
