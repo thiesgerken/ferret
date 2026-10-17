@@ -44,8 +44,18 @@ create table users (
 Every owned record (`documents`, `syncs`, `api_keys`, `sessions`) has a non-null `user_id`. Records
 without an owner are invalid.
 
-Admins manage users in the UI (create, change password, enable or disable). There is no separate
-admin portal.
+Admins manage users in the UI's Admin section (GraphQL `users`, `createUser`, `setUserPassword`,
+`updateUser`, all refused with `FORBIDDEN` for non-admins). There is no separate admin portal.
+
+- **Create**: username, optional display name, password, admin or not. Usernames are trimmed,
+  lowercased and limited to letters, digits, `.`, `_` and `-`, as the login reads them.
+- **Passwords** an admin sets need at least 12 characters (the bootstrap's needs 16, nobody types
+  it). Setting one bumps `token_version`, so the user's sessions end.
+- **Admin and enabled** are toggles. A disabled user can't sign in, their sessions and API keys
+  stop working, and their connections don't run (claims skip them).
+- **The last enabled admin** can't be demoted or disabled: the update locks every enabled admin,
+  so two admins demoting each other can't both succeed. Users aren't deleted in v1, disabling is
+  the way to lock someone out.
 
 ## Bootstrap
 
@@ -54,8 +64,9 @@ If no enabled admin exists at startup, the server creates `admin` with the passw
 bootstrap is needed, the server exits with an error. Once an admin exists, the variable is ignored.
 If a user `admin` exists but isn't an enabled admin, the bootstrap turns it back into one with the
 variable's password: locked out of every admin account, setting the variable is the way back in.
-The Helm chart always provides the variable, so in the cluster any server restart after the last
-admin was disabled or demoted restores `admin` with the generated password and ends its sessions.
+Admin refuses to leave no enabled admin, so that state only comes from manual database changes.
+For those, the bootstrap is the recovery path: the Helm chart always provides the variable, so in
+the cluster a server restart restores `admin` with the generated password and ends its sessions.
 
 The Helm chart takes the password from a Secret (`existingSecret`, or generated once and kept
 across upgrades via `lookup`, like carapace's Postgres password).
@@ -147,7 +158,7 @@ create table api_keys (
 |---|---|---|
 | `search` | search, `GET /documents/{id}`, conversation views | |
 | `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
-| `admin` | list users (`GET /api/users`) | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
+| `admin` | list users (`GET /api/users`). Requires `is_admin` on the owner, and stops working as soon as the owner loses it | no REST endpoint yet: users are managed in the UI's Admin section (GraphQL) |
 
 `sources` restricts a key to source paths and everything below them, for reading, searching and
 writing alike, enforced by the server. Admin scopes act on users, which have no source, so a key

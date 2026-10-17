@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state\n         from connections c\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
+  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state\n         from connections c\n         -- A disabled user's connections don't run: they would ingest for someone who can't\n         -- sign in, with credentials an admin meant to switch off.\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and exists (select 1 from users u where u.id = c.user_id and u.enabled)\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
   "describe": {
     "columns": [
       {
@@ -108,5 +108,5 @@
       false
     ]
   },
-  "hash": "3a015cb9f76082bf72f1a1908c9300716cc9a83f8899ae486d828aea18f9f5c0"
+  "hash": "96f68055f963cad37de8c73db7bcc365d309cbde1896d0afc0e72b87e66abcbf"
 }
