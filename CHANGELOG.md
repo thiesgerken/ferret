@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #110 from thiesgerken/search-mode
+  ([`82df373`](https://github.com/thiesgerken/ferret/commit/82df373aba761188531520944669af48bd5b0147))
+
+### ✨ Features
+
+
+- ✨ feat(server): run keyword or semantic search alone
+  ([`82df373`](https://github.com/thiesgerken/ferret/commit/82df373aba761188531520944669af48bd5b0147))
+
+- ✨ feat(server): run keyword or semantic search alone
+  ([`f540c3e`](https://github.com/thiesgerken/ferret/commit/f540c3ecfe71494023695bd714dfcadb849242dd))
+
+  A `mode` on search (REST `mode=`, GraphQL `SearchInput.mode`): HYBRID by default, KEYWORD skips the query embedding, SEMANTIC runs only the vector half and fails with 503 / UNAVAILABLE without the embedding model. Ranking, total, facets, paging and the lower-bound rule come from the halves that ran.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.6.5 (2026-10-17)
 
 
