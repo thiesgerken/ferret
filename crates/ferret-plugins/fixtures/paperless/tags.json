@@ -1,0 +1,11 @@
+{
+  "count": 3,
+  "next": null,
+  "previous": null,
+  "all": [2, 5, 11],
+  "results": [
+    {"id": 2, "slug": "versicherung", "name": "Versicherung", "color": "#a6cee3", "text_color": "#000000", "match": "", "matching_algorithm": 6, "is_insensitive": true, "is_inbox_tag": false, "document_count": 14, "owner": 1, "user_can_change": true, "parent": null, "children": []},
+    {"id": 5, "slug": "inbox", "name": "Inbox", "color": "#ff0000", "text_color": "#ffffff", "match": "", "matching_algorithm": 0, "is_insensitive": true, "is_inbox_tag": true, "document_count": 0, "owner": 1, "user_can_change": true, "parent": null, "children": []},
+    {"id": 11, "slug": "auto", "name": "Auto", "color": "#1f78b4", "text_color": "#ffffff", "match": "", "matching_algorithm": 6, "is_insensitive": true, "is_inbox_tag": false, "document_count": 6, "owner": 1, "user_can_change": true, "parent": null, "children": []}
+  ]
+}

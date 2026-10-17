@@ -82,6 +82,7 @@ input SearchInput {
   "Only documents created before this time." to: DateTime
   "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
+  "The embedding model of the semantic half. The user's default model when left out." model: String
   "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
 }
 
@@ -162,6 +163,23 @@ type Document {
   nextInThread: ThreadNeighbor
 }
 
+"""
+  A configured embedding model and how much of the signed-in user's data it covers. A model
+  can be chosen before it covers everything, its semantic half is partial until then.
+"""
+type EmbeddingModel {
+  name: String!
+  "Whether searches use it when the user chose no default."
+  configuredDefault: Boolean!
+  """
+    How many of the user's chunks the model has embedded. Counted only when asked for, the
+    search page lists the models without it.
+  """
+  embedded: Int!
+  "How many chunks the user has."
+  chunks: Int!
+}
+
 "A document returned by a search, with its best-matching chunk."
 type Hit {
   documentId: ID!
@@ -233,6 +251,11 @@ type Mutation {
     admin can't be demoted or disabled. Admins only.
   """
   updateUser(id: ID!, input: UserUpdate!): UserAccount!
+  """
+    Sets the embedding model the signed-in user's searches use (UI and API keys), null for the
+    configured default. Returns it.
+  """
+  setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!
@@ -272,6 +295,11 @@ type Query {
     `GET /api/search`.
   """
   search(input: SearchInput!): SearchResult!
+  """
+    The configured embedding models, the configured default first, with how much of the
+    signed-in user's data each covers.
+  """
+  embeddingModels: [EmbeddingModel!]!
   "One of the signed-in user's documents, null when there is none with this id."
   document(id: ID!): Document
   "The plugins that registered workers offer, with their config schemas."
@@ -296,6 +324,8 @@ type SearchResult {
     keyword matches only. Null when it ran.
   """
   semanticUnavailable: String
+  "The embedding model the semantic half used, or would have."
+  model: String!
 }
 
 type SourceBacklog {
@@ -322,6 +352,8 @@ type User {
   username: String!
   displayName: String
   isAdmin: Boolean!
+  "The embedding model the user's searches use, null for the configured default."
+  defaultEmbeddingModel: String
 }
 
 "A user as admins see them."

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select default_embedding_model from users where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_embedding_model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "default_embedding_model"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4c4e31cbdeecc7f6f0365f4d6020839c92fc6aab6ce5040b8df72b2102a72640"
+}
