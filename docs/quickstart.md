@@ -34,7 +34,7 @@ scripts/demo-seed.sh
 
 The script signs in, creates a temporary ingestion key for `demo`, puts every JSON document in `docker/demo`, revokes the key, and creates a git connection named **ferret docs** at source `ferret`. Re-running updates the sample documents and skips an existing connection at that source. Expected per-file outcomes are `created` on a fresh index, and `unchanged` when nothing changed.
 
-In the search UI enter `Brocken`. Turn **Meaning** off while leaving **Keywords** on to make the first result independent of model loading. Filter to source `demo/chat` if needed. A hit contains **“And a Brocken hike on Saturday if the weather holds?”**, authored by Anna. The demo groups this message with other messages in the `harz-trip` thread. Search collapses matching messages into the best hit; open its title and use the viewer's previous/next thread links to read neighboring messages.
+In the search UI enter `Brocken`. Turn **Semantic** off while leaving **Keyword** on to make the first result independent of model loading. Filter to source `demo/chat` if needed. A hit contains **“And a Brocken hike on Saturday if the weather holds?”**, authored by Anna. The demo groups this message with other messages in the `harz-trip` thread. Search collapses matching messages into the best hit; open its title and use the viewer's previous/next thread links to read neighboring messages.
 
 Click the hit title (the external id when no title exists) to open Ferret's document viewer at the matching passage. This sample has no `url`, so the viewer is its origin. Ferret stores searchable text, not the original application's attachments or access controls.
 
