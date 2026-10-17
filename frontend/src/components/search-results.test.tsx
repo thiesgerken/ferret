@@ -78,7 +78,9 @@ async function renderResults(
           hits:
             operation.variables.input.q === "invoice"
               ? [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])]
-              : [hit("c", "notes", [])],
+              : operation.variables.input.q === "nothing"
+                ? []
+                : [hit("c", "notes", [])],
           semanticUnavailable,
           model: state.model ?? models[0],
           total: 37,
@@ -130,7 +132,7 @@ async function pauseTyping() {
 }
 
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
-const CHIPS = "main > div:first-child button[aria-pressed]";
+const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
 
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
 
@@ -340,5 +342,30 @@ test("a chip clicked while typing wins over the typed query", async () => {
 
   assert.deepEqual(changes, [{ ...STATE, sources: ["notes"] }]);
   assert.deepEqual(typed, [], "the typed query belonged to the search before the chip");
+  await view.unmount();
+});
+
+test("hit-shaped placeholders stand in until the first answer", async () => {
+  let answer!: () => void;
+  const { view } = await renderResults(STATE, { answered: new Promise((resolve) => (answer = resolve)) });
+
+  assert.ok(view.container.querySelector("ol[aria-busy=true]"));
+  answer();
+  await settle();
+  assert.equal(view.container.querySelector("ol[aria-busy=true]"), null);
+  assert.equal(view.container.querySelectorAll("article").length, 2);
+  await view.unmount();
+});
+
+test("no matches says so, and offers to clear the filters when there are any", async () => {
+  const plain = await renderResults({ ...STATE, q: "nothing" });
+  assert.match(plain.view.container.textContent ?? "", /No documents match “nothing”/);
+  assert.equal(plain.view.container.querySelector("main button"), null);
+  await plain.view.unmount();
+
+  const { view, changes } = await renderResults({ ...STATE, q: "nothing", sources: ["notes"], range: "week" });
+  const clear = [...view.container.querySelectorAll("main button")].find((b) => b.textContent === "Clear filters")!;
+  await act(async () => (clear as HTMLButtonElement).click());
+  assert.deepEqual(changes, [{ ...STATE, q: "nothing" }]);
   await view.unmount();
 });
