@@ -15,6 +15,9 @@ spec:
     metadata:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "server") | nindent 8 }}
+      annotations:
+        # Rolls the pods when the models change: the server reads them only at startup.
+        checksum/config: {{ include "ferret.config" . | sha256sum }}
     spec:
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
@@ -31,6 +34,8 @@ spec:
           env:
             - name: RUST_LOG
               value: {{ .Values.server.logLevel | quote }}
+            - name: FERRET_CONFIG_FILE
+              value: /etc/ferret/config.yaml
             # The password travels separately (libpq's PGPASSWORD, read by sqlx), so it never
             # needs URL-encoding.
             - name: FERRET_DATABASE_URL
@@ -62,12 +67,17 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          # Startup covers migrations and waiting for Postgres on a fresh install.
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ferret
+              readOnly: true
+          # Startup covers migrations, Postgres and, on a fresh install, TEI downloading its model:
+          # the server waits up to 10 minutes for it before giving up.
           startupProbe:
             tcpSocket:
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 130
           # TCP, not /healthz: health fails while the database is down, and restarting every
           # server pod doesn't bring the database back.
           livenessProbe:
@@ -79,6 +89,10 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
 ---
 apiVersion: v1
 kind: Service
