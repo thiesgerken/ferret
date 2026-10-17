@@ -65,7 +65,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     // Documents link to carapace, so a new URL needs every document put again. `files` names the
     // rule for which other files are indexed: a new rule needs a full sync to sweep what the old
     // one let in.
-    let indexing = json!({ "carapace_url": repository.target.carapace_url, "files": "markdown" });
+    let indexing = json!({
+        "carapace_url": repository.target.carapace_url,
+        "files": "markdown, skills/ apart",
+        "titles": git::TITLES,
+    });
     let stats = match repository.changes(&indexing).await? {
         Ok(changes) => repository.apply(changes).await?,
         Err(reason) => {
@@ -169,7 +173,10 @@ impl Repository<'_> {
         };
         match kind(path) {
             Kind::Ignored => Ok(Ok(Vec::new())),
-            Kind::File => Ok(Ok(vec![(self.target.source("files"), path.to_owned())])),
+            Kind::File(files) => Ok(Ok(vec![(
+                self.target.source(files.sub_source()),
+                path.to_owned(),
+            )])),
             Kind::Session => match self.checkout.text_at(commit, path).await? {
                 None => Ok(Ok(Vec::new())),
                 // Repeated facts were logged when that version was indexed.
@@ -240,7 +247,9 @@ impl Repository<'_> {
             .ok_or_else(|| format!("{path} is in the diff but not tracked"))?;
         let text = match self.checkout.text(path, mode).await? {
             Ok(text) => text,
-            Err(skipped) if kind != Kind::File => return Err(format!("{path}: {skipped}").into()),
+            Err(skipped) if !matches!(kind, Kind::File(_)) => {
+                return Err(format!("{path}: {skipped}").into());
+            }
             Err(skipped) => {
                 self.run.log.line(format!("skipped {path}: {skipped}"));
                 return Ok(Vec::new());
@@ -257,11 +266,11 @@ impl Repository<'_> {
                 &mirror::parse_digest(&text).map_err(in_file)?,
                 &self.target,
             )],
-            Kind::File => {
+            Kind::File(files) => {
                 let history = self.history.get(path).ok_or_else(|| {
                     format!("{path} is tracked but no commit in the log touched it")
                 })?;
-                vec![file_document(path, text, history, &self.target)]
+                vec![file_document(path, text, history, files, &self.target)]
             }
             Kind::Ignored => unreachable!("handled above"),
         })
@@ -287,7 +296,23 @@ enum Kind {
     /// skills' code, lockfiles and configuration, and carapace's raw session dumps
     /// (`conversation.json`), which the sessions and facts distill.
     Ignored,
-    File,
+    File(Files),
+}
+
+/// The repository's other Markdown files: skills apart, everything else as files.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Files {
+    Skill,
+    Other,
+}
+
+impl Files {
+    fn sub_source(self) -> &'static str {
+        match self {
+            Files::Skill => "skills",
+            Files::Other => "files",
+        }
+    }
 }
 
 fn kind(path: &str) -> Kind {
@@ -299,8 +324,10 @@ fn kind(path: &str) -> Kind {
         Kind::Digest
     } else if path.starts_with("memory/facts/") || !markdown {
         Kind::Ignored
+    } else if path.starts_with("skills/") {
+        Kind::File(Files::Skill)
     } else {
-        Kind::File
+        Kind::File(Files::Other)
     }
 }
 
@@ -389,13 +416,23 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
     documents
 }
 
-/// Any other Markdown file of the repository, like the git plugin indexes it.
-fn file_document(path: &str, text: String, history: &FileHistory, target: &Target) -> DocumentPut {
+/// Any other Markdown file of the repository, like the git plugin indexes it. A skill's title is
+/// the `name` of its front matter, as carapace lists it.
+fn file_document(
+    path: &str,
+    text: String,
+    history: &FileHistory,
+    files: Files,
+    target: &Target,
+) -> DocumentPut {
+    let skill_name = (files == Files::Skill)
+        .then(|| front_matter_name(&text))
+        .flatten();
     DocumentPut {
-        source: target.source("files"),
+        source: target.source(files.sub_source()),
         external_id: path.to_owned(),
         content_type: ContentType::Markdown,
-        title: Some(git::title(path, &text, ContentType::Markdown)),
+        title: Some(skill_name.unwrap_or_else(|| git::title(path, &text, ContentType::Markdown))),
         text,
         url: Some(target.url("/knowledge", "path", path)),
         thread: None,
@@ -404,6 +441,19 @@ fn file_document(path: &str, text: String, history: &FileHistory, target: &Targe
         modified_at: history.modified_at,
         meta: Map::new(),
     }
+}
+
+/// `name: …` in the `---` front matter at the top of `text`.
+fn front_matter_name(text: &str) -> Option<String> {
+    let mut lines = text.lines();
+    if lines.next()? != "---" {
+        return None;
+    }
+    lines
+        .take_while(|line| *line != "---")
+        .find_map(|line| line.strip_prefix("name:"))
+        .map(|name| name.trim().trim_matches(['"', '\'']).to_owned())
+        .filter(|name| !name.is_empty())
 }
 
 fn digest_document(digest: &Digest, target: &Target) -> DocumentPut {
@@ -497,14 +547,19 @@ mod tests {
         assert_eq!(kind("memory/weeks/2026-W36.md"), Kind::Digest);
         assert_eq!(kind("memory/months/2026-09.md"), Kind::Digest);
         assert_eq!(kind("memory/facts/user.md"), Kind::Ignored);
-        assert_eq!(kind("memory/README.md"), Kind::File);
+        assert_eq!(kind("memory/README.md"), Kind::File(Files::Other));
         assert_eq!(
             kind("sessions/2026/04/2026-04-11-13-43-0cebc9fa/conversation.json"),
             Kind::Ignored
         );
         assert_eq!(kind("skills/brag/uv.lock"), Kind::Ignored);
         assert_eq!(kind("skills/brag/src/cli.py"), Kind::Ignored);
-        assert_eq!(kind("skills/brag/SKILL.md"), Kind::File);
+        assert_eq!(kind("skills/brag/SKILL.md"), Kind::File(Files::Skill));
+        assert_eq!(
+            kind("skills/mermaid/references/flowchart.md"),
+            Kind::File(Files::Skill)
+        );
+        assert_eq!(kind("research/klima/README.md"), Kind::File(Files::Other));
     }
 
     #[test]
@@ -614,6 +669,19 @@ mod tests {
         assert_eq!(
             document.text,
             "Mostly homelab work, and a trip with Anna.\n\n## Highlights\n\n- Planned the Talos upgrade.\n\n## Open loops\n\n- Back up etcd."
+        );
+    }
+
+    #[test]
+    fn a_skill_is_titled_by_its_front_matter_name() {
+        assert_eq!(
+            front_matter_name("---\nname: moneydb\ndescription: x\n---\n# MoneyDB skill\n"),
+            Some("moneydb".to_owned())
+        );
+        assert_eq!(front_matter_name("# Brag\n\nname: not front matter"), None);
+        assert_eq!(
+            front_matter_name("---\ndescription: x\n---\nname: below"),
+            None
         );
     }
 }
