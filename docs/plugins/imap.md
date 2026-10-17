@@ -27,7 +27,7 @@ Each run lists all eligible messages, marks known identities seen, fetches new U
 
 ## Verify and diagnose
 
-Inspect Activity for folder/message/new counts and run errors. Search a distinctive subject with source `mail/personal`; expand the thread or turn collapse off to see individual messages. Test the origin link on the device where you actually read mail.
+Inspect Activity for folder/message/new counts and run errors. Search a distinctive subject with source `mail/personal`; open a hit's title and use the viewer's previous/next thread links to read individual messages. Test the origin link on the device where you actually read mail.
 
 Check server address, certificate trust and app-password policy for connection failures. The worker must reach the mail server, not your browser. Do not turn off TLS to work around an untrusted public certificate. A provider that only supports OAuth needs a different ingestion route.
 
