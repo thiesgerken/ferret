@@ -21,7 +21,7 @@ use mirror::{Digest, Fact, Session};
 pub const NAME: &str = "carapace";
 
 /// Indexes a carapace knowledge repository: its memory as sessions, facts and digests, and its
-/// other files.
+/// other Markdown files.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "carapace")]
@@ -62,8 +62,10 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         },
     };
 
-    // Documents link to carapace, so a new URL needs every document put again.
-    let indexing = json!({ "carapace_url": repository.target.carapace_url });
+    // Documents link to carapace, so a new URL needs every document put again. `files` names the
+    // rule for which other files are indexed: a new rule needs a full sync to sweep what the old
+    // one let in.
+    let indexing = json!({ "carapace_url": repository.target.carapace_url, "files": "markdown" });
     let stats = match repository.changes(&indexing).await? {
         Ok(changes) => repository.apply(changes).await?,
         Err(reason) => {
@@ -115,9 +117,9 @@ impl Repository<'_> {
             return Ok(Err("no earlier run".to_owned()));
         };
         match state.get("indexing") {
-            None => return Ok(Err("the last run stored no carapace URL".to_owned())),
+            None => return Ok(Err("the last run stored no indexing settings".to_owned())),
             Some(stored) if stored != indexing => {
-                return Ok(Err("the carapace URL changed".to_owned()));
+                return Ok(Err("the indexing settings changed".to_owned()));
             }
             Some(_) => {}
         }
@@ -281,7 +283,9 @@ impl Repository<'_> {
 enum Kind {
     Session,
     Digest,
-    /// `memory/facts/*.md` repeats the facts of the session files.
+    /// `memory/facts/*.md` repeats the facts of the session files. Files other than Markdown are
+    /// skills' code, lockfiles and configuration, and carapace's raw session dumps
+    /// (`conversation.json`), which the sessions and facts distill.
     Ignored,
     File,
 }
@@ -293,7 +297,7 @@ fn kind(path: &str) -> Kind {
     } else if markdown && (path.starts_with("memory/weeks/") || path.starts_with("memory/months/"))
     {
         Kind::Digest
-    } else if path.starts_with("memory/facts/") {
+    } else if path.starts_with("memory/facts/") || !markdown {
         Kind::Ignored
     } else {
         Kind::File
@@ -385,18 +389,13 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
     documents
 }
 
-/// Any other file of the repository, like the git plugin indexes it.
+/// Any other Markdown file of the repository, like the git plugin indexes it.
 fn file_document(path: &str, text: String, history: &FileHistory, target: &Target) -> DocumentPut {
-    let content_type = if path.ends_with(".md") {
-        ContentType::Markdown
-    } else {
-        ContentType::Plain
-    };
     DocumentPut {
         source: target.source("files"),
         external_id: path.to_owned(),
-        content_type,
-        title: Some(git::title(path, &text, content_type)),
+        content_type: ContentType::Markdown,
+        title: Some(git::title(path, &text, ContentType::Markdown)),
         text,
         url: Some(target.url("/knowledge", "path", path)),
         thread: None,
@@ -499,6 +498,12 @@ mod tests {
         assert_eq!(kind("memory/months/2026-09.md"), Kind::Digest);
         assert_eq!(kind("memory/facts/user.md"), Kind::Ignored);
         assert_eq!(kind("memory/README.md"), Kind::File);
+        assert_eq!(
+            kind("sessions/2026/04/2026-04-11-13-43-0cebc9fa/conversation.json"),
+            Kind::Ignored
+        );
+        assert_eq!(kind("skills/brag/uv.lock"), Kind::Ignored);
+        assert_eq!(kind("skills/brag/src/cli.py"), Kind::Ignored);
         assert_eq!(kind("skills/brag/SKILL.md"), Kind::File);
     }
 
