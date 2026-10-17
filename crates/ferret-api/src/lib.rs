@@ -51,19 +51,32 @@ pub struct DocumentPut {
     pub meta: Map<String, Value>,
 }
 
+/// What `PUT /api/documents` did, e.g. `{"outcome": "created", "id": "…"}`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PutOutcome {
-    Created,
-    Updated,
+#[serde(tag = "outcome", rename_all = "lowercase")]
+pub enum PutResponse {
+    Created {
+        id: Uuid,
+    },
+    Updated {
+        id: Uuid,
+    },
     /// Same content as stored: nothing was rewritten.
-    Unchanged,
+    Unchanged {
+        id: Uuid,
+    },
+    /// The user excluded the document or its thread from the index: nothing was stored.
+    Excluded,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PutResponse {
-    pub id: Uuid,
-    pub outcome: PutOutcome,
+impl PutResponse {
+    /// The stored document's id, `None` when it was excluded.
+    pub fn id(&self) -> Option<Uuid> {
+        match self {
+            Self::Created { id } | Self::Updated { id } | Self::Unchanged { id } => Some(*id),
+            Self::Excluded => None,
+        }
+    }
 }
 
 /// A stored document, as `GET /api/documents/{id}` returns it.

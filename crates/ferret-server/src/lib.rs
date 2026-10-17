@@ -18,6 +18,7 @@ mod connections;
 mod content_type;
 mod documents;
 mod error;
+mod exclusions;
 pub mod graphql;
 mod highlight;
 mod runs;

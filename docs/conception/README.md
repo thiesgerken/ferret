@@ -119,7 +119,8 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
 
 ```text
 PUT    /api/documents                           upsert by (source, external_id), idempotent
-                                                -> {id, outcome: created | updated | unchanged}
+                                                -> {outcome: created | updated | unchanged, id}
+                                                   or {outcome: excluded}, nothing stored
 DELETE /api/documents?source=&external_id=      204, or 404 if there is no such document
 POST   /api/syncs                {source}      -> {sync_id}
 POST   /api/syncs/{id}/seen      {source, external_ids}

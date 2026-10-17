@@ -299,7 +299,8 @@ async fn a_key_only_finds_its_own_users_documents_in_its_sources(pool: PgPool) {
         .put_document(&document("paperless", "foreign", "shared word"))
         .await
         .unwrap()
-        .id;
+        .id()
+        .unwrap();
     sqlx::query(
         "insert into users (id, username, password_hash, created_at, password_changed_at)
          values (gen_random_uuid(), 'other', 'x', now(), now())",

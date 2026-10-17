@@ -14,7 +14,10 @@ async fn ingest(api: &Client) -> Vec<Uuid> {
         let mut mail = document("mail/zoho", external_id, "About the invoice for March.");
         mail.thread = Some("invoices".to_owned());
         mail.created_at = day(created);
-        thread.push((created, api.put_document(&mail).await.unwrap().id));
+        thread.push((
+            created,
+            api.put_document(&mail).await.unwrap().id().unwrap(),
+        ));
     }
     api.put_document(&document("mail/zoho", "lone", "Another invoice."))
         .await

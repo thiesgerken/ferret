@@ -12,7 +12,7 @@ use axum::{
     http::StatusCode,
 };
 use chrono::{DateTime, Utc};
-use ferret_api::{Document, DocumentPut, PutOutcome, PutResponse, ThreadQuery, ThreadResponse};
+use ferret_api::{Document, DocumentPut, PutResponse, ThreadQuery, ThreadResponse};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, types::Json as Jsonb};
@@ -23,7 +23,7 @@ use crate::{
     api_auth::{ApiCaller, Scope},
     chunking, connections, content_type,
     error::ApiError,
-    sources,
+    exclusions, sources,
 };
 
 pub async fn put(
@@ -53,6 +53,9 @@ pub async fn put(
     connections::check_api_key_may_write(&state.pool, &caller, &document.source, false).await?;
 
     let mut tx = state.pool.begin().await?;
+    if exclusions::is_excluded(&mut *tx, caller.user_id, &document).await? {
+        return Ok(Json(PutResponse::Excluded));
+    }
     let response = upsert(&mut tx, caller.user_id, &document).await?;
     tx.commit().await?;
     Ok(Json(response))
@@ -268,7 +271,7 @@ async fn upsert(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let (id, outcome) = match stored {
+    let (id, response) = match stored {
         Some(stored) if stored.content_hash == content_hash => {
             sqlx::query!(
                 "update documents set seen_at = now() where id = $1",
@@ -276,10 +279,7 @@ async fn upsert(
             )
             .execute(&mut *tx)
             .await?;
-            return Ok(PutResponse {
-                id: stored.id,
-                outcome: PutOutcome::Unchanged,
-            });
+            return Ok(PutResponse::Unchanged { id: stored.id });
         }
         Some(stored) => {
             sqlx::query!(
@@ -302,7 +302,7 @@ async fn upsert(
             )
             .execute(&mut *tx)
             .await?;
-            (stored.id, PutOutcome::Updated)
+            (stored.id, PutResponse::Updated { id: stored.id })
         }
         None => {
             // ponytail: two concurrent first PUTs of the same document make one fail on the
@@ -329,11 +329,11 @@ async fn upsert(
             )
             .fetch_one(&mut *tx)
             .await?;
-            (id, PutOutcome::Created)
+            (id, PutResponse::Created { id })
         }
     };
     sync_chunks(tx, id, user_id, document).await?;
-    Ok(PutResponse { id, outcome })
+    Ok(response)
 }
 
 /// Makes the document's chunks match its text: chunks with an unchanged text keep their row,
