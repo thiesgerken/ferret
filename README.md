@@ -136,8 +136,7 @@ Start at the [documentation index](docs/README.md), or go directly to:
 - [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
 - Plugin setup: [git](docs/plugins/git.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md).
-- [MCP availability and setup](docs/api/mcp.md): current-main support requires the pending MCP
-  implementation. Check this prerequisite before using the MCP instructions above.
+- [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
 - [Development](docs/development.md): local development and tests.
 
 Design background remains in [conception](docs/conception/README.md),

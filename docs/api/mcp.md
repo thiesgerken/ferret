@@ -1,21 +1,19 @@
 # MCP for agents
 
-## Availability prerequisite
+## Availability and credentials
 
-**Stock main at the documentation baseline (0.14.0) does not expose `/mcp`.** The implementation is in [open PR #131](https://github.com/thiesgerken/ferret/pull/131), branch `128-mcp`, and was still unmerged when this guide was written. The README's earlier MCP description is not evidence that your deployed server contains it. Deploy a reviewed build containing that change before using the instructions below. Do not replace a working server with an unreviewed branch solely to follow this guide. Until then, use the [HTTP API](../ingestion.md) for agent integration.
+Ferret exposes MCP at `/mcp` on current main (0.15.0). Use a deployment containing that implementation, with the reverse proxy forwarding `/mcp` to the server. Older builds without that route require an upgrade, not a different API-key scope.
 
-The following contract describes the implementation inspected in that PR, not a guarantee for the released main build. Source: [mcp.rs in PR #131](https://github.com/thiesgerken/ferret/blob/128-mcp/crates/ferret-server/src/mcp.rs).
+Create an API key in Settings with `search:read` and only the source roots the agent should read. Omit the source restriction for all of that user's sources; an explicit empty array is rejected. Do not give an agent `ingest:write` merely to search. The endpoint uses API-key bearer authentication, not the UI session cookie or an OAuth sign-in flow.
 
-## Client setup on an MCP-enabled build
-
-Create an API key in Settings with `search:read` and only the source roots the agent should read. An empty source restriction means all of that user's sources, not no access. Do not give an agent `ingest:write` merely to search. The endpoint uses API-key bearer authentication, not the UI session cookie or an OAuth sign-in flow.
+## Client setup
 
 ```sh
 claude mcp add --transport http ferret https://ferret.example.com/mcp \
   --header "Authorization: Bearer $FERRET_KEY"
 ```
 
-Use your actual HTTPS origin and key. This is Streamable HTTP, not stdio or the old SSE endpoint. Ensure your reverse proxy actually routes `/mcp` to the MCP-enabled server; baseline proxy/chart routes may need the corresponding PR's changes. Protect the stored client configuration as a credential.
+Use your actual HTTPS origin and key. This is Streamable HTTP, not stdio or the old SSE endpoint. The included proxy and Helm HTTPRoute route `/mcp` to the public server. Protect the stored client configuration as a credential.
 
 ## Tools and workflow
 
@@ -37,4 +35,24 @@ Authorization is checked on every request and tool. A key only sees its user's d
 
 ## Diagnose before changing credentials
 
-A 404 on stock main is expected: the route is absent, not a missing scope. On an MCP-enabled build, distinguish proxy routing errors from invalid/revoked keys and insufficient `search:read` scope. A document outside the key's scope is not readable even if another client knows its id. No MCP runtime success is claimed for the main baseline; verify against the exact build you deploy.
+Distinguish proxy routing/older-build 404 errors from invalid/revoked keys (401) and insufficient `search:read` scope (403). A document outside the key's scope produces a tool error even if another client knows its id. MCP returns protocol/tool errors inside the JSON-RPC response; successful HTTP transport does not guarantee a successful tool result.
+
+## Raw HTTP example
+
+For a protocol smoke, send both accepted response types and initialize before tool calls. This server is stateless and returns JSON rather than requiring a session id:
+
+```sh
+curl --fail-with-body -sS "$FERRET_URL/mcp" \
+  -H "Authorization: Bearer $FERRET_KEY" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ferret-smoke","version":"1"}}}'
+
+curl --fail-with-body -sS "$FERRET_URL/mcp" \
+  -H "Authorization: Bearer $FERRET_KEY" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search","arguments":{"query":"Brocken","sources":["demo/chat"],"mode":"keyword","limit":5}}}'
+```
+
+Tool results include structured content. Read `result.isError` and protocol `error`, not just the HTTP status. Search first to obtain a real UUID, then call `get_document` with it. Source and permission enforcement is shared with REST search/document reads; MCP additionally requires `search:read` at its entry point.
+
+Implementation: [MCP server](../../crates/ferret-server/src/mcp.rs), [transport/auth tests](../../crates/ferret-server/tests/mcp.rs), [public routing](../../crates/ferret-server/src/lib.rs).

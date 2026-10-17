@@ -60,7 +60,7 @@ After the run succeeds, search `discovery` in keyword mode and filter to source 
 
 - [Connections](connections.md) and the individual plugin guides explain how to connect your own data with minimal origin credentials.
 - [HTTP ingestion](ingestion.md) provides a complete write and reconciliation example.
-- [MCP](api/mcp.md) explains the current prerequisite before connecting an agent.
+- [MCP](api/mcp.md) connects an agent with a source-scoped search key.
 - [Helm deployment](../charts/ferret/README.md) replaces the insecure local configuration.
 - [Development](development.md) covers host tooling and tests.
 

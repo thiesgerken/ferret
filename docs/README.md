@@ -11,7 +11,7 @@ Ferret is a personal search index. It copies text from origins, indexes it, and 
 
 - [HTTP ingestion](ingestion.md): write documents and safely reconcile deletions.
 - Plugin setup: [git](plugins/git.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md).
-- [MCP availability and setup](api/mcp.md): the implementation currently requires the unmerged MCP change, not stock main.
+- [MCP setup](api/mcp.md): connect agents with source-scoped search keys.
 
 ## Deploy and operate
 
