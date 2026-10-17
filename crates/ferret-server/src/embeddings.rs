@@ -667,7 +667,10 @@ async fn wake_on_chunks(
     loop {
         match listener {
             Ok(mut listening) => {
-                while listening.recv().await.is_ok() {
+                // Notifications sent while no one listened are lost, so the pumps look again.
+                // `try_recv` returns `None` after it reconnected by itself, for the same reason.
+                embedding.wake.send_replace(());
+                while listening.try_recv().await.is_ok() {
                     embedding.wake.send_replace(());
                 }
                 tracing::warn!("embed pump lost its notification connection");
@@ -789,8 +792,10 @@ async fn embed_batch(
         return Ok(0);
     }
     // An admin may have switched the TEI off while the claim waited for a connection: chunks
-    // ingested after the switch go to another TEI. Rolls back the claim.
+    // ingested after the switch go to another TEI. The rollback releases the claim before the
+    // other pumps look: dropping the transaction would only queue it.
     if tei.serving(Use::Embedding) != Some((embedding.index_of(model), served.to_owned())) {
+        tx.rollback().await?;
         embedding.wake.send_replace(());
         return Ok(0);
     }
