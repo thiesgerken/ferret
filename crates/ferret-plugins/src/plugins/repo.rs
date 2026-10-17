@@ -111,10 +111,7 @@ impl Checkout {
         &self,
         cursor: &str,
     ) -> Result<Result<Vec<Change>, String>, PluginError> {
-        // From a connection's state, but it ends up in a git command line.
-        if cursor.is_empty() || !cursor.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("the stored commit {cursor:?} isn't a commit hash").into());
-        }
+        check_commit(cursor)?;
         if !self
             .succeeds(&["merge-base", "--is-ancestor", cursor, "HEAD"])
             .await?
@@ -134,6 +131,17 @@ impl Checkout {
             ])
             .await?;
         Ok(Ok(name_status(&diff)?))
+    }
+
+    /// The file at `path` as of `commit`, `None` if it didn't exist there. For files whose earlier
+    /// version a run already read, so the checks of [`Self::text`] passed back then.
+    pub async fn text_at(&self, commit: &str, path: &str) -> Result<Option<String>, PluginError> {
+        check_commit(commit)?;
+        let object = format!("{commit}:{path}");
+        if !self.succeeds(&["cat-file", "-e", &object]).await? {
+            return Ok(None);
+        }
+        Ok(Some(self.git(&["show", &object]).await?))
     }
 
     /// The text of the file at `path` with the given mode, or why it can't be indexed: not a
@@ -196,6 +204,14 @@ impl Checkout {
                 .map_err(|_| format!("git {} took too long", args.join(" ")))??;
         Ok(status.success())
     }
+}
+
+/// Commits come from a connection's state, but end up in git command lines.
+fn check_commit(commit: &str) -> Result<(), PluginError> {
+    if commit.is_empty() || !commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("the stored commit {commit:?} isn't a commit hash").into());
+    }
+    Ok(())
 }
 
 async fn output(command: &mut Command, name: &str) -> Result<String, PluginError> {
