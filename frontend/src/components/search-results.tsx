@@ -6,6 +6,7 @@ import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery } from "@/gql/graphql";
 import { TIME_RANGES, searchHref, type SearchState } from "@/lib/search-url";
+import { useConnectionRoots } from "@/lib/connection-roots";
 import { sourceLabel } from "@/lib/source-label";
 import { cn } from "@/lib/utils";
 import { HomeLink } from "@/components/brand-mark";
@@ -84,16 +85,6 @@ const EmbeddingModelNamesQuery = graphql(`
   }
 `);
 
-// A connection's root, so a source reads as the connection's name and the path below it.
-const ConnectionRootsQuery = graphql(`
-  query ConnectionRoots {
-    connections {
-      id
-      source
-    }
-  }
-`);
-
 type Result = SearchHitsQuery["search"];
 
 
@@ -126,11 +117,7 @@ export function SearchResults({
     requestPolicy: "cache-and-network",
   });
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
-  const [{ data: connections }] = useQuery({ query: ConnectionRootsQuery });
-  const roots = useMemo(
-    () => new Map((connections?.connections ?? []).map((connection) => [connection.id, connection.source])),
-    [connections],
-  );
+  const roots = useConnectionRoots();
   const hits = data?.search.hits ?? [];
   // The bars need the cut-off of the model that ran. Until the models are in, hits go without.
   const minSimilarity = models?.embeddingModels.find((model) => model.name === data?.search.model)?.minSimilarity;
@@ -147,7 +134,6 @@ export function SearchResults({
     },
     [client, input],
   );
-
 
   // A query typed before a chip click or Back must not land on top of it: it was typed into a
   // search that's gone.
@@ -190,7 +176,17 @@ export function SearchResults({
         <main className="mt-4 min-w-0 space-y-6 lg:mt-0">
           {(data || error) && (
             <div className="space-y-1">
-              {data && <Stats result={data.search} sources={state.sources} className={cn(fetching && "opacity-60")} />}
+              {data && (
+                <Stats
+                  result={data.search}
+                  sources={state.sources.map(
+                    (source) =>
+                      sourceLabel(source, data.search.facets.sources.find((facet) => facet.value === source)?.writer, roots)
+                        .text,
+                  )}
+                  className={cn(fetching && "opacity-60")}
+                />
+              )}
               {semanticUnavailable && (
                 <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />

@@ -36,7 +36,14 @@ const EXPLORATION = {
   ],
   facets: {
     __typename: "Facets",
-    sources: [{ __typename: "FacetCount", value: "mail/zoho", count: 51 }],
+    sources: [
+      {
+        __typename: "SourceCount",
+        value: "mail/zoho",
+        count: 51,
+        writer: { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Mail", icon: "mail" },
+      },
+    ],
     contentTypes: [{ __typename: "ContentTypeCount", contentType: "EMAIL", count: 51 }],
     authors: [{ __typename: "FacetCount", value: "Ada", count: 30 }],
     months: [{ __typename: "FacetCount", value: "2026-01", count: 51 }],
@@ -47,7 +54,11 @@ async function renderExplore(state: ExploreState) {
   const variables: unknown[] = [];
   const changes: ExploreState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
-    variables.push(JSON.parse(String(init?.body)).variables);
+    const operation = JSON.parse(String(init?.body));
+    if (operation.operationName === "ConnectionRoots") {
+      return Response.json({ data: { connections: [{ __typename: "Connection", id: "c1", source: "mail" }] } });
+    }
+    variables.push(operation.variables);
     return Response.json({ data: { explore: EXPLORATION } });
   });
   const view = await renderReact(
@@ -88,9 +99,10 @@ test("lists a page of documents that open the viewer, with facet counts", async 
 
 test("a facet narrows the table and starts over at the first page", async () => {
   const { view, changes, button } = await renderExplore(STATE);
+  assert.equal(button("Mail › zoho").closest("li")?.querySelector("[title]")?.getAttribute("title"), "mail/zoho", "a source reads under its writer");
 
   await act(async () => {
-    button("mail/zoho").click();
+    button("Mail › zoho").click();
   });
   await act(async () => {
     button("2026-01").click();

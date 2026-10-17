@@ -3,8 +3,10 @@ import test from "node:test";
 import { act, useState } from "react";
 
 import { renderReact, settle } from "../../test/react-test-utils";
-import { CURATED_ICONS, IconPicker, searchIcons } from "./icon-picker";
-import { isIconName, NamedIcon } from "./named-icon";
+import { CURATED_ICONS, searchIcons } from "./icon-grid";
+import { IconPicker } from "./icon-picker";
+import { NamedIcon } from "./named-icon";
+import { isIconName } from "./named-icon-loader";
 
 test("every suggested icon is one lucide has", () => {
   assert.deepEqual(CURATED_ICONS.filter((name) => !isIconName(name)), []);
@@ -33,6 +35,7 @@ test("picking an icon from the grid chooses it and closes the grid", async () =>
   const toggle = view.container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
 
   await act(async () => toggle.click());
+  await settle();
   const search = view.container.querySelector<HTMLInputElement>("input[aria-label='Search icons']")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(search, "piggy");

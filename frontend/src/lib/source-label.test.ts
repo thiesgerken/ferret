@@ -19,3 +19,10 @@ test("an API key's source shows whole after the key's name, an unknown writer as
   assert.deepEqual(sourceLabel("demo/notes", seed, roots), { icon: "key-round", text: "demo seed › demo › notes" });
   assert.deepEqual(sourceLabel("demo/notes", null, roots), { icon: null, text: "demo › notes" });
 });
+
+test("a parent above a connection's root reads as the connection, and so does any source until roots load", () => {
+  const journal: Writer = { kind: "CONNECTION", id: "c2", name: "Journal", icon: "notebook" };
+  const withJournal = new Map([["c2", "notes/journal"]]);
+  assert.deepEqual(sourceLabel("notes", journal, withJournal), { icon: "notebook", text: "Journal" });
+  assert.deepEqual(sourceLabel("carapace/files", carapace, undefined), { icon: "brain", text: "Lumi's memory" });
+});
