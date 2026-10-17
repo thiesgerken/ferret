@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "ferret.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "ferret.config" . | nindent 4 }}

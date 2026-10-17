@@ -216,8 +216,14 @@ async fn try_claim(
 
     let config = match &connection.credentials {
         None => Ok(connection.config),
-        Some(sealed) => (state.config_key.open(sealed))
-            .map(|credentials| credentials::merge(connection.config, credentials)),
+        Some(sealed) => {
+            let owner = credentials::Owner {
+                user_id: connection.user_id,
+                connection_id: connection.id,
+            };
+            (state.config_key.open(sealed, owner))
+                .map(|credentials| credentials::merge(connection.config, credentials))
+        }
     };
     // A run that can't get its credentials fails right here, so its connection doesn't block the
     // queue and the user sees why in the run history.

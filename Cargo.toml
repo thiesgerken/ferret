@@ -36,6 +36,7 @@ sqlx = { version = "0.9", default-features = false, features = [
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde-saphyr = "2"
 sha2 = "0.11"
 subtle = "2"
 tempfile = "3"
@@ -45,7 +46,7 @@ rust-stemmers = "1.2"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-uuid = { version = "1", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v7"] }
 
 # Unoptimized, Argon2 takes seconds per hash, which makes every login in tests and `cargo run`
 # crawl.

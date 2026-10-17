@@ -33,7 +33,7 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone over HTTPS (token write-only, [#11](https://github.com/thiesgerken/ferret/issues/11)) |
+| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule) needs it entered again |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
 | `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
@@ -46,12 +46,15 @@ are the files plugin's job ([Roadmap](#roadmap)).
   the run log.
 - Remotes are limited to HTTPS, so a connection can't reach the worker's filesystem or plain-HTTP
   services in the cluster. A git command that runs longer than 30 minutes fails the run.
-- With `{commit}` in `url_template`, every new commit changes every file's URL, so a full sync
-  puts (and re-chunks) every file again.
 - First run: full ingest inside a sync, commit at the end. Later runs:
-  `git diff --name-status <cursor>..HEAD`, `PUT` changed files, `DELETE` removed ones, renames are
-  both. Cursor = `HEAD`.
-- If the cursor is no longer reachable (force push), the plugin falls back to a full sync.
+  `git diff --name-status --no-renames <cursor> HEAD`, `PUT` changed files, `DELETE` removed ones
+  (and files that can't be indexed any more), renames are both. The state stores the cursor
+  (`HEAD` of the last successful run) and the indexing settings (remote, branch, globs,
+  `url_template`).
+- Full sync instead when the cursor is no longer in the branch's history (force push) or the
+  indexing settings changed, since files the diff doesn't mention may now be in or out.
+- With `{commit}` in `url_template`, an unchanged file keeps the URL of the commit it was last
+  indexed at. That commit shows the same content, so the link stays right.
 
 ### Paperless
 
