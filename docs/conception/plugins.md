@@ -3,8 +3,8 @@
 ## TLDR
 
 A plugin turns one kind of origin into documents. It decides what a document is, the server only
-chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**. Further
-plugins follow continuously, see [Roadmap](#roadmap).
+chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**.
+[AFFiNE](#affine) followed. Further plugins follow continuously, see [Roadmap](#roadmap).
 
 ## Contract
 
@@ -158,6 +158,55 @@ change its rendering freely.
   full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
   a commit.
 
+## After v1
+
+### AFFiNE
+
+Indexes the docs of a workspace on a self-hosted AFFiNE (checked against 0.27.3). AFFiNE has no
+Markdown export for private docs and no personal access tokens for its API, so the plugin signs in
+as a user and turns each doc's Yjs state into Markdown itself.
+
+| Config | Meaning |
+|---|---|
+| `url` | AFFiNE as the worker reaches it, e.g. the in-cluster service. Not behind a login proxy: a redirect fails the run |
+| `public_url` | the address people open, which documents link to. `url` when left out |
+| `workspace_id` | the id in the workspace's address, `/workspace/<id>/…` |
+| `email`, `password` | the user the plugin signs in as, `password` write-only. Invite a ferret user with read access to the workspace rather than using your own account |
+
+- One document per doc outside the trash, `external_id` = doc id, `content_type = markdown`,
+  `title` from the page (the root doc's title when the page has none), `created_at` from the root
+  doc, `modified_at` = the server's `updatedAt`, `url` = `{public_url}/workspace/{workspace}/{doc}`.
+- Every run signs in (`POST /api/auth/sign-in`, session cookie) and is a sync:
+  - The workspace's root doc (`GET /api/workspaces/{ws}/docs/{ws}`, Yjs) lists every doc
+    (`meta.pages`) and whether it's in the trash. The trash lives only there.
+  - `seen` for every doc outside the trash. Trashed and deleted docs disappear with the sweep.
+  - GraphQL `recentlyUpdatedDocs`, newest first, finds the docs the server changed after the cursor.
+    Those are fetched (`GET /api/workspaces/{ws}/docs/{doc}`) and `PUT`. It pages with
+    `updatedAt < after`, so each page asks up to and including the last one's time, and repeats are
+    dropped: ties at a page's end are never skipped. A full page of docs with one and the same time
+    can't be paged past and fails the run.
+  - A doc the root doc lists but the server has no content for yet (no client synced it) is
+    skipped. A full fetch logs how many.
+- Cursor = the newest `updatedAt`, minus 10 minutes on the next run: a save during the last
+  listing, and AFFiNE's merge lag (`updatedAt` is the newest merged update's time, visible once the
+  server merged it). The state also stores the settings (`url`, `public_url`, `workspace_id`),
+  whose change fetches every doc again, and the trashed doc ids: leaving the trash doesn't change a
+  doc on the server, so a doc that left it is fetched by itself (`workspace.doc(docId)` for its
+  `updatedAt`).
+- What only the root doc knows doesn't change a doc on the server, so it shows on the doc's next
+  edit (or a full fetch): a linked doc's new title in the docs that link to it. For the same reason
+  the documents carry no `meta`: AFFiNE's tags and a doc's mode (page or edgeless) live in the root
+  doc too, and would go stale the same way.
+- Yjs → Markdown (`affine/markdown.rs`, on `yrs`): paragraphs (text, headings, quotes), lists
+  (bulleted, numbered, todo, toggle, nested), code, dividers, tables, databases (title, then a table
+  of the rows with their cells, select options by name), equations, images by caption, attachments
+  by name, bookmarks and embeds as links. Linked docs, inline references and synced docs become
+  `[title](link)`. Inline bold, italic, strike, code and links keep their Markdown. Canvas-only
+  elements of edgeless docs (shapes, connectors, frames) are left out, their notes read like a page.
+  A block type the plugin doesn't know keeps its text, and the run log names it. A block among its
+  own descendants (a corrupt doc, or two moves merged into a cycle) renders once.
+- Not AFFiNE's own converter (`affine_doc_loader`): it's AGPL-3.0-only, and ferret is MIT.
+
 ## Roadmap
 
 In rough order of value per effort:
@@ -169,10 +218,7 @@ In rough order of value per effort:
 2. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
    follows as its own plugin (Microsoft Graph rather than IMAP).
 3. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
-4. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
-   already talks to AFFiNE through an MCP server, which shows a working API and auth path. Worst
-   case, the MCP server is the API.
-5. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
+4. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
 
 ### Email
 
