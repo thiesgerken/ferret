@@ -360,7 +360,7 @@ impl Embedding {
 
 /// Embeds chunks in the background until the process ends: the default model first, newest
 /// chunks first. Woken by `chunks_pending` after ingests. Several pumps (server replicas) share
-/// the queue through `SKIP LOCKED`.
+/// the queue through the claim's advisory locks.
 pub async fn run_pump(pool: PgPool, embedding: Arc<Embedding>) {
     let mut listener = loop {
         match listen(&pool).await {

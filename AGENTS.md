@@ -21,7 +21,9 @@ Keep `docs/` up to date when a change alters what it describes.
 - Start everything for development: `docker compose up`
 - Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`
 - Build: `cargo build --workspace`
-- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_SESSION_SECRET=<32+ bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`
+- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
+  The config file's TEI URLs must be reachable from the host (compose's `docker/ferret.yaml` uses
+  `http://tei:80`, which only works inside compose).
 - Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`
 - After changing a query or a migration, refresh the sqlx query metadata (needs
   `cargo install sqlx-cli` and a migrated database):
@@ -52,14 +54,16 @@ docker-compose.yml   development only, the deployment is the Helm chart
 - `#[sqlx::test(migrations = false)]` gives each test its own database, the server's startup
   migrates it. `DATABASE_URL` comes from `.cargo/config.toml` (the compose ParadeDB), an exported
   one takes precedence.
-- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005). Builds read their metadata
-  from `.sqlx/` (`SQLX_OFFLINE`), so only tests need a database.
+- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005), except search, which is
+  built with `QueryBuilder`. Builds read their metadata from `.sqlx/` (`SQLX_OFFLINE`), so only
+  tests need a database.
 - Plugin parsers are tested against fixtures, the frontend with `node --test`.
 
 ## CI
 
-GitHub Actions on every pull request: fmt and clippy, tests against a ParadeDB service container,
-image build.
+GitHub Actions on every pull request: fmt and clippy, a check that `frontend/schema.graphql` and
+`.sqlx/` are current, tests against a ParadeDB service container, frontend lint and tests, helm
+lint, and PR images and chart published as `:pr<N>`.
 
 ## Conventions
 
@@ -69,10 +73,10 @@ image build.
   migration's checksum changed. Add a new one instead.
 - Migration versions are creation timestamps (`cargo sqlx migrate add --source
   crates/ferret-server/migrations <name>`, current UTC), never invented dates: parallel branches
-  that pick round numbers collide, and sqlx runs only one migration per version. The first
-  migrations are dated ahead of the clock, up to 2026-10-25. Until the clock passes them, take
-  the day after the newest version on integration/v1 and the open PRs, with the current UTC time
-  of day, so a migration still sorts after the ones it builds on.
+  that pick round numbers collide, and sqlx runs only one migration per version. Some migrations
+  are dated ahead of the clock. While the newest version on integration/v1 or in an open PR still
+  lies in the future, take the day after it, with the current UTC time of day, so a migration
+  still sorts after the ones it builds on.
 - Invalid state fails loudly: required config and fields stay required, no silent defaults.
 
 ### Commits

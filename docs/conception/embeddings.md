@@ -4,10 +4,12 @@
 
 Several embedding models can be live at the same time. Chunks are model-independent, embeddings
 are stored per chunk and model. The admin decides which models exist and get backfilled. Every user
-evaluates them on their own data and picks their own default.
+picks their own default and sees how much of their data each model covers. Evaluating models on
+one's own data is post-v1 (#21).
 
-Model evaluation is a regular feature, not a one-off: switching to a new model needs evidence that
-it retrieves better on my data. ferret collects that evidence from explicit "right hit" marks.
+Model evaluation is meant to be a regular feature, not a one-off: switching to a new model needs
+evidence that it retrieves better on my data. v1 collects that evidence from explicit "right hit"
+marks. Turning them into metrics is post-v1 (#21).
 
 ## Models
 
@@ -19,8 +21,8 @@ embedding:
   default: qwen3-embedding-0.6b
   models:
     - name: qwen3-embedding-0.6b
-      url: http://ferret-tei-qwen3:80             # queries, and the pump unless bulk_url is set
-      bulk_url: http://ferret-tei-qwen3-gpu:80    # optional: the pump only
+      url: http://ferret-tei-qwen3-embedding-0-6b:80          # queries, and the pump unless bulk_url is set
+      bulk_url: http://ferret-tei-qwen3-embedding-0-6b-gpu:80 # optional: the pump only
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
 ```
@@ -51,8 +53,9 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
 
 - **A model whose `max_input_length` is below the longest embedded input is rejected** and the
   server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
-  title, capped at 200 characters, a blank line and the chunk (at most 2000 characters), so 2202
-  characters at most. The check compares them one to one with `max_input_length` tokens: Latin
+  model's `document_prefix`, the title capped at 200 characters, a blank line and the chunk (at
+  most 2000 characters). The check covers title and chunk, 2202 characters, and leaves the prefix
+  out. It compares them one to one with `max_input_length` tokens: Latin
   text never takes more than one token per character, so a model that accepts 2202 tokens takes
   every input.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
@@ -84,7 +87,7 @@ create index chunk_embeddings_hnsw_qwen3_embedding_0_6b on chunk_embeddings
 `embedding_cache (text_hash, model)` stays: it saves compute when the same text appears in another
 chunk, another document or another user's data, and when chunks are re-created after re-chunking.
 `text_hash` is the SHA-256 of the whole embedded input: prefix, capped title and chunk text (for
-queries: prefix and query). Query embeddings go through the same cache.
+queries: prefix and the query's words, without `"…"` quotes and `-word`s). Query embeddings go through the same cache.
 
 Search embeds the query with the requested model and searches only that model's index, so vectors
 of different models are never compared.
@@ -94,9 +97,10 @@ of different models are never compared.
 All models embed the same chunks. That keeps comparisons fair (same units, same BM25 half) and
 storage simple. The consequences:
 
-- The chunker's cap (2000 characters, roughly 500 to 700 tokens of German text) must fit every
-  configured model. Current models accept 8k tokens and more, so this only excludes old
-  512-token models.
+- Every configured model must take the longest embedded input (title and chunk, 2202 characters,
+  see above; the chunker caps chunks at 2000 characters, roughly 500 to 700 tokens of German
+  text). Current models accept 8k tokens and more, so this only excludes models below 2202
+  tokens, such as old 512-token ones.
 - Chunk size can't be compared like models can. A chunker change means re-chunking all documents,
   after which every configured model re-embeds. If comparing chunkers becomes a need, `chunks` gets
   a `chunker` column (the same pattern as models).
@@ -168,11 +172,12 @@ A search may have several right hits, each its own judgment: recall@10 and MRR h
   flip it twice.
 - `query` is the query as typed, with whitespace collapsed. `filters` is the search's filters in
   canonical form: sources, authors and content types sorted without duplicates, `from`/`to` as
-  absolute times. The same search in another chip order is the same judgment, `k` isn't part of
-  it, and neither is `model`: evaluation replays a judged search with every model. A search `search` would reject can't be judged.
+  absolute times. The same search in another chip order is the same judgment. `k` and `collapse`
+  aren't part of it, and neither is `model`: evaluation (post-v1, #21) is to replay a judged
+  search with every model. A search `search` would reject can't be judged.
 - A relative time range ("Past week", `range` in GraphQL's `SearchInput`) is stored as its preset
   instead of the `from` it resolved to, so the same search tomorrow still shows its ✓ and a
-  second ✓ doesn't add a row. Replay anchors the preset at the judgment's `created_at`.
+  second ✓ doesn't add a row. Replay (#21) will anchor the preset at the judgment's `created_at`.
 
 ```sql
 create table relevance_judgments (
@@ -188,12 +193,14 @@ create table relevance_judgments (
 
 ### Measuring
 
-Settings, tab "Models", per configured model:
+Settings → Models, per configured model:
 
-- **Coverage**: the share of the user's chunks that have an embedding for this model.
-- **recall@10** and **MRR** over the user's judgments, each for vector-only and for hybrid search.
-  The server replays every judged query against the model and checks where the judged document
-  lands. Runs on demand, results are kept until the next run.
+- **Coverage** (v1): the share of the user's chunks that have an embedding for this model.
+- **recall@10** and **MRR** (post-v1, #21) over the user's judgments, each for vector-only and for
+  hybrid search. The server replays every judged query against the model and checks where the
+  judged document lands. Runs on demand, results are kept until the next run.
+- **Similarity cut-off** (post-v1, #21): calibrated per model from the same replays. v1 has none:
+  the vector half always contributes its 100 nearest chunks.
 
 Plus the model switch in the search UI, to compare result lists of two models by eye.
 
