@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into api_ingests\n                         (id, user_id, api_key_id, started_at, last_at, put, unchanged, deleted)\n                     values (uuidv7(), $1, $2, now(), now(), $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34c1d3958beddc972cd5d898494daa7d7144e9c1930d43501a27bae914bcfcc4"
+}

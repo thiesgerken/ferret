@@ -14,10 +14,11 @@ use juniper::{
     RootNode, graphql_object, graphql_value, http,
 };
 use sqlx::PgPool;
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::{
-    AppState,
+    AppState, activity,
     api_auth::Scope,
     api_keys::{self, ApiKey},
     auth,
@@ -85,6 +86,48 @@ impl Query {
                 plugins: worker.plugins,
                 last_seen_at: worker.last_seen_at,
                 online: worker.online,
+            })
+            .collect())
+    }
+
+    /// Plugin runs and bursts of API keys' writes, newest first: the signed-in user's, or every
+    /// user's with `allUsers` (admins only, no when left out). `writer` filters by a connection's
+    /// or key's id. For the next page, `before` takes the last ingest's `cursor`. `limit` is 1 to
+    /// 200, 50 when left out.
+    async fn activity(
+        context: &Context,
+        writer: Option<ID>,
+        before: Option<String>,
+        limit: Option<i32>,
+        all_users: Option<bool>,
+    ) -> FieldResult<Vec<Ingest>> {
+        let limit = limit.unwrap_or(50);
+        let all_users = all_users.unwrap_or(false);
+        if all_users {
+            require_admin(context)?;
+        }
+        if !(1..=200).contains(&limit) {
+            return Err(invalid_input("limit must be between 1 and 200".to_owned()));
+        }
+        let filter = activity::FeedFilter {
+            user_id: (!all_users).then_some(context.user.id),
+            writer_id: writer.as_ref().map(parse_id).transpose()?,
+            before: before
+                .map(|cursor| {
+                    activity::Cursor::decode(&cursor)
+                        .ok_or_else(|| invalid_input("not a cursor of this feed".to_owned()))
+                })
+                .transpose()?,
+            limit: i64::from(limit),
+        };
+        let ingests = activity::feed(&context.pool, &filter)
+            .await
+            .map_err(internal)?;
+        Ok(ingests
+            .into_iter()
+            .map(|ingest| Ingest {
+                owner: all_users.then(|| ingest.owner.clone()),
+                ingest,
             })
             .collect())
     }
@@ -196,6 +239,9 @@ impl Query {
                 name: model.name().to_owned(),
                 configured_default: model.name() == default,
                 min_similarity: model.config.min_similarity,
+                backlog: OnceCell::new(),
+                rate: OnceCell::new(),
+                health: OnceCell::new(),
             })
             .collect()
     }
@@ -352,6 +398,95 @@ struct ExcludedDocuments {
     remembered: bool,
 }
 
+/// A plugin run, or a burst of an API key's writes: those within 10 minutes of each other.
+struct Ingest {
+    ingest: activity::Ingest,
+    owner: Option<String>,
+}
+
+#[derive(GraphQLEnum)]
+enum IngestKind {
+    Run,
+    Api,
+}
+
+#[graphql_object(context = Context)]
+impl Ingest {
+    fn id(&self) -> ID {
+        ID::new(self.ingest.id.to_string())
+    }
+
+    /// Pass the last ingest's as `activity(before:)` for the next page.
+    fn cursor(&self) -> String {
+        activity::Cursor::of(&self.ingest).encode()
+    }
+
+    fn kind(&self) -> IngestKind {
+        match self.ingest.kind {
+            activity::IngestKind::Run => IngestKind::Run,
+            activity::IngestKind::Api => IngestKind::Api,
+        }
+    }
+
+    /// The connection that ran, or the key that wrote.
+    fn writer(&self) -> Writer {
+        Writer::from(self.ingest.writer.clone())
+    }
+
+    /// A burst is RUNNING while its key wrote in the last 10 minutes, then SUCCEEDED. It never
+    /// fails or gets LOST.
+    fn status(&self) -> RunStatus {
+        run_status(&self.ingest.status)
+    }
+
+    fn started_at(&self) -> DateTime<Utc> {
+        self.ingest.started_at
+    }
+
+    /// When a run finished, or a burst's last write.
+    fn finished_at(&self) -> Option<DateTime<Utc>> {
+        self.ingest.finished_at
+    }
+
+    /// Documents written. Counted as they arrive while RUNNING.
+    fn put(&self) -> i32 {
+        self.ingest.put
+    }
+
+    fn unchanged(&self) -> i32 {
+        self.ingest.unchanged
+    }
+
+    fn deleted(&self) -> i32 {
+        self.ingest.deleted
+    }
+
+    fn error(&self) -> Option<&str> {
+        self.ingest.error.as_deref()
+    }
+
+    /// Runs only: the tail of the run's log.
+    fn log(&self) -> Option<&str> {
+        self.ingest.log.as_deref()
+    }
+
+    /// Whose it is, in an admin's feed of every user.
+    fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
+    }
+}
+
+fn run_status(status: &str) -> RunStatus {
+    match status {
+        "running" => RunStatus::Running,
+        "succeeded" => RunStatus::Succeeded,
+        "failed" => RunStatus::Failed,
+        "lost" => RunStatus::Lost,
+        // The table's check constraint admits no other value.
+        status => panic!("unknown run status {status:?} in the database"),
+    }
+}
+
 #[derive(GraphQLEnum)]
 enum RunStatus {
     Running,
@@ -376,14 +511,7 @@ impl PluginRun {
     }
 
     fn status(&self) -> RunStatus {
-        match self.status.as_str() {
-            "running" => RunStatus::Running,
-            "succeeded" => RunStatus::Succeeded,
-            "failed" => RunStatus::Failed,
-            "lost" => RunStatus::Lost,
-            // The table's check constraint admits no other value.
-            status => panic!("unknown run status {status:?} in the database"),
-        }
+        run_status(&self.status)
     }
 
     fn started_at(&self) -> DateTime<Utc> {
@@ -788,6 +916,10 @@ struct EmbeddingModel {
     name: String,
     configured_default: bool,
     min_similarity: f64,
+    // Each worked out once per request, however many fields need it: the Activity page polls.
+    backlog: OnceCell<(i64, i64)>,
+    rate: OnceCell<f64>,
+    health: OnceCell<(bool, Option<bool>)>,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -823,6 +955,80 @@ impl EmbeddingModel {
             .await
             .map(count)
             .map_err(internal)
+    }
+
+    /// The user's chunks still waiting for the embed pump.
+    async fn pending(&self, context: &Context) -> FieldResult<i32> {
+        Ok(count(self.backlog(context).await?.0))
+    }
+
+    /// The user's chunks TEI refused, which the pump leaves out.
+    async fn failed(&self, context: &Context) -> FieldResult<i32> {
+        Ok(count(self.backlog(context).await?.1))
+    }
+
+    /// Chunks per minute the pump embedded over the last 10 minutes, across users: the pump is
+    /// shared.
+    async fn rate_per_minute(&self, context: &Context) -> FieldResult<f64> {
+        self.rate(context).await
+    }
+
+    /// Seconds until `pending` is embedded at `ratePerMinute`. Optimistic while other users'
+    /// chunks wait too, the pump shares its rate. Null when nothing is pending or the rate is 0.
+    async fn eta_seconds(&self, context: &Context) -> FieldResult<Option<i32>> {
+        let (pending, _) = self.backlog(context).await?;
+        let rate = self.rate(context).await?;
+        Ok(embeddings::eta_seconds(pending, rate).map(count))
+    }
+
+    /// Chunks per pump batch in the answering server process, 1 to 32: it shrinks on a TEI that
+    /// is too slow for full batches.
+    fn batch_size(&self, context: &Context) -> i32 {
+        count(self.model(context).batch_size() as i64)
+    }
+
+    /// Whether the TEI for search queries answers.
+    async fn online(&self, context: &Context) -> bool {
+        self.health(context).await.0
+    }
+
+    /// Whether the pump's TEI answers, null when it's the same as for queries.
+    async fn bulk_online(&self, context: &Context) -> Option<bool> {
+        self.health(context).await.1
+    }
+}
+
+impl EmbeddingModel {
+    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
+        self.backlog
+            .get_or_try_init(|| {
+                embeddings::user_backlog(&context.pool, context.user.id, &self.name)
+            })
+            .await
+            .copied()
+            .map_err(internal)
+    }
+
+    async fn rate(&self, context: &Context) -> FieldResult<f64> {
+        self.rate
+            .get_or_try_init(|| embeddings::rate_per_minute(&context.pool, &self.name))
+            .await
+            .copied()
+            .map_err(internal)
+    }
+
+    async fn health(&self, context: &Context) -> (bool, Option<bool>) {
+        *self
+            .health
+            .get_or_init(|| context.embedding.health(self.model(context)))
+            .await
+    }
+
+    fn model<'a>(&self, context: &'a Context) -> &'a embeddings::Model {
+        context
+            .embedding
+            .model(&self.name)
+            .expect("embeddingModels lists configured models only")
     }
 }
 
@@ -1493,6 +1699,49 @@ struct ModelStatus {
     last_error_at: Option<DateTime<Utc>>,
     /// Chunks still to embed, per source and across users. Empty when everything is embedded.
     backlog: Vec<SourceBacklog>,
+    /// Chunks with an embedding for this model, across users.
+    embedded: i32,
+    /// Every user's chunks.
+    chunks: i32,
+    /// Chunks per minute the pump embedded over the last 10 minutes.
+    rate_per_minute: f64,
+    /// Seconds until the whole backlog is embedded at that rate, null when it's empty or the
+    /// rate is 0.
+    eta_seconds: Option<i32>,
+    /// Chunks per pump batch in the answering server process.
+    batch_size: i32,
+    /// The TEI for queries, and the pump's if that's another one, from their `/metrics`.
+    teis: Vec<TeiStatus>,
+}
+
+#[derive(GraphQLEnum)]
+enum TeiRole {
+    Queries,
+    Pump,
+    /// Queries and the pump: no separate TEI for the pump is configured.
+    Both,
+}
+
+/// A TEI's figures, read from its `/metrics`. Null while they don't answer. The rates average the
+/// last minute and are null until two readings a few seconds apart exist.
+#[derive(GraphQLObject)]
+struct TeiStatus {
+    role: TeiRole,
+    url: String,
+    online: bool,
+    /// Inputs waiting in TEI's queue.
+    queue_size: Option<i32>,
+    /// Average inputs per inference batch.
+    batch_size: Option<f64>,
+    /// Inputs embedded per minute.
+    throughput_per_minute: Option<f64>,
+    /// Failed requests since TEI started.
+    failures: Option<i32>,
+    /// Share of the last minute TEI spent in inference, a CPU proxy. Can exceed 1 with batches
+    /// in parallel.
+    load: Option<f64>,
+    /// Pump TEIs only: seconds until the backlog is embedded at this throughput.
+    eta_seconds: Option<i32>,
 }
 
 #[derive(GraphQLObject)]
@@ -1521,6 +1770,33 @@ impl From<embeddings::ModelStatus> for ModelStatus {
                     source: backlog.source,
                     pending: count(backlog.pending),
                     failed: count(backlog.failed),
+                })
+                .collect(),
+            embedded: count(status.embedded),
+            chunks: count(status.chunks),
+            rate_per_minute: status.rate_per_minute,
+            eta_seconds: status.eta_seconds.map(count),
+            batch_size: count(status.batch_size as i64),
+            teis: status
+                .teis
+                .into_iter()
+                .map(|tei| TeiStatus {
+                    role: match tei.role {
+                        embeddings::TeiRole::Queries => TeiRole::Queries,
+                        embeddings::TeiRole::Pump => TeiRole::Pump,
+                        embeddings::TeiRole::Both => TeiRole::Both,
+                    },
+                    url: tei.url,
+                    online: tei.online,
+                    queue_size: tei.load.as_ref().map(|load| load.queue_size as i32),
+                    batch_size: tei.load.as_ref().and_then(|load| load.batch_size),
+                    throughput_per_minute: tei
+                        .load
+                        .as_ref()
+                        .and_then(|load| load.throughput_per_minute),
+                    failures: tei.load.as_ref().map(|load| load.failures as i32),
+                    load: tei.load.as_ref().and_then(|load| load.load),
+                    eta_seconds: tei.eta_seconds.map(count),
                 })
                 .collect(),
         }

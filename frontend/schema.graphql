@@ -28,11 +28,22 @@ enum DocumentOrder {
   SOURCE
 }
 
+enum IngestKind {
+  RUN
+  API
+}
+
 enum RunStatus {
   RUNNING
   SUCCEEDED
   FAILED
   "The worker stopped sending heartbeats." LOST
+}
+
+enum TeiRole {
+  QUERIES
+  PUMP
+  "Queries and the pump: no separate TEI for the pump is configured." BOTH
 }
 
 "A time range up to now."
@@ -224,6 +235,29 @@ type EmbeddingModel {
   embedded: Int!
   "How many chunks the user has."
   chunks: Int!
+  "The user's chunks still waiting for the embed pump."
+  pending: Int!
+  "The user's chunks TEI refused, which the pump leaves out."
+  failed: Int!
+  """
+    Chunks per minute the pump embedded over the last 10 minutes, across users: the pump is
+    shared.
+  """
+  ratePerMinute: Float!
+  """
+    Seconds until `pending` is embedded at `ratePerMinute`. Optimistic while other users'
+    chunks wait too, the pump shares its rate. Null when nothing is pending or the rate is 0.
+  """
+  etaSeconds: Int
+  """
+    Chunks per pump batch in the answering server process, 1 to 32: it shrinks on a TEI that
+    is too slow for full batches.
+  """
+  batchSize: Int!
+  "Whether the TEI for search queries answers."
+  online: Boolean!
+  "Whether the pump's TEI answers, null when it's the same as for queries."
+  bulkOnline: Boolean
 }
 
 type ExcludedDocuments {
@@ -334,6 +368,32 @@ type HitChunk {
   parts: [TextPart!]!
 }
 
+type Ingest {
+  id: ID!
+  "Pass the last ingest's as `activity(before:)` for the next page."
+  cursor: String!
+  kind: IngestKind!
+  "The connection that ran, or the key that wrote."
+  writer: Writer!
+  """
+    A burst is RUNNING while its key wrote in the last 10 minutes, then SUCCEEDED. It never
+    fails or gets LOST.
+  """
+  status: RunStatus!
+  startedAt: DateTime!
+  "When a run finished, or a burst's last write."
+  finishedAt: DateTime
+  "Documents written. Counted as they arrive while RUNNING."
+  put: Int!
+  unchanged: Int!
+  deleted: Int!
+  error: String
+  "Runs only: the tail of the run's log."
+  log: String
+  "Whose it is, in an admin's feed of every user."
+  owner: String
+}
+
 type ModelStatus {
   name: String!
   isDefault: Boolean!
@@ -346,6 +406,21 @@ type ModelStatus {
   lastErrorAt: DateTime
   "Chunks still to embed, per source and across users. Empty when everything is embedded."
   backlog: [SourceBacklog!]!
+  "Chunks with an embedding for this model, across users."
+  embedded: Int!
+  "Every user's chunks."
+  chunks: Int!
+  "Chunks per minute the pump embedded over the last 10 minutes."
+  ratePerMinute: Float!
+  """
+    Seconds until the whole backlog is embedded at that rate, null when it's empty or the
+    rate is 0.
+  """
+  etaSeconds: Int
+  "Chunks per pump batch in the answering server process."
+  batchSize: Int!
+  "The TEI for queries, and the pump's if that's another one, from their `/metrics`."
+  teis: [TeiStatus!]!
 }
 
 type Mutation {
@@ -423,6 +498,13 @@ type Query {
   users: [UserAccount!]!
   "The plugin workers seen in the last day, the most recently seen first. Admins only."
   workers: [Worker!]!
+  """
+    Plugin runs and bursts of API keys' writes, newest first: the signed-in user's, or every
+    user's with `allUsers` (admins only, no when left out). `writer` filters by a connection's
+    or key's id. For the next page, `before` takes the last ingest's `cursor`. `limit` is 1 to
+    200, 50 when left out.
+  """
+  activity(writer: ID, before: String, limit: Int, allUsers: Boolean): [Ingest!]!
   "Each embedding model's TEI health and backlog, the default first. Admins only."
   embeddingStatus: [ModelStatus!]!
   "The signed-in user's API keys, newest first."
@@ -522,6 +604,31 @@ type SourceCount {
     (a root over a connection's documents and a key's).
   """
   writer: Writer
+}
+
+"""
+  A TEI's figures, read from its `/metrics`. Null while they don't answer. The rates average the
+  last minute and are null until two readings a few seconds apart exist.
+"""
+type TeiStatus {
+  role: TeiRole!
+  url: String!
+  online: Boolean!
+  "Inputs waiting in TEI's queue."
+  queueSize: Int
+  "Average inputs per inference batch."
+  batchSize: Float
+  "Inputs embedded per minute."
+  throughputPerMinute: Float
+  "Failed requests since TEI started."
+  failures: Int
+  """
+    Share of the last minute TEI spent in inference, a CPU proxy. Can exceed 1 with batches
+    in parallel.
+  """
+  load: Float
+  "Pump TEIs only: seconds until the backlog is embedded at this throughput."
+  etaSeconds: Int
 }
 
 type TextPart {

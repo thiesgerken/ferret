@@ -1,6 +1,136 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #104 from thiesgerken/ci-release-latest-main
+  ([`2d6eb23`](https://github.com/thiesgerken/ferret/commit/2d6eb23863bb483d5ad5cc99ada8eff562a4743b))
+
+### 👷 CI/Build
+
+
+- 👷 ci(release): version the tip of main, not the pushed commit
+  ([`2d6eb23`](https://github.com/thiesgerken/ferret/commit/2d6eb23863bb483d5ad5cc99ada8eff562a4743b))
+
+- 👷 ci(release): version the tip of main, not the pushed commit
+  ([`6e5c42c`](https://github.com/thiesgerken/ferret/commit/6e5c42cf07a9ffcbb36b327885d991709d71b161))
+
+  Back-to-back merges made the earlier Release run fail with "Upstream branch 'origin/main' has changed". Checking out main's tip lets that run release every merge and the later run find nothing to release.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.5.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #102 from thiesgerken/writer-on-documents
+  ([`228cc0d`](https://github.com/thiesgerken/ferret/commit/228cc0d612b723c44b99aa952b7dd2fd51d50341))
+
+- Merge pull request #99 from thiesgerken/87-activity
+  ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
+
+- Merge remote-tracking branch 'origin/main' into 87-activity
+  ([`ab8adbb`](https://github.com/thiesgerken/ferret/commit/ab8adbb485aa7a2ca4c0d4b245440a7ad170fbf2))
+
+- Merge branch '85-origins' into 87-activity
+  ([`82f5433`](https://github.com/thiesgerken/ferret/commit/82f5433a1d8ab245faa2d5d5b5216fa88604e8e5))
+
+### ✨ Features
+
+
+- ✨ feat(server): documents and Explore's rows carry their writer
+  ([`228cc0d`](https://github.com/thiesgerken/ferret/commit/228cc0d612b723c44b99aa952b7dd2fd51d50341))
+
+- ✨ feat(server): documents and Explore's rows carry their writer
+  ([`6a5eb68`](https://github.com/thiesgerken/ferret/commit/6a5eb68ca62152220dbc2e1f81b4a5da0009cacb))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): an activity feed and embedding progress with TEI load
+  ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
+
+- ✨ feat(server): an activity feed and embedding progress with TEI load
+  ([`343f473`](https://github.com/thiesgerken/ferret/commit/343f473687ac71a2e7a2a8eb3448844791d46ae8))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): count what runs and API keys write as it arrives
+  ([`1900671`](https://github.com/thiesgerken/ferret/commit/1900671fe3caabaff78526311fdbe8a08bed0a7f))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): activity keyset paging, one backlog per request, TEI restarts
+  ([`228bae2`](https://github.com/thiesgerken/ferret/commit/228bae20d9d14f9e2b3daaae321d45d88ab41f39))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+## v0.4.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #101 from thiesgerken/87-settings-shell
+  ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
+
+- Merge remote-tracking branch 'origin/main' into 87-settings-shell
+  ([`c4688cf`](https://github.com/thiesgerken/ferret/commit/c4688cfafd0f3e05713ced52a71c7a7b051a0d40))
+
+- Merge pull request #100 from thiesgerken/85-followups
+  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+
+### 💄 UI/UX
+
+
+- 💄 style(ui): one layout for Connections, Settings and Admin
+  ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
+
+- 💄 style(ui): one layout for Connections, Settings and Admin
+  ([`4708f38`](https://github.com/thiesgerken/ferret/commit/4708f388dbe62a4b0eed564765cb5673c800598f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 💄 style(ui): group sources by writer, and load icons only where they show
+  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+
+- 💄 style(ui): group sources by writer, and load icons only where they show
+  ([`2578cd4`](https://github.com/thiesgerken/ferret/commit/2578cd402091a0b3f10bc942aa5e67fa377394d2))
+
+  The filter column groups a writer's sources under its icon and name. Explore's source facet reads as writers too. Lucide's map of every icon's import and the list of all icon names load lazily, the first when an icon renders and the second when a picker opens, which takes 59 KB gzip off the first load of the search, Connections and Settings pages. A selected parent above a connection's root reads as that connection, and sources no longer flash the full path before the connection roots arrive.
+
+  Part of #85
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.4.0 (2026-10-17)
 
 

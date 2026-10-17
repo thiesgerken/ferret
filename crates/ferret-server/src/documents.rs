@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
+    activity::{self, Counts},
     api_auth::{ApiCaller, Scope},
     chunking, connections, content_type,
     error::ApiError,
@@ -65,6 +66,17 @@ pub async fn put(
         return Ok(Json(PutResponse::Excluded));
     }
     let response = upsert(&mut tx, caller.user_id, caller.api_key_id(), &document).await?;
+    let counts = match response {
+        PutResponse::Unchanged { .. } => Counts {
+            unchanged: 1,
+            ..Counts::default()
+        },
+        _ => Counts {
+            put: 1,
+            ..Counts::default()
+        },
+    };
+    activity::record(&mut tx, &caller, counts).await?;
     tx.commit().await?;
     Ok(Json(response))
 }
@@ -84,18 +96,25 @@ pub async fn delete(
     let Query(key) = key?;
     caller.require_source(&key.source)?;
     connections::check_api_key_may_write(&state.pool, &caller, &key.source, false).await?;
+    let mut tx = state.pool.begin().await?;
     let deleted = sqlx::query!(
         "delete from documents where user_id = $1 and source = $2 and external_id = $3",
         caller.user_id,
         key.source,
         key.external_id,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
     if deleted == 0 {
         return Err(ApiError::not_found("no such document"));
     }
+    let counts = Counts {
+        deleted: 1,
+        ..Counts::default()
+    };
+    activity::record(&mut tx, &caller, counts).await?;
+    tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

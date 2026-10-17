@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
+    activity::{self, Counts},
     api_auth::{ApiCaller, Scope},
     connections,
     error::ApiError,
@@ -119,6 +120,11 @@ pub async fn commit(
     sqlx::query!("update syncs set committed_at = now() where id = $1", id)
         .execute(&mut *tx)
         .await?;
+    let counts = Counts {
+        deleted: i32::try_from(deleted).expect("a user holds fewer than 2^31 documents"),
+        ..Counts::default()
+    };
+    activity::record(&mut tx, &caller, counts).await?;
     tx.commit().await?;
     Ok(Json(SyncCommitted { deleted }))
 }

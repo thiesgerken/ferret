@@ -345,8 +345,15 @@ deployment, as in carapace. docker-compose exists for local development only. De
 
 ## Consumers
 
-- **UI**: a Google-like search page, plus Explore, Connections, Settings and Admin
+- **UI**: a Google-like search page, plus Explore, Activity, Connections, Settings and Admin
   ([architecture.md](architecture.md#frontend)). Map and topics come later.
+- **Activity**: one feed of what was written, newest first: plugin runs and bursts of an API
+  key's writes (those within 10 minutes of each other), each with its writer, status and counts
+  of documents put, unchanged and deleted. API activity is grouped by time, not by sync: tools
+  like the demo seed write without one. The server counts a running run's writes as they
+  arrive (no worker change), a finished run shows its worker's stats. Users see their own, admins
+  may ask for everyone's. Next to it the embedding progress per model
+  ([embeddings.md](embeddings.md#progress)).
 - **carapace**: a search skill in the knowledge repo that calls the search API with an API key
   restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
   the key comes from the password manager, the sentinel gates the call. No carapace code.
