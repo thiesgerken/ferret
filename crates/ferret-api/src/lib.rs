@@ -133,6 +133,8 @@ pub struct SearchQuery {
     pub to: Option<DateTime<Utc>>,
     /// How many hits at most. The server's default applies when `None`.
     pub k: Option<u32>,
+    /// How many hits of the ranking to skip, for the next page. 0 when `None`.
+    pub offset: Option<u32>,
     /// The embedding model of the semantic half. The user's default model when `None`.
     pub model: Option<String>,
     /// Whether hits of one thread fold into the best one, `true` when `None`.
@@ -151,6 +153,9 @@ pub struct SearchResponse {
     /// Documents the caller may read in the selected sources (all sources when none are
     /// selected). The other filters don't narrow it.
     pub documents_in_scope: u32,
+    /// Whether the ranking has hits beyond this page.
+    pub has_more: bool,
+    pub facets: SearchFacets,
     /// The search's time on the server.
     pub took_ms: u32,
     /// Why the semantic half didn't run (e.g. TEI is down), so the hits are keyword matches
@@ -158,6 +163,24 @@ pub struct SearchResponse {
     pub semantic_unavailable: Option<String>,
     /// The embedding model the semantic half used, or would have.
     pub model: String,
+}
+
+/// How many matching documents each facet value has, counted like `total`. A facet's counts
+/// apply every filter except its own, so they show what choosing another value would give.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SearchFacets {
+    /// By source path, most matches first.
+    pub sources: Vec<FacetCount>,
+    /// The 20 most frequent authors and the selected ones.
+    pub authors: Vec<FacetCount>,
+    /// The counts may be short, as `total_is_lower_bound` says for `total`.
+    pub are_lower_bounds: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FacetCount {
+    pub value: String,
+    pub count: u32,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -360,6 +383,7 @@ impl Client {
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
+        params.extend(query.offset.map(|offset| ("offset", offset.to_string())));
         params.extend(query.model.clone().map(|model| ("model", model)));
         params.extend(
             query

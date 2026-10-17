@@ -101,6 +101,7 @@ input SearchInput {
   "Only documents created before this time." to: DateTime
   "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
+  "How many hits of the ranking to skip, for the next page. 0 when left out." offset: Int
   "The embedding model of the semantic half. The user's default model when left out." model: String
   "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
 }
@@ -197,6 +198,8 @@ type EmbeddingModel {
   name: String!
   "Whether searches use it when the user chose no default."
   configuredDefault: Boolean!
+  "The cosine similarity below which search drops the model's semantic candidates."
+  minSimilarity: Float!
   """
     How many of the user's chunks the model has embedded. Counted only when asked for, the
     search page lists the models without it.
@@ -426,6 +429,19 @@ type RunStats {
   deleted: Int!
 }
 
+"""
+  How many matching documents each facet value has, counted like `total`. A facet's counts apply
+  every filter except its own, so they show what choosing another value would give.
+"""
+type SearchFacets {
+  "By source path, most matches first."
+  sources: [FacetCount!]!
+  "The 20 most frequent authors and the selected ones."
+  authors: [FacetCount!]!
+  "True when the counts may be short, as `totalIsLowerBound` says for `total`."
+  areLowerBounds: Boolean!
+}
+
 "The hits of a search, and whether its semantic half ran."
 type SearchResult {
   hits: [Hit!]!
@@ -444,6 +460,9 @@ type SearchResult {
     The other filters don't narrow it.
   """
   documentsInScope: Int!
+  "Whether the ranking has hits beyond this page."
+  hasMore: Boolean!
+  facets: SearchFacets!
   "The search's time on the server, in milliseconds."
   tookMs: Int!
   """

@@ -1,13 +1,17 @@
 //! Hybrid search: BM25 and vector neighbours over chunks, fused with reciprocal rank fusion, one
 //! hit per document.
 
-use std::time::Instant;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    time::Instant,
+};
 
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
-use ferret_api::{Hit, HitChunk, SearchQuery, SearchResponse};
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use ferret_api::{FacetCount, Hit, HitChunk, SearchFacets, SearchQuery, SearchResponse};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::{
@@ -23,6 +27,8 @@ use crate::{
 
 const DEFAULT_K: u32 = 10;
 const MAX_K: u32 = 100;
+/// The most frequent authors in a search's facets, besides the selected ones.
+const MAX_AUTHOR_FACETS: usize = 20;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
 // ranks below these limits in both halves can't be a hit, which matters only when k approaches
 // them. The vector half is smaller, HNSW gets slower with every extra neighbour. Titles are on
@@ -139,14 +145,17 @@ pub async fn find(
     let started = Instant::now();
     let query = validate(request)?;
     let k = request.k.unwrap_or(DEFAULT_K);
+    let skip = request.offset.unwrap_or(0);
     let model = model(pool, embedding, user_id, request.model.as_deref()).await?;
     let roots = sources::narrow(&request.sources, allowed);
     if roots.as_ref().is_some_and(Vec::is_empty) {
         return Ok(SearchResponse {
             hits: vec![],
+            has_more: false,
             total: 0,
             total_is_lower_bound: false,
             documents_in_scope: 0,
+            facets: SearchFacets::default(),
             took_ms: millis_since(started),
             semantic_unavailable: None,
             model: model.name().to_owned(),
@@ -191,108 +200,31 @@ pub async fn find(
         Err(EmbedError::Database(error)) => return Err(error.into()),
     };
 
-    // Built rather than checked at compile time (ADR 0005): every word and every excluded word
-    // is its own clause, pg_search only takes constant query strings in them, and the vector
-    // half needs the model's dimension and name as literals to use its partial index.
-    let mut sql = QueryBuilder::<Postgres>::new(
-        "with keyword as (
-             select id, row_number() over (order by score desc) as rank,
-                    score::real as keyword_score, null::real as similarity
-             from (
-                 select c.id, pdb.score(c.id) as score
-                 from chunks c
-                 where ",
-    );
-    filters.push(&mut sql, "c");
-    // Every word must match in at least one field, so a compound and an inflected word can
-    // match the same chunk in different fields.
-    for word in &query.words {
-        sql.push(" and ");
-        push_word_match(&mut sql, "c.", word);
-    }
-    sql.push(" order by score desc limit ")
-        .push_bind(KEYWORD_CANDIDATES)
-        .push(") k), nearest as (");
-    match &query_hash {
-        Some(query_hash) => push_nearest(&mut sql, model, query_hash, &filters),
-        None => {
-            sql.push("select null::uuid as id, null::float8 as distance where false");
-        }
-    }
-    // The cut-off applies to the nearest candidates rather than inside the scan: a filtered HNSW
-    // scan keeps searching for rows that pass, through the whole index when few do.
-    let max_distance = 1.0 - model.config.min_similarity;
-    sql.push(
-        "), semantic as (
-             select id, row_number() over (order by distance) as rank,
-                    null::real as keyword_score, (1 - distance)::real as similarity
-             from nearest where distance <= ",
-    )
-    .push_bind(max_distance)
-    .push(
-        "),
-         -- Reciprocal rank fusion (k = 60): a chunk scores 1 / (60 + rank) in each half.
-         fused as (
-             select id, sum(1.0 / (60 + rank))::real as score,
-                    max(keyword_score) as keyword_score, max(similarity) as similarity
-             from (select * from keyword union all select * from semantic) ranked
-             group by id
-         ),
-         -- The shown chunk is the best fused one, the scores are the document's best.
-         best as (
-             select distinct on (c.document_id)
-                    c.document_id, c.text, c.start_offset, c.end_offset, f.score,
-                    max(f.keyword_score) over document as keyword_score,
-                    max(f.similarity) over document as similarity
-             from fused f join chunks c on c.id = f.id
-             window document as (partition by c.document_id)
-             order by c.document_id, f.score desc
-         ),
-         hits as (
-             select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                    d.authors, d.created_at, d.modified_at,
-                    b.score, b.keyword_score, b.similarity,
-                    b.text as chunk_text, b.start_offset, b.end_offset,
-                    row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
-                    -- Unordered: with an order, count(*) would count only up to the current row.
-                    count(*) over thread_hits - 1 as collapsed
-             from best b join documents d on d.id = b.document_id
-             window thread_hits as (partition by ",
-    )
-    // A document without a thread is a group of its own.
-    .push(if request.collapse.unwrap_or(true) {
-        "d.source, d.thread, case when d.thread is null then d.id end"
-    } else {
-        "d.id"
-    })
-    .push(
-        ")
-         )
-         select *, count(*) over () as total,
-                -- The keyword half may have left out matches when it filled its candidates.
-                (select count(*) from keyword) >= ",
-    )
-    .push_bind(KEYWORD_CANDIDATES);
-    if query_hash.is_some() {
-        // The vector half may have, when all its neighbours passed the cut-off and the scope
-        // holds more. HNSW is approximate and may return fewer neighbours than asked for, so
-        // their count alone doesn't tell. For the same reason, and because `relaxed_order` may
-        // return them slightly out of order, `false` means no sign of more, not a guarantee.
-        sql.push(" or (not exists (select 1 from nearest where distance > ")
-            .push_bind(max_distance)
-            .push(") and (select count(*) from nearest) < (select count(*) ");
-        push_embeddings_in_scope(&mut sql, model, &filters);
-        sql.push("))");
-    }
-    sql.push(
-        " as total_is_lower_bound
-         from hits where thread_rank = 1
-         order by score desc
-         limit ",
-    )
-    .push_bind(i64::from(k));
+    let collapse = request.collapse.unwrap_or(true);
+    let hybrid = Hybrid {
+        model,
+        query_hash: query_hash.as_deref(),
+        words: &query.words,
+        collapse,
+    };
+    // `total` and the facets come from every match rather than the page, so they stay the same on
+    // every page. Each facet applies every filter except its own, so choosing another value shows
+    // what it would give: one more run of the query per facet whose filter is set.
+    let without_sources = Filters {
+        roots: sources::narrow(&[], allowed),
+        ..filters.clone()
+    };
+    let without_authors = Filters {
+        authors: &[],
+        ..filters.clone()
+    };
 
     let mut tx = pool.begin().await?;
+    // One snapshot for the page, `total` and the facets. Not `read only`: pg_search's field
+    // aliases write to its type cache.
+    sqlx::query!("set transaction isolation level repeatable read")
+        .execute(&mut *tx)
+        .await?;
     // Filtered HNSW scans keep going until they have enough rows that pass the filters, instead
     // of silently returning fewer than the limit.
     sqlx::query!(
@@ -302,16 +234,36 @@ pub async fn find(
     )
     .fetch_one(&mut *tx)
     .await?;
-    let rows: Vec<HitRow> = sql.build_query_as().fetch_all(&mut *tx).await?;
+    let page = skip..skip + k;
+    let matches = hybrid.matches(&mut tx, &filters, page.clone()).await?;
+    let by_source = if request.sources.is_empty() {
+        None
+    } else {
+        Some(hybrid.matches(&mut tx, &without_sources, 0..0).await?)
+    };
+    let by_author = if request.authors.is_empty() {
+        None
+    } else {
+        Some(hybrid.matches(&mut tx, &without_authors, 0..0).await?)
+    };
     tx.commit().await?;
-
-    let (total, total_is_lower_bound) = rows.first().map_or((0, false), |row| {
-        (
-            u32::try_from(row.total).expect("a count is never negative"),
-            row.total_is_lower_bound,
-        )
-    });
-    let hits = rows
+    let by_source = by_source.as_deref().unwrap_or(&matches);
+    let by_author = by_author.as_deref().unwrap_or(&matches);
+    let facets = SearchFacets {
+        sources: source_counts(by_source, &request.sources),
+        authors: author_counts(by_author, collapse, &request.authors),
+        are_lower_bounds: is_lower_bound(by_source) || is_lower_bound(by_author),
+    };
+    let total = u32::try_from(matches.iter().filter(|row| row.is_top()).count())
+        .expect("at most the candidates match");
+    let has_more = page.end < total;
+    let total_is_lower_bound = is_lower_bound(&matches);
+    let mut page_rows: Vec<MatchRow> = matches
+        .into_iter()
+        .filter(|row| row.chunk_text.is_some())
+        .collect();
+    page_rows.sort_by_key(|row| row.page_rank);
+    let hits = page_rows
         .into_iter()
         .map(|row| Hit {
             document_id: row.id,
@@ -331,21 +283,281 @@ pub async fn find(
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),
-                parts: highlight(&row.chunk_text, &query.words),
+                parts: highlight(
+                    &row.chunk_text.expect("the page's rows carry their chunk"),
+                    &query.words,
+                ),
             },
         })
         .collect();
     Ok(SearchResponse {
         hits,
+        has_more,
         total,
         total_is_lower_bound,
         documents_in_scope: u32::try_from(documents_in_scope).expect("a count is never negative"),
+        facets,
         took_ms: millis_since(started),
         semantic_unavailable: query_hash
             .is_none()
             .then(|| format!("the embedding model {} is unavailable", model.name())),
         model: model.name().to_owned(),
     })
+}
+
+/// The hybrid query up to its `hits`: the documents that match, best chunk first, with their
+/// thread rank. A search runs it once for its hits and again for each facet.
+struct Hybrid<'a> {
+    model: &'a Model,
+    /// `None` without the semantic half.
+    query_hash: Option<&'a [u8]>,
+    words: &'a [String],
+    collapse: bool,
+}
+
+impl Hybrid<'_> {
+    fn max_distance(&self) -> f64 {
+        1.0 - self.model.config.min_similarity
+    }
+
+    /// `with … hits as (…)`. Built rather than checked at compile time (ADR 0005): every word
+    /// and every excluded word is its own clause, pg_search only takes constant query strings in
+    /// them, and the vector half needs the model's dimension and name as literals to use its
+    /// partial index.
+    fn push_hits(&self, sql: &mut QueryBuilder<Postgres>, filters: &Filters) {
+        // Ties rank by id, so every page of a search sees the same ranking.
+        sql.push(
+            "with keyword as (
+                 select id, row_number() over (order by score desc, id) as rank,
+                        score::real as keyword_score, null::real as similarity
+                 from (
+                     select c.id, pdb.score(c.id) as score
+                     from chunks c
+                     where ",
+        );
+        filters.push(sql, "c");
+        // Every word must match in at least one field, so a compound and an inflected word can
+        // match the same chunk in different fields.
+        for word in self.words {
+            sql.push(" and ");
+            push_word_match(sql, "c.", word);
+        }
+        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
+        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
+        sql.push(" order by score desc, c.id limit ")
+            .push_bind(KEYWORD_CANDIDATES)
+            .push(") k), nearest as (");
+        match self.query_hash {
+            Some(query_hash) => push_nearest(sql, self.model, query_hash, filters),
+            None => {
+                sql.push("select null::uuid as id, null::float8 as distance where false");
+            }
+        }
+        // The cut-off applies to the nearest candidates rather than inside the scan: a filtered HNSW
+        // scan keeps searching for rows that pass, through the whole index when few do.
+        let max_distance = self.max_distance();
+        sql.push(
+            "), semantic as (
+                 select id, row_number() over (order by distance, id) as rank,
+                        null::real as keyword_score, (1 - distance)::real as similarity
+                 from nearest where distance <= ",
+        )
+        .push_bind(max_distance)
+        .push(
+            "),
+             -- Reciprocal rank fusion (k = 60): a chunk scores 1 / (60 + rank) in each half.
+             fused as (
+                 select id, sum(1.0 / (60 + rank))::real as score,
+                        max(keyword_score) as keyword_score, max(similarity) as similarity
+                 from (select * from keyword union all select * from semantic) ranked
+                 group by id
+             ),
+             -- The shown chunk is the best fused one, the scores are the document's best.
+             best as (
+                 select distinct on (c.document_id)
+                        c.document_id, c.text, c.start_offset, c.end_offset, f.score,
+                        max(f.keyword_score) over document as keyword_score,
+                        max(f.similarity) over document as similarity
+                 from fused f join chunks c on c.id = f.id
+                 window document as (partition by c.document_id)
+                 order by c.document_id, f.score desc
+             ),
+             hits as (
+                 select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
+                        d.authors, d.created_at, d.modified_at,
+                        b.score, b.keyword_score, b.similarity,
+                        b.text as chunk_text, b.start_offset, b.end_offset,
+                        row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
+                        -- Unordered: with an order, count(*) would count only up to the current row.
+                        count(*) over thread_hits - 1 as collapsed
+                 from best b join documents d on d.id = b.document_id
+                 window thread_hits as (partition by ",
+        )
+        // A document without a thread is a group of its own.
+        .push(if self.collapse {
+            "d.source, d.thread, case when d.thread is null then d.id end"
+        } else {
+            "d.id"
+        })
+        .push(
+            ")
+             )",
+        );
+    }
+
+    /// Whether the hits may be short of all matches, as a boolean expression over the CTEs.
+    fn push_lower_bound(&self, sql: &mut QueryBuilder<Postgres>, filters: &Filters) {
+        // The keyword half may have left out matches when it filled its candidates.
+        sql.push("((select count(*) from keyword) >= ")
+            .push_bind(KEYWORD_CANDIDATES);
+        if self.query_hash.is_some() {
+            // The vector half may have, when all its neighbours passed the cut-off and the scope
+            // holds more. HNSW is approximate and may return fewer neighbours than asked for, so
+            // their count alone doesn't tell. For the same reason, and because `relaxed_order` may
+            // return them slightly out of order, `false` means no sign of more, not a guarantee.
+            sql.push(" or (not exists (select 1 from nearest where distance > ")
+                .push_bind(self.max_distance())
+                .push(") and (select count(*) from nearest) < (select count(*) ");
+            push_embeddings_in_scope(sql, self.model, filters);
+            sql.push("))");
+        }
+        sql.push(")");
+    }
+
+    /// Every match, with each thread's other members, and whether there may be more. Only the
+    /// rows of `page` (by rank among the threads' best) carry their chunk text, the others are for
+    /// counting.
+    async fn matches(
+        &self,
+        tx: &mut PgConnection,
+        filters: &Filters<'_>,
+        page: Range<u32>,
+    ) -> Result<Vec<MatchRow>, sqlx::Error> {
+        let mut sql = QueryBuilder::<Postgres>::new("");
+        self.push_hits(&mut sql, filters);
+        sql.push(
+            ", ranked as (
+                 select *,
+                        -- The id breaks ties, so pages neither overlap nor skip.
+                        case when thread_rank = 1
+                             then row_number() over (partition by thread_rank = 1 order by score desc, id)
+                        end as page_rank
+                 from hits
+             )
+             select id, source, external_id, content_type, title, url, thread, authors,
+                    created_at, modified_at, keyword_score, similarity, collapsed, page_rank,
+                    case when page_rank > ",
+        )
+        .push_bind(i64::from(page.start))
+        .push(" and page_rank <= ")
+        .push_bind(i64::from(page.end))
+        .push(" then chunk_text end as chunk_text, start_offset, end_offset, ");
+        self.push_lower_bound(&mut sql, filters);
+        sql.push(" as total_is_lower_bound from ranked");
+        sql.build_query_as().fetch_all(tx).await
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct MatchRow {
+    id: Uuid,
+    source: String,
+    external_id: String,
+    content_type: String,
+    title: Option<String>,
+    url: Option<String>,
+    thread: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    keyword_score: Option<f32>,
+    similarity: Option<f32>,
+    collapsed: i64,
+    /// Among the threads' best rows, `None` for a thread's other members.
+    page_rank: Option<i64>,
+    /// On the page's rows only.
+    chunk_text: Option<String>,
+    start_offset: i32,
+    end_offset: i32,
+    total_is_lower_bound: bool,
+}
+
+impl MatchRow {
+    /// The best row of its thread, which counts as the match.
+    fn is_top(&self) -> bool {
+        self.page_rank.is_some()
+    }
+}
+
+fn is_lower_bound(rows: &[MatchRow]) -> bool {
+    // The same on every row, and no row means nothing matched at all.
+    rows.first().is_some_and(|row| row.total_is_lower_bound)
+}
+
+/// Matches per source, and per selected root, which may be a parent of the stored sources.
+fn source_counts(rows: &[MatchRow], selected: &[String]) -> Vec<FacetCount> {
+    let tops = || rows.iter().filter(|row| row.is_top());
+    let mut counts = counts(tops().map(|row| &row.source), |_, _| true);
+    counts.retain(|count| !selected.contains(&count.value));
+    counts.extend(selected.iter().map(|root| {
+        FacetCount {
+            value: root.clone(),
+            count: u32::try_from(
+                tops()
+                    .filter(|row| sources::covers(root, &row.source))
+                    .count(),
+            )
+            .expect("at most the candidates match"),
+        }
+    }));
+    counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
+    counts
+}
+
+/// Matches per author, counting a thread once for every author of its members: the author filter
+/// keeps a thread in which one of its documents is theirs.
+fn author_counts(rows: &[MatchRow], collapse: bool, selected: &[String]) -> Vec<FacetCount> {
+    let mut thread_authors: HashMap<(&str, &str), HashSet<&String>> = HashMap::new();
+    let mut document_authors = Vec::new();
+    for row in rows {
+        match (&row.thread, collapse) {
+            (Some(thread), true) => thread_authors
+                .entry((&row.source, thread))
+                .or_default()
+                .extend(&row.authors),
+            _ => document_authors.extend(&row.authors),
+        }
+    }
+    let authors = thread_authors
+        .into_values()
+        .flatten()
+        .chain(document_authors);
+    counts(authors, |rank, author| {
+        rank < MAX_AUTHOR_FACETS || selected.contains(author)
+    })
+}
+
+/// How often each value occurs, most frequent first, keeping those `keep` accepts by their rank
+/// and value.
+fn counts<'a>(
+    values: impl Iterator<Item = &'a String>,
+    keep: impl Fn(usize, &String) -> bool,
+) -> Vec<FacetCount> {
+    let mut counts: HashMap<&String, u32> = HashMap::new();
+    for value in values {
+        *counts.entry(value).or_default() += 1;
+    }
+    let mut counts: Vec<_> = counts.into_iter().collect();
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    counts
+        .into_iter()
+        .enumerate()
+        .filter(|(rank, (value, _))| keep(*rank, value))
+        .map(|(_, (value, count))| FacetCount {
+            value: value.clone(),
+            count,
+        })
+        .collect()
 }
 
 /// The model the search asks for, else the user's default, else the configured default. The
@@ -417,6 +629,7 @@ fn push_embeddings_in_scope(sql: &mut QueryBuilder<Postgres>, model: &Model, fil
 
 /// The filters both halves apply, on the denormalized chunk columns of `chunks` or
 /// `chunk_embeddings` (which pgvector's iterative scans need).
+#[derive(Clone)]
 struct Filters<'a> {
     user_id: Uuid,
     roots: Option<Vec<String>>,
@@ -500,28 +713,6 @@ fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
             .push_bind(word.to_owned());
     }
     sql.push(")");
-}
-
-#[derive(sqlx::FromRow)]
-struct HitRow {
-    id: Uuid,
-    source: String,
-    external_id: String,
-    content_type: String,
-    title: Option<String>,
-    url: Option<String>,
-    thread: Option<String>,
-    authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
-    keyword_score: Option<f32>,
-    similarity: Option<f32>,
-    collapsed: i64,
-    chunk_text: String,
-    start_offset: i32,
-    end_offset: i32,
-    total: i64,
-    total_is_lower_bound: bool,
 }
 
 fn offset(stored: i32) -> u32 {

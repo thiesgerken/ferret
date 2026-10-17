@@ -234,7 +234,7 @@ don't change.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=
 ```
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
@@ -296,7 +296,23 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   the approximate, `relaxed_order` vector search may miss a chunk above the cut-off.
   `documents_in_scope` counts the caller's documents in the selected sources (all when none are
   selected), regardless of the other filters. `took_ms` is the search's time on the server.
-- **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
+- **Facets**: `facets` counts the matches per source and for the 20 most frequent (and the selected)
+  authors, like `total`. Each facet applies every filter except its own, so the other sources stay
+  visible while one is selected, and a selected root that is a parent of the stored sources (`mail`
+  over `mail/zoho`) gets its covering count. A collapsed thread counts for every author of its
+  matching documents, as the author filter keeps a thread in which one of them is theirs.
+  `are_lower_bounds` means what `total_is_lower_bound` means.
+- **Size and paging**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate
+  chunks. `offset` skips that many hits of the ranking for the next page, and `has_more` says
+  whether another page exists, up to the candidate limits. Ties rank by id (except at the vector
+  half's candidate limit, which HNSW decides approximately), so pages of an unchanged index
+  neither overlap nor skip. The index may change between two pages; there are no snapshots
+  across requests, the UI drops a document it has already shown, and a skipped hit is accepted.
+- **Cost**: one statement returns the page together with every match (`total`, the facets),
+  only the page's rows with their chunk text. Each facet whose filter is set takes one more run of
+  the hybrid query, so a search runs it one to three times, all in one repeatable-read
+  transaction. On the compose demo (389 chunks) the median `took_ms` is 8 ms, and 16 ms with a
+  source filter.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
   email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing

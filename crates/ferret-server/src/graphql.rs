@@ -139,6 +139,12 @@ impl Query {
             total: graphql_int(response.total),
             total_is_lower_bound: response.total_is_lower_bound,
             documents_in_scope: graphql_int(response.documents_in_scope),
+            has_more: response.has_more,
+            facets: SearchFacets {
+                sources: search_facet_counts(response.facets.sources),
+                authors: search_facet_counts(response.facets.authors),
+                are_lower_bounds: response.facets.are_lower_bounds,
+            },
             took_ms: graphql_int(response.took_ms),
             semantic_unavailable: response.semantic_unavailable,
             model: response.model,
@@ -189,6 +195,7 @@ impl Query {
             .map(|model| EmbeddingModel {
                 name: model.name().to_owned(),
                 configured_default: model.name() == default,
+                min_similarity: model.config.min_similarity,
             })
             .collect()
     }
@@ -437,6 +444,8 @@ struct SearchInput {
     range: Option<TimeRange>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
+    /// How many hits of the ranking to skip, for the next page. 0 when left out.
+    offset: Option<i32>,
     /// The embedding model of the semantic half. The user's default model when left out.
     model: Option<String>,
     /// Whether hits of one thread fold into the best one. Yes when left out.
@@ -616,6 +625,11 @@ impl SearchInput {
             to: self.to,
             // A negative k becomes 0, which the search rejects like any k out of range.
             k: self.k.map(|k| u32::try_from(k).unwrap_or(0)),
+            offset: self
+                .offset
+                .map(u32::try_from)
+                .transpose()
+                .map_err(|_| invalid_input("offset can't be negative".to_owned()))?,
             model: self.model,
             collapse: self.collapse,
         };
@@ -664,6 +678,9 @@ struct SearchResult {
     /// Documents the user may read in the selected sources (all sources when none are selected).
     /// The other filters don't narrow it.
     documents_in_scope: i32,
+    /// Whether the ranking has hits beyond this page.
+    has_more: bool,
+    facets: SearchFacets,
     /// The search's time on the server, in milliseconds.
     took_ms: i32,
     /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
@@ -673,9 +690,32 @@ struct SearchResult {
     model: String,
 }
 
+/// How many matching documents each facet value has, counted like `total`. A facet's counts apply
+/// every filter except its own, so they show what choosing another value would give.
+#[derive(GraphQLObject)]
+struct SearchFacets {
+    /// By source path, most matches first.
+    sources: Vec<FacetCount>,
+    /// The 20 most frequent authors and the selected ones.
+    authors: Vec<FacetCount>,
+    /// True when the counts may be short, as `totalIsLowerBound` says for `total`.
+    are_lower_bounds: bool,
+}
+
+fn search_facet_counts(counts: Vec<ferret_api::FacetCount>) -> Vec<FacetCount> {
+    counts
+        .into_iter()
+        .map(|facet| FacetCount {
+            value: facet.value,
+            count: graphql_int(facet.count),
+        })
+        .collect()
+}
+
 struct EmbeddingModel {
     name: String,
     configured_default: bool,
+    min_similarity: f64,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -689,6 +729,11 @@ impl EmbeddingModel {
     /// Whether searches use it when the user chose no default.
     fn configured_default(&self) -> bool {
         self.configured_default
+    }
+
+    /// The cosine similarity below which search drops the model's semantic candidates.
+    fn min_similarity(&self) -> f64 {
+        self.min_similarity
     }
 
     /// How many of the user's chunks the model has embedded. Counted only when asked for, the
