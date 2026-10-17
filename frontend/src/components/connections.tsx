@@ -36,6 +36,12 @@ const ConnectionsQuery = graphql(`
         log
         error
       }
+      exclusions {
+        id
+        source
+        externalId
+        thread
+      }
     }
   }
 `);
@@ -59,6 +65,12 @@ const UpdateConnectionMutation = graphql(`
 const RunConnectionNowMutation = graphql(`
   mutation RunConnectionNow($id: ID!) {
     runConnectionNow(id: $id)
+  }
+`);
+
+const RemoveExclusionMutation = graphql(`
+  mutation RemoveExclusion($id: ID!) {
+    removeExclusion(id: $id)
   }
 `);
 
@@ -375,6 +387,7 @@ function ConnectionCard({
 }) {
   const [, update] = useMutation(UpdateConnectionMutation);
   const [, runNow] = useMutation(RunConnectionNowMutation);
+  const [, removeExclusion] = useMutation(RemoveExclusionMutation);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -486,6 +499,35 @@ function ConnectionCard({
           ))}
         </ul>
       </details>
+      {connection.exclusions.length > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-muted-foreground">
+            Excluded from the index ({connection.exclusions.length})
+          </summary>
+          <p className="mt-2 text-xs text-muted-foreground">
+            The connection drops these whenever it finds them. Removing one makes the next run start
+            over from scratch and ingest it again.
+          </p>
+          <ul className="mt-2 divide-y divide-border">
+            {connection.exclusions.map((exclusion) => (
+              <li key={exclusion.id} className="flex items-center gap-2 py-1.5">
+                <span className="min-w-0 flex-1 truncate">
+                  {exclusion.externalId ?? `Thread ${exclusion.thread}`}{" "}
+                  <span className="text-xs text-muted-foreground">in {exclusion.source}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => mutate(() => removeExclusion({ id: exclusion.id }))}
+                  aria-label={`Include ${exclusion.externalId ?? `thread ${exclusion.thread}`} again`}
+                  className={buttonClass}
+                >
+                  Include again
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </li>
   );
 }

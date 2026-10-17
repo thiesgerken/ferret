@@ -5,7 +5,7 @@ mod mirror;
 
 use std::collections::HashSet;
 
-use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
+use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -97,9 +97,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             Kind::Ignored => unreachable!("skipped above"),
         };
         for document in documents {
-            match run.api.put_document(&document).await?.outcome {
-                PutOutcome::Unchanged => stats.unchanged += 1,
-                PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+            match run.api.put_document(&document).await? {
+                PutResponse::Unchanged { .. } => stats.unchanged += 1,
+                PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+                // The user excluded it: as if the repository didn't have it.
+                PutResponse::Excluded => {}
             }
         }
     }

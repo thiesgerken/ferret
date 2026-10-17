@@ -204,7 +204,7 @@ async fn graphql_returns_a_whole_document_or_null(pool: PgPool) {
     let mut note = document("notes", "projects/ferret.md", "# ferret\n\nA search index.");
     note.content_type = ContentType::Markdown;
     note.url = Some("obsidian://open?file=projects/ferret.md".to_owned());
-    let id = api.put_document(&note).await.unwrap().id;
+    let id = api.put_document(&note).await.unwrap().id().unwrap();
     let cookie = server.sign_in().await;
     let query = "query ($id: ID!) {
         document(id: $id) { id contentType title text url authors createdAt }

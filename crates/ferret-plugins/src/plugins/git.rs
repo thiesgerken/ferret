@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
+use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use schemars::JsonSchema;
@@ -201,9 +201,11 @@ impl Indexer<'_> {
     /// a symlink, too big, not text.
     async fn put(&self, path: &str, stats: &mut RunStats) -> Result<(), PluginError> {
         match self.document(path).await? {
-            Some(document) => match self.run.api.put_document(&document).await?.outcome {
-                PutOutcome::Unchanged => stats.unchanged += 1,
-                PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+            Some(document) => match self.run.api.put_document(&document).await? {
+                PutResponse::Unchanged { .. } => stats.unchanged += 1,
+                PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+                // The user excluded it: as if the repository didn't have it.
+                PutResponse::Excluded => {}
             },
             None => self.delete(path, stats).await?,
         }
