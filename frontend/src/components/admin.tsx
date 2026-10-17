@@ -1,6 +1,8 @@
 "use client";
 
+import { Brain, Server, Users2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { Section } from "@/components/page-shell";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { AdminQuery as AdminData } from "@/gql/graphql";
@@ -71,7 +73,6 @@ type Model = AdminData["embeddingStatus"][number];
 /** Health and backlog change on their own, so the page keeps them current. */
 const POLL_MS = 10_000;
 
-const sectionHeading = "text-base font-medium";
 const tableClass = "w-full text-left text-sm";
 const headClass = "border-b border-border text-xs text-muted-foreground";
 
@@ -95,22 +96,23 @@ export function Admin() {
   }
 
   return (
-    <div className="space-y-10">
-      <section className="space-y-4">
-        <h2 className={sectionHeading}>Users</h2>
-        <Users users={data.users} onChanged={reload} />
-        <NewUserForm onCreated={reload} />
-      </section>
-      <section className="space-y-4">
-        <h2 className={sectionHeading}>Embedding</h2>
-        {data.embeddingStatus.map((model) => (
-          <ModelCard key={model.name} model={model} />
-        ))}
-      </section>
-      <section className="space-y-4">
-        <h2 className={sectionHeading}>Plugin workers</h2>
+    <div className="space-y-8">
+      <Section title="Users" icon={<Users2 />} description="Who can sign in, and who administers ferret.">
+        <div className="space-y-5">
+          <Users users={data.users} onChanged={reload} />
+          <NewUserForm onCreated={reload} />
+        </div>
+      </Section>
+      <Section title="Embedding" icon={<Brain />} description="Each model's TEI health and what's still waiting to be embedded.">
+        <div className="space-y-4">
+          {data.embeddingStatus.map((model) => (
+            <ModelCard key={model.name} model={model} />
+          ))}
+        </div>
+      </Section>
+      <Section title="Plugin workers" icon={<Server />} description="The workers that ran plugins in the last day.">
         <Workers workers={data.workers} />
-      </section>
+      </Section>
     </div>
   );
 }

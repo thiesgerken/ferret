@@ -1,10 +1,11 @@
 "use client";
 
-import { Cable, Compass, Grip, LogOut, Search, Settings, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Grip, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { graphql, useFragment, type FragmentType } from "@/gql";
 import { logout } from "@/lib/auth";
+import { PAGES } from "@/lib/pages";
 
 const AppMenuUserFragment = graphql(`
   fragment AppMenuUser on User {
@@ -14,13 +15,6 @@ const AppMenuUserFragment = graphql(`
   }
 `);
 
-const SECTIONS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/", label: "Search", icon: Search },
-  { href: "/explore", label: "Explore", icon: Compass },
-  { href: "/connections", label: "Connections", icon: Cable },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
-
 const itemClass = "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent";
 
 // ponytail: the native popover handles outside clicks, Escape and focus; no menu library.
@@ -28,7 +22,7 @@ export function AppMenu(props: { user: FragmentType<typeof AppMenuUserFragment> 
   const user = useFragment(AppMenuUserFragment, props.user);
   const menuRef = useRef<HTMLElement>(null);
   const [error, setError] = useState("");
-  const sections = user.isAdmin ? [...SECTIONS, { href: "/admin", label: "Admin", icon: ShieldCheck }] : SECTIONS;
+  const sections = PAGES.filter((page) => user.isAdmin || !page.adminOnly);
 
   async function signOut() {
     setError("");
