@@ -64,7 +64,16 @@ type Hit = SearchHitsQuery["search"]["hits"][number];
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
 
-export function SearchResults({ state, onChange }: { state: SearchState; onChange: (state: SearchState) => void }) {
+export function SearchResults({
+  state,
+  onChange,
+  onType,
+}: {
+  state: SearchState;
+  onChange: (state: SearchState) => void;
+  /** A query typed into the field, before it's submitted. */
+  onType: (state: SearchState) => void;
+}) {
   const input = useMemo(
     () => ({
       q: state.q,
@@ -84,7 +93,11 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
     <div className="min-h-dvh">
       <header className="flex items-center gap-6 border-b border-border px-4 py-3 pr-16">
         <HomeLink />
-        <SearchField defaultValue={state.q} onSearch={(q) => onChange({ ...state, q })} />
+        <SearchField
+          defaultValue={state.q}
+          onSearch={(q) => onChange({ ...state, q })}
+          onType={(q) => onType({ ...state, q })}
+        />
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
         <FilterChips
