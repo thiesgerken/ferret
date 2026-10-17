@@ -44,7 +44,10 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
   endpoint. If it is unreachable the pump fails loudly (error in Admin, backlog grows) instead of
   falling back to the CPU endpoint, which would slow the backfill to days without anyone noticing.
   Queries are unaffected either way. One Service over CPU and GPU pods doesn't work: HTTP keep-alive
-  pins connections to pods, so the split would be random.
+  pins connections to pods, so the split would be random. In the Helm chart, `tei.gpu.enabled`
+  adds a GPU TEI per model (a Deployment pinned to the GPU node) and sets each model's `bulk_url`
+  to it. Turning it off after the backfill removes `bulk_url`, and the server restarts with the
+  CPU endpoint for the pump.
 
 - **A model whose `max_input_length` is below the longest embedded input is rejected** and the
   server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
