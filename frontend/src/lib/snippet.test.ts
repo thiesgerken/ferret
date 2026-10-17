@@ -43,3 +43,21 @@ test("words with underscores and stars in prose survive", () => {
 test("a highlight made of syntax alone disappears", () => {
   assert.deepEqual(plainMarkdown([plain("Intro\n"), hit("##"), plain(" Notes")]), [plain("Intro\n"), plain("Notes")]);
 });
+
+test("double underscores inside words or around a lone word survive", () => {
+  const parts = [plain("__init__ and foo__bar__baz, but __bold text__ goes")];
+
+  assert.deepEqual(plainMarkdown(parts), [plain("__init__ and foo__bar__baz, but bold text goes")]);
+});
+
+test("Obsidian's lists, tasks and wiki links read as text", () => {
+  const parts = [
+    plain("1. first\n2) second\n- [ ] open task\n- [x] done task\n        - deep bullet\n"),
+    plain("See [[Kfz Versicherung|the insurance]], [[Allianz]] and ![[scan.pdf]]."),
+  ];
+
+  assert.deepEqual(plainMarkdown(parts), [
+    plain("first\nsecond\nopen task\ndone task\n        deep bullet\n"),
+    plain("See the insurance, Allianz and scan.pdf."),
+  ]);
+});

@@ -3,15 +3,24 @@ export type TextPart = { text: string; highlight: boolean };
 /**
  * Markdown syntax to hide in a snippet, each as four groups: what precedes the syntax, the opening
  * syntax, the text it wraps, the closing syntax. The opening and closing syntax go, the rest stays.
+ *
+ * Inline syntax and line markers only. Tables, HTML and code fences stay raw on purpose: their
+ * text reads fine as is, and stripping them would take a real Markdown parser.
  */
 const MARKDOWN_SYNTAX = [
-  // Heading markers, blockquotes and list bullets at the start of a line.
-  /(^[ \t]{0,3})(#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+)()()/gm,
+  /(^[ \t]{0,3})(#{1,6}[ \t]+|>[ \t]?)()()/gm,
+  // List markers at any depth, with a task's checkbox.
+  /(^[ \t]*)((?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)()()/gm,
+  // Obsidian's wiki links and embeds: the alias stays, or else the note's name.
+  /()(!?\[\[[^\]|\n]*\|)([^\]\n]*)(\]\])/g,
+  /()(!?\[\[)([^\]|\n]*)(\]\])/g,
   // Links and images: their text (or alt text) stays, the target goes.
   /()(!?\[)([^\]\n]*)(\]\([^)\n]*\))/g,
-  /()(\*\*|__)(\S[^\n]*?)(\2)/g,
+  /()(\*\*)(\S[^\n]*?)(\*\*)/g,
+  // Underscores only outside words, so snake_case and foo__bar survive. A lone word between double
+  // underscores is more likely a Python dunder (`__init__`) than bold text.
+  /(^|\W)(__)(?!\w+__(?!\w))(\S[^\n]*?)(__)(?!\w)/g,
   /(^|[^\w*])(\*)([^*\s](?:[^*\n]*[^*\s])?)(\*)(?![\w*])/g,
-  // Not inside words, so snake_case survives.
   /(^|\W)(_)([^_\s](?:[^_\n]*[^_\s])?)(_)(?!\w)/g,
   /()(`+)([^`\n]+?)(\2)/g,
 ];
