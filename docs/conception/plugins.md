@@ -55,13 +55,20 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 ### Paperless
 
-- One document per Paperless document, source `paperless`, `content_type = plain` with the OCR
-  text from `content`.
-- `meta`: correspondent, document type, tags, archive serial number. `created_at` = Paperless'
-  `created` date. `url` = `{paperless}/documents/{id}/details`.
+- One document per Paperless document in the connection's root (e.g. `paperless`),
+  `external_id` = Paperless id, `content_type = plain` with the OCR text from `content`.
+- `meta`: correspondent, document type, tags (by name), archive serial number. `authors` = the
+  correspondent. `created_at` = Paperless' `created` date at noon UTC (Paperless keeps only the
+  date; noon keeps it in every time zone from UTC-11 to UTC+11). `url` =
+  `{paperless}/documents/{id}/details`.
 - Every run: a sync, list all ids (`/api/documents/?fields=id,modified`), `seen` for all of them,
-  `PUT` the ones modified after the cursor, commit. Deleted documents disappear with the sweep.
-- Auth: a Paperless API token (write-only config field).
+  fetch the ones modified after the cursor (`id__in`, 100 at a time) and `PUT` them, commit.
+  Deleted documents disappear with the sweep. Cursor = the newest `modified`.
+- Renaming a tag, correspondent or document type doesn't change a document's `modified`, so its
+  documents keep the old name until they change otherwise.
+- Requires Paperless-ngx 2.16 or later: requests pin API version 9, where `created` is a date.
+- Auth: a Paperless API token (write-only config field, `Authorization: Token …`). Objects the
+  token's user can't see are left out of `meta` with a line in the run log.
 
 ### carapace
 
