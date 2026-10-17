@@ -34,7 +34,7 @@ embedding:
       documentPrefix: ""
       # -- Semantic candidates less similar to the query are dropped (cosine similarity, 0 to 1).
       # Model-specific, see embeddings.md for how to calibrate it.
-      minSimilarity: 0.4
+      minSimilarity: 0.42
       # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on
       # small CPU nodes. It also caps the input length, which must stay at 2202 or more (title and
       # chunk, see embeddings.md).

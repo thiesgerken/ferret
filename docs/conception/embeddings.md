@@ -25,7 +25,7 @@ embedding:
       bulk_url: http://ferret-tei-qwen3-embedding-0-6b-gpu:80 # optional: the pump only
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
-      min_similarity: 0.4                                    # see Similarity cut-off
+      min_similarity: 0.42                                   # see Similarity cut-off
 ```
 
 The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap). At
@@ -177,16 +177,22 @@ pass, through the whole index when few do.
 Where noise ends depends on the model (and its prefixes), so the value is calibrated per model:
 
 1. Queries of two kinds, in German and English: on-topic ones whose relevant documents are known
-   (the demo documents of `scripts/demo-seed.sh`, ferret's docs), and off-topic ones the corpus has
-   no answer to.
+   (the demo documents of `scripts/demo-seed.sh`, ferret's docs, notes of the knowledge repo), and
+   off-topic ones the corpus has no answer to (sports, recipes, history, physics).
 2. Each query runs once through the search, which caches its embedding. SQL then computes every
    embedded chunk's similarity to it, exactly rather than through HNSW.
 3. The off-topic queries' best similarities show where noise ends, the relevant documents' best
-   chunks where matches begin. The cut-off goes between them, nearer the noise: a weak match lost
-   costs more than one extra hit, and exact terms still match by keyword.
+   chunks where matches begin. The cut-off goes in the middle of that gap: a bigger corpus raises
+   the noise (more chunks that are close by chance), and a weak match lost costs more than one
+   extra hit.
 
-The 0.4 for Qwen3-Embedding-0.6B in the chart and the compose config is a first guess, not
-calibrated yet.
+**Qwen3-Embedding-0.6B: 0.42**, with the prefixes above, from 10 on-topic and 10 off-topic queries
+on the compose demo (158 documents, 389 chunks: the demo documents, ferret's docs and a carapace
+knowledge repo). The off-topic queries' best chunks reached 0.26 to 0.39, the relevant documents'
+0.45 to 0.80. An average document sits at 0.15 to 0.30 from any query, never near 0: the model's
+space is anisotropic, which is why 0 can't serve as a floor. At 0.42 no off-topic query keeps a
+semantic match and every relevant document stays. On this small corpus that gap rests on a handful
+of documents per query. Model evaluation (#57) re-checks the value against the user's judgments.
 
 ## Evaluation
 

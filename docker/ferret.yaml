@@ -6,4 +6,4 @@ embedding:
       url: http://tei:80
       bulk_url: http://tei-bulk:80
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
-      min_similarity: 0.4
+      min_similarity: 0.42
