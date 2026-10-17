@@ -304,7 +304,19 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
     );
 
     // So does a force push, after which the cursor isn't in the history anymore.
-    git(repo.path(), &["commit", "--amend", "-qm", "rewritten"]);
+    git(
+        repo.path(),
+        &[
+            "-c",
+            "user.name=carapace",
+            "-c",
+            "user.email=c@example.com",
+            "commit",
+            "--amend",
+            "-qm",
+            "rewritten",
+        ],
+    );
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
