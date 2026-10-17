@@ -165,7 +165,7 @@ function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; show
             {showOwner && ingest.owner && <span className="text-xs text-muted-foreground">· {ingest.owner}</span>}
           </span>
           <span className="block text-xs text-muted-foreground tabular-nums">
-            {timeAgo(ingest.startedAt, now, locale)} · <RunDuration startedAt={ingest.startedAt} finishedAt={ingest.finishedAt} now={now} />
+            {timeAgo(ingest.startedAt, now, locale)} · <RunDuration run={ingest} now={now} />
           </span>
         </span>
         <span className="hidden shrink-0 gap-3 text-xs text-muted-foreground tabular-nums sm:flex">
