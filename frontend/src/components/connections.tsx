@@ -1,5 +1,6 @@
 "use client";
 
+import { Cable, Plus } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, type CombinedError } from "urql";
 import { graphql } from "@/gql";
@@ -98,9 +99,12 @@ const STATUS_LABELS: Record<RunStatus, string> = {
 const POLL_MS = 2000;
 
 const buttonClass = "rounded-md px-2 py-1 text-sm hover:bg-accent disabled:opacity-50 disabled:hover:bg-transparent";
+const primaryButtonClass =
+  "inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50";
 
 export function Connections() {
   const [{ data, error }, refetch] = useQuery({ query: ConnectionsQuery });
+  const [creating, setCreating] = useState(false);
   const reload = () => refetch({ requestPolicy: "network-only" });
 
   useEffect(() => {
@@ -124,14 +128,46 @@ export function Connections() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {data.pluginTypes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No plugin worker has registered yet, so there&apos;s nothing to connect.</p>
+        <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+          No plugin worker has registered yet, so there&apos;s nothing to connect.
+        </p>
+      ) : creating ? (
+        <CreateConnectionForm
+          pluginTypes={data.pluginTypes}
+          onCreated={() => {
+            setCreating(false);
+            reload();
+          }}
+          onCancel={() => setCreating(false)}
+        />
       ) : (
-        <CreateConnectionForm pluginTypes={data.pluginTypes} onCreated={reload} />
+        data.connections.length > 0 && (
+          <button type="button" onClick={() => setCreating(true)} className={primaryButtonClass}>
+            <Plus className="size-4" aria-hidden />
+            New connection
+          </button>
+        )
       )}
       {data.connections.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No connections yet.</p>
+        !creating && (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-14 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Cable className="size-6" aria-hidden />
+            </span>
+            <p className="font-medium">No connections yet</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              A connection keeps a source in sync with where its documents live, like a git repository or Paperless.
+            </p>
+            {data.pluginTypes.length > 0 && (
+              <button type="button" onClick={() => setCreating(true)} className={primaryButtonClass}>
+                <Plus className="size-4" aria-hidden />
+                New connection
+              </button>
+            )}
+          </div>
+        )
       ) : (
         <ul className="space-y-4">
           {data.connections.map((connection) => (
@@ -151,9 +187,11 @@ export function Connections() {
 function CreateConnectionForm({
   pluginTypes,
   onCreated,
+  onCancel,
 }: {
   pluginTypes: ConnectionsData["pluginTypes"];
   onCreated: () => void;
+  onCancel: () => void;
 }) {
   const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
@@ -191,8 +229,8 @@ function CreateConnectionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border p-4">
-      <h3 className="text-sm font-medium">New connection</h3>
+    <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-border p-5">
+      <h2 className="text-base font-medium">New connection</h2>
       <div className="flex items-end gap-3">
         <div className="space-y-1.5">
           <span className="block text-xs font-medium text-muted-foreground">Icon</span>
@@ -250,13 +288,14 @@ function CreateConnectionForm({
           {error}
         </p>
       )}
-      <button
-        type="submit"
-        disabled={Boolean(schemaError) || fetching}
-        className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
-      >
-        Create connection
-      </button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={Boolean(schemaError) || fetching} className={primaryButtonClass}>
+          Create connection
+        </button>
+        <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm hover:bg-accent">
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
@@ -436,21 +475,22 @@ function ConnectionCard({
     );
 
   return (
-    <li className="space-y-3 rounded-xl border border-border p-4">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-          <NamedIcon name={connection.icon} className="size-4" />
+    <li className={cn("space-y-3 rounded-2xl border border-border p-5", !connection.enabled && "bg-muted/40")}>
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+          <NamedIcon name={connection.icon} className="size-5" />
         </span>
         <div className="min-w-0 flex-1 space-y-1 text-sm">
-          <p className="font-medium">
-            {connection.name}{" "}
-            <span className="font-normal text-muted-foreground">
-              {connection.source} · {connection.plugin} · <code className="font-mono text-xs">{connection.schedule}</code>
-            </span>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-base font-medium">{connection.name}</span>
+            <StatusPill run={lastRun} enabled={connection.enabled} />
           </p>
           <p className="text-muted-foreground">
-            {lastRun ? <RunSummary run={lastRun} /> : "Never ran"} ·{" "}
-            {connection.enabled ? `next run ${formatDateTime(connection.nextRunAt)}` : "disabled"}
+            {connection.plugin} · {connection.source} · <code className="font-mono text-xs">{connection.schedule}</code>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {lastRun ? <RunSummary run={lastRun} /> : "Never ran"}
+            {connection.enabled && ` · next run ${formatDateTime(connection.nextRunAt)}`}
           </p>
         </div>
         <div className="flex gap-1">
@@ -560,6 +600,23 @@ function ConnectionCard({
       )}
     </li>
   );
+}
+
+const PILLS: Record<RunStatus, { label: string; className: string }> = {
+  RUNNING: { label: "Running", className: "bg-brand/15 text-brand" },
+  SUCCEEDED: { label: "OK", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  FAILED: { label: "Failed", className: "bg-destructive/15 text-destructive" },
+  LOST: { label: "Lost", className: "bg-warning/20 text-warning-foreground dark:text-warning" },
+};
+
+/** The connection's state at a glance: disabled, or how its last run went. */
+function StatusPill({ run, enabled }: { run: Run | undefined; enabled: boolean }) {
+  const { label, className } = !enabled
+    ? { label: "Disabled", className: "bg-muted text-muted-foreground" }
+    : run
+      ? PILLS[run.status]
+      : { label: "New", className: "bg-muted text-muted-foreground" };
+  return <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", className)}>{label}</span>;
 }
 
 function RunSummary({ run }: { run: Run }) {
