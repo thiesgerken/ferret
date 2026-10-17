@@ -1,0 +1,9 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "all": [7],
+  "results": [
+    {"id": 7, "slug": "allianz", "name": "Allianz", "match": "", "matching_algorithm": 6, "is_insensitive": true, "document_count": 9, "last_correspondence": "2025-01-14", "owner": 1, "user_can_change": true}
+  ]
+}
