@@ -62,7 +62,7 @@ Three APIs plus the login endpoints. The path decides the credential, each accep
 | API | Port | Consumers | Auth |
 |---|---|---|---|
 | GraphQL `/graphql` | public | the frontend | session cookie |
-| `/auth/login`, `/auth/logout` | public | the frontend | password, exchanged for the session cookie |
+| `/auth/login`, `/auth/logout`, `/auth/password` | public | the frontend | password, exchanged for the session cookie |
 | REST `/api/...` | public | plugins, external ingesters, agents | API key or plugin run token (bearer) |
 | REST `/internal/...` | internal | plugin workers | worker PSK |
 

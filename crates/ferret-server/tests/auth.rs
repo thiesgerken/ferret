@@ -145,7 +145,7 @@ async fn graphql_without_a_valid_session_is_401(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
-async fn graphql_and_login_accept_only_json(pool: PgPool) {
+async fn graphql_login_and_password_change_accept_only_json(pool: PgPool) {
     let server = start_server(pool).await;
     let cookie = server.sign_in().await;
 
@@ -171,8 +171,19 @@ async fn graphql_and_login_accept_only_json(pool: PgPool) {
         .await
         .unwrap();
 
+    let password_as_form = server
+        .request(Method::POST, "/auth/password")
+        .header(header::COOKIE, &cookie)
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(format!(
+            "current_password={ADMIN_PASSWORD}&new_password=a+brand+new+password"
+        ))
+        .send()
+        .await
+        .unwrap();
+
     assert_eq!(graphql_via_get.status(), 405);
-    for response in [graphql_as_text, login_as_form] {
+    for response in [graphql_as_text, login_as_form, password_as_form] {
         assert_eq!(response.status(), 415);
         assert!(json_body(response).await["error"].is_string());
     }
@@ -191,4 +202,59 @@ async fn a_login_without_password_is_rejected_with_an_error_body(pool: PgPool) {
 
     assert_eq!(response.status(), 422);
     assert!(json_body(response).await["error"].is_string());
+}
+
+#[sqlx::test(migrations = false)]
+async fn users_change_their_own_password_and_only_this_session_stays(pool: PgPool) {
+    let server = start_server(pool).await;
+    let this = server.sign_in().await;
+    let other = server.sign_in().await;
+    let new_password = "a brand new password";
+    let change = async |current: &str, new: &str| {
+        server
+            .request(Method::POST, "/auth/password")
+            .header(header::COOKIE, &this)
+            .json(&json!({"current_password": current, "new_password": new}))
+            .send()
+            .await
+            .unwrap()
+    };
+
+    let wrong = change("not the password", new_password).await;
+    assert_eq!(wrong.status(), 403);
+    assert_eq!(
+        json_body(wrong).await,
+        json!({"error": "the current password is wrong"})
+    );
+    let short = change(ADMIN_PASSWORD, "too short").await;
+    assert_eq!(short.status(), 400);
+    assert_eq!(server.me(&other).await.status(), 200, "nothing changed yet");
+
+    let changed = change(ADMIN_PASSWORD, new_password).await;
+    assert_eq!(changed.status(), 204);
+    let reissued = common::session_cookie(&changed);
+
+    assert_eq!(server.me(&reissued).await.status(), 200);
+    assert_eq!(
+        server.me(&this).await.status(),
+        401,
+        "the old cookie is spent"
+    );
+    assert_eq!(server.me(&other).await.status(), 401);
+    assert_eq!(server.login("admin", ADMIN_PASSWORD).await.status(), 401);
+    assert_eq!(server.login("admin", new_password).await.status(), 204);
+}
+
+#[sqlx::test(migrations = false)]
+async fn changing_a_password_needs_a_session(pool: PgPool) {
+    let server = start_server(pool).await;
+
+    let response = server
+        .request(Method::POST, "/auth/password")
+        .json(&json!({"current_password": ADMIN_PASSWORD, "new_password": "a brand new password"}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
 }

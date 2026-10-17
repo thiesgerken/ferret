@@ -19,7 +19,7 @@ The path decides the credential, each API accepts exactly one kind:
 | API | Credential |
 |---|---|
 | GraphQL `/graphql` (UI) | session cookie |
-| `/auth/...` (login, logout) | username and password, exchanged for the session cookie; logout reads the cookie to end its session |
+| `/auth/...` (login, logout, password) | username and password, exchanged for the session cookie; logout and password change read the cookie |
 | REST `/api/...` | API key or plugin run token, as bearer |
 | REST `/internal/...` (own port) | worker PSK, as bearer |
 
@@ -92,11 +92,17 @@ Same flow as carapace:
 5. `POST /auth/logout` deletes the session row, if the cookie names one, and clears the cookie
    (`Max-Age=0`). It always answers `204`.
 6. Changing a password increments `token_version`, which invalidates all of the user's cookies.
+7. `POST /auth/password` with `{"current_password", "new_password"}` lets the signed-in user change
+   their own password (Settings → Account), e.g. the bootstrap admin replacing the generated one.
+   The new one follows the 12-character policy (`400` otherwise). A wrong current password gets
+   `403 {"error": "the current password is wrong"}` after a full hash check, like a login. The
+   `token_version` bump ends every other session, and the `204` re-issues this session's cookie
+   under the new version with its expiry unchanged, so the browser stays signed in.
 
-**CSRF**: `/graphql` takes `POST` only, and `/graphql` and `/auth/login` accept only
-`Content-Type: application/json` (anything else is a `415`). Cross-site HTML forms can't send JSON
-without a CORS preflight, and `SameSite=Lax` keeps the cookie off cross-site `POST`s anyway. `GET`
-is excluded because `Lax` cookies do ride along on cross-site top-level navigations.
+**CSRF**: `/graphql` takes `POST` only, and `/graphql`, `/auth/login` and `/auth/password` accept
+only `Content-Type: application/json` (anything else is a `415`). Cross-site HTML forms can't send
+JSON without a CORS preflight, and `SameSite=Lax` keeps the cookie off cross-site `POST`s anyway.
+`GET` is excluded because `Lax` cookies do ride along on cross-site top-level navigations.
 
 **Errors**: `/auth` and REST rejections, including a malformed body (`400`, `415`, `422`), are
 answered with `{"error": "<message>"}`. `/graphql` answers a missing session with that `401` and

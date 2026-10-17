@@ -132,21 +132,43 @@ pub async fn create(pool: &PgPool, new: NewUser) -> Result<Account, UserError> {
     )
 }
 
-/// Sets a user's password and ends their sessions. False if there's no such user.
-pub async fn set_password(pool: &PgPool, id: Uuid, password: String) -> Result<bool, UserError> {
+/// Sets a user's password and ends their sessions. Returns the new token version, `None` if
+/// there's no such user.
+pub async fn set_password(
+    pool: &PgPool,
+    id: Uuid,
+    password: String,
+) -> Result<Option<i32>, UserError> {
     check_password(&password)?;
     let password_hash = hash_password(password).await;
-    let updated = sqlx::query!(
+    let version = sqlx::query_scalar!(
         "update users
          set password_hash = $2, token_version = token_version + 1, password_changed_at = now()
-         where id = $1",
+         where id = $1
+         returning token_version",
         id,
         password_hash,
     )
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok(updated == 1)
+    .fetch_optional(pool)
+    .await?;
+    Ok(version)
+}
+
+/// Changes `id`'s own password once `current` matches. Returns the new token version, `None` if
+/// `current` is wrong. The check costs a hash either way, like a login.
+pub async fn change_own_password(
+    pool: &PgPool,
+    id: Uuid,
+    current: String,
+    new: String,
+) -> Result<Option<i32>, UserError> {
+    let stored_hash = sqlx::query_scalar!("select password_hash from users where id = $1", id)
+        .fetch_one(pool)
+        .await?;
+    if !password_matches(current, Some(stored_hash)).await {
+        return Ok(None);
+    }
+    set_password(pool, id, new).await
 }
 
 /// Changes a user's name, admin role and whether they can sign in. Refuses to leave no enabled

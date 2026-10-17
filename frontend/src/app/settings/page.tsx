@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountSettings } from "@/components/account-settings";
 import { ApiKeysSettings } from "@/components/api-keys-settings";
 import { ModelsSettings } from "@/components/models-settings";
 
@@ -9,6 +10,15 @@ export default function SettingsPage() {
         ferret
       </Link>
       <h1 className="text-xl font-semibold">Settings</h1>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-medium">Account</h2>
+          <p className="text-sm text-muted-foreground">
+            A new password signs you out everywhere else. This browser stays signed in.
+          </p>
+        </div>
+        <AccountSettings />
+      </section>
       <section className="space-y-4">
         <div>
           <h2 className="text-base font-medium">API keys</h2>

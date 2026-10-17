@@ -170,6 +170,52 @@ pub async fn logout(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct PasswordChange {
+    current_password: String,
+    new_password: String,
+}
+
+/// The signed-in user changes their own password. The token version bump ends their other
+/// sessions, this one gets a cookie under the new version and keeps its expiry.
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    change: Result<Json<PasswordChange>, JsonRejection>,
+) -> Result<(StatusCode, [(axum::http::HeaderName, HeaderValue); 1]), ApiError> {
+    let not_signed_in = || ApiError::unauthorized("not signed in");
+    let claims = session_token(&headers)
+        .and_then(|token| state.session_key.verify(token))
+        .ok_or_else(not_signed_in)?;
+    let user = signed_in_user(&state, &headers)
+        .await?
+        .ok_or_else(not_signed_in)?;
+    let Json(change) = change?;
+    let version = users::change_own_password(
+        &state.pool,
+        user.id,
+        change.current_password,
+        change.new_password,
+    )
+    .await
+    .map_err(|error| match error {
+        users::UserError::Invalid(message) => ApiError::bad_request(&message),
+        users::UserError::Database(error) => error.into(),
+    })?
+    .ok_or_else(|| ApiError::forbidden("the current password is wrong"))?;
+    let now = unix_now();
+    let remaining = Duration::from_secs(claims.exp.saturating_sub(now));
+    let token = state.session_key.sign(&Claims {
+        iat: now,
+        ver: version,
+        ..claims
+    });
+    Ok((
+        StatusCode::NO_CONTENT,
+        [(SET_COOKIE, session_cookie(&token, remaining))],
+    ))
+}
+
 /// The user behind the request's session cookie, if the session is still valid: the row exists
 /// and hasn't expired, the user is enabled, and no password change happened since the login.
 pub async fn signed_in_user(

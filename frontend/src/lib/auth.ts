@@ -16,6 +16,19 @@ export async function logout(): Promise<void> {
   }
 }
 
+/** Changes the signed-in user's password. The server ends every other session and re-issues this
+ * one's cookie. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch("/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorMessage(res, "Changing the password failed"));
+  }
+}
+
 async function errorMessage(res: Response, fallback: string): Promise<string> {
   const body: unknown = await res.json().catch(() => null);
   if (typeof body === "object" && body !== null && "error" in body && typeof body.error === "string") {
