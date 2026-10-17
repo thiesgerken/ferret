@@ -12,6 +12,7 @@ const FIXTURES: &str = concat!(
     "/../ferret-plugins/fixtures/carapace"
 );
 const TALOS: &str = "memory/sessions/2026/09/s-talos.md";
+const TRIP: &str = "memory/sessions/2026/09/s-trip.md";
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -88,7 +89,7 @@ async fn latest_run(server: &TestServer, cookie: &str) -> Value {
     let runs = server
         .graphql(
             cookie,
-            "{ connections { runs(limit: 1) { status error } } }",
+            "{ connections { runs(limit: 1) { status error log stats { put unchanged deleted } } } }",
             json!({}),
         )
         .await;
@@ -160,12 +161,25 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         .filter(|line| !line.contains("**Anna**: Anna helps"))
         .map(|line| format!("{line}\n"))
         .collect();
-    std::fs::write(&talos, without_anna).unwrap();
+    std::fs::write(&talos, &without_anna).unwrap();
     commit(repo.path(), "re-render");
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
-    assert_eq!(latest_run(&server, &cookie).await["status"], "SUCCEEDED");
+    let incremental = latest_run(&server, &cookie).await;
+    assert_eq!(incremental["status"], "SUCCEEDED");
+    assert!(
+        incremental["log"]
+            .as_str()
+            .unwrap()
+            .contains("indexing the changes since"),
+        "{incremental}"
+    );
+    // Only the Talos session's documents: unchanged ones and the dropped fact.
+    assert_eq!(
+        incremental["stats"],
+        json!({"put": 0, "unchanged": 4, "deleted": 1})
+    );
     assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
     let anna_helps: i64 =
         sqlx::query_scalar("select count(*) from documents where text like 'Anna helps%'")
@@ -206,4 +220,43 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         format!("{TALOS}: not text")
     );
     assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
+
+    // Repaired, and the trip's session deleted: what that file held goes with it, found in its
+    // version at the last indexed commit. The repaired file is as indexed then, so not in the diff.
+    std::fs::write(&talos, &without_anna).unwrap();
+    std::fs::remove_file(repo.path().join(TRIP)).unwrap();
+    commit(repo.path(), "repair, forget the trip");
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    assert_eq!(
+        latest_run(&server, &cookie).await["stats"],
+        json!({"put": 0, "unchanged": 0, "deleted": 2})
+    );
+    let documents = documents_per_source(&pool).await;
+    assert_eq!(
+        (documents["carapace/sessions"], documents["carapace/facts"]),
+        (1, 3)
+    );
+
+    // Another carapace URL changes every link, so the next run puts everything again.
+    sqlx::query("update connections set state = jsonb_set(state, '{indexing,carapace_url}', '\"https://old.example/\"')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let full = latest_run(&server, &cookie).await;
+    assert!(
+        full["log"]
+            .as_str()
+            .unwrap()
+            .contains("full sync: the carapace URL changed"),
+        "{full}"
+    );
+    assert_eq!(
+        full["stats"]["unchanged"], 8,
+        "1 session, 3 facts, 2 digests, 2 files"
+    );
 }

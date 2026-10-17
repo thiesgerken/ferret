@@ -3,7 +3,7 @@
 
 mod mirror;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -14,7 +14,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     Log, Outcome, PluginError, Run, git,
-    repo::{Checkout, FileHistory},
+    repo::{Change, Checkout, FileHistory},
 };
 use mirror::{Digest, Fact, Session};
 
@@ -40,8 +40,6 @@ pub struct CarapaceConfig {
     carapace_url: String,
 }
 
-// ponytail: a full sync every run, whose sweep also removes facts a changed session file
-// dropped. Diffing against the last commit (repo::Checkout::changes_since) is a follow-up.
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: CarapaceConfig = serde_json::from_value(run.config.clone())?;
     let checkout = Checkout::clone(
@@ -53,65 +51,222 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     .await?;
     run.log
         .line(format!("cloned {} at {}", config.remote, checkout.head));
-    let mut modes: Vec<(String, String)> = checkout.modes().await?.into_iter().collect();
-    modes.sort();
-    let history = checkout.history().await?;
-    let target = Target {
-        root: &run.source,
-        carapace_url: config.carapace_url.trim_end_matches('/'),
+    let repository = Repository {
+        run,
+        checkout: &checkout,
+        modes: checkout.modes().await?,
+        history: checkout.history().await?,
+        target: Target {
+            root: &run.source,
+            carapace_url: config.carapace_url.trim_end_matches('/'),
+        },
     };
 
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
-    let mut stats = RunStats::default();
-    for (path, mode) in &modes {
-        let kind = kind(path);
-        if kind == Kind::Ignored {
-            continue;
+    // Documents link to carapace, so a new URL needs every document put again.
+    let indexing = json!({ "carapace_url": config.carapace_url });
+    let stats = match repository.changes(&indexing).await? {
+        Ok(changes) => repository.apply(changes).await?,
+        Err(reason) => {
+            run.log.line(format!("full sync: {reason}"));
+            repository.full_sync().await?
         }
-        let text = match checkout.text(path, mode).await? {
-            Ok(text) => text,
-            // Skipping a session or digest would let the sweep delete what it held.
-            Err(skipped) if kind != Kind::File => return Err(format!("{path}: {skipped}").into()),
-            Err(skipped) => {
-                run.log.line(format!("skipped {path}: {skipped}"));
-                continue;
-            }
-        };
-        let in_file = |error: PluginError| format!("{path}: {error}");
-        let documents = match kind {
-            Kind::Session => session_documents(
-                &mirror::parse_session(&text).map_err(in_file)?,
-                &target,
-                &run.log,
-            ),
-            Kind::Digest => vec![digest_document(
-                &mirror::parse_digest(&text).map_err(in_file)?,
-                &target,
-            )],
-            Kind::File => {
-                let history = history.get(path).ok_or_else(|| {
-                    format!("{path} is tracked but no commit in the log touched it")
-                })?;
-                vec![file_document(path, text, history, &target)]
-            }
-            Kind::Ignored => unreachable!("skipped above"),
-        };
-        for document in documents {
-            match run.api.put_document(&document).await?.outcome {
-                PutOutcome::Unchanged => stats.unchanged += 1,
-                PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
-            }
-        }
-    }
-    stats.deleted = run.api.commit_sync(sync).await?.deleted;
+    };
     run.log.line(format!(
         "{} put, {} unchanged, {} deleted",
         stats.put, stats.unchanged, stats.deleted
     ));
     Ok(Outcome {
-        state: json!({ "commit": checkout.head }),
+        state: json!({ "commit": checkout.head, "indexing": indexing }),
         stats,
     })
+}
+
+/// A document's key on the server.
+type Key = (String, String);
+
+/// The changes since the last run's commit, with the documents their files held back then.
+struct Changes {
+    /// Added or modified, to put.
+    changed: Vec<String>,
+    /// What the changed and deleted files held at the last run. Whatever of it isn't put again
+    /// is gone: a deleted file, or a fact a re-rendered session dropped.
+    before: HashSet<Key>,
+}
+
+/// What a run needs to turn files of the checkout into documents.
+struct Repository<'a> {
+    run: &'a Run,
+    checkout: &'a Checkout,
+    modes: HashMap<String, String>,
+    history: HashMap<String, FileHistory>,
+    target: Target<'a>,
+}
+
+impl Repository<'_> {
+    /// The changes since the commit the last run indexed, or why this run has to be a full sync.
+    async fn changes(&self, indexing: &Value) -> Result<Result<Changes, String>, PluginError> {
+        let state = &self.run.state;
+        let Some(cursor) = state.get("commit").and_then(Value::as_str) else {
+            return Ok(Err("no earlier run".to_owned()));
+        };
+        match state.get("indexing") {
+            None => return Ok(Err("the last run stored no carapace URL".to_owned())),
+            Some(stored) if stored != indexing => {
+                return Ok(Err("the carapace URL changed".to_owned()));
+            }
+            Some(_) => {}
+        }
+        let diff = match self.checkout.changes_since(cursor).await? {
+            Ok(diff) => diff,
+            Err(reason) => return Ok(Err(reason)),
+        };
+        let mut changes = Changes {
+            changed: Vec::new(),
+            before: HashSet::new(),
+        };
+        for change in diff {
+            let path = match change {
+                Change::Changed(path) => {
+                    changes.changed.push(path.clone());
+                    path
+                }
+                Change::Deleted(path) => path,
+            };
+            match self.keys_at(cursor, &path).await? {
+                Ok(keys) => changes.before.extend(keys),
+                Err(reason) => return Ok(Err(reason)),
+            }
+        }
+        self.run
+            .log
+            .line(format!("indexing the changes since {cursor}"));
+        Ok(Ok(changes))
+    }
+
+    /// The keys of the documents the file at `path` held at `commit`, or why they can't be told:
+    /// a session or digest this plugin no longer parses.
+    async fn keys_at(
+        &self,
+        commit: &str,
+        path: &str,
+    ) -> Result<Result<Vec<Key>, String>, PluginError> {
+        let parse = |documents: Result<Vec<DocumentPut>, PluginError>| {
+            Ok(documents
+                .map(|documents| {
+                    documents
+                        .into_iter()
+                        .map(|document| (document.source, document.external_id))
+                        .collect()
+                })
+                .map_err(|error| format!("{path} at {commit}: {error}")))
+        };
+        match kind(path) {
+            Kind::Ignored => Ok(Ok(Vec::new())),
+            Kind::File => Ok(Ok(vec![(self.target.source("files"), path.to_owned())])),
+            Kind::Session => match self.checkout.text_at(commit, path).await? {
+                None => Ok(Ok(Vec::new())),
+                // Repeated facts were logged when that version was indexed.
+                Some(text) => parse(
+                    mirror::parse_session(&text)
+                        .map(|session| session_documents(&session, &self.target, &Log::default())),
+                ),
+            },
+            Kind::Digest => match self.checkout.text_at(commit, path).await? {
+                None => Ok(Ok(Vec::new())),
+                Some(text) => parse(
+                    mirror::parse_digest(&text)
+                        .map(|digest| vec![digest_document(&digest, &self.target)]),
+                ),
+            },
+        }
+    }
+
+    /// Puts every file inside a sync, whose commit deletes what's gone.
+    async fn full_sync(&self) -> Result<RunStats, PluginError> {
+        let run = self.run;
+        let sync = run.api.start_sync(&run.source).await?.sync_id;
+        let mut stats = RunStats::default();
+        let mut paths: Vec<&String> = self.modes.keys().collect();
+        paths.sort();
+        for path in paths {
+            for document in self.documents(path).await? {
+                self.put(&document, &mut stats).await?;
+            }
+        }
+        stats.deleted = run.api.commit_sync(sync).await?.deleted;
+        Ok(stats)
+    }
+
+    /// Puts the changed files' documents and deletes what the changes dropped.
+    async fn apply(&self, changes: Changes) -> Result<RunStats, PluginError> {
+        let mut stats = RunStats::default();
+        let mut put = HashSet::new();
+        for path in &changes.changed {
+            for document in self.documents(path).await? {
+                self.put(&document, &mut stats).await?;
+                put.insert((document.source, document.external_id));
+            }
+        }
+        let mut dropped: Vec<&Key> = changes.before.difference(&put).collect();
+        dropped.sort();
+        for (source, external_id) in dropped {
+            match self.run.api.delete_document(source, external_id).await {
+                Ok(()) => stats.deleted += 1,
+                // Never indexed, e.g. a file that was always too big.
+                Err(error) if error.status() == Some(reqwest::StatusCode::NOT_FOUND) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(stats)
+    }
+
+    /// The documents the file at `path` holds now. A session or digest that can't be read fails
+    /// the run, since what it held would be deleted. Other files that can't be indexed hold none.
+    async fn documents(&self, path: &str) -> Result<Vec<DocumentPut>, PluginError> {
+        let kind = kind(path);
+        if kind == Kind::Ignored {
+            return Ok(Vec::new());
+        }
+        let mode = self
+            .modes
+            .get(path)
+            .ok_or_else(|| format!("{path} is in the diff but not tracked"))?;
+        let text = match self.checkout.text(path, mode).await? {
+            Ok(text) => text,
+            Err(skipped) if kind != Kind::File => return Err(format!("{path}: {skipped}").into()),
+            Err(skipped) => {
+                self.run.log.line(format!("skipped {path}: {skipped}"));
+                return Ok(Vec::new());
+            }
+        };
+        let in_file = |error: PluginError| format!("{path}: {error}");
+        Ok(match kind {
+            Kind::Session => session_documents(
+                &mirror::parse_session(&text).map_err(in_file)?,
+                &self.target,
+                &self.run.log,
+            ),
+            Kind::Digest => vec![digest_document(
+                &mirror::parse_digest(&text).map_err(in_file)?,
+                &self.target,
+            )],
+            Kind::File => {
+                let history = self.history.get(path).ok_or_else(|| {
+                    format!("{path} is tracked but no commit in the log touched it")
+                })?;
+                vec![file_document(path, text, history, &self.target)]
+            }
+            Kind::Ignored => unreachable!("handled above"),
+        })
+    }
+
+    async fn put(&self, document: &DocumentPut, stats: &mut RunStats) -> Result<(), PluginError> {
+        match self.run.api.put_document(document).await?.outcome {
+            PutOutcome::Unchanged => stats.unchanged += 1,
+            PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+        }
+        Ok(())
+    }
 }
 
 /// What a repository path holds.
