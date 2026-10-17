@@ -121,41 +121,28 @@ claude mcp add --transport http ferret https://ferret.example.com/mcp \
 
 ## 🚀 Getting started
 
-```sh
-docker compose up
-scripts/demo-seed.sh
-```
+Follow the [quickstart](docs/quickstart.md) to start the development stack, sign in, seed sample
+documents, search a known phrase, and open its origin. It includes Apple Silicon instructions and
+shows how to inspect a real git connection in Activity.
 
-starts ferret on <http://127.0.0.1:3380> (sign in as `admin` with `ferret-development`) and fills it
-with sample documents and a git connection to ferret's own docs. On Apple Silicon, see
-[docs/development.md](docs/development.md) first.
+The Compose stack is for local development and demos, not deployment. For a real installation use
+the [Helm chart](charts/ferret/README.md).
 
-For a real deployment, install the [Helm chart](charts/ferret/README.md).
+## Documentation
 
-## 🏗️ How it works
+Start at the [documentation index](docs/README.md), or go directly to:
 
-The server (Rust, axum) serves the UI's GraphQL API, the REST API and MCP, schedules plugin runs and
-runs the embed pump. Plugin workers pull runs from the server and write through the same ingest API
-anyone else uses. Postgres holds everything: documents, chunks, the BM25 index and the vectors. A
-pool of TEI servers turns chunks and queries into embeddings. More in
-[architecture.md](docs/conception/architecture.md).
+- [Connections](docs/connections.md): schedules, runs, exclusions and data ownership.
+- [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
+- Plugin setup: [git](docs/plugins/git.md), [Paperless](docs/plugins/paperless.md),
+  [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md).
+- [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
+- [Development](docs/development.md): local development and tests.
 
-## 📚 Docs
+Design background remains in [conception](docs/conception/README.md),
+[ADRs](docs/adr/), the [glossary](docs/glossary.md), and [brand](docs/brand/README.md).
 
-| topic | what it covers |
-| --- | --- |
-| [Conception](docs/conception/README.md) | what ferret is for, the data model, search, v1 scope |
-| [Architecture](docs/conception/architecture.md) | components, APIs, plugin orchestration, deployment |
-| [Users and auth](docs/conception/auth.md) | sessions, API keys and their scopes, plugin credentials |
-| [Embeddings](docs/conception/embeddings.md) | models, the TEI pool, the embed pump, model evaluation |
-| [Plugins](docs/conception/plugins.md) | the plugin contract and each plugin's sync |
-| [Helm chart](charts/ferret/README.md) | installing ferret on Kubernetes |
-| [Development](docs/development.md) | the compose stack, demo data, tests |
-| [Glossary](docs/glossary.md) | the domain vocabulary |
-| [ADRs](docs/adr/) | decisions and why they were made |
-| [Brand](docs/brand/README.md) | the mark, the wordmark and their colours |
-
-## 💬 Remarks
+## Remarks
 
 - Mandatory AI disclaimer: of course I use AI for coding, everything else just doesn't make sense.
   ferret is built by a small team of agents (developers, a reviewer and an orchestrator) working
@@ -164,17 +151,6 @@ pool of TEI servers turns chunks and queries into embeddings. More in
 - I made this for me! And because making stuff is fun, and sharing it too.
 - ferret is pre-1.0. Expect breaking changes before `1.0.0`.
 
-## 🛠️ Development
-
-```sh
-docker compose up -d paradedb
-docker compose up -d --scale dovecot=1 dovecot
-cargo test --workspace
-```
-
-The compose stack, demo data and tests are in [docs/development.md](docs/development.md), commands
-and conventions in [AGENTS.md](AGENTS.md).
-
-## 📄 License
+## License
 
 [MIT](LICENSE)
