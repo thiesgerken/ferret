@@ -645,7 +645,9 @@ impl Embedding {
 /// through the claim's advisory locks. Dropping the future stops every loop.
 pub async fn run_pump(pool: PgPool, embedding: Arc<Embedding>) {
     let mut tasks = JoinSet::new();
-    tasks.spawn(wake_on_chunks(pool.clone(), embedding.clone()));
+    // Listening before the first claim: a chunk ingested in between would wait for `IDLE_POLL`.
+    let listener = listen(&pool).await;
+    tasks.spawn(wake_on_chunks(pool.clone(), embedding.clone(), listener));
     tasks.spawn(poll_teis(pool.clone(), embedding.clone()));
     for tei in &embedding.teis {
         tasks.spawn(pump(pool.clone(), embedding.clone(), tei.clone()));
@@ -657,20 +659,25 @@ pub async fn run_pump(pool: PgPool, embedding: Arc<Embedding>) {
     }
 }
 
-async fn wake_on_chunks(pool: PgPool, embedding: Arc<Embedding>) {
+async fn wake_on_chunks(
+    pool: PgPool,
+    embedding: Arc<Embedding>,
+    mut listener: Result<PgListener, sqlx::Error>,
+) {
     loop {
-        let mut listener = match listen(&pool).await {
-            Ok(listener) => listener,
+        match listener {
+            Ok(mut listening) => {
+                while listening.recv().await.is_ok() {
+                    embedding.wake.send_replace(());
+                }
+                tracing::warn!("embed pump lost its notification connection");
+            }
             Err(error) => {
                 tracing::error!(%error, "embed pump can't listen for chunks_pending");
                 tokio::time::sleep(IDLE_POLL).await;
-                continue;
             }
-        };
-        while listener.recv().await.is_ok() {
-            embedding.wake.send_replace(());
         }
-        tracing::warn!("embed pump lost its notification connection");
+        listener = listen(&pool).await;
     }
 }
 
@@ -779,6 +786,12 @@ async fn embed_batch(
     .fetch_all(&mut *tx)
     .await?;
     if chunks.is_empty() {
+        return Ok(0);
+    }
+    // An admin may have switched the TEI off while the claim waited for a connection: chunks
+    // ingested after the switch go to another TEI. Rolls back the claim.
+    if tei.serving(Use::Embedding) != Some((embedding.index_of(model), served.to_owned())) {
+        embedding.wake.send_replace(());
         return Ok(0);
     }
 

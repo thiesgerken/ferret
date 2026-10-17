@@ -51,8 +51,8 @@ struct FakeState {
     model_id: String,
     /// `--served-model-name`, the model id when `None`.
     served_name: Option<String>,
-    /// The model embeddings come back under, when it isn't the one `/info` reports.
-    answers_as: Option<String>,
+    /// The model it loads with the next embedding request.
+    switching_to: Option<String>,
     max_input_length: usize,
     embedded: Vec<String>,
     health: Health,
@@ -80,7 +80,7 @@ impl FakeTei {
         let state = Arc::new(Mutex::new(FakeState {
             model_id: model_id.to_owned(),
             served_name: None,
-            answers_as: None,
+            switching_to: None,
             max_input_length,
             embedded: Vec::new(),
             health: Health::Up,
@@ -109,10 +109,10 @@ impl FakeTei {
         self.state.lock().unwrap().served_name = Some(name.to_owned());
     }
 
-    /// From now on, embeddings come back under `model`, while `/info` still reports the old one:
-    /// like a TEI that switched models between two of the server's looks.
-    pub fn answer_as(&self, model: &str) {
-        self.state.lock().unwrap().answers_as = Some(model.to_owned());
+    /// Loads `model` with the next embedding request and answers it with that model, like a TEI
+    /// that switched models after the server's last look.
+    pub fn switch_on_next_embedding(&self, model: &str) {
+        self.state.lock().unwrap().switching_to = Some(model.to_owned());
     }
 
     /// From now on, every request fails with a 503, like a TEI that is restarting.
@@ -183,8 +183,12 @@ async fn embeddings(
         ));
     }
     state.embedded.extend(inputs.iter().cloned());
-    let model = (state.answers_as.as_ref())
-        .or(state.served_name.as_ref())
+    if let Some(model) = state.switching_to.take() {
+        state.model_id = model;
+    }
+    let model = state
+        .served_name
+        .as_ref()
         .unwrap_or(&state.model_id)
         .clone();
     let data: Vec<Value> = inputs

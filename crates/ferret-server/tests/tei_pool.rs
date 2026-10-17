@@ -159,9 +159,7 @@ async fn an_answer_from_another_model_is_discarded_and_the_tei_looked_at_again(p
     let config = embedding_config(model(MODEL, &tei), &[&tei]);
     let server = start_server_with(pool.clone(), tei.clone(), config).await;
 
-    // The TEI loaded another model since the server last looked.
-    tei.serve("other/model");
-    tei.answer_as("other/model");
+    tei.switch_on_next_embedding("other/model");
     server
         .admin_api()
         .await
@@ -170,7 +168,8 @@ async fn an_answer_from_another_model_is_discarded_and_the_tei_looked_at_again(p
         .unwrap();
     let listed = eventually("the TEI looked at again", async || {
         let listed = listed(&server, &tei.url).await;
-        (listed["state"] == "UNUSED").then_some(listed)
+        // Discovery may see the new model before the pump records its error.
+        (listed["state"] == "UNUSED" && listed["lastError"].is_string()).then_some(listed)
     })
     .await;
 
