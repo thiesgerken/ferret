@@ -175,6 +175,41 @@ async fn a_new_connection_is_claimed_once_with_a_token_for_its_root(pool: PgPool
 }
 
 #[sqlx::test(migrations = false)]
+async fn a_disabled_users_connections_dont_run(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let internal = server.internal();
+    let worker = register(&internal).await;
+    connection_id(&server, "notes").await;
+    let set_enabled = async |enabled: bool| {
+        // Straight in SQL: the admin UI guards the last enabled admin, not what's tested here.
+        sqlx::query("update users set enabled = $1")
+            .bind(enabled)
+            .execute(&pool)
+            .await
+            .unwrap();
+    };
+
+    set_enabled(false).await;
+    let waited = internal
+        .claim(worker, Duration::from_millis(500))
+        .await
+        .unwrap();
+    assert!(waited.is_none(), "the due connection isn't claimed");
+
+    set_enabled(true).await;
+    let run = claim_now(&internal, worker).await.unwrap();
+    let token = server.api_with_key(&run.token);
+    assert_eq!(put_status(&token, "notes").await, StatusCode::OK);
+
+    set_enabled(false).await;
+    assert_eq!(
+        put_status(&token, "notes").await,
+        StatusCode::UNAUTHORIZED,
+        "the run in flight stops ingesting"
+    );
+}
+
+#[sqlx::test(migrations = false)]
 async fn only_a_successful_run_stores_its_state_and_a_finished_runs_token_dies(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let internal = server.internal();

@@ -12,7 +12,7 @@ use axum::{
     http::{StatusCode, header::AUTHORIZATION, request::Parts},
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use ferret_api::internal::{
     ClaimRequest, ClaimedRun, Heartbeat, Registered, RunFinish, RunResult, WorkerRegistration,
 };
@@ -70,6 +70,26 @@ impl FromRequestParts<AppState> for Worker {
             Err(ApiError::unauthorized("missing or invalid worker secret"))
         }
     }
+}
+
+pub struct WorkerInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub plugins: Vec<String>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+/// The workers seen in the last day, the most recently seen first. A restarted worker registers
+/// anew, so older rows are mostly gone pods.
+pub async fn workers(pool: &PgPool) -> Result<Vec<WorkerInfo>, sqlx::Error> {
+    sqlx::query_as!(
+        WorkerInfo,
+        "select id, name, plugins, last_seen_at from workers
+         where last_seen_at > now() - interval '1 day'
+         order by last_seen_at desc"
+    )
+    .fetch_all(pool)
+    .await
 }
 
 /// Upserts the worker's plugin types and registers the worker with its capabilities.
@@ -165,7 +185,8 @@ async fn next_event(pool: &PgPool, plugins: &[String]) -> Result<Option<Duration
     let seconds = sqlx::query_scalar!(
         r#"select extract(epoch from min(at) - now())::float8 from (
                select c.next_run_at as at from connections c
-               where c.enabled and c.plugin = any($1)
+               join users u on u.id = c.user_id
+               where c.enabled and u.enabled and c.plugin = any($1)
                  and not exists (select 1 from plugin_runs r
                                  where r.connection_id = c.id and r.status = 'running')
                union all
@@ -199,7 +220,10 @@ async fn try_claim(
     let Some(connection) = sqlx::query!(
         "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state
          from connections c
+         -- A disabled user's connections don't run: they would ingest for someone who can't
+         -- sign in, with credentials an admin meant to switch off.
          where c.enabled and c.plugin = any($1) and c.next_run_at <= now()
+           and exists (select 1 from users u where u.id = c.user_id and u.enabled)
            and not exists (select 1 from plugin_runs r
                            where r.connection_id = c.id and r.status = 'running')
          order by c.next_run_at
@@ -411,9 +435,13 @@ pub async fn authenticate(
     };
     let live = sqlx::query_scalar!(
         r#"select exists (
-               select 1 from plugin_runs r join connections c on c.id = r.connection_id
+               select 1 from plugin_runs r
+               join connections c on c.id = r.connection_id
+               join users u on u.id = c.user_id
                where r.id = $1 and c.user_id = $2 and c.source = $3 and r.status = 'running'
                  and r.heartbeat_at >= now() - make_interval(secs => $4)
+                 -- A run in flight stops ingesting when its owner is disabled.
+                 and u.enabled
            ) as "live!""#,
         claims.run,
         claims.sub,

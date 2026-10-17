@@ -76,6 +76,7 @@ impl FakeTei {
             health: health.clone(),
         };
         let app = Router::new()
+            .route("/health", get(health_check))
             .route("/info", get(info))
             .route("/embed", post(embed))
             .with_state(fake);
@@ -102,6 +103,16 @@ impl FakeTei {
     /// Every text embedded so far, in order.
     pub fn embedded(&self) -> Vec<String> {
         self.embedded.lock().unwrap().clone()
+    }
+}
+
+/// Like the embed requests: fine, a 503, or no answer.
+async fn health_check(State(fake): State<Fake>) -> StatusCode {
+    let health = *fake.health.lock().unwrap();
+    match health {
+        Health::Up => StatusCode::OK,
+        Health::Down => StatusCode::SERVICE_UNAVAILABLE,
+        Health::Hanging => std::future::pending().await,
     }
 }
 

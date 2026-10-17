@@ -359,8 +359,8 @@ the roadmap. Details in [plugins.md](plugins.md).
   change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).
 - **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
-  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (API keys,
-  default model with coverage), Admin (users, workers, backlog).
+  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account:
+  change your own password (#54), API keys, default model with coverage), Admin (users, workers, backlog).
 - **Ops**: Helm chart, docker-compose for development, CI and releases as in carapace (images
   `ferret`, `ferret-plugins`, `ferret-frontend`, chart as OCI on ghcr). Structured JSON logs, no
   `/metrics` endpoint.

@@ -5,6 +5,7 @@ use argon2::{
     password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
 use axum::{Json, extract::State};
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
@@ -17,6 +18,8 @@ use crate::{
 
 pub const BOOTSTRAP_USERNAME: &str = "admin";
 pub const BOOTSTRAP_PASSWORD_MIN_CHARS: usize = 16;
+/// For passwords an admin sets. The bootstrap's is longer, since nobody types it.
+pub const PASSWORD_MIN_CHARS: usize = 12;
 
 /// A signed-in user, as the UI sees it.
 pub struct User {
@@ -43,6 +46,154 @@ pub async fn set_default_embedding_model(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// A user as admins manage them.
+pub struct Account {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub is_admin: bool,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub last_login_at: Option<DateTime<Utc>>,
+}
+
+pub struct NewUser {
+    pub username: String,
+    pub display_name: Option<String>,
+    pub password: String,
+    pub is_admin: bool,
+}
+
+pub struct UserUpdate {
+    pub display_name: Option<String>,
+    pub is_admin: bool,
+    pub enabled: bool,
+}
+
+pub enum UserError {
+    /// Rejected input, worded for the admin.
+    Invalid(String),
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for UserError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
+fn invalid<T>(message: impl Into<String>) -> Result<T, UserError> {
+    Err(UserError::Invalid(message.into()))
+}
+
+pub async fn accounts(pool: &PgPool) -> Result<Vec<Account>, sqlx::Error> {
+    sqlx::query_as!(
+        Account,
+        "select id, username, display_name, is_admin, enabled, created_at, last_login_at
+         from users order by username"
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn create(pool: &PgPool, new: NewUser) -> Result<Account, UserError> {
+    // As the login reads usernames, so the new user can sign in with what was typed.
+    let username = new.username.trim().to_lowercase();
+    let valid = username
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if username.is_empty() || !valid {
+        return invalid(format!(
+            "{:?} isn't a username: letters, digits, `.`, `_` and `-` only",
+            new.username
+        ));
+    }
+    check_password(&new.password)?;
+    let password_hash = hash_password(new.password).await;
+    sqlx::query_as!(
+        Account,
+        "insert into users
+             (id, username, display_name, password_hash, is_admin, created_at, password_changed_at)
+         values (uuidv7(), $1, $2, $3, $4, now(), now())
+         on conflict (username) do nothing
+         returning id, username, display_name, is_admin, enabled, created_at, last_login_at",
+        username,
+        display_name(new.display_name),
+        password_hash,
+        new.is_admin,
+    )
+    .fetch_optional(pool)
+    .await?
+    .map_or_else(
+        || invalid(format!("the username {username:?} is taken")),
+        Ok,
+    )
+}
+
+/// Sets a user's password and ends their sessions. False if there's no such user.
+pub async fn set_password(pool: &PgPool, id: Uuid, password: String) -> Result<bool, UserError> {
+    check_password(&password)?;
+    let password_hash = hash_password(password).await;
+    let updated = sqlx::query!(
+        "update users
+         set password_hash = $2, token_version = token_version + 1, password_changed_at = now()
+         where id = $1",
+        id,
+        password_hash,
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(updated == 1)
+}
+
+/// Changes a user's name, admin role and whether they can sign in. Refuses to leave no enabled
+/// admin: the bootstrap would bring `admin` back on the next start, but only where the bootstrap
+/// password is still set, so the UI never relies on it.
+pub async fn update(
+    pool: &PgPool,
+    id: Uuid,
+    update: UserUpdate,
+) -> Result<Option<Account>, UserError> {
+    let mut tx = pool.begin().await?;
+    // Locks every enabled admin, so two admins demoting each other can't both succeed.
+    let admins = sqlx::query_scalar!("select id from users where is_admin and enabled for update")
+        .fetch_all(&mut *tx)
+        .await?;
+    let stays_admin = update.is_admin && update.enabled;
+    if !stays_admin && admins == [id] {
+        return invalid("this is the last enabled admin: make someone else an admin first");
+    }
+    let account = sqlx::query_as!(
+        Account,
+        "update users set display_name = $2, is_admin = $3, enabled = $4 where id = $1
+         returning id, username, display_name, is_admin, enabled, created_at, last_login_at",
+        id,
+        display_name(update.display_name),
+        update.is_admin,
+        update.enabled,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(account)
+}
+
+fn check_password(password: &str) -> Result<(), UserError> {
+    if password.chars().count() < PASSWORD_MIN_CHARS {
+        return invalid(format!(
+            "a password needs at least {PASSWORD_MIN_CHARS} characters"
+        ));
+    }
+    Ok(())
+}
+
+/// A blank display name is no display name.
+fn display_name(name: Option<String>) -> Option<String> {
+    name.map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
 }
 
 /// `GET /api/users`: every user, for admin tooling.

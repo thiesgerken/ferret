@@ -35,6 +35,8 @@ const BATCH_TIMEOUT: Duration = Duration::from_secs(60);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 /// How the claim query looks ahead for chunks no other pump has locked.
 const CLAIM_CANDIDATES: i64 = 256;
+/// A health check that takes longer counts as down: the Admin page waits for all of them.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long the startup waits for a TEI that doesn't accept connections yet.
 const TEI_STARTUP_WAIT: Duration = Duration::from_secs(600);
 /// The pump also looks for work this often without a notification, e.g. after an outage.
@@ -223,9 +225,93 @@ async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
     tx.commit().await
 }
 
+/// How one configured model is doing.
+pub struct ModelStatus {
+    pub name: String,
+    pub is_default: bool,
+    /// Whether the TEI for searches answers.
+    pub online: bool,
+    /// Whether the pump's TEI answers, `None` when the pump uses the same one.
+    pub bulk_online: Option<bool>,
+    /// The pump's last failure, until its next success.
+    pub last_error: Option<(String, chrono::DateTime<chrono::Utc>)>,
+    /// Chunks still to embed per source, across users. Sources without any are left out.
+    pub backlog: Vec<SourceBacklog>,
+}
+
+pub struct SourceBacklog {
+    pub source: String,
+    /// Waiting for the pump.
+    pub pending: i64,
+    /// TEI refused them, so the pump leaves them out.
+    pub failed: i64,
+}
+
 impl Embedding {
     pub fn default_model(&self) -> &Model {
         &self.models[0]
+    }
+
+    /// Every configured model's health and backlog, the default first.
+    // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
+    // running counts if the Admin page gets slow.
+    pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
+        // Every health check at once, so TEIs that are down cost one timeout, not one each.
+        let check = |url: &str| {
+            let (http, url) = (self.http.clone(), url.to_owned());
+            tokio::spawn(async move { tei::healthy(&http, &url, HEALTH_TIMEOUT).await })
+        };
+        let checks: Vec<_> = self
+            .models
+            .iter()
+            .map(|model| {
+                (
+                    check(&model.config.url),
+                    model.config.bulk_url.as_deref().map(check),
+                )
+            })
+            .collect();
+        let mut statuses = Vec::new();
+        for ((index, model), (online, bulk_online)) in self.models.iter().enumerate().zip(checks) {
+            let name = model.name();
+            let online = online.await.expect("a health check doesn't panic");
+            let bulk_online = match bulk_online {
+                Some(check) => Some(check.await.expect("a health check doesn't panic")),
+                None => None,
+            };
+            let last_error = sqlx::query!(
+                "select error, at from embedding_errors where model = $1",
+                name
+            )
+            .fetch_optional(pool)
+            .await?
+            .map(|row| (row.error, row.at));
+            // Pending as the pump sees it: no embedding and no recorded failure.
+            let backlog = sqlx::query_as!(
+                SourceBacklog,
+                r#"select c.source,
+                          count(*) filter (where f.chunk_id is null) as "pending!",
+                          count(f.chunk_id) as "failed!"
+                   from chunks c
+                   left join embedding_failures f on f.chunk_id = c.id and f.model = $1
+                   where not exists (select 1 from chunk_embeddings e
+                                     where e.chunk_id = c.id and e.model = $1)
+                   group by c.source
+                   order by c.source"#,
+                name,
+            )
+            .fetch_all(pool)
+            .await?;
+            statuses.push(ModelStatus {
+                name: name.to_owned(),
+                is_default: index == 0,
+                online,
+                bulk_online,
+                last_error,
+                backlog,
+            });
+        }
+        Ok(statuses)
     }
 
     /// Every configured model, the default first.
