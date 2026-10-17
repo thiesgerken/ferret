@@ -185,7 +185,8 @@ async fn next_event(pool: &PgPool, plugins: &[String]) -> Result<Option<Duration
     let seconds = sqlx::query_scalar!(
         r#"select extract(epoch from min(at) - now())::float8 from (
                select c.next_run_at as at from connections c
-               where c.enabled and c.plugin = any($1)
+               join users u on u.id = c.user_id
+               where c.enabled and u.enabled and c.plugin = any($1)
                  and not exists (select 1 from plugin_runs r
                                  where r.connection_id = c.id and r.status = 'running')
                union all
@@ -219,7 +220,10 @@ async fn try_claim(
     let Some(connection) = sqlx::query!(
         "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state
          from connections c
+         -- A disabled user's connections don't run: they would ingest for someone who can't
+         -- sign in, with credentials an admin meant to switch off.
          where c.enabled and c.plugin = any($1) and c.next_run_at <= now()
+           and exists (select 1 from users u where u.id = c.user_id and u.enabled)
            and not exists (select 1 from plugin_runs r
                            where r.connection_id = c.id and r.status = 'running')
          order by c.next_run_at
