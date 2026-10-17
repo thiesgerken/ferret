@@ -1,20 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { act } from "react";
 import { Provider } from "urql";
 
 import { renderReact, settle } from "../../test/react-test-utils";
 import { createGraphqlClient } from "@/lib/graphql";
 import { DocumentViewer } from "./document-viewer";
 
-async function renderViewer(contentType: string, text: string, hit: { start: number; end: number } | null) {
+type Operation = { operationName: string; variables: Record<string, unknown> };
+
+/** Serves the document, and answers an exclusion like the server does for a connection's thread. */
+async function renderViewer(
+  contentType: string,
+  text: string,
+  hit: { start: number; end: number } | null,
+  operations: Operation[] = [],
+) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
-  const client = createGraphqlClient(async () =>
-    Response.json({
+  const client = createGraphqlClient(async (_url, init) => {
+    const operation = JSON.parse(String(init?.body)) as Operation;
+    operations.push(operation);
+    if (operation.operationName === "ExcludeDocument") {
+      return Response.json({ data: { excludeDocument: { __typename: "ExcludedDocuments", deleted: 3, remembered: true } } });
+    }
+    return Response.json({
       data: {
         document: {
           __typename: "Document",
           id: "d",
           source: "notes",
+          thread: "lunch",
           contentType,
           title: "A note",
           text,
@@ -26,8 +41,8 @@ async function renderViewer(contentType: string, text: string, hit: { start: num
           nextInThread: { __typename: "ThreadNeighbor", id: "e", title: null },
         },
       },
-    }),
-  );
+    });
+  });
   const view = await renderReact(
     <Provider value={client}>
       <DocumentViewer id="d" hit={hit} />
@@ -73,5 +88,23 @@ test("offers the next document of the thread, and no previous one at its start",
     links.map((link) => [link.getAttribute("rel"), link.getAttribute("href"), link.textContent]),
     [["next", "/view?id=e", "Next in thread →"]],
   );
+  await view.unmount();
+});
+
+test("excludes the whole thread after confirmation and says what happened", async (t) => {
+  t.mock.method(window, "confirm", () => true);
+  const operations: Operation[] = [];
+  const view = await renderViewer("PLAIN", "text", null, operations);
+  const button = [...view.container.querySelectorAll("button")].find((b) => b.textContent === "Its whole thread")!;
+
+  await act(async () => {
+    button.click();
+  });
+  await settle();
+
+  const exclude = operations.find((operation) => operation.operationName === "ExcludeDocument");
+  assert.deepEqual(exclude?.variables, { id: "d", wholeThread: true });
+  assert.match(view.container.querySelector("[role=status]")?.textContent ?? "", /3 documents removed/);
+  assert.match(view.container.textContent ?? "", /Its connection won.t ingest it again/);
   await view.unmount();
 });
