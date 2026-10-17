@@ -111,8 +111,8 @@ document with an API key, from a script, a cron job or an agent.
 
 ## 🧩 MCP
 
-ferret speaks MCP (Streamable HTTP) at `/mcp`, with an API key as the bearer token. Its tools are
-`search`, `get_document` and `list_sources`. In Claude Code, for example:
+ferret speaks MCP (Streamable HTTP) at `/mcp`, with an API key with `search:read` as the bearer
+token. Its tools are `search`, `get_document` and `list_sources`. In Claude Code, for example:
 
 ```sh
 claude mcp add --transport http ferret https://ferret.example.com/mcp \
