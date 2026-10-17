@@ -14,6 +14,7 @@ use juniper::{
     RootNode, graphql_object, graphql_value, http,
 };
 use sqlx::PgPool;
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::{
@@ -91,12 +92,12 @@ impl Query {
 
     /// Plugin runs and bursts of API keys' writes, newest first: the signed-in user's, or every
     /// user's with `allUsers` (admins only, no when left out). `writer` filters by a connection's
-    /// or key's id, `before` pages by `startedAt` (ingests starting at the very same instant may
-    /// be skipped at a page boundary). `limit` is 1 to 200, 50 when left out.
+    /// or key's id. For the next page, `before` takes the last ingest's `cursor`. `limit` is 1 to
+    /// 200, 50 when left out.
     async fn activity(
         context: &Context,
         writer: Option<ID>,
-        before: Option<DateTime<Utc>>,
+        before: Option<String>,
         limit: Option<i32>,
         all_users: Option<bool>,
     ) -> FieldResult<Vec<Ingest>> {
@@ -111,7 +112,12 @@ impl Query {
         let filter = activity::FeedFilter {
             user_id: (!all_users).then_some(context.user.id),
             writer_id: writer.as_ref().map(parse_id).transpose()?,
-            before,
+            before: before
+                .map(|cursor| {
+                    activity::Cursor::decode(&cursor)
+                        .ok_or_else(|| invalid_input("not a cursor of this feed".to_owned()))
+                })
+                .transpose()?,
             limit: i64::from(limit),
         };
         let ingests = activity::feed(&context.pool, &filter)
@@ -233,6 +239,9 @@ impl Query {
                 name: model.name().to_owned(),
                 configured_default: model.name() == default,
                 min_similarity: model.config.min_similarity,
+                backlog: OnceCell::new(),
+                rate: OnceCell::new(),
+                health: OnceCell::new(),
             })
             .collect()
     }
@@ -405,6 +414,11 @@ enum IngestKind {
 impl Ingest {
     fn id(&self) -> ID {
         ID::new(self.ingest.id.to_string())
+    }
+
+    /// Pass the last ingest's as `activity(before:)` for the next page.
+    fn cursor(&self) -> String {
+        activity::Cursor::of(&self.ingest).encode()
     }
 
     fn kind(&self) -> IngestKind {
@@ -899,6 +913,10 @@ struct EmbeddingModel {
     name: String,
     configured_default: bool,
     min_similarity: f64,
+    // Each worked out once per request, however many fields need it: the Activity page polls.
+    backlog: OnceCell<(i64, i64)>,
+    rate: OnceCell<f64>,
+    health: OnceCell<(bool, Option<bool>)>,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -938,36 +956,25 @@ impl EmbeddingModel {
 
     /// The user's chunks still waiting for the embed pump.
     async fn pending(&self, context: &Context) -> FieldResult<i32> {
-        let (pending, _) = embeddings::user_backlog(&context.pool, context.user.id, &self.name)
-            .await
-            .map_err(internal)?;
-        Ok(count(pending))
+        Ok(count(self.backlog(context).await?.0))
     }
 
     /// The user's chunks TEI refused, which the pump leaves out.
     async fn failed(&self, context: &Context) -> FieldResult<i32> {
-        let (_, failed) = embeddings::user_backlog(&context.pool, context.user.id, &self.name)
-            .await
-            .map_err(internal)?;
-        Ok(count(failed))
+        Ok(count(self.backlog(context).await?.1))
     }
 
-    /// Chunks per minute the pump embedded over the last 10 minutes, for all users.
+    /// Chunks per minute the pump embedded over the last 10 minutes, across users: the pump is
+    /// shared.
     async fn rate_per_minute(&self, context: &Context) -> FieldResult<f64> {
-        embeddings::rate_per_minute(&context.pool, &self.name)
-            .await
-            .map_err(internal)
+        self.rate(context).await
     }
 
     /// Seconds until `pending` is embedded at `ratePerMinute`. Optimistic while other users'
     /// chunks wait too, the pump shares its rate. Null when nothing is pending or the rate is 0.
     async fn eta_seconds(&self, context: &Context) -> FieldResult<Option<i32>> {
-        let (pending, _) = embeddings::user_backlog(&context.pool, context.user.id, &self.name)
-            .await
-            .map_err(internal)?;
-        let rate = embeddings::rate_per_minute(&context.pool, &self.name)
-            .await
-            .map_err(internal)?;
+        let (pending, _) = self.backlog(context).await?;
+        let rate = self.rate(context).await?;
         Ok(embeddings::eta_seconds(pending, rate).map(count))
     }
 
@@ -979,16 +986,41 @@ impl EmbeddingModel {
 
     /// Whether the TEI for search queries answers.
     async fn online(&self, context: &Context) -> bool {
-        context.embedding.health(self.model(context)).await.0
+        self.health(context).await.0
     }
 
     /// Whether the pump's TEI answers, null when it's the same as for queries.
     async fn bulk_online(&self, context: &Context) -> Option<bool> {
-        context.embedding.health(self.model(context)).await.1
+        self.health(context).await.1
     }
 }
 
 impl EmbeddingModel {
+    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
+        self.backlog
+            .get_or_try_init(|| {
+                embeddings::user_backlog(&context.pool, context.user.id, &self.name)
+            })
+            .await
+            .copied()
+            .map_err(internal)
+    }
+
+    async fn rate(&self, context: &Context) -> FieldResult<f64> {
+        self.rate
+            .get_or_try_init(|| embeddings::rate_per_minute(&context.pool, &self.name))
+            .await
+            .copied()
+            .map_err(internal)
+    }
+
+    async fn health(&self, context: &Context) -> (bool, Option<bool>) {
+        *self
+            .health
+            .get_or_init(|| context.embedding.health(self.model(context)))
+            .await
+    }
+
     fn model<'a>(&self, context: &'a Context) -> &'a embeddings::Model {
         context
             .embedding
@@ -1661,6 +1693,10 @@ struct ModelStatus {
     last_error_at: Option<DateTime<Utc>>,
     /// Chunks still to embed, per source and across users. Empty when everything is embedded.
     backlog: Vec<SourceBacklog>,
+    /// Chunks with an embedding for this model, across users.
+    embedded: i32,
+    /// Every user's chunks.
+    chunks: i32,
     /// Chunks per minute the pump embedded over the last 10 minutes.
     rate_per_minute: f64,
     /// Seconds until the whole backlog is embedded at that rate, null when it's empty or the
@@ -1730,6 +1766,8 @@ impl From<embeddings::ModelStatus> for ModelStatus {
                     failed: count(backlog.failed),
                 })
                 .collect(),
+            embedded: count(status.embedded),
+            chunks: count(status.chunks),
             rate_per_minute: status.rate_per_minute,
             eta_seconds: status.eta_seconds.map(count),
             batch_size: count(status.batch_size as i64),

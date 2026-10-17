@@ -237,7 +237,10 @@ type EmbeddingModel {
   pending: Int!
   "The user's chunks TEI refused, which the pump leaves out."
   failed: Int!
-  "Chunks per minute the pump embedded over the last 10 minutes, for all users."
+  """
+    Chunks per minute the pump embedded over the last 10 minutes, across users: the pump is
+    shared.
+  """
   ratePerMinute: Float!
   """
     Seconds until `pending` is embedded at `ratePerMinute`. Optimistic while other users'
@@ -363,6 +366,8 @@ type HitChunk {
 
 type Ingest {
   id: ID!
+  "Pass the last ingest's as `activity(before:)` for the next page."
+  cursor: String!
   kind: IngestKind!
   "The connection that ran, or the key that wrote."
   writer: Writer!
@@ -397,6 +402,10 @@ type ModelStatus {
   lastErrorAt: DateTime
   "Chunks still to embed, per source and across users. Empty when everything is embedded."
   backlog: [SourceBacklog!]!
+  "Chunks with an embedding for this model, across users."
+  embedded: Int!
+  "Every user's chunks."
+  chunks: Int!
   "Chunks per minute the pump embedded over the last 10 minutes."
   ratePerMinute: Float!
   """
@@ -488,10 +497,10 @@ type Query {
   """
     Plugin runs and bursts of API keys' writes, newest first: the signed-in user's, or every
     user's with `allUsers` (admins only, no when left out). `writer` filters by a connection's
-    or key's id, `before` pages by `startedAt` (ingests starting at the very same instant may
-    be skipped at a page boundary). `limit` is 1 to 200, 50 when left out.
+    or key's id. For the next page, `before` takes the last ingest's `cursor`. `limit` is 1 to
+    200, 50 when left out.
   """
-  activity(writer: ID, before: DateTime, limit: Int, allUsers: Boolean): [Ingest!]!
+  activity(writer: ID, before: String, limit: Int, allUsers: Boolean): [Ingest!]!
   "Each embedding model's TEI health and backlog, the default first. Admins only."
   embeddingStatus: [ModelStatus!]!
   "The signed-in user's API keys, newest first."

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id as \"id!\", kind as \"kind!\", writer_id as \"writer_id!\", writer_name as \"writer_name!\",\n                  writer_icon as \"writer_icon!\", status as \"status!\", started_at as \"started_at!\",\n                  finished_at, put as \"put!\", unchanged as \"unchanged!\", deleted as \"deleted!\",\n                  error, log, owner as \"owner!\"\n           from (\n               select r.id, 'run' as kind, c.id as writer_id, c.name as writer_name,\n                      c.icon as writer_icon, r.status, r.started_at, r.finished_at,\n                      coalesce((r.stats->>'put')::integer, r.put) as put,\n                      coalesce((r.stats->>'unchanged')::integer, r.unchanged) as unchanged,\n                      coalesce((r.stats->>'deleted')::integer, r.deleted) as deleted,\n                      r.error, r.log, u.username as owner\n               from plugin_runs r\n               join connections c on c.id = r.connection_id\n               join users u on u.id = c.user_id\n               where ($1::uuid is null or c.user_id = $1)\n                 and ($2::uuid is null or c.id = $2)\n                 and ($3::timestamptz is null or r.started_at < $3)\n               union all\n               select i.id, 'api', k.id, k.name, k.icon,\n                      case when i.last_at > now() - interval '10 minutes'\n                           then 'running' else 'succeeded' end,\n                      i.started_at, i.last_at, i.put, i.unchanged, i.deleted,\n                      null, null, u.username\n               from api_ingests i\n               join api_keys k on k.id = i.api_key_id\n               join users u on u.id = i.user_id\n               where ($1::uuid is null or i.user_id = $1)\n                 and ($2::uuid is null or k.id = $2)\n                 and ($3::timestamptz is null or i.started_at < $3)\n           ) ingests\n           order by started_at desc, id desc\n           limit $4",
+  "query": "select id as \"id!\", kind as \"kind!\", writer_id as \"writer_id!\", writer_name as \"writer_name!\",\n                  writer_icon as \"writer_icon!\", status as \"status!\", started_at as \"started_at!\",\n                  finished_at, put as \"put!\", unchanged as \"unchanged!\", deleted as \"deleted!\",\n                  error, log, owner as \"owner!\"\n           from (\n               select r.id, 'run' as kind, c.id as writer_id, c.name as writer_name,\n                      c.icon as writer_icon, r.status, r.started_at, r.finished_at,\n                      coalesce((r.stats->>'put')::integer, r.put) as put,\n                      coalesce((r.stats->>'unchanged')::integer, r.unchanged) as unchanged,\n                      coalesce((r.stats->>'deleted')::integer, r.deleted) as deleted,\n                      r.error, r.log, u.username as owner\n               from plugin_runs r\n               join connections c on c.id = r.connection_id\n               join users u on u.id = c.user_id\n               where ($1::uuid is null or c.user_id = $1)\n                 and ($2::uuid is null or c.id = $2)\n                 and ($3::timestamptz is null or (r.started_at, r.id) < ($3, $5))\n               union all\n               select i.id, 'api', k.id, k.name, k.icon,\n                      case when i.last_at > now() - interval '10 minutes'\n                           then 'running' else 'succeeded' end,\n                      i.started_at, i.last_at, i.put, i.unchanged, i.deleted,\n                      null, null, u.username\n               from api_ingests i\n               join api_keys k on k.id = i.api_key_id\n               join users u on u.id = i.user_id\n               where ($1::uuid is null or i.user_id = $1)\n                 and ($2::uuid is null or k.id = $2)\n                 and ($3::timestamptz is null or (i.started_at, i.id) < ($3, $5))\n           ) ingests\n           order by started_at desc, id desc\n           limit $4",
   "describe": {
     "columns": [
       {
@@ -93,7 +93,8 @@
         "Uuid",
         "Uuid",
         "Timestamptz",
-        "Int8"
+        "Int8",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -113,5 +114,5 @@
       null
     ]
   },
-  "hash": "4618405faa1ac2b4adf07df0eb78a707ce0ae72fa14b332f1c16da1df0017ae7"
+  "hash": "8924d49ecb06af0c0370a11a5402395af8e6db83a10614a96dd8b4d49cd4d596"
 }

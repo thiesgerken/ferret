@@ -196,3 +196,45 @@ async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgP
         json!([{"role": "BOTH", "online": true, "queueSize": null, "load": null}])
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn the_feed_pages_by_cursor_without_skipping(pool: PgPool) {
+    let server = start_server(pool).await;
+    // Three keys, three bursts.
+    for index in 0..3 {
+        let key = server.create_api_key(&["INGEST_WRITE"], None).await;
+        server
+            .api_with_key(&key)
+            .put_document(&document("inbox", &format!("doc-{index}"), "Text."))
+            .await
+            .unwrap();
+    }
+    let cookie = server.sign_in().await;
+    const PAGE: &str = "query ($before: String) {
+        activity(before: $before, limit: 2) { id cursor }
+    }";
+
+    let first = server.graphql(&cookie, PAGE, json!({})).await;
+    let first = first["data"]["activity"].as_array().unwrap().clone();
+    let second = server
+        .graphql(&cookie, PAGE, json!({"before": first[1]["cursor"]}))
+        .await;
+    let second = second["data"]["activity"].as_array().unwrap().clone();
+
+    assert_eq!((first.len(), second.len()), (2, 1));
+    let mut ids: Vec<&Value> = first
+        .iter()
+        .chain(&second)
+        .map(|ingest| &ingest["id"])
+        .collect();
+    ids.dedup();
+    assert_eq!(ids.len(), 3);
+
+    let rejected = server
+        .graphql(&cookie, PAGE, json!({"before": "yesterday"}))
+        .await;
+    assert_eq!(
+        rejected["errors"][0]["message"],
+        "not a cursor of this feed"
+    );
+}

@@ -105,14 +105,47 @@ pub enum IngestKind {
     Api,
 }
 
+/// Where a page of the feed ends: the last ingest's start and id, which order the feed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cursor {
+    pub started_at: DateTime<Utc>,
+    pub id: Uuid,
+}
+
+impl Cursor {
+    pub fn of(ingest: &Ingest) -> Self {
+        Self {
+            started_at: ingest.started_at,
+            id: ingest.id,
+        }
+    }
+
+    /// `<started_at in RFC 3339>_<id>`, opaque to clients.
+    pub fn encode(&self) -> String {
+        format!(
+            "{}_{}",
+            self.started_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            self.id
+        )
+    }
+
+    pub fn decode(cursor: &str) -> Option<Self> {
+        let (started_at, id) = cursor.split_once('_')?;
+        Some(Self {
+            started_at: DateTime::parse_from_rfc3339(started_at).ok()?.to_utc(),
+            id: id.parse().ok()?,
+        })
+    }
+}
+
 pub struct FeedFilter {
     /// `None`: every user's, for admins.
     pub user_id: Option<Uuid>,
     /// A connection's or API key's id.
     pub writer_id: Option<Uuid>,
-    /// Only ingests that started before this, for the next page. Ingests starting at the same
-    /// instant may be skipped across a page boundary, which two ingests practically never do.
-    pub before: Option<DateTime<Utc>>,
+    /// Only ingests after this one in the feed's order, for the next page.
+    pub before: Option<Cursor>,
     pub limit: i64,
 }
 
@@ -136,7 +169,7 @@ pub async fn feed(pool: &PgPool, filter: &FeedFilter) -> Result<Vec<Ingest>, sql
                join users u on u.id = c.user_id
                where ($1::uuid is null or c.user_id = $1)
                  and ($2::uuid is null or c.id = $2)
-                 and ($3::timestamptz is null or r.started_at < $3)
+                 and ($3::timestamptz is null or (r.started_at, r.id) < ($3, $5))
                union all
                select i.id, 'api', k.id, k.name, k.icon,
                       case when i.last_at > now() - interval '10 minutes'
@@ -148,14 +181,15 @@ pub async fn feed(pool: &PgPool, filter: &FeedFilter) -> Result<Vec<Ingest>, sql
                join users u on u.id = i.user_id
                where ($1::uuid is null or i.user_id = $1)
                  and ($2::uuid is null or k.id = $2)
-                 and ($3::timestamptz is null or i.started_at < $3)
+                 and ($3::timestamptz is null or (i.started_at, i.id) < ($3, $5))
            ) ingests
            order by started_at desc, id desc
            limit $4"#,
         filter.user_id,
         filter.writer_id,
-        filter.before,
+        filter.before.map(|cursor| cursor.started_at),
         filter.limit,
+        filter.before.map(|cursor| cursor.id),
     )
     .fetch_all(pool)
     .await?;
@@ -191,4 +225,19 @@ pub async fn feed(pool: &PgPool, filter: &FeedFilter) -> Result<Vec<Ingest>, sql
             }
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cursor_survives_its_round_trip() {
+        let cursor = Cursor {
+            started_at: "2026-10-17T12:00:00.123456Z".parse().unwrap(),
+            id: Uuid::nil(),
+        };
+        assert_eq!(Cursor::decode(&cursor.encode()), Some(cursor));
+        assert_eq!(Cursor::decode("2026-10-17"), None);
+    }
 }

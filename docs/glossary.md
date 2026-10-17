@@ -44,6 +44,15 @@ _Avoid_: connector, integration, ingester (for built-in ones)
 A plugin configured by one user for one origin, with its schedule and the source root it owns.
 _Avoid_: plugin instance, integration, feed, source
 
+**Ingest**:
+One stretch of writing into the index: a run, or a burst. What the Activity page lists.
+_Avoid_: job, import
+
+**Burst**:
+An API key's writes with gaps under 10 minutes, counted as one ingest. Grouped by time, not by
+sync: a key that never syncs has bursts, and a sync with a longer pause spans two.
+_Avoid_: sync, session
+
 **Writer**:
 A connection or an API key: what puts documents into sources. Shown with its name and icon.
 _Avoid_: origin (the external system), ingester

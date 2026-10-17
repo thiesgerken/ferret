@@ -41,7 +41,7 @@ impl TeiLoad {
             let metrics = tei::metrics(http, url, SCRAPE_TIMEOUT).await?;
             let mut samples = self.samples.lock().expect("no panics while sampling");
             let samples = samples.entry(url.to_owned()).or_default();
-            samples.push_back((Instant::now(), metrics));
+            push(samples, Instant::now(), metrics);
             // Keeps one sample older than the window, to span all of it.
             while samples.len() > 2 && samples[1].0.elapsed() > WINDOW {
                 samples.pop_front();
@@ -63,6 +63,25 @@ impl TeiLoad {
         let samples = self.samples.lock().expect("no panics while sampling");
         samples.get(url)?.back().copied()
     }
+}
+
+/// Adds a sample. A TEI restart resets its counters, and differences across one would be negative:
+/// the samples before it are dropped.
+fn push(samples: &mut VecDeque<(Instant, Metrics)>, at: Instant, metrics: Metrics) {
+    if samples
+        .back()
+        .is_some_and(|(_, previous)| restarted(previous, &metrics))
+    {
+        samples.clear();
+    }
+    samples.push_back((at, metrics));
+}
+
+fn restarted(previous: &Metrics, now: &Metrics) -> bool {
+    now.embedded < previous.embedded
+        || now.failures < previous.failures
+        || now.inference_seconds < previous.inference_seconds
+        || now.batches < previous.batches
 }
 
 /// The figures of `newest`, with rates against an earlier sample `span` before it.
@@ -121,5 +140,25 @@ mod tests {
         assert_eq!(load.throughput_per_minute, Some(32.0));
         assert_eq!(load.load, Some(24.0 / 30.0));
         assert!(super::load(None, newest).load.is_none());
+    }
+
+    #[test]
+    fn a_restarted_tei_starts_its_samples_over() {
+        let start = Instant::now();
+        let before = Metrics {
+            embedded: 500.0,
+            batches: 40.0,
+            ..Metrics::default()
+        };
+        let after_restart = Metrics {
+            embedded: 3.0,
+            batches: 1.0,
+            ..Metrics::default()
+        };
+        let mut samples = VecDeque::new();
+        push(&mut samples, start, before);
+        push(&mut samples, start + Duration::from_secs(10), after_restart);
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].1, after_restart);
     }
 }

@@ -329,6 +329,10 @@ pub struct ModelStatus {
     pub last_error: Option<(String, chrono::DateTime<chrono::Utc>)>,
     /// Chunks still to embed per source, across users. Sources without any are left out.
     pub backlog: Vec<SourceBacklog>,
+    /// Chunks with an embedding for this model, across users.
+    pub embedded: i64,
+    /// Every user's chunks.
+    pub chunks: i64,
     pub rate_per_minute: f64,
     /// Until the whole backlog is embedded.
     pub eta_seconds: Option<i64>,
@@ -369,9 +373,6 @@ impl Embedding {
         &self.models[0]
     }
 
-    /// Every configured model's health and backlog, the default first.
-    // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
-    // running counts if the Admin page gets slow.
     async fn tei_status(&self, url: &str, role: TeiRole, online: bool, pending: i64) -> TeiStatus {
         let load = self.tei_load.read(&self.http, url).await;
         let eta_seconds = match role {
@@ -402,6 +403,9 @@ impl Embedding {
         tokio::join!(online, bulk_online)
     }
 
+    /// Every configured model's health and backlog, the default first.
+    // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
+    // running counts if the Admin page gets slow.
     pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
         // Every health check at once, so TEIs that are down cost one timeout, not one each.
         let check = |url: &str| {
@@ -451,6 +455,15 @@ impl Embedding {
             .await?;
             let rate_per_minute = rate_per_minute(pool, name).await?;
             let pending = backlog.iter().map(|source| source.pending).sum();
+            let embedded = sqlx::query_scalar!(
+                r#"select count(*) as "count!" from chunk_embeddings where model = $1"#,
+                name
+            )
+            .fetch_one(pool)
+            .await?;
+            let chunks = sqlx::query_scalar!(r#"select count(*) as "count!" from chunks"#)
+                .fetch_one(pool)
+                .await?;
             let mut teis = vec![
                 self.tei_status(
                     &model.config.url,
@@ -477,6 +490,8 @@ impl Embedding {
                 bulk_online,
                 last_error,
                 backlog,
+                embedded,
+                chunks,
                 rate_per_minute,
                 eta_seconds: eta_seconds(pending, rate_per_minute),
                 batch_size: model.batch_size(),

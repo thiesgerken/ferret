@@ -156,14 +156,18 @@ What the Activity page shows per model:
 - **Backlog**: the user's chunks still pending and those TEI refused (Admin: per source, across
   users).
 - **Rate**: embeddings written in the last 10 minutes (`chunk_embeddings.embedded_at`), per
-  minute. It's read from the database, so it holds across server processes and restarts. ETA is
-  the backlog divided by it, optimistic for one user while others' chunks wait too.
+  minute, across users: the pump is shared, so every user sees it. It's read from the database,
+  so it holds across server processes and restarts. ETA is the backlog divided by it, optimistic
+  for one user while others' chunks wait too. Admins also get the global embedded and total
+  chunks.
 - **Batch size**: the pump's current one, per server process (it adapts per process).
 - **TEI** (Admin): per configured URL (queries, pump, or both), TEI's own figures from its
   Prometheus `/metrics`, read on demand at most every 3 s and kept for a minute: queue size,
   average batch size, inputs embedded per minute, failed requests, and the share of the minute
   spent in inference as a CPU proxy. TEI records each input of a batch with the batch's
-  inference time, so that share divides the inference time by the average batch size. The
+  inference time, so that share divides the inference time by the average batch size, which is
+  approximate when batch sizes vary. A TEI restart resets its counters, the samples before it
+  are dropped. The
   pump's TEI also gets an ETA from its throughput. No Prometheus server is involved.
 
 ## Per-user model choice

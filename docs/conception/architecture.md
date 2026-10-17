@@ -144,9 +144,9 @@ create table api_ingests (
     api_key_id  uuid not null references api_keys on delete cascade,
     started_at  timestamptz not null,
     last_at     timestamptz not null,
-    put         integer not null,
-    unchanged   integer not null,
-    deleted     integer not null
+    put         integer not null default 0,
+    unchanged   integer not null default 0,
+    deleted     integer not null default 0
 );
 ```
 
