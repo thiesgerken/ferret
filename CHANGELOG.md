@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.6.5 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #109 from thiesgerken/viewer-header-align
+  ([`9a83a1f`](https://github.com/thiesgerken/ferret/commit/9a83a1f6b55a34995751a8169ae948dae5572f68))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): line up the viewer's source and modified date
+  ([`9a83a1f`](https://github.com/thiesgerken/ferret/commit/9a83a1f6b55a34995751a8169ae948dae5572f68))
+
+- 💄 style(frontend): line up the viewer's source and modified date
+  ([`20fdb8c`](https://github.com/thiesgerken/ferret/commit/20fdb8c89447225a6918cf27152ffc9f974cd169))
+
+  Inline, the source's icon set the inline-flex box's baseline and lifted the writer above the "· modified" text. The line is a flex row now.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.6.4 (2026-10-17)
 
 
