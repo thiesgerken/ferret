@@ -66,7 +66,9 @@ const ExploreDocumentsQueryDocument = graphql(`
 
 type Exploration = ExploreDocumentsQuery["explore"];
 
-const COLUMNS: { label: "title" | "source" | "type" | "authors" | "created" | "modified"; order: DocumentOrder | null }[] = [
+type Column = "title" | "source" | "type" | "authors" | "created" | "modified";
+
+const COLUMNS: { label: Column; order: DocumentOrder | null }[] = [
   { label: "title", order: "TITLE" },
   { label: "source", order: "SOURCE" },
   { label: "type", order: null },
@@ -75,8 +77,24 @@ const COLUMNS: { label: "title" | "source" | "type" | "authors" | "created" | "m
   { label: "modified", order: "MODIFIED_AT" },
 ];
 
+/**
+ * Fixed widths and truncated cells instead of a horizontal scroll: the title takes what's left.
+ * Narrower screens drop the columns the facets already show (type, authors) and the modified date,
+ * so title, source and creation date stay.
+ */
+const COLUMN_CLASSES: Record<Column, string> = {
+  title: "",
+  source: "hidden w-44 sm:table-cell",
+  type: "hidden w-24 xl:table-cell",
+  authors: "hidden w-36 lg:table-cell",
+  created: "w-28",
+  modified: "hidden w-28 xl:table-cell",
+};
+
 /** In UTC, like the month facet, so a document shows the date of the month it's counted in. */
 const UTC_DATE = { dateStyle: "medium", timeZone: "UTC" } as const;
+
+const cell = (column: Column) => cn("truncate px-2 py-2", COLUMN_CLASSES[column]);
 
 export function Explore({ state, onChange }: { state: ExploreState; onChange: (state: ExploreState) => void }) {
   const t = useTranslations("explore");
@@ -151,9 +169,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
         {documents.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("noMatches")}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <DocumentTable documents={documents} roots={roots} state={state} onSort={narrow} />
-          </div>
+          <DocumentTable documents={documents} roots={roots} state={state} onSort={narrow} />
         )}
         <Pager total={total} state={state} onChange={onChange} />
       </section>
@@ -230,7 +246,7 @@ function DocumentTable({
   const t = useTranslations("explore");
   const format = useFormatter();
   return (
-    <table className="w-full text-left text-sm">
+    <table className="w-full table-fixed text-left text-sm">
       <thead className="border-b border-border text-xs text-muted-foreground">
         <tr>
           {COLUMNS.map(({ label, order }) => {
@@ -240,7 +256,7 @@ function DocumentTable({
                 key={label}
                 scope="col"
                 aria-sort={sorted ? (state.descending ? "descending" : "ascending") : undefined}
-                className="px-2 py-2 font-medium whitespace-nowrap"
+                className={cn("truncate px-2 py-2 font-medium", COLUMN_CLASSES[label])}
               >
                 {order ? (
                   <button
@@ -267,21 +283,18 @@ function DocumentTable({
       <tbody className="divide-y divide-border">
         {documents.map((document) => (
           <tr key={document.id}>
-            <td className="max-w-xs truncate px-2 py-2">
-              <Link
-                href={viewerHref(document.id)}
-                className="text-brand hover:underline"
-              >
+            <td className={cell("title")}>
+              <Link href={viewerHref(document.id)} className="text-brand hover:underline">
                 {document.title || document.externalId}
               </Link>
             </td>
-            <td className="max-w-56 px-2 py-2 whitespace-nowrap">
+            <td className={cell("source")}>
               <SourceName source={document.source} writer={document.writer} roots={roots} />
             </td>
-            <td className="px-2 py-2 whitespace-nowrap">{t(`contentType.${document.contentType}`)}</td>
-            <td className="max-w-48 truncate px-2 py-2">{document.authors.join(", ")}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{format.dateTime(new Date(document.createdAt), UTC_DATE)}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{format.dateTime(new Date(document.modifiedAt), UTC_DATE)}</td>
+            <td className={cell("type")}>{t(`contentType.${document.contentType}`)}</td>
+            <td className={cell("authors")}>{document.authors.join(", ")}</td>
+            <td className={cell("created")}>{format.dateTime(new Date(document.createdAt), UTC_DATE)}</td>
+            <td className={cell("modified")}>{format.dateTime(new Date(document.modifiedAt), UTC_DATE)}</td>
           </tr>
         ))}
       </tbody>
