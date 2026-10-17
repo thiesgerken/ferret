@@ -274,6 +274,20 @@ async fn a_git_connection_indexes_the_files_and_deletes_removed_ones(pool: PgPoo
         .await
         .unwrap();
     assert!(leaked.hits.is_empty(), "the symlink's target got indexed");
+
+    std::fs::write(
+        repo.path().join("notes/alpha.md"),
+        "# Alpha\n\nThe invoice is overdue.",
+    )
+    .unwrap();
+    commit(repo.path(), "Grace", "overdue");
+    connection.run().await;
+
+    let latest = head(repo.path());
+    assert_eq!(
+        invoice_hits(&server).await[0].3,
+        Some(format!("https://git.example.com/{latest}/notes/alpha.md"))
+    );
 }
 
 #[sqlx::test(migrations = false)]

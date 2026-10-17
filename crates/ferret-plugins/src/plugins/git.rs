@@ -126,8 +126,12 @@ async fn changes(
     let Some(cursor) = state.get("commit").and_then(Value::as_str) else {
         return Ok(Err("no earlier run".to_owned()));
     };
-    if state.get("indexing") != Some(indexing) {
-        return Ok(Err("which files to index or how changed".to_owned()));
+    match state.get("indexing") {
+        None => return Ok(Err("the last run stored no indexing settings".to_owned())),
+        Some(stored) if stored != indexing => {
+            return Ok(Err("which files to index or how changed".to_owned()));
+        }
+        Some(_) => {}
     }
     let changes = checkout.changes_since(cursor).await?;
     if changes.is_ok() {
@@ -214,7 +218,10 @@ impl Indexer<'_> {
     /// The document for the file at `path`, `None` (and a log line) if it can't be indexed.
     async fn document(&self, path: &str) -> Result<Option<DocumentPut>, PluginError> {
         let run = self.run;
-        let mode = self.modes.get(path).map(String::as_str).unwrap_or_default();
+        let mode = self
+            .modes
+            .get(path)
+            .ok_or_else(|| format!("{path} is in the diff but not tracked"))?;
         let text = match self.checkout.text(path, mode).await? {
             Ok(text) => text,
             Err(reason) => {

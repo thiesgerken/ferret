@@ -10,7 +10,7 @@ use super::PluginError;
 
 /// Larger files aren't indexed: far more text than search needs, and reading them could exhaust
 /// the worker's memory.
-pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
 /// A git command that takes longer has stalled, e.g. on a remote that stopped answering. The
 /// heartbeats would otherwise keep the run alive forever.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -68,7 +68,7 @@ impl Checkout {
         Ok(checkout)
     }
 
-    pub fn path(&self) -> &Path {
+    fn path(&self) -> &Path {
         self.dir.path()
     }
 
