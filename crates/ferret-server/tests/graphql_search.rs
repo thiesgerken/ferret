@@ -355,3 +355,63 @@ async fn graphql_has_paging_facets_and_the_models_cut_off(pool: PgPool) {
             .contains("offset")
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn a_selected_parent_root_gets_its_covering_count(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            sources: vec!["mail".to_owned()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        counts(&response.facets.sources),
+        [
+            ("mail", 1),
+            ("mail/zoho", 1),
+            ("notes", 1),
+            ("paperless/2026", 1)
+        ]
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_collapsed_thread_counts_for_every_author_of_its_members(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+    let mut reply = document("mail/zoho", "invoice-reply", "Got the invoice, thanks.");
+    reply.thread = Some("invoices".to_owned());
+    reply.authors = vec!["Anna".to_owned()];
+    api.put_document(&reply).await.unwrap();
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(response.total, 3, "the thread collapses into one hit");
+    let authors = counts(&response.facets.authors);
+    assert!(authors.contains(&("Anna", 1)), "{authors:?}");
+    assert!(authors.contains(&("Stadtwerke", 1)), "{authors:?}");
+
+    let anna = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            authors: vec!["Anna".to_owned()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(anna.total, 1, "the facet's count is what the filter gives");
+}

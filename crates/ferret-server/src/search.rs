@@ -1,7 +1,11 @@
 //! Hybrid search: BM25 and vector neighbours over chunks, fused with reciprocal rank fusion, one
 //! hit per document.
 
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    time::Instant,
+};
 
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
@@ -203,21 +207,9 @@ pub async fn find(
         words: &query.words,
         collapse,
     };
-    let mut sql = QueryBuilder::<Postgres>::new("");
-    hybrid.push_hits(&mut sql, &filters);
-    sql.push(
-        " select * from hits where thread_rank = 1
-         -- The id breaks ties, so pages neither overlap nor skip.
-         order by score desc, id
-         limit ",
-    )
-    .push_bind(i64::from(k))
-    .push(" offset ")
-    .push_bind(i64::from(skip));
-
     // `total` and the facets come from every match rather than the page, so they stay the same on
     // every page. Each facet applies every filter except its own, so choosing another value shows
-    // what it would give.
+    // what it would give: one more run of the query per facet whose filter is set.
     let without_sources = Filters {
         roots: sources::narrow(&[], allowed),
         ..filters.clone()
@@ -228,6 +220,11 @@ pub async fn find(
     };
 
     let mut tx = pool.begin().await?;
+    // One snapshot for the page, `total` and the facets. Not `read only`: pg_search's field
+    // aliases write to its type cache.
+    sqlx::query!("set transaction isolation level repeatable read")
+        .execute(&mut *tx)
+        .await?;
     // Filtered HNSW scans keep going until they have enough rows that pass the filters, instead
     // of silently returning fewer than the limit.
     sqlx::query!(
@@ -237,32 +234,36 @@ pub async fn find(
     )
     .fetch_one(&mut *tx)
     .await?;
-    let rows: Vec<HitRow> = sql.build_query_as().fetch_all(&mut *tx).await?;
-    let matches = hybrid.facet_rows(&mut tx, &filters).await?;
-    let by_source = match request.sources.is_empty() {
-        true => None,
-        false => Some(hybrid.facet_rows(&mut tx, &without_sources).await?),
+    let page = skip..skip + k;
+    let matches = hybrid.matches(&mut tx, &filters, page.clone()).await?;
+    let by_source = if request.sources.is_empty() {
+        None
+    } else {
+        Some(hybrid.matches(&mut tx, &without_sources, 0..0).await?)
     };
-    let by_author = match request.authors.is_empty() {
-        true => None,
-        false => Some(hybrid.facet_rows(&mut tx, &without_authors).await?),
+    let by_author = if request.authors.is_empty() {
+        None
+    } else {
+        Some(hybrid.matches(&mut tx, &without_authors, 0..0).await?)
     };
     tx.commit().await?;
-    let by_source = by_source.as_ref().unwrap_or(&matches);
-    let by_author = by_author.as_ref().unwrap_or(&matches);
+    let by_source = by_source.as_deref().unwrap_or(&matches);
+    let by_author = by_author.as_deref().unwrap_or(&matches);
     let facets = SearchFacets {
-        sources: counts(by_source.iter().map(|row| &row.source), |_| true),
-        authors: counts(
-            by_author.iter().flat_map(|row| &row.authors),
-            |rank_and_value| {
-                rank_and_value.0 < MAX_AUTHOR_FACETS || request.authors.contains(rank_and_value.1)
-            },
-        ),
+        sources: source_counts(by_source, &request.sources),
+        authors: author_counts(by_author, collapse, &request.authors),
         are_lower_bounds: is_lower_bound(by_source) || is_lower_bound(by_author),
     };
-    let total = u32::try_from(matches.len()).expect("at most the candidates match");
-    let has_more = skip + u32::try_from(rows.len()).expect("at most MAX_K hits") < total;
-    let hits = rows
+    let total = u32::try_from(matches.iter().filter(|row| row.is_top()).count())
+        .expect("at most the candidates match");
+    let has_more = page.end < total;
+    let total_is_lower_bound = is_lower_bound(&matches);
+    let mut page_rows: Vec<MatchRow> = matches
+        .into_iter()
+        .filter(|row| row.chunk_text.is_some())
+        .collect();
+    page_rows.sort_by_key(|row| row.page_rank);
+    let hits = page_rows
         .into_iter()
         .map(|row| Hit {
             document_id: row.id,
@@ -282,7 +283,10 @@ pub async fn find(
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),
-                parts: highlight(&row.chunk_text, &query.words),
+                parts: highlight(
+                    &row.chunk_text.expect("the page's rows carry their chunk"),
+                    &query.words,
+                ),
             },
         })
         .collect();
@@ -290,7 +294,7 @@ pub async fn find(
         hits,
         has_more,
         total,
-        total_is_lower_bound: is_lower_bound(&matches),
+        total_is_lower_bound,
         documents_in_scope: u32::try_from(documents_in_scope).expect("a count is never negative"),
         facets,
         took_ms: millis_since(started),
@@ -338,7 +342,9 @@ impl Hybrid<'_> {
             sql.push(" and ");
             push_word_match(sql, "c.", word);
         }
-        sql.push(" order by score desc limit ")
+        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
+        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
+        sql.push(" order by score desc, c.id limit ")
             .push_bind(KEYWORD_CANDIDATES)
             .push(") k), nearest as (");
         match self.query_hash {
@@ -418,38 +424,124 @@ impl Hybrid<'_> {
         sql.push(")");
     }
 
-    /// Every match's source and authors, for counting, and whether there may be more.
-    async fn facet_rows(
+    /// Every match, with each thread's other members, and whether there may be more. Only the
+    /// rows of `page` (by rank among the threads' best) carry their chunk text, the others are for
+    /// counting.
+    async fn matches(
         &self,
         tx: &mut PgConnection,
         filters: &Filters<'_>,
-    ) -> Result<Vec<FacetRow>, sqlx::Error> {
+        page: Range<u32>,
+    ) -> Result<Vec<MatchRow>, sqlx::Error> {
         let mut sql = QueryBuilder::<Postgres>::new("");
         self.push_hits(&mut sql, filters);
-        sql.push(" select source, authors, ");
+        sql.push(
+            ", ranked as (
+                 select *,
+                        -- The id breaks ties, so pages neither overlap nor skip.
+                        case when thread_rank = 1
+                             then row_number() over (partition by thread_rank = 1 order by score desc, id)
+                        end as page_rank
+                 from hits
+             )
+             select id, source, external_id, content_type, title, url, thread, authors,
+                    created_at, modified_at, keyword_score, similarity, collapsed, page_rank,
+                    case when page_rank > ",
+        )
+        .push_bind(i64::from(page.start))
+        .push(" and page_rank <= ")
+        .push_bind(i64::from(page.end))
+        .push(" then chunk_text end as chunk_text, start_offset, end_offset, ");
         self.push_lower_bound(&mut sql, filters);
-        sql.push(" as total_is_lower_bound from hits where thread_rank = 1");
+        sql.push(" as total_is_lower_bound from ranked");
         sql.build_query_as().fetch_all(tx).await
     }
 }
 
 #[derive(sqlx::FromRow)]
-struct FacetRow {
+struct MatchRow {
+    id: Uuid,
     source: String,
+    external_id: String,
+    content_type: String,
+    title: Option<String>,
+    url: Option<String>,
+    thread: Option<String>,
     authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    keyword_score: Option<f32>,
+    similarity: Option<f32>,
+    collapsed: i64,
+    /// Among the threads' best rows, `None` for a thread's other members.
+    page_rank: Option<i64>,
+    /// On the page's rows only.
+    chunk_text: Option<String>,
+    start_offset: i32,
+    end_offset: i32,
     total_is_lower_bound: bool,
 }
 
-fn is_lower_bound(rows: &[FacetRow]) -> bool {
+impl MatchRow {
+    /// The best row of its thread, which counts as the match.
+    fn is_top(&self) -> bool {
+        self.page_rank.is_some()
+    }
+}
+
+fn is_lower_bound(rows: &[MatchRow]) -> bool {
     // The same on every row, and no row means nothing matched at all.
     rows.first().is_some_and(|row| row.total_is_lower_bound)
+}
+
+/// Matches per source, and per selected root, which may be a parent of the stored sources.
+fn source_counts(rows: &[MatchRow], selected: &[String]) -> Vec<FacetCount> {
+    let tops = || rows.iter().filter(|row| row.is_top());
+    let mut counts = counts(tops().map(|row| &row.source), |_, _| true);
+    counts.retain(|count| !selected.contains(&count.value));
+    counts.extend(selected.iter().map(|root| {
+        FacetCount {
+            value: root.clone(),
+            count: u32::try_from(
+                tops()
+                    .filter(|row| sources::covers(root, &row.source))
+                    .count(),
+            )
+            .expect("at most the candidates match"),
+        }
+    }));
+    counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
+    counts
+}
+
+/// Matches per author, counting a thread once for every author of its members: the author filter
+/// keeps a thread in which one of its documents is theirs.
+fn author_counts(rows: &[MatchRow], collapse: bool, selected: &[String]) -> Vec<FacetCount> {
+    let mut thread_authors: HashMap<(&str, &str), HashSet<&String>> = HashMap::new();
+    let mut document_authors = Vec::new();
+    for row in rows {
+        match (&row.thread, collapse) {
+            (Some(thread), true) => thread_authors
+                .entry((&row.source, thread))
+                .or_default()
+                .extend(&row.authors),
+            _ => document_authors.extend(&row.authors),
+        }
+    }
+    let authors = thread_authors
+        .into_values()
+        .flatten()
+        .chain(document_authors);
+    counts(authors, |rank, author| {
+        rank < MAX_AUTHOR_FACETS || selected.contains(author)
+    })
 }
 
 /// How often each value occurs, most frequent first, keeping those `keep` accepts by their rank
 /// and value.
 fn counts<'a>(
     values: impl Iterator<Item = &'a String>,
-    keep: impl Fn((usize, &String)) -> bool,
+    keep: impl Fn(usize, &String) -> bool,
 ) -> Vec<FacetCount> {
     let mut counts: HashMap<&String, u32> = HashMap::new();
     for value in values {
@@ -460,7 +552,7 @@ fn counts<'a>(
     counts
         .into_iter()
         .enumerate()
-        .filter(|(rank, (value, _))| keep((*rank, value)))
+        .filter(|(rank, (value, _))| keep(*rank, value))
         .map(|(_, (value, count))| FacetCount {
             value: value.clone(),
             count,
@@ -621,26 +713,6 @@ fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
             .push_bind(word.to_owned());
     }
     sql.push(")");
-}
-
-#[derive(sqlx::FromRow)]
-struct HitRow {
-    id: Uuid,
-    source: String,
-    external_id: String,
-    content_type: String,
-    title: Option<String>,
-    url: Option<String>,
-    thread: Option<String>,
-    authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
-    keyword_score: Option<f32>,
-    similarity: Option<f32>,
-    collapsed: i64,
-    chunk_text: String,
-    start_offset: i32,
-    end_offset: i32,
 }
 
 fn offset(stored: i32) -> u32 {
