@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { act } from "react";
+import { act, useState } from "react";
 import { Provider } from "urql";
 
 import { renderReact, settle } from "../../test/react-test-utils";
@@ -104,6 +104,12 @@ const EMBEDDERS = {
   ],
 };
 
+/** The writer filter in state, as the route keeps it in the URL. */
+function FilteredActivity() {
+  const [writer, setWriter] = useState<string | null>(null);
+  return <Activity writer={writer} onWriterChange={setWriter} />;
+}
+
 async function renderActivity(isAdmin = false) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
@@ -126,7 +132,7 @@ async function renderActivity(isAdmin = false) {
   });
   const view = await renderReact(
     <Provider value={client}>
-      <Activity />
+      <FilteredActivity />
     </Provider>,
   );
   await settle();

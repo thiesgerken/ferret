@@ -4,8 +4,9 @@ import { ChevronRight, CircleDashed, KeyRound, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQuery } from "urql";
 import { NamedIcon } from "@/components/named-icon";
+import { Count, Pill, STATUS_STYLES } from "@/components/run-status";
 import { graphql } from "@/gql";
-import type { ActivityFeedQuery, RunStatus } from "@/gql/graphql";
+import type { ActivityFeedQuery } from "@/gql/graphql";
 import { formatDuration, timeAgo } from "@/lib/format-time";
 import { errorMessage } from "@/lib/graphql";
 import { cn } from "@/lib/utils";
@@ -36,13 +37,6 @@ const ActivityFeedQueryDocument = graphql(`
 `);
 
 type Ingest = ActivityFeedQuery["activity"][number];
-
-export const STATUS_STYLES: Record<RunStatus, { label: string; className: string }> = {
-  RUNNING: { label: "Running", className: "bg-brand/15 text-brand" },
-  SUCCEEDED: { label: "OK", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  FAILED: { label: "Failed", className: "bg-destructive/15 text-destructive" },
-  LOST: { label: "Lost", className: "bg-warning/20 text-warning-foreground dark:text-warning" },
-};
 
 /**
  * Plugin runs and API keys' bursts of writes, newest first, one page at a time. A run opens to
@@ -141,7 +135,6 @@ function FeedPage({
 
 function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; showOwner: boolean }) {
   const [open, setOpen] = useState(false);
-  const { label, className } = STATUS_STYLES[ingest.status];
   const end = ingest.finishedAt ? new Date(ingest.finishedAt) : now;
   const seconds = (end.getTime() - new Date(ingest.startedAt).getTime()) / 1000;
   const expandable = Boolean(ingest.log || ingest.error);
@@ -162,7 +155,7 @@ function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; show
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2">
             <span className="truncate font-medium">{ingest.writer?.name ?? "Unknown writer"}</span>
-            <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", className)}>{label}</span>
+            <Pill {...STATUS_STYLES[ingest.status]} />
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               {ingest.kind === "RUN" ? <Play className="size-3" aria-hidden /> : <KeyRound className="size-3" aria-hidden />}
               {ingest.kind === "RUN" ? "Run" : "API writes"}
@@ -192,13 +185,5 @@ function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; show
         </div>
       )}
     </li>
-  );
-}
-
-function Count({ label, value }: { label: string; value: number }) {
-  return (
-    <span className={cn(value === 0 && "opacity-50")}>
-      <span className="font-medium text-foreground">{value.toLocaleString()}</span> {label}
-    </span>
   );
 }
