@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update users\n         set password_hash = $2, token_version = token_version + 1, password_changed_at = now()\n         where id = $1 and ($3::int is null or token_version = $3)\n         returning token_version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "token_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3481e6fc43137b17ec95a4844db8f2c0ec3736b9fb4e47fd1b41d0c83597f4bc"
+}

@@ -975,6 +975,7 @@ impl Mutation {
         if users::set_password(&context.pool, user_id, password)
             .await
             .map_err(user_error)?
+            .is_some()
         {
             Ok(id)
         } else {

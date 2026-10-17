@@ -126,6 +126,7 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(health))
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/password", post(auth::change_password))
         .route("/graphql", post(graphql::handle))
         .route("/api/users", get(users::list))
         .route(
