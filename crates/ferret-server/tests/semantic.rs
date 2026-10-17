@@ -234,3 +234,34 @@ async fn an_unreachable_bulk_url_is_reported_and_keyword_search_keeps_working(po
     assert_eq!(embedded, 0);
     assert_eq!(ids(&search(&api, query("car")).await), ["car"]);
 }
+
+#[sqlx::test(migrations = false)]
+async fn without_the_embedding_model_search_answers_by_keyword_and_says_so(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+
+    server.tei.break_down();
+    let response = api.search(&query("car")).await.unwrap();
+    let cookie = server.sign_in().await;
+    let graphql = server
+        .graphql(
+            &cookie,
+            "{ search(input: {q: \"vehicle\"}) { hits { externalId } semanticUnavailable } }",
+            serde_json::json!({}),
+        )
+        .await;
+
+    assert_eq!(ids(&response.hits), ["car"]);
+    assert_eq!(
+        response.semantic_unavailable.as_deref(),
+        Some("the embedding model fake is unavailable")
+    );
+    assert_eq!(
+        graphql["data"]["search"],
+        serde_json::json!({"hits": [], "semanticUnavailable": "the embedding model fake is unavailable"})
+    );
+}

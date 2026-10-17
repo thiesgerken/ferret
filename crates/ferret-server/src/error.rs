@@ -28,14 +28,6 @@ impl ApiError {
         }
     }
 
-    /// A service the server depends on, like TEI, failed.
-    pub fn bad_gateway(message: &str) -> Self {
-        Self {
-            status: StatusCode::BAD_GATEWAY,
-            message: message.to_owned(),
-        }
-    }
-
     /// The request conflicts with the resource's state, e.g. a sync that is already committed.
     pub fn conflict(message: &str) -> Self {
         Self {

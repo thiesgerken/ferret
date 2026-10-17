@@ -231,8 +231,11 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   half only counts neighbours with a positive cosine similarity, and uses the user's default model
   unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
   `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding
-  yet (backfill) is found by keyword only. If the query can't be embedded (TEI down), the search
-  fails with `502` rather than quietly turning into a keyword search.
+  yet (backfill) is found by keyword only. If the query can't be embedded (TEI down or broken), the
+  search answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
+  `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
+  a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
+  a restarting TEI shouldn't make ferret useless.
 - **Filters**: core columns plus equality on `meta` keys, `source` by path prefix. No query
   language.
 - **Filtered vector search** needs pgvector's iterative index scans

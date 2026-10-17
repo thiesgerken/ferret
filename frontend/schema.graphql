@@ -132,9 +132,19 @@ type Query {
     Searches the signed-in user's documents, one hit per document. The same search as
     `GET /api/search`.
   """
-  search(input: SearchInput!): [Hit!]!
+  search(input: SearchInput!): SearchResult!
   "One of the signed-in user's documents, null when there is none with this id."
   document(id: ID!): Document
+}
+
+"The hits of a search, and whether its semantic half ran."
+type SearchResult {
+  hits: [Hit!]!
+  """
+    Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    keyword matches only. Null when it ran.
+  """
+  semanticUnavailable: String
 }
 
 type TextPart {

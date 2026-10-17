@@ -2,7 +2,10 @@
 //! maximum input length but no dimension, `/embed` takes `inputs`, `normalize` and `truncate`,
 //! and rejects over-long inputs with a 422 unless truncation is allowed.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use axum::{
     Json, Router,
@@ -38,6 +41,7 @@ pub enum Similarity {
 pub struct FakeTei {
     pub url: String,
     embedded: Arc<Mutex<Vec<String>>>,
+    broken: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -45,6 +49,7 @@ struct Fake {
     similarity: Similarity,
     max_input_length: usize,
     embedded: Arc<Mutex<Vec<String>>>,
+    broken: Arc<AtomicBool>,
 }
 
 #[derive(Deserialize)]
@@ -64,10 +69,12 @@ struct EmbedRequest {
 impl FakeTei {
     pub async fn start(similarity: Similarity, max_input_length: usize) -> Self {
         let embedded = Arc::new(Mutex::new(Vec::new()));
+        let broken = Arc::new(AtomicBool::new(false));
         let fake = Fake {
             similarity,
             max_input_length,
             embedded: embedded.clone(),
+            broken: broken.clone(),
         };
         let app = Router::new()
             .route("/info", get(info))
@@ -76,7 +83,16 @@ impl FakeTei {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self { url, embedded }
+        Self {
+            url,
+            embedded,
+            broken,
+        }
+    }
+
+    /// From now on, every embed request fails with a 503, like a TEI that is restarting.
+    pub fn break_down(&self) {
+        self.broken.store(true, Ordering::SeqCst);
     }
 
     /// Every text embedded so far, in order.
@@ -99,6 +115,12 @@ async fn embed(
     State(fake): State<Fake>,
     Json(request): Json<EmbedRequest>,
 ) -> Result<Json<Vec<Vec<f32>>>, (StatusCode, Json<Value>)> {
+    if fake.broken.load(Ordering::SeqCst) {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "model is overloaded", "error_type": "Overloaded"})),
+        ));
+    }
     let inputs = match request.inputs {
         Inputs::One(input) => vec![input],
         Inputs::Many(inputs) => inputs,

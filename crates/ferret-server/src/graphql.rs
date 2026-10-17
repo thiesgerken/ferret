@@ -67,7 +67,7 @@ impl Query {
 
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
-    async fn search(context: &Context, input: SearchInput) -> FieldResult<Vec<Hit>> {
+    async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
         let request = ferret_api::SearchQuery {
             q: input.q,
             sources: input.sources.unwrap_or_default(),
@@ -92,15 +92,11 @@ impl Query {
         )
         .await
         {
-            Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
+            Ok(response) => Ok(SearchResult {
+                hits: response.hits.into_iter().map(Hit::from).collect(),
+                semantic_unavailable: response.semantic_unavailable,
+            }),
             Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
-            Err(SearchError::Embedding(error)) => {
-                tracing::error!(%error, "can't embed a query");
-                Err(FieldError::new(
-                    "the embedding model is unavailable",
-                    graphql_value!(null),
-                ))
-            }
             Err(SearchError::Database(error)) => Err(internal(error)),
         }
     }
@@ -161,6 +157,15 @@ impl From<ferret_api::ContentType> for ContentType {
             ferret_api::ContentType::Email => Self::Email,
         }
     }
+}
+
+/// The hits of a search, and whether its semantic half ran.
+#[derive(GraphQLObject)]
+struct SearchResult {
+    hits: Vec<Hit>,
+    /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    /// keyword matches only. Null when it ran.
+    semantic_unavailable: Option<String>,
 }
 
 /// A document returned by a search, with its best-matching chunk.

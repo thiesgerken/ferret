@@ -12,7 +12,7 @@ use crate::{
     AppState,
     api_auth::{ApiCaller, Scope},
     content_type,
-    embeddings::{EmbedError, Embedding},
+    embeddings::{EmbedError, Embedding, Model},
     error::ApiError,
     highlight::highlight,
     search_query, sources,
@@ -33,7 +33,7 @@ pub async fn handle(
 ) -> Result<Json<SearchResponse>, ApiError> {
     caller.require(Scope::SearchRead)?;
     let Query(query) = query?;
-    let hits = find(
+    let response = find(
         &state.pool,
         &state.embedding,
         caller.user_id,
@@ -41,24 +41,13 @@ pub async fn handle(
         &query,
     )
     .await?;
-    Ok(Json(SearchResponse { hits }))
+    Ok(Json(response))
 }
 
 pub enum SearchError {
     /// The query can't be run as posed, the message says why.
     Invalid(String),
-    /// The query couldn't be embedded, e.g. TEI is down.
-    Embedding(EmbedError),
     Database(sqlx::Error),
-}
-
-impl From<EmbedError> for SearchError {
-    fn from(error: EmbedError) -> Self {
-        match error {
-            EmbedError::Database(error) => Self::Database(error),
-            error => Self::Embedding(error),
-        }
-    }
 }
 
 impl From<sqlx::Error> for SearchError {
@@ -71,10 +60,6 @@ impl From<SearchError> for ApiError {
     fn from(error: SearchError) -> Self {
         match error {
             SearchError::Invalid(message) => ApiError::bad_request(&message),
-            SearchError::Embedding(error) => {
-                tracing::error!(%error, "can't embed a query");
-                ApiError::bad_gateway("the embedding model is unavailable")
-            }
             SearchError::Database(error) => error.into(),
         }
     }
@@ -88,7 +73,7 @@ pub async fn find(
     user_id: Uuid,
     allowed: Option<&[String]>,
     request: &SearchQuery,
-) -> Result<Vec<Hit>, SearchError> {
+) -> Result<SearchResponse, SearchError> {
     let query = search_query::parse(&request.q);
     if query.words.is_empty() {
         return Err(SearchError::Invalid(
@@ -112,7 +97,10 @@ pub async fn find(
     }
     let roots = sources::narrow(&request.sources, allowed);
     if roots.as_ref().is_some_and(Vec::is_empty) {
-        return Ok(vec![]);
+        return Ok(SearchResponse {
+            hits: vec![],
+            semantic_unavailable: None,
+        });
     }
 
     let filters = Filters {
@@ -130,10 +118,19 @@ pub async fn find(
         phrases: &query.phrases,
     };
     let model = embedding.default_model();
-    // The vector half gets the words without operators.
-    let query_hash = embedding
+    // The vector half gets the words without operators. Without it (TEI down or broken), the
+    // keyword half still answers, and the response says so.
+    let query_hash = match embedding
         .cache_query(pool, model, &query.words.join(" "))
-        .await?;
+        .await
+    {
+        Ok(query_hash) => Some(query_hash),
+        Err(EmbedError::Tei(error)) => {
+            tracing::warn!(model = %model.config.name, %error, "searching by keyword only, the query can't be embedded");
+            None
+        }
+        Err(EmbedError::Database(error)) => return Err(error.into()),
+    };
 
     // Built rather than checked at compile time (ADR 0005): every word and every excluded word
     // is its own clause, pg_search only takes constant query strings in them, and the vector
@@ -160,37 +157,15 @@ pub async fn find(
     }
     sql.push(" order by score desc limit ")
         .push_bind(KEYWORD_CANDIDATES)
-        .push(
-            ") k
-         ),
-         semantic as (
-             select id, row_number() over (order by distance) as rank
-             from (
-                 select e.chunk_id as id, ",
-        );
-    // Validated model names need no quoting (config.rs).
-    let vector = format!("e.embedding::halfvec({})", model.dimension);
-    sql.push(&vector)
-        .push(" <=> (select embedding from embedding_cache where text_hash = ")
-        .push_bind(query_hash)
-        .push(format!(
-            " and model = '{name}')::halfvec({dimension}) as distance
-                 from chunk_embeddings e",
-            name = model.config.name,
-            dimension = model.dimension,
-        ));
-    if !query.phrases.is_empty() {
-        sql.push(" join chunks c on c.id = e.chunk_id");
+        .push(") k), semantic as (");
+    match &query_hash {
+        Some(query_hash) => push_semantic(&mut sql, model, query_hash, &filters),
+        None => {
+            sql.push("select null::uuid as id, null::bigint as rank where false");
+        }
     }
-    sql.push(format!(" where e.model = '{}' and ", model.config.name));
-    filters.push(&mut sql, "e");
-    sql.push(" order by distance limit ")
-        .push_bind(SEMANTIC_CANDIDATES)
-        .push(
-            ") s
-             -- No similarity at all is no hit, however few neighbours there are.
-             where distance < 1
-         ),
+    sql.push(
+        "),
          -- Reciprocal rank fusion (k = 60): a chunk scores 1 / (60 + rank) in each half.
          fused as (
              select id, sum(1.0 / (60 + rank))::real as score
@@ -209,8 +184,8 @@ pub async fn find(
          from best b join documents d on d.id = b.document_id
          order by b.score desc
          limit ",
-        )
-        .push_bind(i64::from(k));
+    )
+    .push_bind(i64::from(k));
 
     let mut tx = pool.begin().await?;
     // Filtered HNSW scans keep going until they have enough rows that pass the filters, instead
@@ -225,7 +200,7 @@ pub async fn find(
     let rows: Vec<HitRow> = sql.build_query_as().fetch_all(&mut *tx).await?;
     tx.commit().await?;
 
-    Ok(rows
+    let hits = rows
         .into_iter()
         .map(|row| Hit {
             document_id: row.id,
@@ -245,11 +220,54 @@ pub async fn find(
                 parts: highlight(&row.chunk_text, &query.words),
             },
         })
-        .collect())
+        .collect();
+    Ok(SearchResponse {
+        hits,
+        semantic_unavailable: query_hash
+            .is_none()
+            .then(|| format!("the embedding model {} is unavailable", model.config.name)),
+    })
 }
 
 /// The filters both halves apply, on the denormalized chunk columns of `chunks` or
 /// `chunk_embeddings` (which pgvector's iterative scans need).
+/// The vector half: the nearest chunks to the cached query embedding, ranked.
+fn push_semantic(
+    sql: &mut QueryBuilder<Postgres>,
+    model: &Model,
+    query_hash: &[u8],
+    filters: &Filters,
+) {
+    // Validated model names need no quoting (config.rs). The dimension and name are literals so
+    // the planner can use the model's partial index.
+    sql.push(format!(
+        "select id, row_number() over (order by distance) as rank
+         from (
+             select e.chunk_id as id, e.embedding::halfvec({dimension})
+                    <=> (select embedding from embedding_cache where text_hash = ",
+        dimension = model.dimension,
+    ))
+    .push_bind(query_hash.to_vec())
+    .push(format!(
+        " and model = '{name}')::halfvec({dimension}) as distance
+             from chunk_embeddings e",
+        name = model.config.name,
+        dimension = model.dimension,
+    ));
+    if !filters.phrases.is_empty() {
+        sql.push(" join chunks c on c.id = e.chunk_id");
+    }
+    sql.push(format!(" where e.model = '{}' and ", model.config.name));
+    filters.push(sql, "e");
+    sql.push(" order by distance limit ")
+        .push_bind(SEMANTIC_CANDIDATES)
+        .push(
+            ") s
+             -- No similarity at all is no hit, however few neighbours there are.
+             where distance < 1",
+        );
+}
+
 struct Filters<'a> {
     user_id: Uuid,
     roots: Option<Vec<String>>,
