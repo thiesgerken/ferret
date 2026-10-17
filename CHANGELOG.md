@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.12.2 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #126 from thiesgerken/fix-run-duration
+  ([`b63a034`](https://github.com/thiesgerken/ferret/commit/b63a0346a446fe17c7c60cb3c415392cdd306aac))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): an API key's running burst reads "for", not "took"
+  ([`b63a034`](https://github.com/thiesgerken/ferret/commit/b63a0346a446fe17c7c60cb3c415392cdd306aac))
+
+- 🐛 fix(frontend): an API key's running burst reads "for", not "took"
+  ([`29973d9`](https://github.com/thiesgerken/ferret/commit/29973d91f1fb10ee26d8fe2c29a27f1e8e6004df))
+
+  RunDuration chose its wording by whether the run had an end, but an API key's burst has its last write as finishedAt while it's still running, so Activity showed "Running · took 0 sec". The status decides again, as in the feed before #124.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.12.1 (2026-10-17)
 
 
