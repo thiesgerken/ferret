@@ -262,8 +262,8 @@ async fn embed_batch(
     // No outer `order by`: sorting would try the lock of every candidate before the limit,
     // leaving a second pump nothing to claim.
     let chunks = sqlx::query!(
-        "select id, text from (
-             select c.id, c.text from chunks c
+        "select id, text, title from (
+             select c.id, c.text, c.title from chunks c
              where not exists (
                  select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
              )
@@ -287,7 +287,13 @@ async fn embed_batch(
 
     let texts: Vec<String> = chunks
         .iter()
-        .map(|chunk| format!("{}{}", model.config.document_prefix, chunk.text))
+        .map(|chunk| {
+            embedded_input(
+                &model.config.document_prefix,
+                chunk.title.as_deref(),
+                &chunk.text,
+            )
+        })
         .collect();
     let hashes: Vec<Vec<u8>> = texts.iter().map(|text| text_hash(text)).collect();
     let cached: HashSet<Vec<u8>> = sqlx::query_scalar!(
@@ -437,7 +443,16 @@ async fn clear_error(pool: &PgPool, model: &Model) {
     }
 }
 
-/// The cache key of a prefixed text.
+/// What the model embeds for a chunk: the title gives every chunk of a document its context,
+/// e.g. a Paperless title naming the insurance a bill is for.
+fn embedded_input(prefix: &str, title: Option<&str>, text: &str) -> String {
+    match title {
+        Some(title) => format!("{prefix}{title}\n\n{text}"),
+        None => format!("{prefix}{text}"),
+    }
+}
+
+/// The cache key of an embedded input or a prefixed query.
 fn text_hash(prefixed: &str) -> Vec<u8> {
     Sha256::digest(prefixed).to_vec()
 }

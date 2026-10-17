@@ -37,8 +37,8 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
-  part of the cache key (`text_hash` covers prefix plus text), so changing it never serves stale
-  vectors.
+  part of the cache key (`text_hash` covers the whole input: prefix, title and text), so changing
+  it never serves stale vectors.
 - **`bulk_url`**: online embedding (queries, incremental ingest) runs on CPU. Big backfills run on a
   GPU node that joins the cluster temporarily. With `bulk_url` set, the pump uses only that
   endpoint. If it is unreachable the pump fails loudly (error in Admin, backlog grows) instead of
@@ -49,7 +49,8 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
 - **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
   refuses to start. TEI would otherwise truncate chunks silently. The cap counts characters (2000)
   and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
-  than one token per character, so a model that accepts 2000 tokens takes every chunk.
+  than one token per character, so a model that accepts 2000 tokens takes every chunk. The title
+  comes on top: a chunk whose title pushes it over the limit lands in `embedding_failures`.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
 - **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 

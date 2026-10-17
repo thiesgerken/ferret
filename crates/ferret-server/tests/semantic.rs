@@ -8,6 +8,7 @@ use common::{
 use ferret_api::{Client, Hit, SearchQuery};
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 async fn search(api: &Client, query: SearchQuery) -> Vec<Hit> {
     api.search(&query).await.unwrap().hits
@@ -86,7 +87,10 @@ async fn the_model_and_its_prefixes_are_used_and_identical_texts_embedded_once(p
 
     let embedded = server.tei.embedded();
     let count = |text: &str| embedded.iter().filter(|embedded| *embedded == text).count();
-    assert_eq!(count(&format!("{DOCUMENT_PREFIX}The same text twice.")), 1);
+    assert_eq!(
+        count(&format!("{DOCUMENT_PREFIX}same\n\nThe same text twice.")),
+        1
+    );
     assert_eq!(count(&format!("{QUERY_PREFIX}text")), 1);
     let models: Vec<String> = sqlx::query_scalar("select distinct model from chunk_embeddings")
         .fetch_all(&pool)
@@ -193,7 +197,7 @@ async fn with_a_bulk_url_the_pump_uses_only_that_and_queries_keep_using_url(pool
     server.wait_for_embeddings(1).await;
     let hits = search(&api, query("vehicle")).await;
 
-    let document_text = format!("{DOCUMENT_PREFIX}My car broke down.");
+    let document_text = format!("{DOCUMENT_PREFIX}car\n\nMy car broke down.");
     assert_eq!(ids(&hits), ["car"]);
     assert!(bulk.embedded().contains(&document_text));
     assert!(!online.embedded().contains(&document_text));
@@ -311,4 +315,33 @@ async fn a_stuck_embedding_model_degrades_search_to_keywords_quickly(pool: PgPoo
     assert!(started.elapsed() < Duration::from_secs(10));
     assert_eq!(ids(&response.hits), ["car"]);
     assert!(response.semantic_unavailable.is_some());
+}
+
+#[sqlx::test(migrations = false)]
+async fn the_title_is_embedded_with_every_chunk_and_a_new_title_re_embeds(pool: PgPool) {
+    let server = start_semantic_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let mut note = document("notes", "note", "Broke down on the highway.");
+    note.title = Some("My car".to_owned());
+    api.put_document(&note).await.unwrap();
+    server.wait_for_embeddings(1).await;
+    let chunk: Uuid = sqlx::query_scalar("select chunk_id from chunk_embeddings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    note.title = Some("My bike".to_owned());
+    api.put_document(&note).await.unwrap();
+    server.wait_for_embeddings(1).await;
+
+    let embedded = server.tei.embedded();
+    for title in ["My car", "My bike"] {
+        let input = format!("{DOCUMENT_PREFIX}{title}\n\nBroke down on the highway.");
+        assert!(embedded.contains(&input), "{embedded:?}");
+    }
+    let rechunked: Uuid = sqlx::query_scalar("select chunk_id from chunk_embeddings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rechunked, chunk, "a new title keeps the chunk");
 }
