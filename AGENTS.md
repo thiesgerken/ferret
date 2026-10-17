@@ -23,7 +23,7 @@ Keep `docs/` up to date when a change alters what it describes.
 - Build: `cargo build --workspace`
 - Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
   The config file's TEI URLs must be reachable from the host (compose's `docker/ferret.yaml` uses
-  `http://tei:80`, which only works inside compose).
+  `http://tei:80` and `http://tei-bulk:80`, which only work inside compose).
 - Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`
 - After changing a query or a migration, refresh the sqlx query metadata (needs
   `cargo install sqlx-cli` and a migrated database):

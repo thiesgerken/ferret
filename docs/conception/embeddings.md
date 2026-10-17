@@ -50,7 +50,8 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
   pins connections to pods, so the split would be random. In the Helm chart, `tei.gpu.enabled`
   adds a GPU TEI per model (a Deployment pinned to the GPU node) and sets each model's `bulk_url`
   to it. Turning it off after the backfill removes `bulk_url`, and the server restarts with the
-  CPU endpoint for the pump.
+  CPU endpoint for the pump. The compose dev setup sets it to a second CPU TEI: a query that
+  queues behind a backfill batch there would run into the 5 s query timeout.
 
 - **A model whose `max_input_length` is below the longest embedded input is rejected** and the
   server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
