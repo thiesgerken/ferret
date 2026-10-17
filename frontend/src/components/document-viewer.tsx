@@ -14,12 +14,20 @@ import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
 import { viewerHref } from "@/lib/viewer-url";
 import { HomeLink } from "@/components/brand-mark";
+import { SourceName } from "@/components/source-name";
+import { useConnectionRoots } from "@/lib/connection-roots";
 
 const ViewDocumentQueryDocument = graphql(`
   query ViewDocument($id: ID!) {
     document(id: $id) {
       id
       source
+      writer {
+        kind
+        id
+        name
+        icon
+      }
       thread
       contentType
       title
@@ -57,6 +65,7 @@ export type HitOffsets = { start: number; end: number };
 
 export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null }) {
   const [{ data, error }] = useQuery({ query: ViewDocumentQueryDocument, variables: { id } });
+  const roots = useConnectionRoots();
   const document = data?.document;
   const [excluded, setExcluded] = useState<Excluded | null>(null);
   const range = useMemo(
@@ -88,7 +97,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
       <header className="space-y-1 border-b border-border pb-4">
         <h1 className="text-xl font-semibold">{document.title || "Untitled"}</h1>
         <p className="text-xs text-muted-foreground">
-          {document.source} · modified {new Date(document.modifiedAt).toLocaleString()}
+          <SourceName source={document.source} writer={document.writer} roots={roots} /> · modified{" "}
+          {new Date(document.modifiedAt).toLocaleString()}
         </p>
         {originUrl && (
           <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">

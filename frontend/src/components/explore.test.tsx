@@ -26,6 +26,7 @@ const EXPLORATION = {
       __typename: "ExploredDocument",
       id: "d1",
       source: "mail/zoho",
+      writer: { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Mail", icon: "mail" },
       externalId: "msg-1",
       contentType: "EMAIL",
       title: null,
@@ -92,6 +93,7 @@ test("lists a page of documents that open the viewer, with facet counts", async 
   assert.equal(link.getAttribute("href"), "/view?id=d1");
   assert.equal(link.textContent, "msg-1", "the external id stands in for a missing title");
   assert.match(view.container.querySelector("tbody")!.textContent ?? "", /Email.*Ada, Grace/);
+  assert.equal(view.container.querySelector("tbody span[title='mail/zoho']")?.textContent, "Mail › zoho");
   assert.match(view.container.querySelector("aside")!.textContent ?? "", /Ada30/);
   assert.match(view.container.textContent ?? "", /51–51 of 51 documents/);
   await view.unmount();

@@ -21,6 +21,9 @@ async function renderViewer(
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body)) as Operation;
     operations.push(operation);
+    if (operation.operationName === "ConnectionRoots") {
+      return Response.json({ data: { connections: [{ __typename: "Connection", id: "c1", source: "notes" }] } });
+    }
     if (operation.operationName === "ExcludeDocument") {
       return Response.json({ data: { excludeDocument: { __typename: "ExcludedDocuments", deleted: 3, remembered: true } } });
     }
@@ -29,7 +32,8 @@ async function renderViewer(
         document: {
           __typename: "Document",
           id: "d",
-          source: "notes",
+          source: "notes/2026",
+          writer: { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Notes", icon: "notebook" },
           thread: "lunch",
           contentType,
           title: "A note",
@@ -97,6 +101,14 @@ test("Markdown shows a frontmatter at the very start as a YAML block, not as a h
 test("a rule further down isn't a frontmatter", async () => {
   const view = await renderViewer("MARKDOWN", "Intro\n\n---\nkey: value\n---", null);
   assert.equal(view.container.querySelector("code.language-yaml"), null);
+  await view.unmount();
+});
+
+test("the header names the document's writer, the full source in the tooltip", async () => {
+  const view = await renderViewer("PLAIN", "text", null);
+  const source = view.container.querySelector("header span[title]");
+  assert.equal(source?.getAttribute("title"), "notes/2026");
+  assert.equal(source?.textContent, "Notes › 2026");
   await view.unmount();
 });
 

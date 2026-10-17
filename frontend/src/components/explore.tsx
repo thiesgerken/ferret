@@ -11,6 +11,7 @@ import { NamedIcon } from "@/components/named-icon";
 import { useConnectionRoots } from "@/lib/connection-roots";
 import { toggle } from "@/lib/search-url";
 import { sourceLabel } from "@/lib/source-label";
+import { SourceName } from "@/components/source-name";
 import { cn } from "@/lib/utils";
 import { viewerHref } from "@/lib/viewer-url";
 
@@ -21,6 +22,12 @@ const ExploreDocumentsQueryDocument = graphql(`
       documents {
         id
         source
+        writer {
+          kind
+          id
+          name
+          icon
+        }
         externalId
         contentType
         title
@@ -144,7 +151,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
           <p className="text-sm text-muted-foreground">No documents match.</p>
         ) : (
           <div className="overflow-x-auto">
-            <DocumentTable documents={documents} state={state} onSort={narrow} />
+            <DocumentTable documents={documents} roots={roots} state={state} onSort={narrow} />
           </div>
         )}
         <Pager total={total} state={state} onChange={onChange} />
@@ -210,10 +217,12 @@ function FacetList({
 
 function DocumentTable({
   documents,
+  roots,
   state,
   onSort,
 }: {
   documents: Exploration["documents"];
+  roots: Map<string, string> | undefined;
   state: ExploreState;
   onSort: (change: Partial<ExploreState>) => void;
 }) {
@@ -263,7 +272,9 @@ function DocumentTable({
                 {document.title || document.externalId}
               </Link>
             </td>
-            <td className="px-2 py-2 whitespace-nowrap">{document.source}</td>
+            <td className="max-w-56 px-2 py-2 whitespace-nowrap">
+              <SourceName source={document.source} writer={document.writer} roots={roots} />
+            </td>
             <td className="px-2 py-2 whitespace-nowrap">{CONTENT_TYPE_LABELS[document.contentType]}</td>
             <td className="max-w-48 truncate px-2 py-2">{document.authors.join(", ")}</td>
             <td className="px-2 py-2 whitespace-nowrap">{formatDate(document.createdAt)}</td>
