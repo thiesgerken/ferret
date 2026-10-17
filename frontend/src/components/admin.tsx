@@ -3,6 +3,7 @@
 import { Brain, Server, Users2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Section } from "@/components/page-shell";
+import { TeiPool } from "@/components/tei-pool";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { AdminQuery as AdminData } from "@/gql/graphql";
@@ -29,16 +30,24 @@ const AdminQuery = graphql(`
     }
     embeddingStatus {
       name
+      modelId
       isDefault
-      online
-      bulkOnline
-      lastError
-      lastErrorAt
+      dimension
       backlog {
         source
         pending
         failed
       }
+    }
+    teis {
+      url
+      model
+      servedModel
+      state
+      enabled
+      queries
+      embedding
+      ...TeiCardFields
     }
   }
 `);
@@ -68,8 +77,6 @@ const SetUserPasswordMutation = graphql(`
 `);
 
 type User = AdminData["users"][number];
-type Model = AdminData["embeddingStatus"][number];
-
 /** Health and backlog change on their own, so the page keeps them current. */
 const POLL_MS = 10_000;
 
@@ -103,12 +110,12 @@ export function Admin() {
           <NewUserForm onCreated={reload} />
         </div>
       </Section>
-      <Section title="Embedding" icon={<Brain />} description="Each model's TEI health and what's still waiting to be embedded.">
-        <div className="space-y-4">
-          {data.embeddingStatus.map((model) => (
-            <ModelCard key={model.name} model={model} />
-          ))}
-        </div>
+      <Section
+        title="Embedding"
+        icon={<Brain />}
+        description="The TEIs by the model they serve, and what's still waiting to be embedded. Switches take effect within 10 seconds."
+      >
+        <TeiPool models={data.embeddingStatus} teis={data.teis} onChanged={reload} />
       </Section>
       <Section title="Plugin workers" icon={<Server />} description="The workers that ran plugins in the last day.">
         <Workers workers={data.workers} />
@@ -305,61 +312,6 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
         Create user
       </button>
     </form>
-  );
-}
-
-function ModelCard({ model }: { model: Model }) {
-  return (
-    <div className="space-y-3 rounded-xl border border-border p-4 text-sm">
-      <p className="font-medium">
-        {model.name}
-        {model.isDefault && <span className="text-xs font-normal text-muted-foreground"> · default</span>}
-      </p>
-      <p>
-        <Health label="Queries" online={model.online} />
-        {model.bulkOnline !== null && model.bulkOnline !== undefined && (
-          <>
-            {" · "}
-            <Health label="Bulk" online={model.bulkOnline} />
-          </>
-        )}
-      </p>
-      {model.lastError && (
-        <p className="text-destructive">
-          Last error{model.lastErrorAt && ` (${formatDateTime(model.lastErrorAt)})`}: {model.lastError}
-        </p>
-      )}
-      {model.backlog.length === 0 ? (
-        <p className="text-muted-foreground">Everything is embedded.</p>
-      ) : (
-        <table className={tableClass}>
-          <thead className={headClass}>
-            <tr>
-              <th className="py-1.5 pr-3 font-medium">Source</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Pending</th>
-              <th className="py-1.5 text-right font-medium">Refused by TEI</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {model.backlog.map((row) => (
-              <tr key={row.source}>
-                <td className="py-1.5 pr-3">{row.source}</td>
-                <td className="py-1.5 pr-3 text-right tabular-nums">{row.pending}</td>
-                <td className="py-1.5 text-right tabular-nums">{row.failed}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function Health({ label, online }: { label: string; online: boolean }) {
-  return (
-    <span className={online ? "text-foreground" : "text-destructive"}>
-      {label}: {online ? "online" : "offline"}
-    </span>
   );
 }
 
