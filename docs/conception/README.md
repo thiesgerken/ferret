@@ -386,8 +386,8 @@ not stored in ferret.
 
 ## Plugins
 
-v1 ships **git**, **Paperless** and **carapace**. Email, chats, AFFiNE and saved articles are on
-the roadmap. Details in [plugins.md](plugins.md).
+v1 ships **git**, **Paperless** and **carapace**, and **IMAP** followed. Outlook, chats, AFFiNE
+and saved articles are on the roadmap. Details in [plugins.md](plugins.md).
 
 ## Embedding model choice
 

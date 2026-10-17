@@ -1,0 +1,13 @@
+From: Stadtwerke <rechnung@stadtwerke.example>
+To: alice@example.com
+Subject: Ihre Rechnung Januar 2025
+Date: Wed, 15 Jan 2025 06:00:00 +0100
+Message-ID: <invoice-2025-01@stadtwerke.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html><html><head><style>td { padding: 4px; }</style></head><body><=
+table><tr><td><h1>Ihre Rechnung</h1></td></tr><tr><td>Rechnungsnummer: <b>R=
+E-2025-0117</b></td></tr><tr><td>Betrag: 84,20 =E2=82=AC</td></tr></table><p=
+>Der Betrag wird am 30.01.2025 abgebucht.</p></body></html>

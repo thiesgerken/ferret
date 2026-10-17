@@ -4,7 +4,7 @@
 
 A plugin turns one kind of origin into documents. It decides what a document is, the server only
 chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**. Further
-plugins follow continuously, see [Roadmap](#roadmap).
+plugins follow continuously: **IMAP** so far, the rest in the [Roadmap](#roadmap).
 
 ## Contract
 
@@ -158,6 +158,81 @@ change its rendering freely.
   full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
   a commit.
 
+## After v1
+
+### IMAP
+
+Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing with
+[`mail-parser`](https://crates.io/crates/mail-parser).
+
+| Config | Meaning |
+|---|---|
+| `server` | e.g. `imap.zoho.eu`, with `:port` unless it's 993 |
+| `tls` | default on. Off sends the password in plain text: only for a server next to the worker (the compose Dovecot, tests) |
+| `username`, `password` | `password` is write-only, an app password where the provider has them |
+| `exclude_folders` | by name, default Trash, Spam, Junk, Drafts. Folders the server marks `\Trash`, `\Junk` or `\Drafts` (RFC 6154) are always left out, whatever their name |
+| `url_template` | deep link with `{message_id}` (percent-encoded, `@` kept), e.g. `mid:{message_id}` (RFC 2392). Without one, ferret's viewer is the origin |
+
+**Identity**
+
+- `external_id` = Message-ID without its angle brackets, so a mail in several folders is one
+  document and a move to another folder is invisible to ferret. A mail without one gets a
+  stand-in from the hash of its `Date`, `Subject` and sender (`no-message-id-…`), which survives
+  moves as well.
+- Source = the connection's root, e.g. `mail/zoho`. Folders are not recorded (a folder filter
+  would require tracking moves).
+- `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
+- `content_type = email`, `title` = subject, `authors` = the senders' names (their addresses where
+  a name is missing), `meta`: `to` and `cc` (`Name <address>`), `attachments` (file names).
+  `created_at` = `modified_at` = the `Date` header, else when the mail arrived (`INTERNALDATE`).
+- The text comes from the HTML body when there is one (its quote containers are more reliable
+  than text markers), with a line break around every block element, else from the plain-text
+  body.
+
+**Sync and deletions**
+
+- Every run is a sync over the account: per folder, `UID FETCH 1:* (UID INTERNALDATE ENVELOPE)`
+  lists every mail's Message-ID (a few MB for 50k mails), `seen` goes out for all of them, the
+  new ones are `PUT`, commit. Deleted mails, and mails moved into an excluded folder, disappear
+  with the sweep.
+- Per folder, `UIDVALIDITY` and the last UID are the cursor. A mail is new when its UID is above
+  the cursor and its Message-ID is in no indexed UID of any folder: a mail moved or copied into
+  another folder gets a new UID there, but isn't fetched again. A changed `UIDVALIDITY` (a folder
+  recreated under the same name) makes all of that folder's mails new.
+- New mails are fetched 50 at a time (`BODY.PEEK[]`, so they stay unread), oldest arrival first:
+  the thread diff needs a thread's earlier mails indexed before its later ones.
+- The state stores the cursors and the indexing settings (server, username, `url_template`, the
+  quote rule). When those change, every mail is fetched again.
+- No noise filter: unwanted mails get deleted at the origin.
+
+**Stripping quoted text**, in this order:
+
+1. **HTML quote containers** before the HTML-to-text conversion: `blockquote[type=cite]` (Apple
+   Mail, Thunderbird), `.gmail_quote`, and Outlook's `#divRplyFwdMsg` reply header with everything
+   after it (Outlook doesn't wrap the quoted mail).
+2. **Text markers**, German and English: lines starting with `>`, attribution lines `On … wrote:`
+   / `Am … schrieb …:` (also wrapped onto a second line), and everything from
+   `-----Original Message-----` / `-----Ursprüngliche Nachricht-----` or a `From:`/`Von:` line
+   followed by `Sent:`, `Date:`, `Gesendet:` or `Datum:` on.
+3. **Thread diff**: the plugin loads the thread's earlier mails from ferret
+   (`GET /api/documents?source=&thread=`, already stripped, earlier by `created_at`). From each
+   new mail it removes every run of at least 3 consecutive lines that also appears in an earlier
+   mail of the thread, after normalizing (`>` removed, whitespace collapsed, blank lines skipped).
+   Diffing against the whole thread, not just the parent, also catches the parent's quote of the
+   grandparent. Runs of 3 protect short lines like "Thanks!" that parent and reply happen to
+   share. Top-posting and inline replies both work, only matching runs go. A thread's first mail
+   skips this step.
+
+Forwards (subject `Fwd:`, `Fw:`, `WG:`) skip steps 1 and 2: the forwarded mail is new to me. An
+older mail that turns up after its replies (moved in from elsewhere) doesn't retroactively strip
+them. Accepted, it's a heuristic. Leftover duplicates are caught at search time by collapsing hits
+per thread ([README](README.md#search)).
+
+Tests run against the Dovecot of `docker-compose.yml` (and CI) with the fixture mails in
+`crates/ferret-plugins/fixtures/imap`, never against a real mailbox.
+
+**Wishlist**: attachment text (PDFs, Office documents).
+
 ## Roadmap
 
 In rough order of value per effort:
@@ -166,62 +241,12 @@ In rough order of value per effort:
    in the cluster syncs them into a PVC, mounted read-only into a dedicated worker. Every run is a
    full sync (`PUT` everything, the server skips unchanged files), excluding `.stfolder`,
    `.stversions` and `.obsidian`.
-2. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
-   follows as its own plugin (Microsoft Graph rather than IMAP).
+2. **Outlook** (work), as its own plugin: Microsoft Graph rather than [IMAP](#imap).
 3. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
 4. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
    already talks to AFFiNE through an MCP server, which shows a working API and auth path. Worst
    case, the MCP server is the API.
 5. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
-
-### Email
-
-IMAP, MIME parsing with [`mail-parser`](https://crates.io/crates/mail-parser), which also turns HTML
-into text.
-
-**Identity**
-
-- `external_id` = Message-ID, so a mail in several folders is one document and a move to another
-  folder is invisible to ferret.
-- Source = `mail/<account>`, e.g. `mail/zoho`. Folders are not recorded in v1 (a folder filter
-  would require tracking moves).
-- `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
-- `title` = subject, `authors` = From, `meta`: To, Cc, attachment names. `created_at` =
-  the `Date` header.
-- `url` from an optional `url_template` with `{message_id}` (e.g. `mid:{message_id}`, RFC 2392).
-  Without one, ferret's viewer is the origin.
-
-**Sync and deletions**
-
-- Per folder, `UIDVALIDITY` and the last UID are the cursor. New mails come in through
-  `UID FETCH`. A changed `UIDVALIDITY` refetches that folder.
-- Every run is a sync over the account: fetch the Message-IDs of all UIDs (`ENVELOPE`, a few MB for
-  50k mails), `seen` for all of them, `PUT` the new ones, commit. Deleted mails disappear with the
-  sweep.
-- Trash, Spam and Drafts are excluded (configurable), so a mail moved to Trash counts as deleted.
-- No noise filter: unwanted mails get deleted at the origin.
-
-**Stripping quoted text**, in this order:
-
-1. **HTML quote containers** before the HTML-to-text conversion: `blockquote[type=cite]` (Apple
-   Mail, Thunderbird), `div.gmail_quote`, Outlook's `#divRplyFwdMsg` and reply header block.
-2. **Text markers**, German and English: lines starting with `>`, `On ... wrote:` /
-   `Am ... schrieb ...:`, `-----Original Message-----` / `-----Ursprüngliche Nachricht-----`,
-   `From:`/`Sent:` and `Von:`/`Gesendet:` header blocks.
-3. **Thread diff**: the plugin processes a thread's new mails in date order and loads the thread's
-   earlier mails from ferret (`GET /api/documents?source=&thread=`, already stripped). From each new
-   mail it removes every run of at least 3 consecutive lines that already appeared in an earlier
-   mail of the thread, after normalizing (`>` removed, whitespace collapsed). Diffing against the
-   whole thread, not just the parent, also catches the parent's quote of the grandparent. Runs of 3
-   protect short lines like "Thanks!" that parent and reply happen to share. Top-posting and inline
-   replies both work, only matching runs go.
-
-Forwards (`Fwd:`, `WG:`) keep the forwarded content, it's new to me. An older mail that turns up
-after its replies (moved in from elsewhere) doesn't retroactively strip them. Accepted, it's a
-heuristic. Leftover duplicates are caught at search time by collapsing hits per thread
-([README](README.md#search)).
-
-**Wishlist**: attachment text (PDFs, Office documents).
 
 ### Chats
 

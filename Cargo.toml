@@ -11,15 +11,19 @@ publish = false
 [workspace.dependencies]
 ferret-api = { path = "crates/ferret-api" }
 argon2 = "0.6"
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 base64 = "0.22"
 chacha20poly1305 = "0.11"
 chrono = { version = "0.4", default-features = false }
 croner = "4"
+futures-util = "0.3"
 axum = "0.8"
 axum-extra = { version = "0.12", default-features = false, features = ["query"] }
 getrandom = "0.4"
 globset = "0.4"
 jsonschema = { version = "0.59", default-features = false }
+lol_html = "3"
+mail-parser = "0.11"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
@@ -43,7 +47,9 @@ tempfile = "3"
 text-splitter = { version = "0.33", features = ["markdown"] }
 percent-encoding = "2"
 rust-stemmers = "1.2"
+rustls-platform-verifier = "0.7"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = "0.26"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["serde", "v7"] }

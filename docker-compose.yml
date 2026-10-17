@@ -70,6 +70,18 @@ services:
       timeout: 3s
       retries: 20
 
+  # A throwaway mailbox for the IMAP plugin's tests (see .cargo/config.toml), and for trying the
+  # plugin by hand: server `dovecot:31143` without TLS, any user name, password `pass`. Mails live
+  # only in the container.
+  dovecot:
+    image: dovecot/dovecot:2.4.5@sha256:43c14def08a57f25107593cbcf64a0a6fbae84a7b9de7aa038513c9b21e91914
+    environment:
+      USER_PASSWORD: "{PLAIN}pass"
+    ports:
+      - "127.0.0.1:3143:31143"
+    volumes:
+      - ./docker/dovecot-test.conf:/etc/dovecot/conf.d/ferret-test.conf:ro
+
   # Queries. The embed pump has its own TEI (tei-bulk, the model's bulk_url): a query that queues
   # behind a backfill batch, about 30 s on CPU, runs into the server's 5 s query timeout.
   tei: &tei

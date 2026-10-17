@@ -1,0 +1,43 @@
+From: Alice Example <alice@example.com>
+To: Bob Builder <bob@gmail.example>
+Cc: Carol <carol@outlook.example>
+Subject: =?UTF-8?Q?Hausratversicherung_k=C3=BCndigen?=
+Date: Mon, 13 Jan 2025 09:12:00 +0100
+Message-ID: <original@alice.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed"
+
+--mixed
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Bob,
+
+die Hausratversicherung läuft Ende März aus.
+Ich würde sie gern zum 31.03. kündigen
+und zur neuen Police wechseln.
+
+Kannst du die Unterlagen prüfen?
+
+Viele Grüße
+Alice
+
+--alt
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><body><div>Hallo Bob,</div><div><br></div><div>die Hausratversicherung läuft Ende März aus.<br>Ich würde sie gern zum 31.03. kündigen<br>und zur neuen Police wechseln.</div><div><br></div><div>Kannst du die Unterlagen prüfen?</div><div><br></div><div>Viele Grüße<br>Alice</div></body></html>
+
+--alt--
+
+--mixed
+Content-Type: application/pdf; name="police.pdf"
+Content-Disposition: attachment; filename="police.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJcOkw7zDtsOfCg==
+
+--mixed--
