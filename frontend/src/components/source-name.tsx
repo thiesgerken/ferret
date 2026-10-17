@@ -14,7 +14,7 @@ export function SourceName({
 }) {
   const label = sourceLabel(source, writer, roots);
   return (
-    <span title={source} className="inline-flex min-w-0 items-center gap-1.5">
+    <span title={source} className="inline-flex max-w-full min-w-0 items-center gap-1.5">
       {label.icon ? (
         <NamedIcon name={label.icon} className="size-3.5 shrink-0" />
       ) : (
