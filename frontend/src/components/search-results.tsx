@@ -5,11 +5,13 @@ import { useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery } from "@/gql/graphql";
-import { TIME_RANGES, searchHref, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import { TIME_RANGES, searchHref, type SearchState } from "@/lib/search-url";
 import { pluginOf } from "@/lib/source-plugin";
 import { cn } from "@/lib/utils";
 import { HomeLink } from "@/components/brand-mark";
-import { HitItem, type Hit } from "@/components/search-hit";
+import { HitItem } from "@/components/search-hit";
+import { SearchFilters } from "@/components/search-filters";
+import { SearchX, TriangleAlert } from "lucide-react";
 
 const SearchHitsQueryDocument = graphql(`
   query SearchHits($input: SearchInput!) {
@@ -73,9 +75,6 @@ type Result = SearchHitsQuery["search"];
 // is in the API.
 const MIN_SIMILARITY = 0.42;
 
-/** How many authors get a chip, most frequent among the hits first. */
-const MAX_AUTHOR_CHIPS = 8;
-
 export function SearchResults({
   state,
   onChange,
@@ -123,138 +122,107 @@ export function SearchResults({
   }
   const semanticUnavailable = data?.search.semanticUnavailable;
 
+  const filtered = state.sources.length > 0 || state.authors.length > 0 || state.range !== "any";
+
   return (
     <div className="min-h-dvh">
-      <header className="flex items-center gap-6 border-b border-border px-4 py-3 pr-16">
-        <HomeLink />
-        <SearchField
-          defaultValue={state.q}
-          onSearch={(q) => onChange({ ...state, q })}
-          onType={handleType}
-        />
+      <header className="border-b border-border">
+        <div className={cn(columns, "flex items-center gap-6 py-3 pr-16 lg:pr-4")}>
+          <HomeLink />
+          <SearchField
+            defaultValue={state.q}
+            onSearch={(q) => onChange({ ...state, q })}
+            onType={handleType}
+            className="min-w-0"
+          />
+        </div>
       </header>
-      <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
-        <FilterChips
-          state={state}
-          hits={hits}
-          models={models?.embeddingModels.map((model) => model.name) ?? []}
-          ranModel={data?.search.model}
-          onChange={onChange}
-        />
-        {data && <Stats result={data.search} sources={state.sources} className={cn(fetching && "opacity-60")} />}
-        {semanticUnavailable && (
-          <p role="status" className="text-sm text-muted-foreground">
-            Keyword matches only: {semanticUnavailable}.
-          </p>
-        )}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error.graphQLErrors[0]?.message ?? error.message}
-          </p>
-        ) : data && hits.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No documents match.</p>
-        ) : (
-          // Keyed by the search, so a hit's ✓ state never carries over into another search.
-          <ol key={JSON.stringify(input)} className={cn("space-y-6", fetching && "opacity-60")}>
-            {hits.map((hit) => (
-              <li key={hit.documentId}>
-                <HitItem
-                  hit={hit}
-                  search={input}
-                  plugin={pluginOf(hit.source, connections?.connections ?? [])}
-                  relevance={relevance}
-                />
-              </li>
-            ))}
-          </ol>
-        )}
-      </main>
+      <div className={cn(columns, "pt-4 pb-16 lg:pt-6")}>
+        <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+          <SearchFilters
+            state={state}
+            hits={hits}
+            models={models?.embeddingModels.map((model) => model.name) ?? []}
+            ranModel={data?.search.model}
+            onChange={onChange}
+          />
+        </aside>
+        <main className="mt-4 min-w-0 space-y-6 lg:mt-0">
+          {(data || error) && (
+            <div className="space-y-1">
+              {data && <Stats result={data.search} sources={state.sources} className={cn(fetching && "opacity-60")} />}
+              {semanticUnavailable && (
+                <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
+                  Keyword matches only: {semanticUnavailable}.
+                </p>
+              )}
+            </div>
+          )}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error.graphQLErrors[0]?.message ?? error.message}
+            </p>
+          ) : !data ? (
+            <HitSkeletons />
+          ) : hits.length === 0 ? (
+            <NoMatches q={state.q} onClearFilters={filtered ? () => onChange({ ...state, sources: [], authors: [], range: "any" }) : null} />
+          ) : (
+            // Keyed by the search, so a hit's ✓ state never carries over into another search.
+            <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>
+              {hits.map((hit) => (
+                <li key={hit.documentId}>
+                  <HitItem
+                    hit={hit}
+                    search={input}
+                    plugin={pluginOf(hit.source, connections?.connections ?? [])}
+                    relevance={relevance}
+                  />
+                </li>
+              ))}
+            </ol>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
 
-function FilterChips({
-  state,
-  hits,
-  models,
-  ranModel,
-  onChange,
-}: {
-  state: SearchState;
-  hits: Hit[];
-  models: string[];
-  ranModel: string | undefined;
-  onChange: (state: SearchState) => void;
-}) {
-  // Chips come from the current hits; selected ones stay even when no hit has them anymore.
-  const sources = unique([...state.sources, ...hits.map((hit) => hit.source)]);
-  const authors = unique([...state.authors, ...byFrequency(hits.flatMap((hit) => hit.authors))]).slice(
-    0,
-    Math.max(MAX_AUTHOR_CHIPS, state.authors.length),
-  );
+/** The header lines the search field up with the hits, next to the filter column on wide screens. */
+const columns = "mx-auto max-w-3xl px-4 lg:grid lg:max-w-6xl lg:grid-cols-[14rem_minmax(0,44rem)] lg:gap-x-12";
 
+/** Placeholders shaped like hits, so the page doesn't jump when they arrive. */
+function HitSkeletons() {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <select
-        aria-label="Time range"
-        value={state.range}
-        onChange={(event) => onChange({ ...state, range: event.target.value as TimeRange })}
-        className={chipClass(state.range !== "any")}
-      >
-        {Object.entries(TIME_RANGES).map(([range, { label }]) => (
-          <option key={range} value={range}>
-            {label}
-          </option>
-        ))}
-      </select>
-      {/* With one model there's nothing to choose. The default option names the model that ran. */}
-      {models.length > 1 && (
-        <select
-          aria-label="Embedding model"
-          value={state.model ?? ""}
-          onChange={(event) => onChange({ ...state, model: event.target.value || null })}
-          className={chipClass(state.model !== null)}
-        >
-          <option value="">{!state.model && ranModel ? `Default model (${ranModel})` : "Default model"}</option>
-          {models.map((model) => (
-            <option key={model} value={model}>
-              {model}
-            </option>
-          ))}
-        </select>
+    <ol aria-busy="true" aria-label="Loading" className="space-y-7">
+      {[0, 1, 2, 3].map((index) => (
+        <li key={index} className="animate-pulse space-y-2.5">
+          <div className="h-3 w-48 rounded bg-muted" />
+          <div className="h-5 w-2/3 rounded bg-muted" />
+          <div className="h-3.5 w-full rounded bg-muted" />
+          <div className="h-3.5 w-5/6 rounded bg-muted" />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function NoMatches({ q, onClearFilters }: { q: string; onClearFilters: (() => void) | null }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-16 text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <SearchX className="size-6" aria-hidden />
+      </span>
+      <p className="font-medium">No documents match “{q}”</p>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        {onClearFilters ? "The filters may be too narrow." : "Try fewer or other words: every word has to match, or the meaning has to be close."}
+      </p>
+      {onClearFilters && (
+        <button type="button" onClick={onClearFilters} className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-accent">
+          Clear filters
+        </button>
       )}
-      {sources.map((source) => (
-        <Chip
-          key={`source:${source}`}
-          label={source}
-          pressed={state.sources.includes(source)}
-          onClick={() => onChange({ ...state, sources: toggle(state.sources, source) })}
-        />
-      ))}
-      {authors.map((author) => (
-        <Chip
-          key={`author:${author}`}
-          label={author}
-          pressed={state.authors.includes(author)}
-          onClick={() => onChange({ ...state, authors: toggle(state.authors, author) })}
-        />
-      ))}
     </div>
-  );
-}
-
-function Chip({ label, pressed, onClick }: { label: string; pressed: boolean; onClick: () => void }) {
-  return (
-    <button type="button" aria-pressed={pressed} onClick={onClick} className={chipClass(pressed)}>
-      {label}
-    </button>
-  );
-}
-
-function chipClass(active: boolean) {
-  return cn(
-    "rounded-full border px-3 py-1 text-sm transition-colors",
-    active ? "border-foreground bg-foreground text-background" : "border-border bg-background hover:bg-accent",
   );
 }
 
@@ -268,14 +236,4 @@ function Stats({ result, sources, className }: { result: Result; sources: string
       {matches} · {documents} in {scope} · {result.tookMs} ms
     </p>
   );
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function byFrequency(values: string[]): string[] {
-  const counts = new Map<string, number>();
-  values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
-  return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)!);
 }
