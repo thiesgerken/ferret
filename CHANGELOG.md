@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #103 from thiesgerken/87-activity-ui
+  ([`f795170`](https://github.com/thiesgerken/ferret/commit/f795170700a99ef5e0f80b54263de8055c455c72))
+
+- Merge remote-tracking branch 'origin/main' into 87-activity-ui
+  ([`ee0bb22`](https://github.com/thiesgerken/ferret/commit/ee0bb22e7a8d5eae6f032a866ddcff684511257b))
+
+### ✨ Features
+
+
+- ✨ feat(ui): an Activity page with the index, the embedders and every ingest, live
+  ([`f795170`](https://github.com/thiesgerken/ferret/commit/f795170700a99ef5e0f80b54263de8055c455c72))
+
 ## v0.5.1 (2026-10-17)
 
 
@@ -37,12 +55,6 @@
 - Merge pull request #99 from thiesgerken/87-activity
   ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
 
-- Merge remote-tracking branch 'origin/main' into 87-activity
-  ([`ab8adbb`](https://github.com/thiesgerken/ferret/commit/ab8adbb485aa7a2ca4c0d4b245440a7ad170fbf2))
-
-- Merge branch '85-origins' into 87-activity
-  ([`82f5433`](https://github.com/thiesgerken/ferret/commit/82f5433a1d8ab245faa2d5d5b5216fa88604e8e5))
-
 ### ✨ Features
 
 
@@ -59,36 +71,6 @@
 - ✨ feat(server): an activity feed and embedding progress with TEI load
   ([`34f5880`](https://github.com/thiesgerken/ferret/commit/34f5880db9e41849b7c49a4ab6b3ba44ece1af6f))
 
-- ✨ feat(server): an activity feed and embedding progress with TEI load
-  ([`343f473`](https://github.com/thiesgerken/ferret/commit/343f473687ac71a2e7a2a8eb3448844791d46ae8))
-
-  Part of #87.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-- ✨ feat(server): count what runs and API keys write as it arrives
-  ([`1900671`](https://github.com/thiesgerken/ferret/commit/1900671fe3caabaff78526311fdbe8a08bed0a7f))
-
-  Part of #87.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-### 🐛 Bug Fixes
-
-
-- 🐛 fix(server): activity keyset paging, one backlog per request, TEI restarts
-  ([`228bae2`](https://github.com/thiesgerken/ferret/commit/228bae20d9d14f9e2b3daaae321d45d88ab41f39))
-
-  Part of #87.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
 ## v0.4.1 (2026-10-17)
 
 
@@ -98,24 +80,23 @@
 - Merge pull request #101 from thiesgerken/87-settings-shell
   ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
 
+- Merge pull request #100 from thiesgerken/85-followups
+  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+
+- Merge branch '87-settings-shell' into 87-activity-ui
+  ([`77ff2ec`](https://github.com/thiesgerken/ferret/commit/77ff2ec2769c35c3119288409194d8dae91df28d))
+
 - Merge remote-tracking branch 'origin/main' into 87-settings-shell
   ([`c4688cf`](https://github.com/thiesgerken/ferret/commit/c4688cfafd0f3e05713ced52a71c7a7b051a0d40))
 
-- Merge pull request #100 from thiesgerken/85-followups
-  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+- Merge remote-tracking branch 'origin/main' into 87-activity
+  ([`ab8adbb`](https://github.com/thiesgerken/ferret/commit/ab8adbb485aa7a2ca4c0d4b245440a7ad170fbf2))
 
 ### 💄 UI/UX
 
 
 - 💄 style(ui): one layout for Connections, Settings and Admin
   ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
-
-- 💄 style(ui): one layout for Connections, Settings and Admin
-  ([`4708f38`](https://github.com/thiesgerken/ferret/commit/4708f388dbe62a4b0eed564765cb5673c800598f))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
 
 - 💄 style(ui): group sources by writer, and load icons only where they show
   ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
@@ -131,6 +112,35 @@
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
 
+- 💄 style(ui): one layout for Connections, Settings and Admin
+  ([`4708f38`](https://github.com/thiesgerken/ferret/commit/4708f388dbe62a4b0eed564765cb5673c800598f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### ✨ Features
+
+
+- ✨ feat(ui): an Activity page with the index, the embedders and every ingest, live
+  ([`ae9a3cd`](https://github.com/thiesgerken/ferret/commit/ae9a3cd79b92fdb45a67a59ddb83690d343f7983))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): activity keyset paging, one backlog per request, TEI restarts
+  ([`228bae2`](https://github.com/thiesgerken/ferret/commit/228bae20d9d14f9e2b3daaae321d45d88ab41f39))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.4.0 (2026-10-17)
 
 
@@ -145,6 +155,9 @@
 
 - Merge remote-tracking branch 'origin/85-origins' into 85-origins-ui
   ([`b234112`](https://github.com/thiesgerken/ferret/commit/b234112afbbfe0e5421dc4df9196627460805404))
+
+- Merge branch '85-origins' into 87-activity
+  ([`82f5433`](https://github.com/thiesgerken/ferret/commit/82f5433a1d8ab245faa2d5d5b5216fa88604e8e5))
 
 - Merge remote-tracking branch 'origin/main' into 85-origins
   ([`8e84d2c`](https://github.com/thiesgerken/ferret/commit/8e84d2cc97df85100436529a0c206ef36416b440))
@@ -175,6 +188,24 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F (cherry picked from commit 76e4e79117ba3d93148928fc624433d2dc5b5379)
+
+- ✨ feat(server): an activity feed and embedding progress with TEI load
+  ([`343f473`](https://github.com/thiesgerken/ferret/commit/343f473687ac71a2e7a2a8eb3448844791d46ae8))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): count what runs and API keys write as it arrives
+  ([`1900671`](https://github.com/thiesgerken/ferret/commit/1900671fe3caabaff78526311fdbe8a08bed0a7f))
+
+  Part of #87.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ### ♻️ Refactoring
 
