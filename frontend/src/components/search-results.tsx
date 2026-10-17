@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useClient, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
-import type { SearchHitsQuery } from "@/gql/graphql";
-import { TIME_RANGES, searchHref, type SearchState } from "@/lib/search-url";
+import type { SearchHitsQuery, SearchMode as SearchModeInput } from "@/gql/graphql";
+import { TIME_RANGES, searchHref, type SearchMode, type SearchState } from "@/lib/search-url";
 import { useConnectionRoots } from "@/lib/connection-roots";
 import { sourceLabel } from "@/lib/source-label";
 import { cn } from "@/lib/utils";
@@ -87,8 +87,6 @@ const EmbeddingModelNamesQuery = graphql(`
 
 type Result = SearchHitsQuery["search"];
 
-
-
 export function SearchResults({
   state,
   onChange,
@@ -106,8 +104,9 @@ export function SearchResults({
       authors: state.authors.length > 0 ? state.authors : null,
       range: TIME_RANGES[state.range].preset,
       model: state.model,
+      mode: state.mode === "hybrid" ? null : (state.mode.toUpperCase() as SearchModeInput),
     }),
-    [state.q, state.sources, state.authors, state.range, state.model],
+    [state.q, state.sources, state.authors, state.range, state.model, state.mode],
   );
   // Typing revisits queries all the time, and a cached answer would pass off an old `tookMs` and
   // `semanticUnavailable` as current.
@@ -179,6 +178,7 @@ export function SearchResults({
               {data && (
                 <Stats
                   result={data.search}
+                  mode={state.mode}
                   sources={state.sources.map(
                     (source) =>
                       sourceLabel(source, data.search.facets.sources.find((facet) => facet.value === source)?.writer, roots)
@@ -202,7 +202,7 @@ export function SearchResults({
           ) : !data ? (
             <HitSkeletons />
           ) : hits.length === 0 ? (
-            <NoMatches q={state.q} onClearFilters={filtered ? () => onChange({ ...state, sources: [], authors: [], range: "any" }) : null} />
+            <NoMatches q={state.q} mode={state.mode} onClearFilters={filtered ? () => onChange({ ...state, sources: [], authors: [], range: "any" }) : null} />
           ) : (
             // Keyed by the search, so a hit's ✓ state never carries over into another search.
             <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>
@@ -247,7 +247,13 @@ function HitSkeletons() {
   );
 }
 
-function NoMatches({ q, onClearFilters }: { q: string; onClearFilters: (() => void) | null }) {
+const MATCH_RULES: Record<SearchMode, string> = {
+  hybrid: "every word has to match, or the meaning has to be close",
+  keyword: "every word has to match",
+  semantic: "the meaning has to be close",
+};
+
+function NoMatches({ q, mode, onClearFilters }: { q: string; mode: SearchMode; onClearFilters: (() => void) | null }) {
   return (
     <div className="flex flex-col items-center gap-3 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -255,7 +261,7 @@ function NoMatches({ q, onClearFilters }: { q: string; onClearFilters: (() => vo
       </span>
       <p className="font-medium">No documents match “{q}”</p>
       <p className="max-w-sm text-sm text-muted-foreground">
-        {onClearFilters ? "The filters may be too narrow." : "Try fewer or other words: every word has to match, or the meaning has to be close."}
+        {onClearFilters ? "The filters may be too narrow." : `Try fewer or other words: ${MATCH_RULES[mode]}.`}
       </p>
       {onClearFilters && (
         <button type="button" onClick={onClearFilters} className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-accent">
@@ -266,9 +272,11 @@ function NoMatches({ q, onClearFilters }: { q: string; onClearFilters: (() => vo
   );
 }
 
-/** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. */
-function Stats({ result, sources, className }: { result: Result; sources: string[]; className?: string }) {
-  const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${result.total === 1 ? "match" : "matches"}`;
+/** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. With
+ * one half of the search off, "37 keyword matches". */
+function Stats({ result, mode, sources, className }: { result: Result; mode: SearchMode; sources: string[]; className?: string }) {
+  const kind = mode === "hybrid" ? "" : `${mode} `;
+  const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${kind}${result.total === 1 ? "match" : "matches"}`;
   const documents = `${result.documentsInScope} ${result.documentsInScope === 1 ? "document" : "documents"}`;
   const scope = sources.length > 0 ? sources.join(", ") : "all sources";
   return (
