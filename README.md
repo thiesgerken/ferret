@@ -26,11 +26,12 @@
   <a href="charts/ferret/README.md">⚓ Helm chart</a>
 </p>
 
-Your notes, documents, mail, chats and your agent's memory already live somewhere: Paperless, git,
-a mailbox, carapace. ferret doesn't replace any of them. It is an **index** over all of them: one
-search that finds what you wrote, shows the passage that matched, and links you straight back to
-where it lives. Your agents get the same search through the same API, so they ask once instead of
-guessing which tool's search to try first.
+Your notes, documents, mail, chats and your agent's memory are spread over Paperless, git, a
+mailbox, carapace and more, each with its own search, mostly not a good one. ferret is the
+**discovery layer** on top: one index over all of them that answers *"what do I have about this,
+and where?"* in a single query. It shows the passage that matched and links straight back to the
+origin, where that source's own tools take over. You search it in the browser; your agents search
+the same index through the same API instead of guessing which tool to try first.
 
 ## ✨ Highlights
 
