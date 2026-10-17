@@ -539,15 +539,17 @@ struct Facets {
 struct SourceCount {
     value: String,
     count: i32,
-    /// The connection whose root covers the source, else the API key that put its most recently
-    /// modified document. Null when no key is known (documents from before keys were recorded).
-    origin: Option<Origin>,
+    /// Who put its documents, for grouping: the connection covering it, else the one connection
+    /// below it or the API key of its most recently modified document that has one. Null when no
+    /// writer is known (documents from before writers were recorded) or there's more than one kind
+    /// (a root over a connection's documents and a key's).
+    writer: Option<Writer>,
 }
 
-/// Where documents come from.
+/// A connection or an API key: what puts documents into sources.
 #[derive(GraphQLObject)]
-struct Origin {
-    kind: OriginKind,
+struct Writer {
+    kind: WriterKind,
     /// The connection's or API key's id.
     id: ID,
     name: String,
@@ -556,21 +558,21 @@ struct Origin {
 }
 
 #[derive(GraphQLEnum)]
-enum OriginKind {
+enum WriterKind {
     Connection,
     ApiKey,
 }
 
-impl From<ferret_api::Origin> for Origin {
-    fn from(origin: ferret_api::Origin) -> Self {
+impl From<ferret_api::Writer> for Writer {
+    fn from(writer: ferret_api::Writer) -> Self {
         Self {
-            kind: match origin.kind {
-                ferret_api::OriginKind::Connection => OriginKind::Connection,
-                ferret_api::OriginKind::ApiKey => OriginKind::ApiKey,
+            kind: match writer.kind {
+                ferret_api::WriterKind::Connection => WriterKind::Connection,
+                ferret_api::WriterKind::ApiKey => WriterKind::ApiKey,
             },
-            id: ID::new(origin.id.to_string()),
-            name: origin.name,
-            icon: origin.icon,
+            id: ID::new(writer.id.to_string()),
+            name: writer.name,
+            icon: writer.icon,
         }
     }
 }
@@ -581,7 +583,7 @@ fn source_counts(counts: Vec<ferret_api::SourceCount>) -> Vec<SourceCount> {
         .map(|count| SourceCount {
             value: count.value,
             count: graphql_int(count.count),
-            origin: count.origin.map(Origin::from),
+            writer: count.writer.map(Writer::from),
         })
         .collect()
 }
@@ -835,11 +837,11 @@ struct Hit {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
+    /// The connection or API key that put the document, null for one from before writers were
+    /// recorded.
+    writer: Option<Writer>,
     /// The best BM25 score among the document's chunks in the keyword half's candidates, null
     /// when none of them is.
-    /// The connection or API key the document comes from. Null when no key is known (documents
-    /// from before keys were recorded).
-    origin: Option<Origin>,
     keyword_score: Option<f64>,
     /// The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
     /// half's candidates above the model's cut-off, null when none of them is or the semantic
@@ -881,7 +883,7 @@ impl From<ferret_api::Hit> for Hit {
             authors: hit.authors,
             created_at: hit.created_at,
             modified_at: hit.modified_at,
-            origin: hit.origin.map(Origin::from),
+            writer: hit.writer.map(Writer::from),
             keyword_score: hit.keyword_score.map(f64::from),
             similarity: hit.similarity.map(f64::from),
             collapsed: graphql_int(hit.collapsed),
@@ -1207,8 +1209,8 @@ impl Mutation {
         };
         match api_keys::create(&context.pool, &context.user, new).await {
             Ok((api_key, key)) => Ok(CreatedApiKey { api_key, key }),
-            Err(api_keys::CreateError::Invalid(message)) => Err(invalid_input(message)),
-            Err(api_keys::CreateError::Database(error)) => Err(internal(error)),
+            Err(api_keys::KeyError::Invalid(message)) => Err(invalid_input(message)),
+            Err(api_keys::KeyError::Database(error)) => Err(internal(error)),
         }
     }
 
@@ -1224,12 +1226,12 @@ impl Mutation {
         match api_keys::update(&context.pool, context.user.id, key_id, &name, &icon).await {
             Ok(Some(api_key)) => Ok(api_key),
             Ok(None) => Err(not_found()),
-            Err(api_keys::CreateError::Invalid(message)) => Err(invalid_input(message)),
-            Err(api_keys::CreateError::Database(error)) => Err(internal(error)),
+            Err(api_keys::KeyError::Invalid(message)) => Err(invalid_input(message)),
+            Err(api_keys::KeyError::Database(error)) => Err(internal(error)),
         }
     }
 
-    /// Revokes one of the signed-in user's keys and returns its id. It stays the origin of the
+    /// Revokes one of the signed-in user's keys and returns its id. It stays the writer of the
     /// documents it put.
     async fn revoke_api_key(context: &Context, id: ID) -> FieldResult<ID> {
         let not_found = || FieldError::new("no such API key", graphql_value!(null));

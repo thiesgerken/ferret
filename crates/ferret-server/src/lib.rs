@@ -28,7 +28,6 @@ pub mod graphql;
 mod highlight;
 mod icons;
 mod judgments;
-mod origins;
 mod runs;
 mod search;
 mod search_query;
@@ -36,6 +35,7 @@ mod sources;
 mod syncs;
 mod tei;
 mod users;
+mod writers;
 
 pub use auth::SessionKey;
 pub use credentials::ConfigKey;

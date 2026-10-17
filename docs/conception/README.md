@@ -116,14 +116,15 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
 - Filters match by path prefix, segment-wise: `source=carapace` finds `carapace/facts` and
   `carapace/sessions`, but not `carapace-old`. `source=` may be repeated.
 - Syncs, sweeps and credentials (run tokens, API keys) are scoped to a path and everything below it.
-- **Origin**: where a document comes from, shown with a name and an icon instead of the bare
-  path. A document below a connection's root comes from that connection, any other from the API
-  key that last put it (`documents.api_key_id`), revoked keys included. Search hits carry their
-  `origin`, and the source facets of search and Explore carry each source's (for a source no
-  connection covers, the key of its most recently modified document), so the UI can group sources
-  by origin. Connections and keys have a name and a lucide icon name, chosen by the user with a
-  per-plugin default (git `git-branch`, carapace `brain`, Paperless `file-text`, API keys
-  `key-round`).
+- **Writer**: the connection or API key that put a document, shown with a name and an icon
+  instead of the bare path. A document below a connection's root was put by that connection, any
+  other by the API key that last put it (`documents.api_key_id`), revoked keys included. Search
+  hits carry their `writer`. The source facets of search and Explore carry each source's, so the
+  UI can group sources by writer: the connection covering it, else the one connection below it or
+  the key of its most recently modified document that has one, and none for a root over both a
+  connection's documents and a key's. Connections and keys have a name and a lucide icon name,
+  chosen by the user with a per-plugin default (git `git-branch`, carapace `brain`, Paperless
+  `file-text`, API keys `key-round`).
 
 ## Ingest API
 

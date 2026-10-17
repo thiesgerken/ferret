@@ -23,7 +23,7 @@ graphql() { # query, variables
 }
 
 # The machine API takes only API keys, so the documents go in with one that works for this run
-# only. Revoked, it stays their origin.
+# only. Revoked, it stays their writer.
 created=$(graphql 'mutation($input: NewApiKey!) { createApiKey(input: $input) { key apiKey { id } } }' \
   '{"input": {"name": "Demo data", "icon": "package", "scopes": ["INGEST_WRITE"], "sources": ["demo"]}}')
 key=$(jq -r .createApiKey.key <<<"$created")

@@ -188,15 +188,17 @@ pub struct FacetCount {
 pub struct SourceCount {
     pub value: String,
     pub count: u32,
-    /// The connection whose root covers the source, else the API key that put its most recently
-    /// modified match. `None` when no key is known (documents from before keys were recorded).
-    pub origin: Option<Origin>,
+    /// Who put its documents, for grouping: the connection covering it, else the one connection
+    /// below it or the API key of its most recently modified document that has one. `None` when
+    /// no writer is known (documents from before writers were recorded) or there's more than one
+    /// kind (a root over a connection's documents and a key's).
+    pub writer: Option<Writer>,
 }
 
-/// Where documents come from.
+/// A connection or an API key: what puts documents into sources.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Origin {
-    pub kind: OriginKind,
+pub struct Writer {
+    pub kind: WriterKind,
     pub id: Uuid,
     pub name: String,
     /// A lucide icon name, e.g. `git-branch`.
@@ -205,7 +207,7 @@ pub struct Origin {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OriginKind {
+pub enum WriterKind {
     Connection,
     ApiKey,
 }
@@ -230,9 +232,9 @@ pub struct Hit {
     /// candidates above the model's `min_similarity`, `None` when none of them is or the semantic
     /// half didn't run.
     pub similarity: Option<f32>,
-    /// The connection or API key the document comes from, `None` when no key is known
-    /// (documents from before keys were recorded).
-    pub origin: Option<Origin>,
+    /// The connection or API key that put the document, `None` for one from before writers were
+    /// recorded.
+    pub writer: Option<Writer>,
     /// How many more documents of the same thread matched and were folded into this hit.
     pub collapsed: u32,
     pub chunk: HitChunk,

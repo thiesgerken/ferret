@@ -277,9 +277,9 @@ impl From<DocumentRow> for Document {
     }
 }
 
-/// Stores `document` unless it's unchanged, and re-chunks a changed one. Chunks whose text
-/// didn't change keep their identity (and later their embeddings).
-/// Stores `document` for `user_id`, as put by `api_key_id` (`None`: a plugin run).
+/// Stores `document` for `user_id` as put by `api_key_id` (`None`: a plugin run), unless it's
+/// unchanged, and re-chunks a changed one. Chunks whose text didn't change keep their identity
+/// (and later their embeddings).
 async fn upsert(
     tx: &mut PgConnection,
     user_id: Uuid,
