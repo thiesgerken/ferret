@@ -122,7 +122,7 @@ select id, text, title from (
     limit 256
 ) candidates
 where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
-limit 32;  -- TEI's max_client_batch_size
+limit $2;  -- the model's batch size, at most 32 (TEI's max_client_batch_size)
 ```
 
 - The pump serves the default model first, then the others. Within a model, newest chunks first.
@@ -142,6 +142,10 @@ limit 32;  -- TEI's max_client_batch_size
 - Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
   The final insert locks the chunks `for share` and skips those deleted meanwhile.
 - Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
+- The batch size adapts per model and server: a timeout halves it (down to 1), a batch that took
+  less than 30 s adds one (up to 32). TEI computes a request to the end even after the pump gave
+  up on it, so on a CPU too slow for 32 long chunks, retrying the same batch would queue behind
+  the abandoned one and time out again, forever. A GPU TEI stays at 32.
 
 ## Per-user model choice
 
