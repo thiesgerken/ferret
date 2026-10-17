@@ -34,6 +34,7 @@ mod search_query;
 mod sources;
 mod syncs;
 mod tei;
+mod tei_load;
 mod users;
 mod writers;
 

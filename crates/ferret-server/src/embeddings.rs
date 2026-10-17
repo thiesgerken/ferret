@@ -20,6 +20,7 @@ use crate::{
     chunking::MAX_CHUNK_CHARS,
     config::{EmbeddingConfig, ModelConfig},
     tei,
+    tei_load::{Load, TeiLoad},
 };
 
 /// Chunks per pump transaction at most, TEI's default client batch size.
@@ -94,6 +95,11 @@ impl Model {
         &self.config.name
     }
 
+    /// Chunks per pump batch in this server process, see `BatchSize`.
+    pub fn batch_size(&self) -> usize {
+        self.batch_size.get()
+    }
+
     fn index_name(&self) -> String {
         format!("chunk_embeddings_hnsw_{}", self.config.slug())
     }
@@ -103,6 +109,7 @@ pub struct Embedding {
     http: reqwest::Client,
     /// The default model first.
     models: Vec<Model>,
+    tei_load: TeiLoad,
 }
 
 #[derive(Debug)]
@@ -173,7 +180,11 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
         models.push(model);
     }
     reset_removed_defaults(pool, &models).await?;
-    Ok(Embedding { http, models })
+    Ok(Embedding {
+        http,
+        models,
+        tei_load: TeiLoad::default(),
+    })
 }
 
 // ponytail: exact counts, and neither table has an index on user_id, so both scan the whole
@@ -192,6 +203,51 @@ pub async fn embedded_chunks(
     )
     .fetch_one(pool)
     .await
+}
+
+/// The minutes the pump's rate is averaged over.
+const RATE_WINDOW_MINUTES: i32 = 10;
+
+/// Chunks the pump embedded for `model` per minute lately, across users and server processes.
+pub async fn rate_per_minute(pool: &PgPool, model: &str) -> Result<f64, sqlx::Error> {
+    let embedded = sqlx::query_scalar!(
+        r#"select count(*) as "count!" from chunk_embeddings
+           where model = $1 and embedded_at > now() - make_interval(mins => $2)"#,
+        model,
+        RATE_WINDOW_MINUTES,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(embedded as f64 / f64::from(RATE_WINDOW_MINUTES))
+}
+
+/// Seconds until `pending` chunks are embedded at `rate_per_minute`, `None` when nothing is
+/// pending or nothing gets embedded.
+pub fn eta_seconds(pending: i64, rate_per_minute: f64) -> Option<i64> {
+    (pending > 0 && rate_per_minute > 0.0)
+        .then(|| (pending as f64 / rate_per_minute * 60.0).ceil() as i64)
+}
+
+/// `user_id`'s chunks still waiting for `model`, and those TEI refused.
+pub async fn user_backlog(
+    pool: &PgPool,
+    user_id: Uuid,
+    model: &str,
+) -> Result<(i64, i64), sqlx::Error> {
+    let backlog = sqlx::query!(
+        r#"select count(*) filter (where f.chunk_id is null) as "pending!",
+                  count(f.chunk_id) as "failed!"
+           from chunks c
+           left join embedding_failures f on f.chunk_id = c.id and f.model = $2
+           where c.user_id = $1
+             and not exists (select 1 from chunk_embeddings e
+                             where e.chunk_id = c.id and e.model = $2)"#,
+        user_id,
+        model,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok((backlog.pending, backlog.failed))
 }
 
 pub async fn chunks(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
@@ -273,6 +329,31 @@ pub struct ModelStatus {
     pub last_error: Option<(String, chrono::DateTime<chrono::Utc>)>,
     /// Chunks still to embed per source, across users. Sources without any are left out.
     pub backlog: Vec<SourceBacklog>,
+    pub rate_per_minute: f64,
+    /// Until the whole backlog is embedded.
+    pub eta_seconds: Option<i64>,
+    /// In this server process.
+    pub batch_size: usize,
+    /// The TEI for queries, and the pump's if that's another one.
+    pub teis: Vec<TeiStatus>,
+}
+
+pub struct TeiStatus {
+    pub role: TeiRole,
+    pub url: String,
+    pub online: bool,
+    /// `None` while its metrics don't answer.
+    pub load: Option<Load>,
+    /// The pump's TEI only: until `pending` chunks are embedded at its throughput.
+    pub eta_seconds: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+pub enum TeiRole {
+    Queries,
+    Pump,
+    /// Queries and the pump, without a `bulk_url`.
+    Both,
 }
 
 pub struct SourceBacklog {
@@ -291,6 +372,36 @@ impl Embedding {
     /// Every configured model's health and backlog, the default first.
     // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
     // running counts if the Admin page gets slow.
+    async fn tei_status(&self, url: &str, role: TeiRole, online: bool, pending: i64) -> TeiStatus {
+        let load = self.tei_load.read(&self.http, url).await;
+        let eta_seconds = match role {
+            TeiRole::Queries => None,
+            TeiRole::Pump | TeiRole::Both => load
+                .as_ref()
+                .and_then(|load| load.throughput_per_minute)
+                .and_then(|throughput| eta_seconds(pending, throughput)),
+        };
+        TeiStatus {
+            role,
+            url: url.to_owned(),
+            online,
+            load,
+            eta_seconds,
+        }
+    }
+
+    /// Whether `model`'s TEI for searches answers, and its pump's TEI if that's another one.
+    pub async fn health(&self, model: &Model) -> (bool, Option<bool>) {
+        let online = tei::healthy(&self.http, &model.config.url, HEALTH_TIMEOUT);
+        let bulk_online = async {
+            match model.config.bulk_url.as_deref() {
+                Some(url) => Some(tei::healthy(&self.http, url, HEALTH_TIMEOUT).await),
+                None => None,
+            }
+        };
+        tokio::join!(online, bulk_online)
+    }
+
     pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
         // Every health check at once, so TEIs that are down cost one timeout, not one each.
         let check = |url: &str| {
@@ -338,6 +449,27 @@ impl Embedding {
             )
             .fetch_all(pool)
             .await?;
+            let rate_per_minute = rate_per_minute(pool, name).await?;
+            let pending = backlog.iter().map(|source| source.pending).sum();
+            let mut teis = vec![
+                self.tei_status(
+                    &model.config.url,
+                    if bulk_online.is_some() {
+                        TeiRole::Queries
+                    } else {
+                        TeiRole::Both
+                    },
+                    online,
+                    pending,
+                )
+                .await,
+            ];
+            if let (Some(url), Some(bulk_online)) = (&model.config.bulk_url, bulk_online) {
+                teis.push(
+                    self.tei_status(url, TeiRole::Pump, bulk_online, pending)
+                        .await,
+                );
+            }
             statuses.push(ModelStatus {
                 name: name.to_owned(),
                 is_default: index == 0,
@@ -345,6 +477,10 @@ impl Embedding {
                 bulk_online,
                 last_error,
                 backlog,
+                rate_per_minute,
+                eta_seconds: eta_seconds(pending, rate_per_minute),
+                batch_size: model.batch_size(),
+                teis,
             });
         }
         Ok(statuses)

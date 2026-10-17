@@ -129,8 +129,24 @@ create table plugin_runs (
     heartbeat_at  timestamptz not null,
     finished_at   timestamptz,
     stats         jsonb,                       -- documents put, deleted, unchanged
+    put           integer not null default 0,  -- the same, counted by the server while running
+    unchanged     integer not null default 0,
+    deleted       integer not null default 0,
     log           text not null default '',    -- capped
     error         text
+);
+
+-- An API key's writes, grouped into bursts: a write within 10 minutes of the burst's last one
+-- belongs to it. With the plugin runs, the Activity page's feed (`activity` in GraphQL).
+create table api_ingests (
+    id          uuid primary key,
+    user_id     uuid not null references users on delete cascade,
+    api_key_id  uuid not null references api_keys on delete cascade,
+    started_at  timestamptz not null,
+    last_at     timestamptz not null,
+    put         integer not null,
+    unchanged   integer not null,
+    deleted     integer not null
 );
 ```
 
