@@ -8,6 +8,7 @@ use ferret_api::{
 };
 use serde_json::Value;
 
+pub mod carapace;
 pub mod git;
 pub mod paperless;
 pub mod repo;
@@ -17,6 +18,11 @@ pub type PluginError = Box<dyn std::error::Error + Send + Sync>;
 /// Every plugin this binary knows, as the server learns them at registration.
 pub fn registrations() -> Vec<PluginRegistration> {
     vec![
+        PluginRegistration {
+            name: carapace::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(carapace::CarapaceConfig))
+                .expect("a schema serializes"),
+        },
         PluginRegistration {
             name: git::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(git::GitConfig))
@@ -92,6 +98,7 @@ impl Log {
 
 pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
     match plugin {
+        carapace::NAME => carapace::run(run).await,
         git::NAME => git::run(run).await,
         paperless::NAME => paperless::run(run).await,
         other => Err(format!("this worker doesn't know the plugin {other:?}").into()),

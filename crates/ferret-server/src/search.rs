@@ -15,14 +15,18 @@ use crate::{
     embeddings::{EmbedError, Embedding, Model},
     error::ApiError,
     highlight::highlight,
-    search_query, sources,
+    search_query::{self, ParsedQuery},
+    sources,
 };
 
 const DEFAULT_K: u32 = 10;
 const MAX_K: u32 = 100;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
 // ranks below these limits in both halves can't be a hit, which matters only when k approaches
-// them. The vector half is smaller, HNSW gets slower with every extra neighbour.
+// them. The vector half is smaller, HNSW gets slower with every extra neighbour. Titles are on
+// every chunk, so a common title word matches all chunks of long documents and can fill the
+// keyword candidates (BM25's document frequency counts those chunks, too). #21's evaluation
+// shows whether that bites.
 const KEYWORD_CANDIDATES: i64 = 1000;
 const SEMANTIC_CANDIDATES: i64 = 100;
 
@@ -65,23 +69,46 @@ impl From<SearchError> for ApiError {
     }
 }
 
-/// Searches `user_id`'s documents, within the `allowed` source roots (`None`: all sources).
-/// Both APIs answer searches with this.
-pub async fn find(
-    pool: &PgPool,
-    embedding: &Embedding,
-    user_id: Uuid,
-    allowed: Option<&[String]>,
-    request: &SearchQuery,
-) -> Result<SearchResponse, SearchError> {
+/// A time range up to now, as the UI offers it. Judgments store it as such, so a judged "past
+/// week" search is still the same search tomorrow.
+#[derive(Clone, Copy)]
+pub enum RelativeRange {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl RelativeRange {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Week => "week",
+            Self::Month => "month",
+            Self::Year => "year",
+        }
+    }
+
+    pub fn start(self, now: DateTime<Utc>) -> DateTime<Utc> {
+        let days = match self {
+            Self::Day => 1,
+            Self::Week => 7,
+            Self::Month => 31,
+            Self::Year => 366,
+        };
+        now - chrono::Duration::days(days)
+    }
+}
+
+/// Rejects a search `find` couldn't answer, and returns its parsed query.
+pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
     let query = search_query::parse(&request.q);
     if query.words.is_empty() {
         return Err(SearchError::Invalid(
             "the query needs at least one word that isn't excluded".to_owned(),
         ));
     }
-    let k = request.k.unwrap_or(DEFAULT_K);
-    if !(1..=MAX_K).contains(&k) {
+    if !(1..=MAX_K).contains(&request.k.unwrap_or(DEFAULT_K)) {
         return Err(SearchError::Invalid(format!(
             "k must be between 1 and {MAX_K}"
         )));
@@ -95,6 +122,20 @@ pub async fn find(
             "{invalid:?} is not a source path like `notes` or `mail/zoho`"
         )));
     }
+    Ok(query)
+}
+
+/// Searches `user_id`'s documents, within the `allowed` source roots (`None`: all sources).
+/// Both APIs answer searches with this.
+pub async fn find(
+    pool: &PgPool,
+    embedding: &Embedding,
+    user_id: Uuid,
+    allowed: Option<&[String]>,
+    request: &SearchQuery,
+) -> Result<SearchResponse, SearchError> {
+    let query = validate(request)?;
+    let k = request.k.unwrap_or(DEFAULT_K);
     let roots = sources::narrow(&request.sources, allowed);
     if roots.as_ref().is_some_and(Vec::is_empty) {
         return Ok(SearchResponse {
@@ -147,13 +188,8 @@ pub async fn find(
     // Every word must match in at least one field, so a compound and an inflected word can
     // match the same chunk in different fields.
     for word in &query.words {
-        sql.push(" and (c.text &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_en') &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word)
-            .push(")");
+        sql.push(" and ");
+        push_word_match(&mut sql, "c.", word);
     }
     sql.push(" order by score desc limit ")
         .push_bind(KEYWORD_CANDIDATES)
@@ -286,13 +322,9 @@ impl Filters<'_> {
                 " and {table}.document_id not in (select document_id from chunks where user_id = "
             ))
             .push_bind(self.user_id)
-            .push(" and (text &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_en') &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word.clone())
-            .push("))");
+            .push(" and ");
+            push_word_match(sql, "", word);
+            sql.push(")");
         }
         if let Some(roots) = &self.roots {
             sql.push(" and exists (select 1 from unnest(")
@@ -327,6 +359,30 @@ impl Filters<'_> {
                 .push(")) > 0");
         }
     }
+}
+
+/// `word` matches a chunk's text or its document's title in any of the BM25 index's fields.
+/// `table` qualifies the columns, e.g. `c.`.
+fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
+    sql.push("(");
+    for (index, field) in [
+        "text",
+        "text::pdb.alias('text_en')",
+        "text::pdb.alias('text_ngram')",
+        "title",
+        "title::pdb.alias('title_en')",
+        "title::pdb.alias('title_ngram')",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index > 0 {
+            sql.push(" or ");
+        }
+        sql.push(format!("{table}{field} &&& "))
+            .push_bind(word.to_owned());
+    }
+    sql.push(")");
 }
 
 #[derive(sqlx::FromRow)]

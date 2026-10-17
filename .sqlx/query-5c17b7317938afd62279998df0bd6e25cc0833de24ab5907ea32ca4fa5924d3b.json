@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select document_id from relevance_judgments\n         where user_id = $1 and query = $2 and filters = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "document_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relevance_judgments",
+            "name": "document_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5c17b7317938afd62279998df0bd6e25cc0833de24ab5907ea32ca4fa5924d3b"
+}

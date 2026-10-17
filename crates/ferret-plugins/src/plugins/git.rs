@@ -264,7 +264,7 @@ impl Indexer<'_> {
 }
 
 /// The first Markdown heading, or the file name.
-fn title(path: &str, text: &str, content_type: ContentType) -> String {
+pub(super) fn title(path: &str, text: &str, content_type: ContentType) -> String {
     let heading = (content_type == ContentType::Markdown)
         .then(|| text.lines().find_map(|line| line.strip_prefix("# ")))
         .flatten()

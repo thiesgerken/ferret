@@ -90,7 +90,8 @@ carapace itself.
 - Body sections by heading: abstract (prose under the title), `## Outcomes`, `## Open loops`,
   `## On my mind`, `## Facts` with one `### <category>` per category, `## Friction`, `## Tags`.
 - Fact lines: `- **<subject>**: <statement> _(<source_kind> · <confidence> confidence ·
-  <durability or "dated until <date>"> · #<seq> ...)_`.
+  <durability or "dated until <date>"> · #<seq> ...)_`. render.py prints "dated until" whenever a
+  fact has a `valid_until`, so a durable fact with one reads as dated. v2 fixes that.
 
 This couples the plugin to carapace's render format. Parser tests run against fixtures rendered
 by carapace, and a line that doesn't parse fails the run instead of being skipped.
@@ -108,13 +109,21 @@ change its rendering freely.
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
   `session_id`. Session and digest `meta`: week and month keys, provenance.
+- `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
+  record, the only timestamp the mirror has. A re-extraction moves it.
+- A fact that appears twice in one session (under two categories, say) is indexed once.
 - `memory/facts/*.md` is ignored: it repeats the facts of the session files.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
-- Incremental like the git plugin. A changed session file can lose facts: the plugin compares the
-  fact ids of the old version (`git show <cursor>:<path>`) with the new one and deletes the missing
-  ones.
+- v1 does a full sync per run: one sync over the root, every document put again (the server skips
+  unchanged ones), commit. The sweep removes facts a changed session file dropped, and anything
+  else that's gone.
+- Later, incremental like the git plugin: a changed session file can lose facts, so the plugin
+  compares the fact ids of the old version (`git show <cursor>:<path>`) with the new one and
+  deletes the missing ones.
+- Config: `remote`, `branch`, `token` (write-only) like the git plugin, and `carapace_url`, the web
+  UI that documents link to.
 - `url` (relative to the configured carapace base URL): sessions
   `/memory/sessions?session={session_id}`, facts link to their session, digests
   `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.

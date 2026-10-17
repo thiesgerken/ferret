@@ -23,6 +23,7 @@ pub mod embeddings;
 mod error;
 pub mod graphql;
 mod highlight;
+mod judgments;
 mod runs;
 mod search;
 mod search_query;
