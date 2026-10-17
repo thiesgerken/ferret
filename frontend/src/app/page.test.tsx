@@ -23,7 +23,7 @@ const client = createGraphqlClient(async () =>
           ].map(([value, writer]) => ({
             __typename: "SourceCount",
             value,
-            origin: writer && { __typename: "Origin", id: writer },
+            writer: writer && { __typename: "Writer", id: writer },
           })),
         },
       },

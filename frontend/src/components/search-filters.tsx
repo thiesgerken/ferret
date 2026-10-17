@@ -39,7 +39,7 @@ export function SearchFilters({
   const sourceFacets = facets?.sources ?? [];
   const sources = withSelected(sourceFacets, state.sources);
   const label = (source: string) =>
-    sourceLabel(source, sourceFacets.find((facet) => facet.value === source)?.origin, roots);
+    sourceLabel(source, sourceFacets.find((facet) => facet.value === source)?.writer, roots);
   const authors = withSelected(facets?.authors ?? [], state.authors).slice(0, Math.max(MAX_AUTHORS, state.authors.length));
   const counted = (count: number | null) => (count === null ? null : `${count}${facets?.areLowerBounds ? "+" : ""}`);
 

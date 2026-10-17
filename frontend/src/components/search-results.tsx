@@ -30,7 +30,7 @@ const SearchHitsQueryDocument = graphql(`
         judged
         keywordScore
         similarity
-        origin {
+        writer {
           kind
           id
           name
@@ -56,7 +56,7 @@ const SearchHitsQueryDocument = graphql(`
         sources {
           value
           count
-          origin {
+          writer {
             kind
             id
             name
@@ -212,7 +212,7 @@ export function SearchResults({
             <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>
               {hits.map((hit) => (
                 <li key={hit.documentId}>
-                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.origin, roots)} relevance={relevance} />
+                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.writer, roots)} relevance={relevance} />
                 </li>
               ))}
               <MoreHits
@@ -221,7 +221,7 @@ export function SearchResults({
                 endIsCandidateLimit={data.search.totalIsLowerBound}
                 loadPage={loadPage}
                 renderHit={(hit) => (
-                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.origin, roots)} relevance={relevance} />
+                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.writer, roots)} relevance={relevance} />
                 )}
               />
             </ol>

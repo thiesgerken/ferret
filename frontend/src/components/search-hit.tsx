@@ -36,7 +36,7 @@ export function HitItem({
 }: {
   hit: Hit;
   search: SearchInput;
-  /** The hit's source under its origin's name. */
+  /** The hit's source under its writer's name. */
   source: SourceLabel;
   /** Null until the cut-off of the model that ran is known: the hit shows without bars. */
   relevance: RelevanceContext | null;

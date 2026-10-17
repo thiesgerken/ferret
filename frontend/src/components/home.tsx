@@ -14,7 +14,7 @@ const IndexSummaryQuery = graphql(`
       facets {
         sources {
           value
-          origin {
+          writer {
             id
           }
         }
@@ -41,7 +41,7 @@ function IndexSummary() {
   if (!data) return <p className="mt-5 h-4" />;
   const documents = data.explore.total;
   // Sources without a known writer (from before keys were recorded) count as one more.
-  const sources = new Set(data.explore.facets.sources.map((source) => source.origin?.id ?? null)).size;
+  const sources = new Set(data.explore.facets.sources.map((source) => source.writer?.id ?? null)).size;
   return (
     <p className="mt-5 h-4 text-xs text-muted-foreground tabular-nums">
       {documents.toLocaleString()} {documents === 1 ? "document" : "documents"} · {sources}{" "}

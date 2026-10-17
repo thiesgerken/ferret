@@ -33,14 +33,14 @@ import { SearchResults } from "./search-results";
 /** notes belongs to the git connection "Notes", mail/zoho came in through an API key. */
 const writerOf = (source: string) =>
   source.startsWith("notes")
-    ? { __typename: "Origin", kind: "CONNECTION", id: "c1", name: "Notes", icon: "notebook" }
-    : { __typename: "Origin", kind: "API_KEY", id: "k1", name: "mail import", icon: "mail" };
+    ? { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Notes", icon: "notebook" }
+    : { __typename: "Writer", kind: "API_KEY", id: "k1", name: "mail import", icon: "mail" };
 
 const hit = (id: string, source: string, authors: string[]) => ({
   __typename: "Hit",
   documentId: id,
   source,
-  origin: writerOf(source),
+  writer: writerOf(source),
   externalId: `${id}.md`,
   title: null,
   url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
@@ -123,8 +123,8 @@ async function renderResults(
           facets: {
             __typename: "SearchFacets",
             sources: [
-              { __typename: "SourceCount", value: "notes", count: 12, origin: writerOf("notes") },
-              { __typename: "SourceCount", value: "mail/zoho", count: 3, origin: writerOf("mail/zoho") },
+              { __typename: "SourceCount", value: "notes", count: 12, writer: writerOf("notes") },
+              { __typename: "SourceCount", value: "mail/zoho", count: 3, writer: writerOf("mail/zoho") },
             ],
             authors: [
               { __typename: "FacetCount", value: "thies", count: 9 },
