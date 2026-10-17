@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from embedding_failures f using chunks c\n         where c.id = f.chunk_id and c.id = any($1) and c.title is distinct from $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7110da96d93fcfa10d101a277e45d19919c784b4c85d004c165e5ca7c1963fb1"
+}

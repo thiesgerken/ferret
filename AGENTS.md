@@ -67,6 +67,12 @@ image build.
   `Dockerfile`.
 - Migrations are never edited after they are merged: the server refuses to start when an applied
   migration's checksum changed. Add a new one instead.
+- Migration versions are creation timestamps (`cargo sqlx migrate add --source
+  crates/ferret-server/migrations <name>`, current UTC), never invented dates: parallel branches
+  that pick round numbers collide, and sqlx runs only one migration per version. The first
+  migrations are dated ahead of the clock, up to 2026-10-25. Until the clock passes them, take
+  the day after the newest version on integration/v1 and the open PRs, with the current UTC time
+  of day, so a migration still sorts after the ones it builds on.
 - Invalid state fails loudly: required config and fields stay required, no silent defaults.
 
 ### Commits

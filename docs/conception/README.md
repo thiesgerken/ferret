@@ -83,6 +83,7 @@ create table chunks (
     source        text not null,
     content_type  text not null,
     ts            timestamptz not null,    -- the document's created_at
+    title         text,                    -- the document's, searched and embedded with the text
     ordinal       int not null,
     start_offset  int not null,            -- into the rendered document text
     end_offset    int not null,
@@ -103,8 +104,8 @@ Embeddings live in `chunk_embeddings`, one row per chunk and model, so several m
 at once. See [embeddings.md](embeddings.md).
 
 Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
-`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at)` for
-thread navigation.
+`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at, id)`
+(partial, where `thread` is set) for thread navigation.
 
 ## Sources
 
@@ -128,7 +129,8 @@ POST   /api/syncs/{id}/seen      {source, external_ids}
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
                                                 -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
-GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
+GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at, then id
+                                                -> {documents}, full documents as above
 ```
 
 `seen` names the source of its external ids: a sync over `carapace` covers `carapace/facts` and
@@ -176,7 +178,8 @@ All in one transaction:
 
 1. Hash the document (text plus metadata).
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
-3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding. New
+3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding
+   unless the title changed (it is part of the embedded input). New
    chunks look up `embedding_cache` per configured model and are left to the embed pump on a miss.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
@@ -220,6 +223,12 @@ Every chunk keeps its offsets into the document's text, counted in characters (U
 values), so a hit shows both the localized snippet and, via `GET /api/documents/{id}`, the full
 context.
 
+The document's title belongs to every chunk: Paperless titles, mail subjects and note headings
+often carry the most specific words, which the chunk's text may lack. A query word may match the
+title instead of the text (see Search), and the embedding model gets `{title}\n\n{text}` (after the
+model's prefix, the title capped at 200 characters) as input. The stored chunk text stays the text alone, so offsets and snippets
+don't change.
+
 ## Search
 
 ```text
@@ -229,11 +238,11 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
   rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
   half always contributes its 100 nearest chunks, however distant (a calibrated per-model cut-off
-  is part of the model evaluation in #21), and uses the user's default model unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
-  `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding
-  yet (backfill) is found by keyword only. If the query can't be embedded within 5 s (TEI down,
-  stuck or broken), the
-  search answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
+  is part of the model evaluation in #21), and uses the user's default model unless `model=` says
+  otherwise (v1 so far: the configured default). Filters, `-word` and `"phrases"` apply to both
+  halves, the every-word rule only to BM25. A chunk without an embedding yet (backfill) is found by
+  keyword only. If the query can't be embedded within 5 s (TEI down, stuck or broken), the search
+  answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
   `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
   a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
   a restarting TEI shouldn't make ferret useless.
@@ -243,16 +252,19 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
   Author and `meta` filters are rare and selective and stay a join.
-- **Languages**: German and English, often mixed in one text. Chunk text is indexed three times in
-  `pg_search`: German-stemmed, English-stemmed, and trigrams (for compounds: "Versicherung" must
-  find "Kfz-Versicherungsbeitrag"). Every query word must match the chunk in at least one of the
-  three: German or English stem, or all of its trigrams. So the words of one query may match in
-  different fields: `Versicherung Rechnungen` finds "Kfz-Versicherungsbeitrag … Rechnung". No
+- **Languages**: German and English, often mixed in one text. Chunk text and the document's title
+  are each indexed three times in `pg_search`: German-stemmed, English-stemmed, and trigrams (for
+  compounds: "Versicherung" must find "Kfz-Versicherungsbeitrag"). Every query word must match the
+  chunk's text or title in at least one of the three: German or English stem, or all of its
+  trigrams. So the words of one query may match in different fields: `Versicherung Rechnungen`
+  finds "Kfz-Versicherungsbeitrag … Rechnung", and `Versicherung 312` finds a bill titled
+  "HUK Kfz-Versicherung Beitragsrechnung" whose text says "312 Euro". No
   language detection. No typo tolerance in v1: the trigram match needs all trigrams, so a
   misspelled word doesn't match (follow-up in #21).
 - **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as a
   substring, ignoring case and whitespace differences (so it also matches inside longer words).
-  `-word` drops every document containing it in any of the three fields, compounds included. All
+  `-word` drops every document containing it in its text or title, compounds included. Phrases
+  are matched on the chunk's text only. All
   three go into the BM25 half, the vector half gets the words without operators. Filters are not
   part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
@@ -270,8 +282,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
-  email stripping and consecutive chat segments. The API returns the collapsed count, and
-  `collapse=false` turns it off.
+  email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing
+  happens before `k`, so `k` counts threads. The hit's `collapsed` says how many more documents of
+  its thread matched, and `collapse=false` turns it off.
 
 ## Users
 
