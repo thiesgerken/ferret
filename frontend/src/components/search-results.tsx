@@ -7,6 +7,7 @@ import { useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery } from "@/gql/graphql";
+import { linkableUrl } from "@/lib/safe-url";
 import { rangeStart, TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { snippet } from "@/lib/snippet";
 import { cn } from "@/lib/utils";
@@ -154,6 +155,7 @@ function HitItem({ hit }: { hit: Hit }) {
     start: String(hit.chunk.startOffset),
     end: String(hit.chunk.endOffset),
   })}`;
+  const originUrl = linkableUrl(hit.url);
   return (
     <article className="space-y-1">
       <p className="truncate text-xs text-muted-foreground">
@@ -173,8 +175,8 @@ function HitItem({ hit }: { hit: Hit }) {
           ),
         )}
       </p>
-      {hit.url && (
-        <a href={hit.url} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
+      {originUrl && (
+        <a href={originUrl} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ExternalLink className="size-3" aria-hidden />
           Open in origin
         </a>
