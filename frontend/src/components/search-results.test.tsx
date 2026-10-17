@@ -14,9 +14,10 @@ const hit = (id: string, source: string, authors: string[]) => ({
   source,
   externalId: `${id}.md`,
   title: null,
-  url: id === "a" ? "obsidian://open?file=a.md" : null,
+  url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
   authors,
   createdAt: "2026-01-01T12:00:00Z",
+  judged: false,
   chunk: {
     __typename: "HitChunk",
     startOffset: 10,
@@ -28,13 +29,23 @@ const hit = (id: string, source: string, authors: string[]) => ({
   },
 });
 
-async function renderResults(state: SearchState) {
+async function renderResults(state: SearchState, semanticUnavailable: string | null = null) {
   const variables: unknown[] = [];
   const changes: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
-    variables.push(JSON.parse(String(init?.body)).variables);
+    const body = JSON.parse(String(init?.body));
+    variables.push(body.variables);
+    if (String(body.query).includes("setJudgment")) {
+      return Response.json({ data: { setJudgment: body.variables.input.judged } });
+    }
     return Response.json({
-      data: { search: [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])] },
+      data: {
+        search: {
+          __typename: "SearchResult",
+          hits: [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])],
+          semanticUnavailable,
+        },
+      },
     });
   });
   const view = await renderReact(
@@ -46,12 +57,15 @@ async function renderResults(state: SearchState) {
   return { view, variables, changes };
 }
 
+/** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
+const CHIPS = "main > div:first-child button[aria-pressed]";
+
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any" };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
   const { view, variables } = await renderResults(STATE);
 
-  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, from: null } });
+  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, range: null } });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
@@ -65,10 +79,10 @@ test("shows one hit per document with its highlighted snippet and links", async 
 test("offers the hits' sources and authors as chips that filter", async () => {
   const { view, changes } = await renderResults(STATE);
   const chip = (label: string) =>
-    [...view.container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].find((b) => b.textContent === label)!;
+    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => b.textContent === label)!;
 
   assert.deepEqual(
-    [...view.container.querySelectorAll("button[aria-pressed]")].map((b) => b.textContent),
+    [...view.container.querySelectorAll(CHIPS)].map((b) => b.textContent),
     ["notes", "mail/zoho", "thies", "Allianz"],
     "sources, then authors by frequency",
   );
@@ -88,8 +102,42 @@ test("selected filters go into the query and stay as pressed chips", async () =>
   const input = (variables[0] as { input: Record<string, unknown> }).input;
   assert.deepEqual(input.sources, ["paperless"]);
   assert.deepEqual(input.authors, ["Allianz"]);
-  assert.equal(typeof input.from, "string");
+  assert.equal(input.range, "WEEK");
   const pressed = [...view.container.querySelectorAll("button[aria-pressed=true]")].map((b) => b.textContent);
   assert.deepEqual(pressed, ["paperless", "Allianz"]);
+  await view.unmount();
+});
+
+test("says when the hits are keyword matches only", async () => {
+  const available = await renderResults(STATE);
+  assert.equal(available.view.container.querySelector('[role="status"]'), null);
+  await available.view.unmount();
+
+  const { view } = await renderResults(STATE, "the embedding model qwen3 is unavailable");
+  assert.equal(
+    view.container.querySelector('[role="status"]')?.textContent,
+    "Keyword matches only: the embedding model qwen3 is unavailable.",
+  );
+  assert.equal(view.container.querySelectorAll("article").length, 2);
+  await view.unmount();
+});
+
+test("a ✓ judges the hit for this search, a second click takes it back", async () => {
+  const { view, variables } = await renderResults({ ...STATE, sources: ["notes"] });
+  const check = () => view.container.querySelector<HTMLButtonElement>('article button[aria-label="Right hit for this search"]')!;
+
+  assert.equal(check().getAttribute("aria-pressed"), "false");
+  await act(async () => check().click());
+  await settle();
+  assert.equal(check().getAttribute("aria-pressed"), "true");
+  await act(async () => check().click());
+  await settle();
+
+  assert.equal(check().getAttribute("aria-pressed"), "false");
+  const search = { q: "invoice", sources: ["notes"], authors: null, range: null };
+  assert.deepEqual(variables.slice(1), [
+    { input: { search, documentId: "a", judged: true } },
+    { input: { search, documentId: "a", judged: false } },
+  ]);
   await view.unmount();
 });

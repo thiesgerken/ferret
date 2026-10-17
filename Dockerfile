@@ -17,12 +17,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked -p ferret-server \
     && cp target/release/ferret /ferret
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS plugins
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
+# reqwest's rustls client loads the system's root certificates when it's built, and fails without
+# any, even for plain-http calls like the server's to TEI. They also serve https git remotes.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM runtime AS plugins
+# The git plugin shells out to git.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build-plugins /ferret-plugins /usr/local/bin/ferret-plugins
 USER nobody
 CMD ["ferret-plugins"]
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS server
+FROM runtime AS server
 COPY --from=build-server /ferret /usr/local/bin/ferret
 USER nobody
 EXPOSE 8080

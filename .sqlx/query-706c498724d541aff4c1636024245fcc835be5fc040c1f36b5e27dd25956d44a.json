@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into plugin_types (name, config_schema, registered_at) values ($1, $2, now())\n             on conflict (name) do update set config_schema = excluded.config_schema,\n                                              registered_at = excluded.registered_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "706c498724d541aff4c1636024245fcc835be5fc040c1f36b5e27dd25956d44a"
+}

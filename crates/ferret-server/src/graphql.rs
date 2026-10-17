@@ -1,6 +1,8 @@
 //! The UI's API. Every request needs a valid session, which the transport checks before juniper
 //! sees the request.
 
+use std::sync::Arc;
+
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
@@ -18,10 +20,16 @@ use crate::{
     AppState,
     api_auth::Scope,
     api_keys::{self, ApiKey},
-    auth, content_type, documents,
+    auth,
+    connections::{self, Connection, ConnectionError, PluginRun, PluginType},
+    content_type,
+    credentials::ConfigKey,
+    documents,
+    embeddings::Embedding,
     error::ApiError,
     explore::{self, ExploreError, ExploreFilter, Order, Page},
-    search::{self, SearchError},
+    judgments,
+    search::{self, RelativeRange, SearchError},
     users::User,
 };
 
@@ -42,6 +50,8 @@ pub fn sdl() -> String {
 pub struct Context {
     user: User,
     pool: PgPool,
+    embedding: Arc<Embedding>,
+    config_key: Arc<ConfigKey>,
 }
 
 impl juniper::Context for Context {}
@@ -64,27 +74,35 @@ impl Query {
 
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
-    async fn search(context: &Context, input: SearchInput) -> FieldResult<Vec<Hit>> {
-        let request = ferret_api::SearchQuery {
-            q: input.q,
-            sources: input.sources.unwrap_or_default(),
-            authors: input.authors.unwrap_or_default(),
-            content_types: input
-                .content_types
-                .unwrap_or_default()
-                .into_iter()
-                .map(ferret_api::ContentType::from)
-                .collect(),
-            from: input.from,
-            to: input.to,
-            // A negative k becomes 0, which the search rejects like any k out of range.
-            k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
+    async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
+        let (request, range) = input.resolve(Utc::now())?;
+        let response = match search::find(
+            &context.pool,
+            &context.embedding,
+            context.user.id,
+            None,
+            &request,
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(SearchError::Invalid(message)) => return Err(invalid_input(message)),
+            Err(SearchError::Database(error)) => return Err(internal(error)),
         };
-        match search::find(&context.pool, context.user.id, None, &request).await {
-            Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
-            Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
-            Err(SearchError::Database(error)) => Err(internal(error)),
-        }
+        let judged = judgments::judged_documents(&context.pool, context.user.id, &request, range)
+            .await
+            .map_err(internal)?;
+        Ok(SearchResult {
+            hits: response
+                .hits
+                .into_iter()
+                .map(|hit| Hit {
+                    judged: judged.contains(&hit.document_id),
+                    ..Hit::from(hit)
+                })
+                .collect(),
+            semantic_unavailable: response.semantic_unavailable,
+        })
     }
 
     /// The signed-in user's documents without a query: a page of them, how many there are, and
@@ -130,6 +148,173 @@ impl Query {
             .map_err(internal)?;
         Ok(document.map(Document::from))
     }
+
+    /// The plugins that registered workers offer, with their config schemas.
+    async fn plugin_types(context: &Context) -> FieldResult<Vec<PluginType>> {
+        connections::plugin_types(&context.pool)
+            .await
+            .map_err(internal)
+    }
+
+    /// The signed-in user's connections, by source.
+    async fn connections(context: &Context) -> FieldResult<Vec<Connection>> {
+        connections::list(&context.pool, context.user.id)
+            .await
+            .map_err(internal)
+    }
+
+    async fn connection(context: &Context, id: ID) -> FieldResult<Option<Connection>> {
+        let Ok(id) = id.parse::<Uuid>() else {
+            return Ok(None);
+        };
+        connections::find(&context.pool, context.user.id, id)
+            .await
+            .map_err(internal)
+    }
+}
+
+#[graphql_object(context = Context)]
+impl PluginType {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// JSON Schema of the config, as JSON text. Secret fields are `writeOnly`.
+    fn config_schema(&self) -> String {
+        self.config_schema.to_string()
+    }
+}
+
+#[graphql_object(context = Context)]
+impl Connection {
+    fn id(&self) -> ID {
+        ID::new(self.id.to_string())
+    }
+
+    fn plugin(&self) -> &str {
+        &self.plugin
+    }
+
+    /// The source root the connection owns: it writes to it and below it.
+    fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// The plugin config, as JSON text.
+    fn config(&self) -> String {
+        self.config.to_string()
+    }
+
+    /// Cron expression.
+    fn schedule(&self) -> &str {
+        &self.schedule
+    }
+
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn next_run_at(&self) -> DateTime<Utc> {
+        self.next_run_at
+    }
+
+    fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+
+    /// The latest runs, newest first.
+    async fn runs(
+        &self,
+        context: &Context,
+        #[graphql(default = 20)] limit: i32,
+    ) -> FieldResult<Vec<PluginRun>> {
+        connections::runs(&context.pool, self.id, i64::from(limit.clamp(1, 100)))
+            .await
+            .map_err(internal)
+    }
+}
+
+#[derive(GraphQLEnum)]
+enum RunStatus {
+    Running,
+    Succeeded,
+    Failed,
+    /// The worker stopped sending heartbeats.
+    Lost,
+}
+
+/// What a run did to the index.
+#[derive(GraphQLObject)]
+struct RunStats {
+    put: i32,
+    unchanged: i32,
+    deleted: i32,
+}
+
+#[graphql_object(context = Context)]
+impl PluginRun {
+    fn id(&self) -> ID {
+        ID::new(self.id.to_string())
+    }
+
+    fn status(&self) -> RunStatus {
+        match self.status.as_str() {
+            "running" => RunStatus::Running,
+            "succeeded" => RunStatus::Succeeded,
+            "failed" => RunStatus::Failed,
+            "lost" => RunStatus::Lost,
+            // The table's check constraint admits no other value.
+            status => panic!("unknown run status {status:?} in the database"),
+        }
+    }
+
+    fn started_at(&self) -> DateTime<Utc> {
+        self.started_at
+    }
+
+    fn finished_at(&self) -> Option<DateTime<Utc>> {
+        self.finished_at
+    }
+
+    /// Only for a run that succeeded.
+    fn stats(&self) -> Option<RunStats> {
+        let stats: ferret_api::internal::RunStats =
+            serde_json::from_value(self.stats.clone()?).expect("stored stats are RunStats");
+        let count = |n: u64| i32::try_from(n).unwrap_or(i32::MAX);
+        Some(RunStats {
+            put: count(stats.put),
+            unchanged: count(stats.unchanged),
+            deleted: count(stats.deleted),
+        })
+    }
+
+    /// The tail of the run's log.
+    fn log(&self) -> &str {
+        &self.log
+    }
+
+    fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+}
+
+#[derive(GraphQLInputObject)]
+struct NewConnection {
+    plugin: String,
+    /// The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
+    /// connection's root.
+    source: String,
+    /// The plugin config as JSON text, valid against the plugin's schema.
+    config: String,
+    /// Cron expression, e.g. `0 * * * *` for hourly.
+    schedule: String,
+}
+
+#[derive(GraphQLInputObject)]
+struct ConnectionUpdate {
+    config: String,
+    schedule: String,
+    enabled: bool,
 }
 
 #[derive(GraphQLInputObject)]
@@ -146,6 +331,8 @@ struct SearchInput {
     from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
     to: Option<DateTime<Utc>>,
+    /// Only documents created within this range up to now. Instead of `from`.
+    range: Option<TimeRange>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
 }
@@ -274,9 +461,58 @@ impl From<explore::Exploration> for Exploration {
     }
 }
 
+/// A time range up to now.
+#[derive(GraphQLEnum, Clone, Copy)]
+enum TimeRange {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl From<TimeRange> for RelativeRange {
+    fn from(range: TimeRange) -> Self {
+        match range {
+            TimeRange::Day => Self::Day,
+            TimeRange::Week => Self::Week,
+            TimeRange::Month => Self::Month,
+            TimeRange::Year => Self::Year,
+        }
+    }
+}
+
 /// Document counts fit GraphQL's 32-bit `Int` for any single user's index.
 fn count_int(count: i64) -> i32 {
     i32::try_from(count).expect("document counts fit into 32 bits")
+}
+
+impl SearchInput {
+    /// The search to run, with a relative `range` resolved against `now`, and that range.
+    fn resolve(
+        self,
+        now: DateTime<Utc>,
+    ) -> FieldResult<(ferret_api::SearchQuery, Option<RelativeRange>)> {
+        let range = self.range.map(RelativeRange::from);
+        if range.is_some() && self.from.is_some() {
+            return Err(invalid_input("set either from or range".to_owned()));
+        }
+        let query = ferret_api::SearchQuery {
+            q: self.q,
+            sources: self.sources.unwrap_or_default(),
+            authors: self.authors.unwrap_or_default(),
+            content_types: self
+                .content_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(ferret_api::ContentType::from)
+                .collect(),
+            from: range.map(|range| range.start(now)).or(self.from),
+            to: self.to,
+            // A negative k becomes 0, which the search rejects like any k out of range.
+            k: self.k.map(|k| u32::try_from(k).unwrap_or(0)),
+        };
+        Ok((query, range))
+    }
 }
 
 /// How the viewer renders a document.
@@ -307,6 +543,15 @@ impl From<ferret_api::ContentType> for ContentType {
     }
 }
 
+/// The hits of a search, and whether its semantic half ran.
+#[derive(GraphQLObject)]
+struct SearchResult {
+    hits: Vec<Hit>,
+    /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    /// keyword matches only. Null when it ran.
+    semantic_unavailable: Option<String>,
+}
+
 /// A document returned by a search, with its best-matching chunk.
 #[derive(GraphQLObject)]
 struct Hit {
@@ -323,6 +568,8 @@ struct Hit {
     modified_at: DateTime<Utc>,
     score: f64,
     chunk: HitChunk,
+    /// Whether the signed-in user marked this document as the right hit for this very search.
+    judged: bool,
 }
 
 /// The best-matching chunk of a hit. Offsets count characters (Unicode code points) into the
@@ -355,6 +602,7 @@ impl From<ferret_api::Hit> for Hit {
             created_at: hit.created_at,
             modified_at: hit.modified_at,
             score: hit.score.into(),
+            judged: false,
             chunk: HitChunk {
                 start_offset: graphql_int(hit.chunk.start_offset),
                 end_offset: graphql_int(hit.chunk.end_offset),
@@ -413,6 +661,16 @@ fn graphql_int(offset: u32) -> i32 {
 
 pub struct Mutation;
 
+/// A ✓ on a hit, or taking it back.
+#[derive(GraphQLInputObject)]
+struct JudgmentInput {
+    /// The search the hit answered, as it was passed to `search`.
+    search: SearchInput,
+    document_id: ID,
+    /// Whether the document is the right hit for the search.
+    judged: bool,
+}
+
 #[derive(GraphQLInputObject)]
 struct NewApiKey {
     name: String,
@@ -430,6 +688,104 @@ struct CreatedApiKey {
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    /// Marks a document as the right hit for a search, or takes that back. Returns `judged`.
+    /// Model evaluation replays the judged searches.
+    async fn set_judgment(context: &Context, input: JudgmentInput) -> FieldResult<bool> {
+        let document_id = input
+            .document_id
+            .parse::<Uuid>()
+            .map_err(|_| invalid_input("no such document".to_owned()))?;
+        let (search, range) = input.search.resolve(Utc::now())?;
+        // A search `search` rejects could never be replayed.
+        search::validate(&search).map_err(|error| match error {
+            SearchError::Invalid(message) => invalid_input(message),
+            SearchError::Database(error) => internal(error),
+        })?;
+        let owned = judgments::set(
+            &context.pool,
+            context.user.id,
+            &search,
+            range,
+            document_id,
+            input.judged,
+        )
+        .await
+        .map_err(internal)?;
+        if !owned {
+            return Err(invalid_input("no such document".to_owned()));
+        }
+        Ok(input.judged)
+    }
+
+    /// Creates a connection, which runs right away and then on its schedule.
+    async fn create_connection(context: &Context, input: NewConnection) -> FieldResult<Connection> {
+        let new = connections::NewConnection {
+            plugin: input.plugin,
+            source: input.source,
+            config: parse_config(&input.config)?,
+            schedule: input.schedule,
+        };
+        connections::create(&context.pool, &context.config_key, context.user.id, new)
+            .await
+            .map_err(connection_error)
+    }
+
+    async fn update_connection(
+        context: &Context,
+        id: ID,
+        input: ConnectionUpdate,
+    ) -> FieldResult<Connection> {
+        let update = connections::ConnectionUpdate {
+            config: parse_config(&input.config)?,
+            schedule: input.schedule,
+            enabled: input.enabled,
+        };
+        connections::update(
+            &context.pool,
+            &context.config_key,
+            context.user.id,
+            parse_id(&id)?,
+            update,
+        )
+        .await
+        .map_err(connection_error)?
+        .ok_or_else(no_such_connection)
+    }
+
+    /// Starts a run without waiting for the schedule. Fails for a disabled connection.
+    async fn run_connection_now(context: &Context, id: ID) -> FieldResult<ID> {
+        if connections::run_now(&context.pool, context.user.id, parse_id(&id)?)
+            .await
+            .map_err(internal)?
+        {
+            Ok(id)
+        } else {
+            Err(FieldError::new(
+                "no such enabled connection",
+                graphql_value!(null),
+            ))
+        }
+    }
+
+    /// Deletes the connection and every document below its source root, once `confirmSource`
+    /// repeats the root. Returns how many documents were deleted.
+    async fn delete_connection(
+        context: &Context,
+        id: ID,
+        confirm_source: String,
+    ) -> FieldResult<i32> {
+        let deleted = connections::delete(
+            &context.pool,
+            context.user.id,
+            parse_id(&id)?,
+            &confirm_source,
+        )
+        .await
+        .map_err(connection_error)?
+        .ok_or_else(no_such_connection)?;
+        Ok(i32::try_from(deleted).unwrap_or(i32::MAX))
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
@@ -509,6 +865,26 @@ impl ApiKey {
     }
 }
 
+fn parse_config(config: &str) -> FieldResult<serde_json::Value> {
+    serde_json::from_str(config)
+        .map_err(|error| invalid_input(format!("the config isn't JSON: {error}")))
+}
+
+fn parse_id(id: &ID) -> FieldResult<Uuid> {
+    id.parse().map_err(|_| no_such_connection())
+}
+
+fn no_such_connection() -> FieldError {
+    FieldError::new("no such connection", graphql_value!(null))
+}
+
+fn connection_error(error: ConnectionError) -> FieldError {
+    match error {
+        ConnectionError::Invalid(message) => invalid_input(message),
+        ConnectionError::Database(error) => internal(error),
+    }
+}
+
 fn invalid_input(message: String) -> FieldError {
     FieldError::new(message, graphql_value!({ "code": "INVALID_INPUT" }))
 }
@@ -552,6 +928,8 @@ pub async fn handle(
     let context = Context {
         user,
         pool: state.pool.clone(),
+        embedding: state.embedding.clone(),
+        config_key: state.config_key.clone(),
     };
     let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {

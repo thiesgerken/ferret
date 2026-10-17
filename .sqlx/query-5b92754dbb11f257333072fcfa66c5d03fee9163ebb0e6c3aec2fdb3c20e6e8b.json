@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update plugin_runs set status = 'lost', finished_at = now(),\n                error = 'no heartbeat within the lease, the worker is gone'\n         where status = 'running' and heartbeat_at < now() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b92754dbb11f257333072fcfa66c5d03fee9163ebb0e6c3aec2fdb3c20e6e8b"
+}

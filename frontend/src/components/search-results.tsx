@@ -1,56 +1,67 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
-import { useQuery } from "urql";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
-import type { SearchHitsQuery } from "@/gql/graphql";
-import { rangeStart, TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
+import { linkableUrl } from "@/lib/safe-url";
+import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { snippet } from "@/lib/snippet";
 import { cn } from "@/lib/utils";
 
 const SearchHitsQueryDocument = graphql(`
   query SearchHits($input: SearchInput!) {
     search(input: $input) {
-      documentId
-      source
-      externalId
-      title
-      url
-      authors
-      createdAt
-      chunk {
-        startOffset
-        endOffset
-        parts {
-          text
-          highlight
+      hits {
+        documentId
+        source
+        externalId
+        title
+        url
+        authors
+        createdAt
+        judged
+        chunk {
+          startOffset
+          endOffset
+          parts {
+            text
+            highlight
+          }
         }
       }
+      semanticUnavailable
     }
   }
 `);
 
-type Hit = SearchHitsQuery["search"][number];
+const SetJudgmentMutation = graphql(`
+  mutation SetJudgment($input: JudgmentInput!) {
+    setJudgment(input: $input)
+  }
+`);
+
+type Hit = SearchHitsQuery["search"]["hits"][number];
 
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
 
 export function SearchResults({ state, onChange }: { state: SearchState; onChange: (state: SearchState) => void }) {
-  const from = useMemo(() => rangeStart(state.range, new Date()), [state.range]);
   const input = useMemo(
     () => ({
       q: state.q,
       sources: state.sources.length > 0 ? state.sources : null,
       authors: state.authors.length > 0 ? state.authors : null,
-      from,
+      range: TIME_RANGES[state.range].preset,
     }),
-    [state.q, state.sources, state.authors, from],
+    [state.q, state.sources, state.authors, state.range],
   );
   const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
-  const hits = data?.search ?? [];
+  const hits = data?.search.hits ?? [];
+  const semanticUnavailable = data?.search.semanticUnavailable;
 
   return (
     <div className="min-h-dvh">
@@ -62,6 +73,11 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
         <FilterChips state={state} hits={hits} onChange={onChange} />
+        {semanticUnavailable && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Keyword matches only: {semanticUnavailable}.
+          </p>
+        )}
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error.graphQLErrors[0]?.message ?? error.message}
@@ -69,10 +85,11 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
         ) : data && hits.length === 0 ? (
           <p className="text-sm text-muted-foreground">No documents match.</p>
         ) : (
-          <ol className={cn("space-y-6", fetching && "opacity-60")}>
+          // Keyed by the search, so a hit's ✓ state never carries over into another search.
+          <ol key={JSON.stringify(input)} className={cn("space-y-6", fetching && "opacity-60")}>
             {hits.map((hit) => (
               <li key={hit.documentId}>
-                <HitItem hit={hit} />
+                <HitItem hit={hit} search={input} />
               </li>
             ))}
           </ol>
@@ -139,20 +156,24 @@ function chipClass(active: boolean) {
   );
 }
 
-function HitItem({ hit }: { hit: Hit }) {
+function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
   const viewerHref = `/view?${new URLSearchParams({
     id: hit.documentId,
     start: String(hit.chunk.startOffset),
     end: String(hit.chunk.endOffset),
   })}`;
+  const originUrl = linkableUrl(hit.url);
   return (
     <article className="space-y-1">
       <p className="truncate text-xs text-muted-foreground">
         {hit.source} · {hit.authors.join(", ")} · {new Date(hit.createdAt).toLocaleDateString()}
       </p>
-      <Link href={viewerHref} className="text-lg font-medium text-brand hover:underline">
-        {hit.title || hit.externalId}
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link href={viewerHref} className="text-lg font-medium text-brand hover:underline">
+          {hit.title || hit.externalId}
+        </Link>
+        <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
+      </div>
       <p className="text-sm leading-relaxed">
         {snippet(hit.chunk.parts).map((part, index) =>
           part.highlight ? (
@@ -164,13 +185,48 @@ function HitItem({ hit }: { hit: Hit }) {
           ),
         )}
       </p>
-      {hit.url && (
-        <a href={hit.url} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
+      {originUrl && (
+        <a href={originUrl} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ExternalLink className="size-3" aria-hidden />
           Open in origin
         </a>
       )}
     </article>
+  );
+}
+
+/** ✓ marks the hit as the right one for this search, for evaluating embedding models. */
+function JudgeButton({ documentId, judged: initial, search }: { documentId: string; judged: boolean; search: SearchInput }) {
+  const [judged, setJudged] = useState(initial);
+  const [{ fetching, error }, setJudgment] = useMutation(SetJudgmentMutation);
+
+  async function toggle() {
+    const result = await setJudgment({ input: { search, documentId, judged: !judged } });
+    if (result.data) setJudged(result.data.setJudgment);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-pressed={judged}
+        aria-label="Right hit for this search"
+        title={judged ? "Marked as the right hit for this search" : "Mark as the right hit for this search"}
+        disabled={fetching}
+        onClick={toggle}
+        className={cn(
+          "rounded-full border p-0.5",
+          judged ? "border-brand bg-brand text-white" : "border-border text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Check className="size-3.5" aria-hidden />
+      </button>
+      {error && (
+        <span role="alert" className="text-xs text-destructive">
+          {error.graphQLErrors[0]?.message ?? error.message}
+        </span>
+      )}
+    </>
   );
 }
 

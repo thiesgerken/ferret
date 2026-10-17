@@ -28,6 +28,27 @@ enum DocumentOrder {
   SOURCE
 }
 
+enum RunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  "The worker stopped sending heartbeats." LOST
+}
+
+"A time range up to now."
+enum TimeRange {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+input ConnectionUpdate {
+  config: String!
+  schedule: String!
+  enabled: Boolean!
+}
+
 input ExploreInput {
   "Only documents in these sources or below them. Leave out for all sources." sources: [String!]
   "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
@@ -40,11 +61,28 @@ input ExploreInput {
   "How many documents at most, 1 to 100, 50 when left out." limit: Int
 }
 
+"A ✓ on a hit, or taking it back."
+input JudgmentInput {
+  "The search the hit answered, as it was passed to `search`." search: SearchInput!
+  documentId: ID!
+  "Whether the document is the right hit for the search." judged: Boolean!
+}
+
 input NewApiKey {
   name: String!
   scopes: [ApiKeyScope!]!
   "Restricts every scope to these source paths and below. Leave out for all sources." sources: [String!]
   expiresAt: DateTime
+}
+
+input NewConnection {
+  plugin: String!
+  """
+    The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
+    connection's root.
+  """ source: String!
+  "The plugin config as JSON text, valid against the plugin's schema." config: String!
+  "Cron expression, e.g. `0 * * * *` for hourly." schedule: String!
 }
 
 input SearchInput {
@@ -54,6 +92,7 @@ input SearchInput {
   "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
   "Only documents created at or after this time." from: DateTime
   "Only documents created before this time." to: DateTime
+  "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
 }
 
@@ -85,6 +124,22 @@ type ApiKey {
   "Updated at most once a minute."
   lastUsedAt: DateTime
   expiresAt: DateTime
+}
+
+type Connection {
+  id: ID!
+  plugin: String!
+  "The source root the connection owns: it writes to it and below it."
+  source: String!
+  "The plugin config, as JSON text."
+  config: String!
+  "Cron expression."
+  schedule: String!
+  enabled: Boolean!
+  nextRunAt: DateTime!
+  createdAt: DateTime!
+  "The latest runs, newest first."
+  runs(limit: Int! = 20): [PluginRun!]!
 }
 
 type ContentTypeCount {
@@ -166,6 +221,8 @@ type Hit {
   modifiedAt: DateTime!
   score: Float!
   chunk: HitChunk!
+  "Whether the signed-in user marked this document as the right hit for this very search."
+  judged: Boolean!
 }
 
 """
@@ -180,9 +237,42 @@ type HitChunk {
 }
 
 type Mutation {
+  """
+    Marks a document as the right hit for a search, or takes that back. Returns `judged`.
+    Model evaluation replays the judged searches.
+  """
+  setJudgment(input: JudgmentInput!): Boolean!
+  "Creates a connection, which runs right away and then on its schedule."
+  createConnection(input: NewConnection!): Connection!
+  updateConnection(id: ID!, input: ConnectionUpdate!): Connection!
+  "Starts a run without waiting for the schedule. Fails for a disabled connection."
+  runConnectionNow(id: ID!): ID!
+  """
+    Deletes the connection and every document below its source root, once `confirmSource`
+    repeats the root. Returns how many documents were deleted.
+  """
+  deleteConnection(id: ID!, confirmSource: String!): Int!
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!
+}
+
+type PluginRun {
+  id: ID!
+  status: RunStatus!
+  startedAt: DateTime!
+  finishedAt: DateTime
+  "Only for a run that succeeded."
+  stats: RunStats
+  "The tail of the run's log."
+  log: String!
+  error: String
+}
+
+type PluginType {
+  name: String!
+  "JSON Schema of the config, as JSON text. Secret fields are `writeOnly`."
+  configSchema: String!
 }
 
 type Query {
@@ -194,7 +284,7 @@ type Query {
     Searches the signed-in user's documents, one hit per document. The same search as
     `GET /api/search`.
   """
-  search(input: SearchInput!): [Hit!]!
+  search(input: SearchInput!): SearchResult!
   """
     The signed-in user's documents without a query: a page of them, how many there are, and
     facet counts. The filters mean what search's mean.
@@ -202,6 +292,28 @@ type Query {
   explore(input: ExploreInput!): Exploration!
   "One of the signed-in user's documents, null when there is none with this id."
   document(id: ID!): Document
+  "The plugins that registered workers offer, with their config schemas."
+  pluginTypes: [PluginType!]!
+  "The signed-in user's connections, by source."
+  connections: [Connection!]!
+  connection(id: ID!): Connection
+}
+
+"What a run did to the index."
+type RunStats {
+  put: Int!
+  unchanged: Int!
+  deleted: Int!
+}
+
+"The hits of a search, and whether its semantic half ran."
+type SearchResult {
+  hits: [Hit!]!
+  """
+    Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    keyword matches only. Null when it ran.
+  """
+  semanticUnavailable: String
 }
 
 type TextPart {

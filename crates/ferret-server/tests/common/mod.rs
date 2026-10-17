@@ -7,9 +7,22 @@
 // Every test file compiles its own copy of this module and uses only part of it.
 #![allow(dead_code)]
 
+pub mod fake_tei;
+
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
 use chrono::{DateTime, TimeZone, Utc};
+use fake_tei::FakeTei;
+use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
-use ferret_server::{AppState, SessionKey};
+use ferret_server::{
+    AppState, ConfigKey, SessionKey, WorkerSecret,
+    config::{EmbeddingConfig, ModelConfig},
+    embeddings,
+};
 use reqwest::{Response, header};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -17,36 +30,175 @@ use tokio::net::TcpListener;
 
 pub const ADMIN_PASSWORD: &str = "the bootstrap admin's password";
 const SESSION_SECRET: &str = "a session secret of at least 32 bytes";
+/// 32 bytes in base64.
+const CONFIG_KEY: &str = "dGVzdCBjb25maWcga2V5IG9mIHRoaXJ0eS10d28gYnk=";
+pub const MODEL: &str = "fake";
+pub const QUERY_PREFIX: &str = "query: ";
+pub const DOCUMENT_PREFIX: &str = "passage: ";
+/// Generous, since a busy CI runner embeds slowly.
+const POLL_BUDGET: Duration = Duration::from_secs(30);
+pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
 
 pub struct TestServer {
     /// The machine API's client.
     pub api: Client,
+    /// The default model's TEI.
+    pub tei: FakeTei,
+    pool: PgPool,
     url: String,
+    /// The plugin workers' API, on its own listener like in production.
+    pub internal_url: String,
     http: reqwest::Client,
+    /// Servers, pump and run wakeups. They hold pool connections (LISTEN ones for good), which
+    /// must be back before `#[sqlx::test]` drops the test database.
+    tasks: Vec<tokio::task::AbortHandle>,
 }
 
-/// Starts the server in-process on a random port, the way `ferret` starts: migrations, then the
-/// bootstrap admin (`admin` / [`ADMIN_PASSWORD`]).
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.tasks.iter().for_each(tokio::task::AbortHandle::abort);
+    }
+}
+
+/// Starts the server in-process on a random port, the way `ferret` starts: migrations, the
+/// bootstrap admin (`admin` / [`ADMIN_PASSWORD`]) and the embedding model, but without the
+/// pump. Nothing gets embedded, so searches behave like keyword searches.
 pub async fn start_server(pool: PgPool) -> TestServer {
+    let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
+    start(
+        pool,
+        tei.clone(),
+        embedding_config(model(MODEL, &tei)),
+        false,
+    )
+    .await
+}
+
+/// Like [`start_server`], with the pump.
+pub async fn start_semantic_server(pool: PgPool) -> TestServer {
+    let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
+    start_server_with(pool, tei.clone(), embedding_config(model(MODEL, &tei))).await
+}
+
+/// Like [`start_semantic_server`], with the given models.
+pub async fn start_server_with(
+    pool: PgPool,
+    tei: FakeTei,
+    embedding: EmbeddingConfig,
+) -> TestServer {
+    start(pool, tei, embedding, true).await
+}
+
+async fn start(pool: PgPool, tei: FakeTei, embedding: EmbeddingConfig, pump: bool) -> TestServer {
     ferret_server::migrate(&pool)
         .await
         .expect("migrations apply");
     ferret_server::bootstrap_admin(&pool, Some(ADMIN_PASSWORD))
         .await
         .expect("the admin is bootstrapped");
+    let embedding = Arc::new(
+        embeddings::prepare(&pool, embedding)
+            .await
+            .expect("the embedding models are ready"),
+    );
+    let mut tasks = Vec::new();
+    if pump {
+        let pump = tokio::spawn(embeddings::run_pump(pool.clone(), embedding.clone()));
+        tasks.push(pump.abort_handle());
+    }
     let session_key = SessionKey::new(SESSION_SECRET).unwrap();
-    let app = ferret_server::router(AppState::new(pool, session_key));
+    let worker_secret = WorkerSecret::new(WORKER_SECRET.to_owned()).unwrap();
+    let config_key = ConfigKey::new(CONFIG_KEY).unwrap();
+    let state = AppState::new(
+        pool.clone(),
+        session_key,
+        worker_secret,
+        embedding,
+        config_key,
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let internal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let internal_url = format!("http://{}", internal_listener.local_addr().unwrap());
+    let wakeups = tokio::spawn(ferret_server::listen_for_due_runs(state.clone()));
+    let internal = ferret_server::internal_router(state.clone());
+    let internal =
+        tokio::spawn(async move { axum::serve(internal_listener, internal).await.unwrap() });
+    let app = ferret_server::router(state);
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    tasks.extend([
+        wakeups.abort_handle(),
+        internal.abort_handle(),
+        server.abort_handle(),
+    ]);
     TestServer {
         api: Client::new(url.clone()),
+        tei,
+        pool,
         url,
+        internal_url,
         http: reqwest::Client::new(),
+        tasks,
+    }
+}
+
+/// Polls `check` until it returns `Some`, and panics if that takes too long.
+pub async fn eventually<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + POLL_BUDGET;
+    loop {
+        if let Some(value) = check().await {
+            return value;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "expected {what} within {POLL_BUDGET:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// A model on `tei` with the test prefixes.
+pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
+    ModelConfig {
+        name: name.to_owned(),
+        url: tei.url.clone(),
+        bulk_url: None,
+        query_prefix: QUERY_PREFIX.to_owned(),
+        document_prefix: DOCUMENT_PREFIX.to_owned(),
+    }
+}
+
+/// `model` as the only and default model.
+pub fn embedding_config(model: ModelConfig) -> EmbeddingConfig {
+    EmbeddingConfig {
+        default: model.name.clone(),
+        models: vec![model],
     }
 }
 
 impl TestServer {
+    /// Waits until the pump has embedded `count` chunks (all models together).
+    pub async fn wait_for_embeddings(&self, count: i64) {
+        eventually(&format!("{count} embedded chunks"), async || {
+            let embedded: i64 = sqlx::query_scalar("select count(*) from chunk_embeddings")
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+            (embedded >= count).then_some(())
+        })
+        .await
+    }
+
+    /// The public API's origin.
+    pub fn public_url(&self) -> String {
+        self.url.clone()
+    }
+
+    /// A plugin worker's client for the internal API.
+    pub fn internal(&self) -> InternalClient {
+        InternalClient::new(self.internal_url.clone(), WORKER_SECRET)
+    }
+
     /// A machine API client that authenticates with `api_key`.
     pub fn api_with_key(&self, api_key: &str) -> Client {
         Client::new(self.url.clone()).with_api_key(api_key)

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from relevance_judgments\n             where user_id = $1 and query = $2 and filters = $3 and document_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dd44d24a8110e872544cd2b9c6119057871551fb8ce1ed4bdccf507642468bba"
+}

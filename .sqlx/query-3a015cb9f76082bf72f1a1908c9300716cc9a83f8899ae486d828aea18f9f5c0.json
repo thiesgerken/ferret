@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state\n         from connections c\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "plugin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "plugin"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "config",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "credentials",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "credentials"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "schedule",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "schedule"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "state",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3a015cb9f76082bf72f1a1908c9300716cc9a83f8899ae486d828aea18f9f5c0"
+}

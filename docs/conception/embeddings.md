@@ -25,12 +25,20 @@ embedding:
       document_prefix: ""
 ```
 
-At startup the server reads each model's dimension and `max_input_length` from TEI's `/info`.
+The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap). At
+startup the server reads each model's `max_input_length` from TEI's `/info` and its dimension from
+embedding a probe text, since `/info` doesn't report it. The server waits up to 10 minutes for an
+unreachable model (TEI downloads its model on first start), then stops. Model names end up in index
+names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`, ending in a letter or digit,
+at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
+
+- **No silent truncation**: every embed request sets `truncate: false`, so TEI rejects an
+  over-long text instead of embedding its beginning.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
-  part of the cache key (`text_hash` covers prefix plus text), so changing it never serves stale
-  vectors.
+  part of the cache key (`text_hash` covers the whole input: prefix, title and text), so changing
+  it never serves stale vectors.
 - **`bulk_url`**: online embedding (queries, incremental ingest) runs on CPU. Big backfills run on a
   GPU node that joins the cluster temporarily. With `bulk_url` set, the pump uses only that
   endpoint. If it is unreachable the pump fails loudly (error in Admin, backlog grows) instead of
@@ -38,13 +46,14 @@ At startup the server reads each model's dimension and `max_input_length` from T
   Queries are unaffected either way. One Service over CPU and GPU pods doesn't work: HTTP keep-alive
   pins connections to pods, so the split would be random.
 
-- **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
-  refuses to start. TEI would otherwise truncate chunks silently. The cap counts characters (2000)
-  and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
-  than one token per character, so a model that accepts 2000 tokens takes every chunk.
+- **A model whose `max_input_length` is below the longest embedded input is rejected** and the
+  server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
+  title, capped at 200 characters, a blank line and the chunk (at most 2000 characters), so 2202
+  characters at most. The check compares them one to one with `max_input_length` tokens: Latin
+  text never takes more than one token per character, so a model that accepts 2202 tokens takes
+  every input.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
-- **Removing a model**: the server drops its index and its rows. User preferences pointing to it
-  are reset to the default at startup, logged as a warning.
+- **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
 ## Storage
 
@@ -54,6 +63,7 @@ create table chunk_embeddings (
     model         text not null,
     -- Denormalized from chunks: pgvector's iterative scans only filter on columns of the table
     -- that holds the vector.
+    document_id   uuid not null,                -- for -word
     user_id       uuid not null,
     source        text not null,
     content_type  text not null,
@@ -70,7 +80,8 @@ create index chunk_embeddings_hnsw_qwen3_embedding_0_6b on chunk_embeddings
 
 `embedding_cache (text_hash, model)` stays: it saves compute when the same text appears in another
 chunk, another document or another user's data, and when chunks are re-created after re-chunking.
-Query embeddings go through the same cache.
+`text_hash` is the SHA-256 of the whole embedded input: prefix, capped title and chunk text (for
+queries: prefix and query). Query embeddings go through the same cache.
 
 Search embeds the query with the requested model and searches only that model's index, so vectors
 of different models are never compared.
@@ -92,20 +103,38 @@ storage simple. The consequences:
 The queue is "chunks without an embedding for model X":
 
 ```sql
-select c.id, c.text from chunks c
-where not exists (
-    select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
-)
-order by c.ts desc
-limit 64
-for update of c skip locked;
+select id, text, title from (
+    select c.id, c.text, c.title from chunks c
+    where not exists (
+        select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
+    )
+    and not exists (
+        select 1 from embedding_failures f where f.chunk_id = c.id and f.model = $1
+    )
+    order by c.ts desc
+    limit 256
+) candidates
+where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
+limit 32;  -- TEI's max_client_batch_size
 ```
 
 - The pump serves the default model first, then the others. Within a model, newest chunks first.
 - Each batch: look up `embedding_cache`, send the misses to that model's TEI, write
   `chunk_embeddings` and `embedding_cache` in one transaction.
 - `LISTEN chunks_pending` wakes the pump after an ingest. Several pumps share the queue through
-  `SKIP LOCKED`.
+  the advisory locks.
+- A statement trigger on `chunks` sends the notification, delivered when the ingest commits. The
+  pump also polls every 30 s, which picks up after outages.
+- A failed batch is logged and stored in `embedding_errors` (model, error, time) until the model's
+  next successful batch, for Admin. The pump keeps retrying, an unreachable `bulk_url` therefore
+  shows as an error and a growing backlog.
+- TEI rejecting a batch (4xx) makes the pump retry its texts one by one. Texts TEI rejects alone
+  (more tokens than characters, e.g. emoji or CJK) land in `embedding_failures` (chunk, model,
+  error) and leave the queue. A changed text is a new chunk and a changed title deletes the
+  failure, so either gets another chance.
+- Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
+  The final insert locks the chunks `for share` and skips those deleted meanwhile.
+- Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
 
 ## Per-user model choice
 
@@ -124,6 +153,18 @@ switching to it needs nothing but the Settings dropdown once its backfill is don
 ### Collecting judgments
 
 A ✓ on a hit records an explicit judgment. It carries its own query, so there is no search log.
+A search may have several right hits, each its own judgment: recall@10 and MRR handle that.
+
+- GraphQL only (`setJudgment(input: {search, documentId, judged})`, and `judged` on every hit of
+  `search`): agents don't judge. An explicit set rather than a toggle, so a double click can't
+  flip it twice.
+- `query` is the query as typed, with whitespace collapsed. `filters` is the search's filters in
+  canonical form: sources, authors and content types sorted without duplicates, `from`/`to` as
+  absolute times. The same search in another chip order is the same judgment, `k` isn't part of
+  it. A search `search` would reject can't be judged.
+- A relative time range ("Past week", `range` in GraphQL's `SearchInput`) is stored as its preset
+  instead of the `from` it resolved to, so the same search tomorrow still shows its ✓ and a
+  second ✓ doesn't add a row. Replay anchors the preset at the judgment's `created_at`.
 
 ```sql
 create table relevance_judgments (

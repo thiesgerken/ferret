@@ -108,7 +108,8 @@ create table connections (
     user_id      uuid not null references users on delete cascade,
     plugin       text not null references plugin_types,
     source       text not null,                -- source root: documents go to it or below it
-    config       jsonb not null,               -- secret fields encrypted, see below
+    config       jsonb not null,               -- without the secret fields
+    credentials  bytea,                        -- the secret fields, sealed (see below), null without any
     schedule     text not null,                -- cron expression
     enabled      boolean not null default true,
     next_run_at  timestamptz not null,
@@ -158,20 +159,23 @@ create table exclusions (
 
 Every source below a connection's root belongs to that connection exclusively: API keys can't
 write there, and connection roots can't overlap. Otherwise a sync sweep would delete documents
-someone else wrote. API keys write only to sources outside every connection's root.
+someone else wrote. API keys write only to sources outside every connection's root, and a sync of
+an API key can't contain a connection's root either. Reading and searching stay governed by the
+key's own sources.
 
 ### Run lifecycle
 
 ```text
 POST /internal/workers/register   {name, plugins: [{name, config_schema}]}    -> {worker_id}
-POST /internal/runs/claim?wait=30s                                           -> 204 | {run}
-POST /internal/runs/{id}/heartbeat {log_lines}
-POST /internal/runs/{id}/finish    {status, state, stats, error}
+POST /internal/runs/claim?wait=30 {worker_id}                                -> 204 | {run}
+POST /internal/runs/{id}/heartbeat {log_lines}                               -> 204, 409 once not live
+POST /internal/runs/{id}/finish    {result: succeeded, state, stats, log_lines}
+                                   | {result: failed, error, log_lines}      -> 204, 409 once not live
 ```
 
 1. **Register**: at startup the worker upserts its plugin types and announces its capabilities.
-   Dedicated workers per plugin come for free: a worker started with `--plugins imap` only ever gets
-   IMAP runs.
+   Every worker registers every plugin it knows. Dedicated workers per plugin (`--plugins imap`)
+   would come for free from this, but don't exist yet.
 2. **Claim (long poll)**: the server looks for an enabled connection of one of the worker's plugins
    with `next_run_at <= now()` and no live run, using `FOR UPDATE SKIP LOCKED`. On a hit it inserts
    a `plugin_runs` row, advances `next_run_at` to the next cron slot, and returns the run: config
@@ -194,13 +198,22 @@ run is harmless.
 ### Plugin credentials
 
 Secret config fields (marked `writeOnly` in the plugin's schema) are encrypted with
-XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the server from a Secret
-(generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start without it.
+XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key in base64 mounted into the server from a
+Secret (generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start
+without it.
 
-- The GraphQL API never returns secret fields. An update that omits a secret keeps the stored value.
+- They're stored apart from the rest of the config (`connections.credentials`: nonce, then
+  ciphertext), so the GraphQL API can't return them. The ciphertext is bound to its user and
+  connection (as associated data): copied to another row, it doesn't open.
+- Stored secrets survive only an update that leaves the rest of the config unchanged (schedule
+  and enabled may change). Any other config change needs every stored secret entered again, so a
+  session can't point a connection at its own server and have the next run send the secret
+  there. `null` removes a secret.
+- Validation errors under a secret field, or ones that would quote a secret, only name the path.
 - Only claimed runs get decrypted secrets, over the internal API.
 - The key must be backed up separately from the database. A database backup without it restores
-  everything except plugin credentials, which then have to be re-entered.
+  everything except plugin credentials, which then have to be re-entered: runs fail with that
+  message, and an update has to enter them.
 
 ## Embedding orchestration
 
@@ -225,7 +238,7 @@ the frontend. In development Next rewrites those paths to the local server, as i
 
 | Section | Contents |
 |---|---|
-| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
+| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
 | **Settings** (`/settings`) | Account, API keys, Models (coverage on my data and my default model in v1, recall@10 and MRR on my judgments in v2) |
@@ -248,7 +261,8 @@ The Helm chart, modelled on carapace's:
 
 - `ferret-server` Deployment (replicas configurable), Services for the public and the internal
   port.
-- `ferret-plugins` Deployment, optionally several with different `--plugins` sets.
+- `ferret-plugins` Deployment, without a service account token: runs read files from repositories
+  they don't control.
 - `frontend` Deployment.
 - One TEI Deployment per configured embedding model, on CPU.
 - Optionally (`tei.gpu.enabled`) a GPU TEI Deployment per model for backfills, pinned to a tainted
@@ -268,10 +282,23 @@ replicas starting together are safe.
 
 | Variable | Required | Meaning |
 |---|---|---|
+| `FERRET_CONFIG_FILE` | yes | path to the configuration file, so far the `embedding` section ([embeddings.md](embeddings.md#models)) |
 | `FERRET_DATABASE_URL` | yes | Postgres URL. Without a password in it, `PGPASSWORD` supplies one, so the password needs no URL-encoding |
 | `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
 | `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
+| `FERRET_WORKER_SECRET` | yes | the plugin workers' pre-shared key for the internal API, at least 32 bytes ([auth.md](auth.md#worker-psk)) |
+| `FERRET_CONFIG_KEY` | yes | encrypts plugin credentials, 32 bytes in base64 ([Plugin credentials](#plugin-credentials)) |
 | `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
+
+### Plugin worker environment
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `FERRET_INTERNAL_URL` | yes | the server's internal API, e.g. `http://ferret-server:8081` |
+| `FERRET_SERVER_URL` | yes | the server's public API, where runs ingest, e.g. `http://ferret-server:8080` |
+| `FERRET_WORKER_SECRET` | yes | the same pre-shared key as the server's |
+| `HOSTNAME` | no | the worker's name in the server's records, the pod name in Kubernetes |
+| `RUST_LOG` | no | as for the server |
 
 The public port is 8080, the internal one 8081, both fixed. `GET /healthz` is the readiness
 probe: 200, or 503 while the database is unreachable. It lives outside `/api` because every `/api`
