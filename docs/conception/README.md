@@ -265,7 +265,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
-  word, share its German or English stem, or contain it (compounds).
+  word, share its German or English stem, or contain it (compounds). Next to the hits, `model`
+  names the embedding model the semantic half used (or would have, when `semantic_unavailable`
+  says it couldn't run).
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived

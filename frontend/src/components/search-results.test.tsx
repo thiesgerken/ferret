@@ -30,12 +30,25 @@ const hit = (id: string, source: string, authors: string[]) => ({
 
 async function renderResults(
   state: SearchState,
-  { semanticUnavailable = null, models = ["alpha"] }: { semanticUnavailable?: string | null; models?: string[] } = {},
+  {
+    semanticUnavailable = null,
+    models = ["alpha"],
+    searchError = null,
+  }: { semanticUnavailable?: string | null; models?: string[]; searchError?: string | null } = {},
 ) {
   const variables: unknown[] = [];
   const changes: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
-    variables.push(JSON.parse(String(init?.body)).variables);
+    const operation = JSON.parse(String(init?.body));
+    if (operation.operationName === "EmbeddingModelNames") {
+      return Response.json({
+        data: { embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name })) },
+      });
+    }
+    variables.push(operation.variables);
+    if (searchError) {
+      return Response.json({ data: null, errors: [{ message: searchError }] }, { status: 400 });
+    }
     return Response.json({
       data: {
         search: {
@@ -44,7 +57,6 @@ async function renderResults(
           semanticUnavailable,
           model: state.model ?? models[0],
         },
-        embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name })),
       },
     });
   });
@@ -140,4 +152,20 @@ test("offers a model choice, naming the default's model, only with several model
   const chosen = await renderResults({ ...STATE, model: "beta" }, { models: ["alpha", "beta"] });
   assert.equal((chosen.variables[0] as { input: { model: string } }).input.model, "beta");
   await chosen.view.unmount();
+});
+
+test("a search for a model that's gone keeps the select to switch back", async () => {
+  const { view, changes } = await renderResults(
+    { ...STATE, model: "gone" },
+    { models: ["alpha", "beta"], searchError: 'no embedding model "gone" is configured' },
+  );
+
+  assert.match(view.container.querySelector('[role="alert"]')?.textContent ?? "", /"gone" is configured/);
+  const select = view.container.querySelector<HTMLSelectElement>('select[aria-label="Embedding model"]')!;
+  await act(async () => {
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  assert.deepEqual(changes, [STATE]);
+  await view.unmount();
 });

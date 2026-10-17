@@ -133,8 +133,9 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     Ok(Embedding { http, models })
 }
 
-// ponytail: exact counts scan the user's rows, fine for one person's data. Cached counts if
-// Settings gets slow.
+// ponytail: exact counts, and neither table has an index on user_id, so both scan the whole
+// table. Fine for a household's data. An index on (user_id, model) or cached counts if Settings
+// gets slow.
 /// How many of `user_id`'s chunks `model` has embedded.
 pub async fn embedded_chunks(
     pool: &PgPool,

@@ -79,7 +79,7 @@ async fn searches_use_the_requested_model_else_the_users_default_else_the_config
 
 #[sqlx::test(migrations = false)]
 async fn unknown_models_are_rejected(pool: PgPool) {
-    let (server, _beta) = two_models(pool).await;
+    let (server, _beta) = two_models(pool.clone()).await;
     let api = server.admin_api().await;
     let cookie = server.sign_in().await;
 
@@ -90,6 +90,23 @@ async fn unknown_models_are_rejected(pool: PgPool) {
     assert_eq!(
         set["errors"][0]["message"],
         "no embedding model \"gamma\" is configured"
+    );
+
+    // A stale default, as during a rolling deploy before the startup reset.
+    sqlx::query("update users set default_embedding_model = 'gamma'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stale = server
+        .graphql(
+            &cookie,
+            "{ search(input: {q: \"car\"}) { model } }",
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        stale["errors"][0]["message"],
+        "your default embedding model \"gamma\" is no longer configured"
     );
 }
 

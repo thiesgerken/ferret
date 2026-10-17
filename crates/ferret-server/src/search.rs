@@ -231,28 +231,33 @@ pub async fn find(
     })
 }
 
-/// The model the search asks for, else the user's default, else the configured default.
+/// The model the search asks for, else the user's default, else the configured default. The
+/// default is read here rather than taken from the session's user: API keys only carry the user's
+/// id, and a default set in another tab must apply right away.
 async fn model<'a>(
     pool: &PgPool,
     embedding: &'a Embedding,
     user_id: Uuid,
     requested: Option<&str>,
 ) -> Result<&'a Model, SearchError> {
-    let name = match requested {
-        Some(name) => Some(name.to_owned()),
-        None => {
-            sqlx::query_scalar!(
-                "select default_embedding_model from users where id = $1",
-                user_id
-            )
-            .fetch_one(pool)
-            .await?
-        }
-    };
-    match name {
-        None => Ok(embedding.default_model()),
-        Some(name) => embedding.model(&name).ok_or_else(|| {
+    if let Some(name) = requested {
+        return embedding.model(name).ok_or_else(|| {
             SearchError::Invalid(format!("no embedding model {name:?} is configured"))
+        });
+    }
+    let default = sqlx::query_scalar!(
+        "select default_embedding_model from users where id = $1",
+        user_id
+    )
+    .fetch_one(pool)
+    .await?;
+    match default {
+        None => Ok(embedding.default_model()),
+        // Only until the next startup resets it, e.g. during a rolling deploy.
+        Some(name) => embedding.model(&name).ok_or_else(|| {
+            SearchError::Invalid(format!(
+                "your default embedding model {name:?} is no longer configured"
+            ))
         }),
     }
 }

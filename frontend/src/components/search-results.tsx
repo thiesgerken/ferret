@@ -35,6 +35,13 @@ const SearchHitsQueryDocument = graphql(`
       semanticUnavailable
       model
     }
+  }
+`);
+
+// Its own query: a search for a model that is no longer configured fails, and the select must
+// stay to switch back.
+const EmbeddingModelNamesQuery = graphql(`
+  query EmbeddingModelNames {
     embeddingModels {
       name
     }
@@ -59,6 +66,7 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
     [state.q, state.sources, state.authors, from, state.model],
   );
   const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
+  const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
   const hits = data?.search.hits ?? [];
   const semanticUnavailable = data?.search.semanticUnavailable;
 
@@ -74,7 +82,7 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
         <FilterChips
           state={state}
           hits={hits}
-          models={data?.embeddingModels.map((model) => model.name) ?? []}
+          models={models?.embeddingModels.map((model) => model.name) ?? []}
           ranModel={data?.search.model}
           onChange={onChange}
         />
