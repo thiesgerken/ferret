@@ -23,6 +23,8 @@ const GIT_SCHEMA = JSON.stringify({
 const CONNECTION = {
   __typename: "Connection",
   id: "connection-1",
+  name: "Notes",
+  icon: "notebook",
   plugin: "git",
   source: "notes",
   config: JSON.stringify({ remote: "https://example.test/notes.git" }),
@@ -80,7 +82,7 @@ test("shows each connection with its last run, run history and log", async () =>
   const { view } = await renderConnections();
   const text = view.container.textContent ?? "";
 
-  assert.match(text, /notes git · 0 \* \* \* \*/);
+  assert.match(text, /Notes notes · git · 0 \* \* \* \*/);
   assert.match(text, /Failed .* · next run /);
   assert.match(text, /git clone failed: repository not found/);
   assert.match(text, /cloning https:\/\/example\.test\/notes\.git/);
@@ -96,6 +98,7 @@ test("creates a connection with the config from the plugin's schema", async () =
     [...view.container.querySelectorAll("fieldset [name]")].map((element) => element.getAttribute("name")),
     ["config.remote", "config.branch", "config.exclude", "config.token"],
   );
+  field<HTMLInputElement>("#connection-name").value = "ferret's code";
   field<HTMLInputElement>("#connection-source").value = "code/ferret";
   field<HTMLInputElement>("#config-remote").value = "https://example.test/ferret.git";
   field<HTMLTextAreaElement>("#config-exclude").value = "target/**\nnode_modules/**";
@@ -108,6 +111,8 @@ test("creates a connection with the config from the plugin's schema", async () =
   const create = operations.find((operation) => operation.operationName === "CreateConnection");
   const input = create?.variables.input as Record<string, string>;
   assert.equal(input.plugin, "git");
+  assert.equal(input.name, "ferret's code");
+  assert.equal(input.icon, "git-branch", "the plugin's default icon");
   assert.equal(input.source, "code/ferret");
   assert.equal(input.schedule, "0 * * * *");
   assert.deepEqual(JSON.parse(input.config), {
@@ -130,7 +135,7 @@ test("disables a connection, keeping its config and schedule", async () => {
   const update = operations.find((operation) => operation.operationName === "UpdateConnection");
   assert.deepEqual(update?.variables, {
     id: "connection-1",
-    input: { config: CONNECTION.config, schedule: "0 * * * *", enabled: false },
+    input: { name: "Notes", icon: "notebook", config: CONNECTION.config, schedule: "0 * * * *", enabled: false },
   });
   await view.unmount();
 });
@@ -162,6 +167,8 @@ test("edits the config and schedule, starting from the stored ones", async () =>
   assert.deepEqual(JSON.parse(String(input.config)), { remote: "https://example.test/notes-v2.git" });
   assert.equal(input.schedule, "0 3 * * *");
   assert.equal(input.enabled, true);
+  assert.equal(input.name, "Notes", "name and icon start from the stored ones");
+  assert.equal(input.icon, "notebook");
   await view.unmount();
 });
 

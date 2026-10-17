@@ -1,11 +1,13 @@
 "use client";
 
-import { Plug } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, type CombinedError } from "urql";
 import { graphql } from "@/gql";
 import type { ConnectionsQuery as ConnectionsData, RunStatus } from "@/gql/graphql";
 import { configFields, configFromForm, configInputName, type ConfigField } from "@/lib/config-schema";
+import { IconPicker } from "@/components/icon-picker";
+import { NamedIcon } from "@/components/named-icon";
+import { defaultPluginIcon } from "@/lib/default-icons";
 import { errorMessage } from "@/lib/graphql";
 import { cn, fieldClass } from "@/lib/utils";
 
@@ -17,6 +19,8 @@ const ConnectionsQuery = graphql(`
     }
     connections {
       id
+      name
+      icon
       plugin
       source
       config
@@ -153,6 +157,9 @@ function CreateConnectionForm({
 }) {
   const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
+  // Follows the plugin's default until the user picks one.
+  const [pickedIcon, setPickedIcon] = useState<string | null>(null);
+  const icon = pickedIcon ?? defaultPluginIcon(plugin);
   const [error, setError] = useState("");
   const { fields, schemaError } = parseConfigSchema(
     plugin,
@@ -166,6 +173,8 @@ function CreateConnectionForm({
     const result = await create({
       input: {
         plugin,
+        name: String(form.get("name")).trim(),
+        icon,
         source: String(form.get("source")),
         config: JSON.stringify(configFromForm(fields, form)),
         schedule: String(form.get("schedule")),
@@ -177,12 +186,25 @@ function CreateConnectionForm({
     }
     setError("");
     formElement.reset();
+    setPickedIcon(null);
     onCreated();
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border p-4">
       <h3 className="text-sm font-medium">New connection</h3>
+      <div className="flex items-end gap-3">
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium text-muted-foreground">Icon</span>
+          <IconPicker value={icon} onChange={setPickedIcon} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <label htmlFor="connection-name" className="text-xs font-medium text-muted-foreground">
+            Name
+          </label>
+          <input id="connection-name" name="name" required pattern=".*\S.*" placeholder="My notes" className={fieldClass} />
+        </div>
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-1.5">
           <label htmlFor="connection-plugin" className="text-xs font-medium text-muted-foreground">
@@ -403,19 +425,27 @@ function ConnectionCard({
     mutate(() =>
       update({
         id: connection.id,
-        input: { config: connection.config, schedule: connection.schedule, enabled },
+        input: {
+          name: connection.name,
+          icon: connection.icon,
+          config: connection.config,
+          schedule: connection.schedule,
+          enabled,
+        },
       }),
     );
 
   return (
     <li className="space-y-3 rounded-xl border border-border p-4">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <Plug className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+          <NamedIcon name={connection.icon} className="size-4" />
+        </span>
         <div className="min-w-0 flex-1 space-y-1 text-sm">
           <p className="font-medium">
-            {connection.source}{" "}
+            {connection.name}{" "}
             <span className="font-normal text-muted-foreground">
-              {connection.plugin} · <code className="font-mono text-xs">{connection.schedule}</code>
+              {connection.source} · {connection.plugin} · <code className="font-mono text-xs">{connection.schedule}</code>
             </span>
           </p>
           <p className="text-muted-foreground">
@@ -558,7 +588,9 @@ function EditConnectionForm({
   const [, update] = useMutation(UpdateConnectionMutation);
   const [error, setError] = useState("");
   const { fields, schemaError } = parseConfigSchema(connection.plugin, configSchema);
+  const [icon, setIcon] = useState(connection.icon);
   const scheduleId = `schedule-${connection.id}`;
+  const nameId = `name-${connection.id}`;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -566,6 +598,8 @@ function EditConnectionForm({
     const result = await update({
       id: connection.id,
       input: {
+        name: String(form.get("name")).trim(),
+        icon,
         config: JSON.stringify(configFromForm(fields, form)),
         schedule: String(form.get("schedule")),
         enabled: connection.enabled,
@@ -580,6 +614,18 @@ function EditConnectionForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-border p-3 text-sm">
+      <div className="flex items-end gap-3">
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium text-muted-foreground">Icon</span>
+          <IconPicker value={icon} onChange={setIcon} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <label htmlFor={nameId} className="text-xs font-medium text-muted-foreground">
+            Name
+          </label>
+          <input id={nameId} name="name" required pattern=".*\S.*" defaultValue={connection.name} className={fieldClass} />
+        </div>
+      </div>
       <div className="space-y-1.5">
         <label htmlFor={scheduleId} className="text-xs font-medium text-muted-foreground">
           Schedule (cron)

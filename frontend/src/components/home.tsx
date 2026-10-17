@@ -5,7 +5,8 @@ import { BrandMark } from "@/components/brand-mark";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 
-// Explore without filters counts what the user can read, and its source facet lists the sources.
+// Explore without filters counts what the user can read, and its source facet names each
+// source's writer (a connection or an API key).
 const IndexSummaryQuery = graphql(`
   query IndexSummary {
     explore(input: { limit: 1 }) {
@@ -13,6 +14,9 @@ const IndexSummaryQuery = graphql(`
       facets {
         sources {
           value
+          writer {
+            id
+          }
         }
       }
     }
@@ -36,9 +40,8 @@ function IndexSummary() {
   const [{ data }] = useQuery({ query: IndexSummaryQuery });
   if (!data) return <p className="mt-5 h-4" />;
   const documents = data.explore.total;
-  // ponytail: a source's first path segment stands for its connection or API key, until #85's
-  // origins are in the API.
-  const sources = new Set(data.explore.facets.sources.map((source) => source.value.split("/")[0])).size;
+  // Sources without a known writer (from before keys were recorded) count as one more.
+  const sources = new Set(data.explore.facets.sources.map((source) => source.writer?.id ?? null)).size;
   return (
     <p className="mt-5 h-4 text-xs text-muted-foreground tabular-nums">
       {documents.toLocaleString()} {documents === 1 ? "document" : "documents"} · {sources}{" "}

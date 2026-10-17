@@ -1,0 +1,12 @@
+/** The icon a new connection starts with, by plugin. The user can pick another. */
+const PLUGIN_ICONS: Record<string, string> = {
+  git: "git-branch",
+  carapace: "brain",
+  paperless: "file-text",
+};
+
+export function defaultPluginIcon(plugin: string): string {
+  return PLUGIN_ICONS[plugin] ?? "plug";
+}
+
+export const DEFAULT_API_KEY_ICON = "key-round";
