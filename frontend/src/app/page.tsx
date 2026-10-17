@@ -4,13 +4,9 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { SearchField } from "@/components/search-field";
 import { SearchResults } from "@/components/search-results";
-import { parseSearch, searchHref, type SearchState } from "@/lib/search-url";
+import { parseSearch } from "@/lib/search-url";
+import { submitSearch, typeSearch } from "@/lib/search-history";
 import { BrandMark } from "@/components/brand-mark";
-
-/** `history.pushState` keeps the page and updates `useSearchParams`, Next's router follows it. */
-function navigate(state: SearchState) {
-  window.history.pushState(null, "", searchHref(state));
-}
 
 function SearchRoute() {
   // Null outside Next's router (tests): the home page.
@@ -18,7 +14,7 @@ function SearchRoute() {
   const state = parseSearch(new URLSearchParams(params?.toString()));
 
   if (state.q) {
-    return <SearchResults state={state} onChange={navigate} />;
+    return <SearchResults state={state} onChange={submitSearch} onType={typeSearch} />;
   }
   return (
     <main className="flex min-h-dvh flex-col items-center px-4 pt-[22vh]">
@@ -26,7 +22,7 @@ function SearchRoute() {
         <BrandMark className="h-[0.8em] w-auto" />
         ferret
       </h1>
-      <SearchField onSearch={(q) => navigate({ ...state, q })} />
+      <SearchField onSearch={(q) => submitSearch({ ...state, q })} />
     </main>
   );
 }
