@@ -418,7 +418,38 @@ async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: P
 }
 
 #[sqlx::test(migrations = false)]
-async fn the_total_is_exact_only_once_a_neighbour_falls_below_the_cut_off(pool: PgPool) {
+async fn the_total_is_a_lower_bound_only_while_more_chunks_could_pass_the_cut_off(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    // The test model's `min_similarity` is 0, so every chunk passes.
+    for index in 0..3 {
+        api.put_document(&document("notes", &format!("car-{index}"), "My car."))
+            .await
+            .unwrap();
+    }
+    server.wait_for_embeddings(3).await;
+
+    let response = api.search(&query("vehicle")).await.unwrap();
+    assert_eq!(response.total, 3);
+    assert!(
+        !response.total_is_lower_bound,
+        "all of the scope's chunks came back"
+    );
+
+    // One more than the vector half's candidates.
+    for index in 3..101 {
+        api.put_document(&document("notes", &format!("car-{index}"), "My car."))
+            .await
+            .unwrap();
+    }
+    server.wait_for_embeddings(101).await;
+
+    let response = api.search(&query("vehicle")).await.unwrap();
+    assert!(response.total_is_lower_bound, "{}", response.total);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_neighbour_below_the_cut_off_makes_the_total_exact(pool: PgPool) {
     let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
     let mut strict = model(MODEL, &tei);
     strict.min_similarity = 0.3;
@@ -427,21 +458,13 @@ async fn the_total_is_exact_only_once_a_neighbour_falls_below_the_cut_off(pool: 
     api.put_document(&document("notes", "car", "My car broke down."))
         .await
         .unwrap();
-    server.wait_for_embeddings(1).await;
-
-    let response = api.search(&query("vehicle")).await.unwrap();
-    assert_eq!(response.total, 1);
-    assert!(
-        response.total_is_lower_bound,
-        "nothing seen below the cut-off yet"
-    );
-
     api.put_document(&document("notes", "weather", "Lovely weather today."))
         .await
         .unwrap();
     server.wait_for_embeddings(2).await;
 
     let response = api.search(&query("vehicle")).await.unwrap();
+
     assert_eq!(response.total, 1);
     assert!(!response.total_is_lower_bound);
 }

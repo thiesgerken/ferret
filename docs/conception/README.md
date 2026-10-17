@@ -289,8 +289,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   says it couldn't run).
 - **Counts and timing**: `total` counts the matching documents after the cut-off, exclusions and
   collapsing, not only the `k` returned. `total_is_lower_bound` says it may be short: the keyword
-  half filled its 1000 candidates, or none of the 100 nearest chunks fell below the cut-off (HNSW
-  is approximate and may return fewer neighbours, so their number doesn't tell).
+  half filled its 1000 candidates, or all of the 100 nearest chunks passed the cut-off while the
+  scope holds more embedded chunks than came back (HNSW is approximate and may return fewer
+  neighbours, so their number alone doesn't tell).
   `documents_in_scope` counts the caller's documents in the selected sources (all when none are
   selected), regardless of the other filters. `took_ms` is the search's time on the server.
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.

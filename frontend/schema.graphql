@@ -431,8 +431,8 @@ type SearchResult {
   """
   total: Int!
   """
-    True when `total` is a minimum: the keyword half filled its candidates, or the vector half
-    didn't reach the model's similarity cut-off within its candidates.
+    True when `total` is a minimum: the keyword half filled its candidates, or all of the vector
+    half's nearest chunks passed the model's similarity cut-off while the scope holds more.
   """
   totalIsLowerBound: Boolean!
   """

@@ -658,8 +658,8 @@ struct SearchResult {
     /// Matching documents after the similarity cut-off, exclusions and collapsing, not only the
     /// hits returned.
     total: i32,
-    /// True when `total` is a minimum: the keyword half filled its candidates, or the vector half
-    /// didn't reach the model's similarity cut-off within its candidates.
+    /// True when `total` is a minimum: the keyword half filled its candidates, or all of the vector
+    /// half's nearest chunks passed the model's similarity cut-off while the scope holds more.
     total_is_lower_bound: bool,
     /// Documents the user may read in the selected sources (all sources when none are selected).
     /// The other filters don't narrow it.

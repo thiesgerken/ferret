@@ -145,8 +145,8 @@ pub struct SearchResponse {
     /// Matching documents after the similarity cut-off, exclusions and collapsing, not only the
     /// `k` returned.
     pub total: u32,
-    /// `total` is a minimum: the keyword half filled its candidates, or the vector half didn't
-    /// reach the model's similarity cut-off within its candidates.
+    /// `total` is a minimum: the keyword half filled its candidates, or all of the vector half's
+    /// nearest chunks passed the model's similarity cut-off while the scope holds more.
     pub total_is_lower_bound: bool,
     /// Documents the caller may read in the selected sources (all sources when none are
     /// selected). The other filters don't narrow it.

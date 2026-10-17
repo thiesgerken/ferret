@@ -269,19 +269,22 @@ pub async fn find(
         ")
          )
          select *, count(*) over () as total,
-                -- The keyword half may have left out matches when it filled its candidates, the
-                -- vector half unless a neighbour fell below the cut-off. HNSW is approximate and
-                -- may return fewer neighbours than asked for, so their count doesn't tell.
+                -- The keyword half may have left out matches when it filled its candidates.
                 (select count(*) from keyword) >= ",
     )
-    .push_bind(KEYWORD_CANDIDATES)
-    .push(
-        " or (exists (select 1 from nearest)
-                    and not exists (select 1 from nearest where distance > ",
-    )
-    .push_bind(max_distance)
-    .push(
-        ")) as total_is_lower_bound
+    .push_bind(KEYWORD_CANDIDATES);
+    if query_hash.is_some() {
+        // The vector half may have, when all its neighbours passed the cut-off and the scope
+        // holds more. HNSW is approximate and may return fewer neighbours than asked for, so
+        // their count alone doesn't tell.
+        sql.push(" or (not exists (select 1 from nearest where distance > ")
+            .push_bind(max_distance)
+            .push(") and (select count(*) from nearest) < (select count(*) ");
+        push_embeddings_in_scope(&mut sql, model, &filters);
+        sql.push("))");
+    }
+    sql.push(
+        " as total_is_lower_bound
          from hits where thread_rank = 1
          order by score desc
          limit ",
@@ -391,18 +394,24 @@ fn push_nearest(
     ))
     .push_bind(query_hash.to_vec())
     .push(format!(
-        " and model = '{name}')::halfvec({dimension}) as distance
-             from chunk_embeddings e",
+        " and model = '{name}')::halfvec({dimension}) as distance ",
         name = model.config.name,
         dimension = model.dimension,
     ));
+    push_embeddings_in_scope(sql, model, filters);
+    sql.push(" order by distance limit ")
+        .push_bind(SEMANTIC_CANDIDATES);
+}
+
+/// `from` and `where` for the chunks the vector half searches.
+fn push_embeddings_in_scope(sql: &mut QueryBuilder<Postgres>, model: &Model, filters: &Filters) {
+    sql.push("from chunk_embeddings e");
     if !filters.phrases.is_empty() {
         sql.push(" join chunks c on c.id = e.chunk_id");
     }
+    // Validated model names need no quoting (config.rs).
     sql.push(format!(" where e.model = '{}' and ", model.config.name));
     filters.push(sql, "e");
-    sql.push(" order by distance limit ")
-        .push_bind(SEMANTIC_CANDIDATES);
 }
 
 /// The filters both halves apply, on the denormalized chunk columns of `chunks` or
