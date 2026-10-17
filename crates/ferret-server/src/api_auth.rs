@@ -59,6 +59,7 @@ impl Scope {
 
 /// The caller of a `/api` route. It acts as its owner: it only ever sees and writes that user's
 /// documents, within its scopes and sources.
+#[derive(Clone)]
 pub struct ApiCaller {
     pub user_id: Uuid,
     scopes: Vec<Scope>,

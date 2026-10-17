@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.14.0"
+version = "0.15.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -28,6 +28,7 @@ jsonwebtoken = { version = "11", default-features = false, features = ["rust_cry
 juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+rmcp = { version = "3.5", default-features = false }
 sqlx = { version = "0.9", default-features = false, features = [
     "macros",
     "chrono",

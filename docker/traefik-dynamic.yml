@@ -3,7 +3,7 @@
 http:
   routers:
     ferret-server:
-      rule: Path(`/graphql`) || PathPrefix(`/api`) || PathPrefix(`/auth`)
+      rule: Path(`/graphql`) || Path(`/mcp`) || PathPrefix(`/api`) || PathPrefix(`/auth`)
       entryPoints:
         - web
       priority: 100

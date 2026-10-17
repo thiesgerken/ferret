@@ -360,8 +360,10 @@ deployment, as in carapace. docker-compose exists for local development only. De
   arrive (no worker change), a finished run shows its worker's stats. Users see their own, admins
   may ask for everyone's. Next to it the embedding progress per model
   ([embeddings.md](embeddings.md#progress)).
-- **carapace**: a search skill in the knowledge repo that calls the search API with an API key
-  restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
+- **Agents** connect to the MCP server at `/mcp` ([architecture.md](architecture.md#apis)) with an
+  API key restricted to the sources they may see.
+- **carapace**: the MCP server, or a search skill in the knowledge repo that calls the search API,
+  with an API key restricted to the sources the agent may see. ferret's domain goes on the sandbox proxy allowlist,
   the key comes from the password manager, the sentinel gates the call. No carapace code.
 
 ## Privacy and security
@@ -404,8 +406,8 @@ chats and saved articles are on the roadmap. Details in [plugins.md](plugins.md)
 
 - **Server**: ingest API (documents, syncs, `seen`, exclusions), search (hybrid, one hit per
   document, collapsed per thread), GraphQL for the UI, auth (users, sessions, API keys restricted
-  by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
-  API.
+  by source, run tokens, worker PSK), the MCP server for agents, embed pump, connections with
+  scheduling over the internal API.
 - **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
   change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).

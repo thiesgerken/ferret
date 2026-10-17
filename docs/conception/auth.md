@@ -171,7 +171,7 @@ create table api_keys (
 
 | scope | read | write |
 |---|---|---|
-| `search` | `GET /api/search`, `GET /api/documents/{id}`, thread listing (`GET /api/documents?source=&thread=`) | |
+| `search` | `GET /api/search`, `GET /api/documents/{id}`, thread listing (`GET /api/documents?source=&thread=`), MCP (`/mcp`, all its tools) | |
 | `ingest` | `GET /api/documents/{id}` and thread listing | `PUT` and `DELETE /api/documents`, start, `seen` and commit syncs |
 | `admin` | list users (`GET /api/users`). Requires `is_admin` on the owner, and stops working as soon as the owner loses it | no REST endpoint yet: users are managed in the UI's Admin section (GraphQL) |
 
@@ -184,8 +184,9 @@ chats, and an agent's key only finds what it was given. API keys can't write bel
 Typical keys:
 
 - **An external ingester** (a script outside ferret): `ingest:write`, `sources = {articles}`.
-- **carapace's search skill**: `search:read`, `sources = {carapace, notes, paperless}`. Mail and chats
-  stay invisible to it, and so never reach its LLM provider.
+- **carapace, through the MCP server or its search skill**: `search:read`,
+  `sources = {carapace, notes, paperless}`. Mail and chats stay invisible to it, and so never reach
+  its LLM provider.
 
 A key acts as its owner: it only ever sees and writes that user's documents.
 
