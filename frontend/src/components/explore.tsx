@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ContentType, DocumentOrder, ExploreDocumentsQuery } from "@/gql/graphql";
 import { errorMessage } from "@/lib/graphql";
 import { PAGE_SIZE, monthRange, type ExploreState } from "@/lib/explore-url";
+import { NamedIcon } from "@/components/named-icon";
+import { useConnectionRoots } from "@/lib/connection-roots";
 import { toggle } from "@/lib/search-url";
+import { sourceLabel } from "@/lib/source-label";
 import { cn } from "@/lib/utils";
 import { viewerHref } from "@/lib/viewer-url";
 
@@ -29,6 +32,12 @@ const ExploreDocumentsQueryDocument = graphql(`
         sources {
           value
           count
+          writer {
+            kind
+            id
+            name
+            icon
+          }
         }
         contentTypes {
           contentType
@@ -79,6 +88,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
     [state],
   );
   const [{ data, error, fetching }] = useQuery({ query: ExploreDocumentsQueryDocument, variables: { input } });
+  const roots = useConnectionRoots();
   // Any change but paging starts over at the first page.
   const narrow = (change: Partial<ExploreState>) => onChange({ ...state, ...change, page: 0 });
 
@@ -93,6 +103,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
     return null;
   }
   const { total, documents, facets } = data.explore;
+  const writerOf = (source: string) => facets.sources.find((facet) => facet.value === source)?.writer ?? null;
 
   return (
     <div className="grid gap-8 md:grid-cols-[14rem_1fr]">
@@ -101,6 +112,8 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
           title="Sources"
           values={withSelected(facets.sources, state.sources)}
           selected={state.sources}
+          label={(source) => sourceLabel(source, writerOf(source), roots).text}
+          icon={(source) => <NamedIcon name={writerOf(source)?.icon ?? "circle-dashed"} className="size-3.5 shrink-0" />}
           onToggle={(source) => narrow({ sources: toggle(state.sources, source) })}
         />
         <FacetList
@@ -151,12 +164,14 @@ function FacetList({
   values,
   selected,
   label = (value) => value,
+  icon,
   onToggle,
 }: {
   title: string;
   values: { value: string; count: number }[];
   selected: string[];
   label?: (value: string) => string;
+  icon?: (value: string) => ReactNode;
   onToggle: (value: string) => void;
 }) {
   if (values.length === 0) {
@@ -179,7 +194,10 @@ function FacetList({
                   pressed && "bg-accent font-medium",
                 )}
               >
-                <span className="truncate">{label(value)}</span>
+                <span className="flex min-w-0 items-center gap-2" title={icon ? value : undefined}>
+                  {icon?.(value)}
+                  <span className="truncate">{label(value)}</span>
+                </span>
                 <span className="text-xs text-muted-foreground">{count}</span>
               </button>
             </li>

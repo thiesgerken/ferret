@@ -642,6 +642,8 @@ struct Exploration {
 struct ExploredDocument {
     id: ID,
     source: String,
+    /// The connection or API key that put it, null for one from before writers were recorded.
+    writer: Option<Writer>,
     external_id: String,
     content_type: ContentType,
     title: Option<String>,
@@ -747,6 +749,7 @@ impl From<explore::Exploration> for Exploration {
                 .into_iter()
                 .map(|document| ExploredDocument {
                     id: ID::new(document.id.to_string()),
+                    writer: document.writer.map(Writer::from),
                     source: document.source,
                     external_id: document.external_id,
                     content_type: content_type::parse(&document.content_type).into(),
@@ -1115,6 +1118,8 @@ impl From<ferret_api::Hit> for Hit {
 struct Document {
     id: ID,
     source: String,
+    /// The connection or API key that put it, null for one from before writers were recorded.
+    writer: Option<Writer>,
     external_id: String,
     content_type: ContentType,
     title: Option<String>,
@@ -1151,6 +1156,7 @@ impl Document {
     fn new(document: ferret_api::Document, neighbors: documents::ThreadNeighbors) -> Self {
         Self {
             id: ID::new(document.id.to_string()),
+            writer: document.writer.map(Writer::from),
             source: document.source,
             external_id: document.external_id,
             content_type: document.content_type.into(),

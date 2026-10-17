@@ -119,7 +119,7 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
 - **Writer**: the connection or API key that put a document, shown with a name and an icon
   instead of the bare path. A document below a connection's root was put by that connection, any
   other by the API key that last put it (`documents.api_key_id`), revoked keys included. Search
-  hits carry their `writer`. The source facets of search and Explore carry each source's, so the
+  hits, documents (viewer and `GET /api/documents`) and Explore's rows carry their `writer`. The source facets of search and Explore carry each source's, so the
   UI can group sources by writer: the connection covering it, else the one connection below it or
   the key of its most recently modified document that has one, and none for a root over both a
   connection's documents and a key's. Connections and keys have a name and a lucide icon name,
