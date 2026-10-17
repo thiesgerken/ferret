@@ -17,6 +17,9 @@ Ferret is a personal search index. It copies text from origins, indexes it, and 
 
 ## Deploy and operate
 
+- [Configuration](configuration.md): environment, server YAML and startup/live settings.
+- [Kubernetes](kubernetes.md): Gateway/storage/secret decisions and deployment walkthrough.
+- [Operations](operations.md): health, troubleshooting, upgrades and backup/restore boundaries.
 - [Helm chart](../charts/ferret/README.md): production deployment and canonical chart values.
 - [Authentication and privacy](auth.md): bootstrap, scopes, worker trust and encrypted credentials.
 

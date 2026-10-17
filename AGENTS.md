@@ -14,7 +14,7 @@ Read before working on a feature:
   avoid the ones it lists under _Avoid_.
 - `docs/adr/`: decisions and why they were made
 
-Keep `docs/` up to date when a change alters what it describes.
+Every PR must assess whether the maintained documentation (not `docs/conception/`) needs updating and update it when applicable.
 
 ## Commands
 

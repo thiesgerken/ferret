@@ -1,44 +1,129 @@
 # Development
 
-## The compose stack
+Use the [quickstart](quickstart.md) to try the app; this page covers changing it. The [contribution rules](../AGENTS.md) apply to every PR. Read maintained topic docs for current behavior, the [glossary](glossary.md) for vocabulary and [ADRs](adr/) for rationale. Conception is background, not the endpoint/config contract.
+
+## Prerequisites and repository map
+
+Install the Rust toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), a C/C++ build toolchain for native dependencies, Git, Docker Compose v2, curl and jq. Frontend development uses Node 24 and the pnpm version pinned in frontend/package.json (12.8.1 at this baseline). Use that package manager with the checked lockfile.
+
+| Path | Responsibility |
+| --- | --- |
+| `crates/ferret-server/src` | axum routers, GraphQL, auth, ingestion, search, scheduling and embed pump |
+| `crates/ferret-server/migrations` | embedded sqlx migrations, applied before startup listens |
+| `crates/ferret-server/tests` | real-Postgres HTTP integration tests plus fixtures/helpers |
+| `crates/ferret-api` | shared public/internal wire types and clients |
+| `crates/ferret-plugins` | worker orchestration, schemas and origin implementations |
+| `frontend/src` | static Next.js UI, GraphQL operations and unit tests |
+| `frontend/schema.graphql` | checked generated server schema |
+| `.sqlx` | checked offline query metadata |
+| `docker`, `scripts/demo-seed.sh` | local config, origin fixtures and demo ingestion |
+| `charts/ferret` | deployment templates and canonical Helm values |
+
+## Full Compose development
 
 ```sh
-docker compose up
-```
-
-starts ParadeDB, two TEIs with Qwen3-Embedding-0.6B (one for queries, one for the embed pump, so
-search stays fast during a backfill), the server, a plugin worker and the UI on
-<http://127.0.0.1:3380>. Sign in as `admin` with the password `ferret-development`.
-
-On Apple Silicon, set `TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4`
-for native TEI builds instead of emulated ones.
-
-## Demo data
-
-```sh
+# Apple Silicon only:
+export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+docker compose up -d --build
 scripts/demo-seed.sh
 ```
 
-ingests the sample documents in [docker/demo](../docker/demo) (needs `jq`) and adds a git
-connection to ferret's own docs. To index a local carapace knowledge repository as well, start
-compose with the demo overlay and seed with the same variable:
+The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. First startup builds images and downloads weights; TEIs share a cache. `tei` can query and embed, while the external-marked `tei-bulk` starts embedding-only. This is development/demo configuration with public secrets, not a deployment recipe.
+
+Use `docker compose logs -f server plugins` and Activity for different layers of diagnostics. Rebuild the service you changed with `docker compose up -d --build server` (or plugins/frontend); frontend static output is baked into its image, not hot-reloaded from the checkout. Do not start a second project on occupied fixed ports or seed an existing personal index. Use isolated project names, host-port overrides and separate volumes when working alongside one.
+
+Optional carapace demo:
 
 ```sh
 export CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 scripts/demo-seed.sh
 ```
 
-## Tests
+The overlay mounts that local Git repository into workers and explicitly permits file transport for the demonstration. Only committed/mirrored content is indexed. Keep this exception out of untrusted deployments.
 
-Tests need the database, and the IMAP plugin's tests a Dovecot, which compose leaves out of a plain
-`docker compose up`:
+## Host server and workers
+
+Start only the test/development database if port 8080/8081 will be used by the host server:
+
+```sh
+docker compose up -d paradedb
+export FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret
+export FERRET_CONFIG_FILE=/absolute/path/to/host-ferret.yaml
+export FERRET_SESSION_SECRET='development session secret, not for production'
+export FERRET_WORKER_SECRET='development worker secret, not for production'
+export FERRET_CONFIG_KEY=ZGV2ZWxvcG1lbnQgY29uZmlnIGtleSwgbm90IHByb2Q=
+export FERRET_BOOTSTRAP_PASSWORD=ferret-development
+cargo run -p ferret-server
+```
+
+Create host-ferret.yaml from the complete [configuration example](configuration.md#complete-server-yaml), replacing TEI URLs with addresses reachable from the host. Compose's `http://tei:80` names are not host DNS. Run an independent TEI with a host-published port, or configure an existing reachable TEI; do not copy container-only addresses and then diagnose their expected DNS failure as a model bug. TEIs may be offline at startup, but semantic queries need an eligible endpoint.
+
+In another terminal, with the same worker secret:
+
+```sh
+FERRET_INTERNAL_URL=http://127.0.0.1:8081 \
+FERRET_SERVER_URL=http://127.0.0.1:8080 \
+FERRET_WORKER_SECRET='development worker secret, not for production' \
+cargo run -p ferret-plugins
+```
+
+Host listeners are fixed at public8080/internal8081. If another local app owns8080, either stop your own conflicting instance or keep Ferret containerized with mapped host ports. There is no implemented listener override variable.
+
+## Frontend iteration
+
+```sh
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend dev
+```
+
+Next dev serves port3000 by default. It proxies GraphQL/MCP/API/auth to `http://127.0.0.1:8380`, fitting the Compose server. For the host server:
+
+```sh
+FERRET_SERVER_URL=http://127.0.0.1:8080 pnpm --dir frontend dev
+```
+
+Production builds are static exports served by nginx; reverse-proxy routing replaces dev rewrites. `predev`, `prebuild` and `pretest` regenerate typed GraphQL client artifacts from the checked schema and operations. Do not hand-edit `frontend/src/gql/`.
+
+## Tests and checks
+
+Server tests start in-process servers against a real ParadeDB, not a mocked SQL interface. sqlx tests create an isolated database per test, so the configured test role needs database-creation permission. Use disposable test infrastructure, never an irreplaceable production database server.
 
 ```sh
 docker compose up -d paradedb
 docker compose up -d --scale dovecot=1 dovecot
-cargo test --workspace
+cargo test --workspace --locked
+
+pnpm --dir frontend test
+pnpm --dir frontend lint
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+helm lint charts/ferret --set ingress.hostname=ferret.example.com
 ```
 
-The frontend's tests run with `pnpm test` in `frontend/`. More commands and conventions are in
-[AGENTS.md](../AGENTS.md).
+[.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; TEI-specific tests use their checked fake service where configured. See actual test setup before assuming an external account/GPU is required.
+
+## Migrations and sqlx metadata
+
+Install a matching sqlx CLI (`cargo install sqlx-cli --version 0.9.0`). Create a new migration rather than editing an applied one:
+
+```sh
+cargo sqlx migrate add --source crates/ferret-server/migrations describe_change
+DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret \
+  cargo sqlx migrate run --source crates/ferret-server/migrations
+DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret \
+  cargo sqlx prepare --workspace
+```
+
+Follow the migration-version ordering rule in AGENTS.md when existing migrations are future-dated. Commit `.sqlx/` with query/migration changes: builds use checked metadata and do not require a live database; tests/metadata regeneration do. CI also checks metadata against the migrated schema. The runtime server uses FERRET_DATABASE_URL, not the tooling DATABASE_URL.
+
+## GraphQL schema changes
+
+```sh
+cargo run --locked -q -p ferret-server -- schema > frontend/schema.graphql
+pnpm --dir frontend codegen
+```
+
+The schema command prints SDL without starting the server or needing runtime secrets/database. Commit the canonical schema with resolver/input changes. Client codegen reads [codegen.ts](../frontend/codegen.ts) and frontend operations; generated client files are not the canonical API contract.
+
+For behavior changes, update the appropriate maintained [topic/API/plugin guide](README.md), not just conception. [CI](../.github/workflows/ci.yml) defines the actual checks and PR preview image/chart publication; do not claim a check passed unless you ran it.

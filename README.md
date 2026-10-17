@@ -125,18 +125,23 @@ Follow the [quickstart](docs/quickstart.md) to start the development stack, sign
 documents, search a known phrase, and open its origin. It includes Apple Silicon instructions and
 shows how to inspect a real git connection in Activity.
 
-The Compose stack is for local development and demos, not deployment. For a real installation use
-the [Helm chart](charts/ferret/README.md).
+The Compose stack is for local development and demos, not deployment. For a real installation
+follow the [Kubernetes walkthrough](docs/kubernetes.md) and [Helm chart](charts/ferret/README.md).
 
 ## Documentation
 
 Start at the [documentation index](docs/README.md), or go directly to:
 
+- [Search](docs/search.md): query syntax, filters, ranking and origin links.
 - [Connections](docs/connections.md): schedules, runs, exclusions and data ownership.
 - [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
 - Plugin setup: [git](docs/plugins/git.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md).
 - [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
+- [API guide](docs/api/README.md): REST and GraphQL contracts and credential choices.
+- [Architecture](docs/architecture.md): components, data flows and subsystem references.
+- [Configuration](docs/configuration.md) and [operations](docs/operations.md): deploy, diagnose,
+  upgrade and back up the index.
 - [Development](docs/development.md): local development and tests.
 
 Design background remains in [conception](docs/conception/README.md),

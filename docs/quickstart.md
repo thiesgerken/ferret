@@ -61,7 +61,7 @@ After the run succeeds, search `discovery` in keyword mode and filter to source 
 - [Connections](connections.md) and the individual plugin guides explain how to connect your own data with minimal origin credentials.
 - [HTTP ingestion](ingestion.md) provides a complete write and reconciliation example.
 - [MCP](api/mcp.md) connects an agent with a source-scoped search key.
-- [Helm deployment](../charts/ferret/README.md) replaces the insecure local configuration.
+- [Kubernetes deployment](kubernetes.md) and the [Helm chart](../charts/ferret/README.md) replace the insecure local configuration.
 - [Development](development.md) covers host tooling and tests.
 
 Stop this development project with `docker compose stop`. Its named volumes retain the database and model cache. Removing the database volume deletes your index and users; never run volume-removal commands against a project you intend to keep.

@@ -5,6 +5,10 @@ and one CPU [TEI](https://github.com/huggingface/text-embeddings-inference) per 
 (`embedding.models`). TEIs outside the chart, e.g. a laptop's GPU for a backfill, join through
 `externalTeis`.
 
+For the infrastructure walkthrough, see [Kubernetes](../../docs/kubernetes.md). This page and
+[values.yaml](values.yaml) own chart-specific installation/settings; [operations](../../docs/operations.md)
+owns health, troubleshooting, upgrades and backup/restore procedures.
+
 ## Prerequisites
 
 - [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs and a Gateway to attach the `HTTPRoute` to
