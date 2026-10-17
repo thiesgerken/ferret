@@ -486,7 +486,12 @@ async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_a
     assert!(error.contains("enter them again"), "{error}");
 
     let unchanged = update_config(&server, &id, json!({"path": "/data"})).await;
-    let entered = update_config(&server, &id, json!({"path": "/data", "secret": "a new secret"})).await;
+    let entered = update_config(
+        &server,
+        &id,
+        json!({"path": "/data", "secret": "a new secret"}),
+    )
+    .await;
 
     assert_eq!(
         unchanged["errors"][0]["message"],
@@ -502,7 +507,12 @@ async fn credentials_open_only_for_the_connection_they_were_sealed_for(pool: PgP
     let worker = register(&internal).await;
     let notes = connection_id(&server, "notes").await;
     let mail = connection_id(&server, "mail").await;
-    update_config(&server, &notes, json!({"path": "/data", "secret": "notes secret"})).await;
+    update_config(
+        &server,
+        &notes,
+        json!({"path": "/data", "secret": "notes secret"}),
+    )
+    .await;
     // Someone with write access to the database copies one connection's credentials to another.
     sqlx::query("update connections set credentials = $1 where id = $2::uuid")
         .bind(credentials_of(&pool, &notes).await)
@@ -510,11 +520,13 @@ async fn credentials_open_only_for_the_connection_they_were_sealed_for(pool: PgP
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("update connections set next_run_at = now() + interval '1 day' where id = $1::uuid")
-        .bind(&notes)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "update connections set next_run_at = now() + interval '1 day' where id = $1::uuid",
+    )
+    .bind(&notes)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     while claim_now(&internal, worker).await.is_some() {}
 
@@ -533,7 +545,12 @@ async fn null_removes_a_stored_credential(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     register(&server.internal()).await;
     let id = connection_id(&server, "notes").await;
-    update_config(&server, &id, json!({"path": "/data", "secret": "a stored secret"})).await;
+    update_config(
+        &server,
+        &id,
+        json!({"path": "/data", "secret": "a stored secret"}),
+    )
+    .await;
     assert!(credentials_of(&pool, &id).await.is_some());
 
     let cleared = update_config(&server, &id, json!({"path": "/data", "secret": null})).await;
@@ -549,11 +566,18 @@ async fn validation_errors_never_quote_a_credential(pool: PgPool) {
     let id = connection_id(&server, "notes").await;
 
     let too_short = update_config(&server, &id, json!({"path": "/data", "secret": "s3cr3t"})).await;
-    let wrong_type = update_config(&server, &id, json!({"path": 42, "secret": "a long secret"})).await;
+    let wrong_type =
+        update_config(&server, &id, json!({"path": 42, "secret": "a long secret"})).await;
 
-    assert_eq!(too_short["errors"][0]["message"], "invalid config at /secret");
+    assert_eq!(
+        too_short["errors"][0]["message"],
+        "invalid config at /secret"
+    );
     let message = wrong_type["errors"][0]["message"].as_str().unwrap();
-    assert!(message.starts_with("invalid config at /path: "), "{message}");
+    assert!(
+        message.starts_with("invalid config at /path: "),
+        "{message}"
+    );
     assert!(!message.contains("a long secret"), "{message}");
 }
 
