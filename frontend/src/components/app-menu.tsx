@@ -1,6 +1,6 @@
 "use client";
 
-import { Grip, LogOut } from "lucide-react";
+import { Cable, Compass, Grip, LogOut, Search, Settings, ShieldCheck, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { graphql, useFragment, type FragmentType } from "@/gql";
@@ -14,10 +14,11 @@ const AppMenuUserFragment = graphql(`
   }
 `);
 
-const SECTIONS = [
-  { href: "/explore", label: "Explore" },
-  { href: "/connections", label: "Connections" },
-  { href: "/settings", label: "Settings" },
+const SECTIONS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/", label: "Search", icon: Search },
+  { href: "/explore", label: "Explore", icon: Compass },
+  { href: "/connections", label: "Connections", icon: Cable },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const itemClass = "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent";
@@ -27,7 +28,7 @@ export function AppMenu(props: { user: FragmentType<typeof AppMenuUserFragment> 
   const user = useFragment(AppMenuUserFragment, props.user);
   const menuRef = useRef<HTMLElement>(null);
   const [error, setError] = useState("");
-  const sections = user.isAdmin ? [...SECTIONS, { href: "/admin", label: "Admin" }] : SECTIONS;
+  const sections = user.isAdmin ? [...SECTIONS, { href: "/admin", label: "Admin", icon: ShieldCheck }] : SECTIONS;
 
   async function signOut() {
     setError("");
@@ -60,15 +61,16 @@ export function AppMenu(props: { user: FragmentType<typeof AppMenuUserFragment> 
         <p className="truncate px-3 py-2 text-xs text-muted-foreground">
           Signed in as {user.displayName || user.username}
         </p>
-        {sections.map(({ href, label }) => (
+        {sections.map(({ href, label, icon: Icon }) => (
           // The menu outlives client-side navigation, and light dismiss only reacts to clicks outside it.
           <Link key={href} href={href} onClick={() => menuRef.current?.hidePopover()} className={itemClass}>
+            <Icon className="size-4 text-muted-foreground" aria-hidden />
             {label}
           </Link>
         ))}
         <hr className="my-1 border-border" />
         <button type="button" onClick={signOut} className={itemClass}>
-          <LogOut className="size-4" aria-hidden />
+          <LogOut className="size-4 text-muted-foreground" aria-hidden />
           Sign out
         </button>
         {error && (
