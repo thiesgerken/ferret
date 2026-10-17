@@ -21,6 +21,7 @@ mod credentials;
 mod documents;
 pub mod embeddings;
 mod error;
+mod exclusions;
 pub mod graphql;
 mod highlight;
 mod judgments;

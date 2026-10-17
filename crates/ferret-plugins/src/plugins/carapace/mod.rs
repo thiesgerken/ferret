@@ -5,7 +5,7 @@ mod mirror;
 
 use std::collections::{HashMap, HashSet};
 
-use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
+use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -63,7 +63,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     };
 
     // Documents link to carapace, so a new URL needs every document put again.
-    let indexing = json!({ "carapace_url": config.carapace_url });
+    let indexing = json!({ "carapace_url": repository.target.carapace_url });
     let stats = match repository.changes(&indexing).await? {
         Ok(changes) => repository.apply(changes).await?,
         Err(reason) => {
@@ -85,6 +85,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
 type Key = (String, String);
 
 /// The changes since the last run's commit, with the documents their files held back then.
+///
+/// This relies on a document coming from one path only: a key that a changed or deleted path held
+/// and no changed path puts again is deleted, even if an unchanged path holds it too. carapace
+/// keeps a session in one file, and moving it shows up as a deletion and an addition in one
+/// commit.
 struct Changes {
     /// Added or modified, to put.
     changed: Vec<String>,
@@ -261,9 +266,11 @@ impl Repository<'_> {
     }
 
     async fn put(&self, document: &DocumentPut, stats: &mut RunStats) -> Result<(), PluginError> {
-        match self.run.api.put_document(document).await?.outcome {
-            PutOutcome::Unchanged => stats.unchanged += 1,
-            PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+        match self.run.api.put_document(document).await? {
+            PutResponse::Unchanged { .. } => stats.unchanged += 1,
+            PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+            // The user excluded it: as if the repository didn't have it.
+            PutResponse::Excluded => {}
         }
         Ok(())
     }

@@ -147,6 +147,7 @@ list. The list is visible and editable on the connection's page.
 
 ```sql
 create table exclusions (
+    id             uuid primary key,
     connection_id  uuid not null references connections on delete cascade,
     source         text not null,
     external_id    text,                -- exactly one of external_id and thread is set
@@ -154,6 +155,13 @@ create table exclusions (
     created_at     timestamptz not null
 );
 ```
+
+- A thread exclusion covers every document of that `(source, thread)`, also ones that arrive later.
+- Removing an exclusion resets the connection's `state`, so its next run starts over from scratch:
+  an incremental plugin (Paperless) wouldn't otherwise fetch an unchanged document again.
+- A document no connection owns (an API key wrote it) is deleted, but nothing is recorded: there's
+  no connection to drop its next `PUT`, and API keys get no exclusion list of their own. The UI
+  says so.
 
 ### Source ownership
 
