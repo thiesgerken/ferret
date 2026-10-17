@@ -15,6 +15,7 @@ mod chunking;
 mod content_type;
 mod documents;
 mod error;
+mod explore;
 pub mod graphql;
 mod highlight;
 mod search;

@@ -18,8 +18,9 @@ use crate::{
     AppState,
     api_auth::Scope,
     api_keys::{self, ApiKey},
-    auth, documents,
+    auth, content_type, documents,
     error::ApiError,
+    explore::{self, ExploreError, ExploreFilter, Order, Page},
     search::{self, SearchError},
     users::User,
 };
@@ -86,6 +87,39 @@ impl Query {
         }
     }
 
+    /// The signed-in user's documents without a query: a page of them, how many there are, and
+    /// facet counts. The filters mean what search's mean.
+    async fn explore(context: &Context, input: ExploreInput) -> FieldResult<Exploration> {
+        let filter = ExploreFilter {
+            sources: input.sources.unwrap_or_default(),
+            content_types: input
+                .content_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(ferret_api::ContentType::from)
+                .collect(),
+            authors: input.authors.unwrap_or_default(),
+            from: input.from,
+            to: input.to,
+        };
+        let page = Page {
+            order: match input.order_by.unwrap_or(DocumentOrder::CreatedAt) {
+                DocumentOrder::CreatedAt => Order::CreatedAt,
+                DocumentOrder::ModifiedAt => Order::ModifiedAt,
+                DocumentOrder::Title => Order::Title,
+                DocumentOrder::Source => Order::Source,
+            },
+            descending: input.descending.unwrap_or(true),
+            offset: input.offset.unwrap_or(0).into(),
+            limit: input.limit.unwrap_or(DEFAULT_EXPLORE_LIMIT).into(),
+        };
+        match explore::explore(&context.pool, context.user.id, &filter, &page).await {
+            Ok(exploration) => Ok(Exploration::from(exploration)),
+            Err(ExploreError::Invalid(message)) => Err(invalid_input(message)),
+            Err(ExploreError::Database(error)) => Err(internal(error)),
+        }
+    }
+
     /// One of the signed-in user's documents, null when there is none with this id.
     async fn document(context: &Context, id: ID) -> FieldResult<Option<Document>> {
         let Ok(id) = id.parse::<Uuid>() else {
@@ -114,6 +148,135 @@ struct SearchInput {
     to: Option<DateTime<Utc>>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
+}
+
+const DEFAULT_EXPLORE_LIMIT: i32 = 50;
+
+#[derive(GraphQLInputObject)]
+struct ExploreInput {
+    /// Only documents in these sources or below them. Leave out for all sources.
+    sources: Option<Vec<String>>,
+    /// Only documents of these content types. Leave out for all.
+    content_types: Option<Vec<ContentType>>,
+    /// Only documents with at least one of these authors. Leave out for any author.
+    authors: Option<Vec<String>>,
+    /// Only documents created at or after this time.
+    from: Option<DateTime<Utc>>,
+    /// Only documents created before this time.
+    to: Option<DateTime<Utc>>,
+    /// `CREATED_AT` when left out.
+    order_by: Option<DocumentOrder>,
+    /// Yes when left out: newest first.
+    descending: Option<bool>,
+    /// How many documents to skip, 0 when left out.
+    offset: Option<i32>,
+    /// How many documents at most, 1 to 100, 50 when left out.
+    limit: Option<i32>,
+}
+
+#[derive(GraphQLEnum)]
+enum DocumentOrder {
+    CreatedAt,
+    ModifiedAt,
+    /// The title, or the external id for documents without one.
+    Title,
+    Source,
+}
+
+/// A page of the user's documents with the counts to narrow them down.
+#[derive(GraphQLObject)]
+struct Exploration {
+    /// How many documents match, across all pages.
+    total: i32,
+    documents: Vec<ExploredDocument>,
+    facets: Facets,
+}
+
+/// A document as the table lists it, without its text.
+#[derive(GraphQLObject)]
+struct ExploredDocument {
+    id: ID,
+    source: String,
+    external_id: String,
+    content_type: ContentType,
+    title: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+}
+
+/// How many documents each facet value has. A facet's counts apply every filter except its own,
+/// so they show what choosing another value of it would give.
+#[derive(GraphQLObject)]
+struct Facets {
+    sources: Vec<FacetCount>,
+    content_types: Vec<ContentTypeCount>,
+    /// The 20 most frequent authors.
+    authors: Vec<FacetCount>,
+    /// `YYYY-MM` of `createdAt` in UTC, newest first.
+    months: Vec<FacetCount>,
+}
+
+#[derive(GraphQLObject)]
+struct FacetCount {
+    value: String,
+    count: i32,
+}
+
+#[derive(GraphQLObject)]
+struct ContentTypeCount {
+    content_type: ContentType,
+    count: i32,
+}
+
+impl From<explore::Exploration> for Exploration {
+    fn from(exploration: explore::Exploration) -> Self {
+        let counts = |facets: Vec<explore::FacetCount>| {
+            facets
+                .into_iter()
+                .map(|facet| FacetCount {
+                    value: facet.value,
+                    count: count_int(facet.count),
+                })
+                .collect()
+        };
+        let facets = exploration.facets;
+        Self {
+            total: count_int(exploration.total),
+            documents: exploration
+                .documents
+                .into_iter()
+                .map(|document| ExploredDocument {
+                    id: ID::new(document.id.to_string()),
+                    source: document.source,
+                    external_id: document.external_id,
+                    content_type: content_type::parse(&document.content_type).into(),
+                    title: document.title,
+                    authors: document.authors,
+                    created_at: document.created_at,
+                    modified_at: document.modified_at,
+                })
+                .collect(),
+            facets: Facets {
+                sources: counts(facets.sources),
+                content_types: facets
+                    .content_types
+                    .into_iter()
+                    .map(|facet| ContentTypeCount {
+                        content_type: content_type::parse(&facet.value).into(),
+                        count: count_int(facet.count),
+                    })
+                    .collect(),
+                authors: counts(facets.authors),
+                months: counts(facets.months),
+            },
+        }
+    }
+}
+
+/// Document counts fit GraphQL's 32-bit `Int` for any single user's index.
+fn count_int(count: i64) -> i32 {
+    i32::try_from(count).expect("document counts fit into 32 bits")
 }
 
 /// How the viewer renders a document.
