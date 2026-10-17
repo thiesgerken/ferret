@@ -51,7 +51,8 @@ const CONNECTION = {
 /** Renders the page against a fake server that records every operation and answers mutations with `respond`. */
 async function renderConnections(
   respond: (operation: Operation) => Response = () => Response.json({ data: {} }),
-  connection: typeof CONNECTION = CONNECTION,
+  /** Null for none at all. */
+  connection: typeof CONNECTION | null = CONNECTION,
 ) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
@@ -61,7 +62,7 @@ async function renderConnections(
       return Response.json({
         data: {
           pluginTypes: [{ __typename: "PluginType", name: "git", configSchema: GIT_SCHEMA }],
-          connections: [connection],
+          connections: connection ? [connection] : [],
         },
       });
     }
@@ -82,7 +83,7 @@ test("shows each connection with its last run, run history and log", async () =>
   const { view } = await renderConnections();
   const text = view.container.textContent ?? "";
 
-  assert.match(text, /Notes notes · git · 0 \* \* \* \*/);
+  assert.match(text, /NotesFailedgit · notes · 0 \* \* \* \*/, "name, status at a glance, then plugin, source and schedule");
   assert.match(text, /Failed .* · next run /);
   assert.match(text, /git clone failed: repository not found/);
   assert.match(text, /cloning https:\/\/example\.test\/notes\.git/);
@@ -90,9 +91,11 @@ test("shows each connection with its last run, run history and log", async () =>
 });
 
 test("creates a connection with the config from the plugin's schema", async () => {
-  const { view, operations } = await renderConnections(() =>
+  const { view, operations, button } = await renderConnections(() =>
     Response.json({ data: { createConnection: { __typename: "Connection", id: "connection-2" } } }),
   );
+  assert.equal(view.container.querySelector("form"), null, "the form opens on request");
+  await act(async () => button("New connection").click());
   const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
   assert.deepEqual(
     [...view.container.querySelectorAll("fieldset [name]")].map((element) => element.getAttribute("name")),
@@ -228,5 +231,12 @@ test("lists the exclusions and includes one again", async () => {
 
   const remove = operations.find((operation) => operation.operationName === "RemoveExclusion");
   assert.deepEqual(remove?.variables, { id: "exclusion-1" });
+  await view.unmount();
+});
+
+test("without connections, an empty state offers to create the first one", async () => {
+  const { view } = await renderConnections(undefined, null);
+  assert.match(view.container.textContent ?? "", /No connections yet/);
+  assert.ok([...view.container.querySelectorAll("button")].some((b) => b.textContent === "New connection"));
   await view.unmount();
 });
