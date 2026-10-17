@@ -1,7 +1,7 @@
 //! The internal API between the server and plugin workers, on its own port, authenticated with
 //! the worker PSK (`FERRET_WORKER_SECRET`).
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ pub struct ClaimRequest {
 }
 
 /// A run a worker claimed: everything the plugin needs.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ClaimedRun {
     pub run_id: Uuid,
     pub connection_id: Uuid,
@@ -52,6 +52,19 @@ pub struct ClaimedRun {
     /// Bearer token for the public REST API: `ingest:write` below `source`, valid while the run
     /// is live.
     pub token: String,
+}
+
+/// Without the config and the token, so a logged run never shows credentials.
+impl fmt::Debug for ClaimedRun {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClaimedRun")
+            .field("run_id", &self.run_id)
+            .field("connection_id", &self.connection_id)
+            .field("plugin", &self.plugin)
+            .field("source", &self.source)
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
 }
 
 /// `POST /internal/runs/{id}/heartbeat`: keeps the run alive, carries new log lines.

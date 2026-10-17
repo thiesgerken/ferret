@@ -16,6 +16,7 @@ const GIT_SCHEMA = JSON.stringify({
     branch: { type: ["string", "null"], default: null, description: "The branch to index." },
     exclude: { type: "array", items: { type: "string" }, default: [], description: "Globs of files to skip." },
     remote: { type: "string", description: "The repository to clone." },
+    token: { type: ["string", "null"], writeOnly: true, description: "For a private repository." },
   },
 });
 
@@ -43,7 +44,10 @@ const CONNECTION = {
 };
 
 /** Renders the page against a fake server that records every operation and answers mutations with `respond`. */
-async function renderConnections(respond: (operation: Operation) => Response = () => Response.json({ data: {} })) {
+async function renderConnections(
+  respond: (operation: Operation) => Response = () => Response.json({ data: {} }),
+  connection: typeof CONNECTION = CONNECTION,
+) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body)) as Operation;
@@ -52,7 +56,7 @@ async function renderConnections(respond: (operation: Operation) => Response = (
       return Response.json({
         data: {
           pluginTypes: [{ __typename: "PluginType", name: "git", configSchema: GIT_SCHEMA }],
-          connections: [CONNECTION],
+          connections: [connection],
         },
       });
     }
@@ -87,7 +91,7 @@ test("creates a connection with the config from the plugin's schema", async () =
   const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
   assert.deepEqual(
     [...view.container.querySelectorAll("fieldset [name]")].map((element) => element.getAttribute("name")),
-    ["config.remote", "config.branch", "config.exclude"],
+    ["config.remote", "config.branch", "config.exclude", "config.token"],
   );
   field<HTMLInputElement>("#connection-source").value = "code/ferret";
   field<HTMLInputElement>("#config-remote").value = "https://example.test/ferret.git";
@@ -125,6 +129,54 @@ test("disables a connection, keeping its config and schedule", async () => {
     id: "connection-1",
     input: { config: CONNECTION.config, schedule: "0 * * * *", enabled: false },
   });
+  await view.unmount();
+});
+
+test("edits the config and schedule, starting from the stored ones", async () => {
+  const { view, operations, button } = await renderConnections(() =>
+    Response.json({ data: { updateConnection: { __typename: "Connection", id: "connection-1" } } }),
+  );
+  await act(async () => {
+    button("Edit").click();
+  });
+  const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
+  const remote = field<HTMLInputElement>("#edit-connection-1-remote");
+  assert.equal(remote.value, "https://example.test/notes.git");
+  const token = field<HTMLInputElement>("#edit-connection-1-token");
+  assert.equal(token.type, "password");
+  assert.equal(token.value, "");
+  assert.equal(token.required, false, "an empty secret keeps the stored one");
+  remote.value = "https://example.test/notes-v2.git";
+  field<HTMLInputElement>("#schedule-connection-1").value = "0 3 * * *";
+
+  await act(async () => {
+    button("Save").closest("form")!.requestSubmit();
+  });
+  await settle();
+
+  const update = operations.find((operation) => operation.operationName === "UpdateConnection");
+  const input = update?.variables.input as Record<string, unknown>;
+  assert.deepEqual(JSON.parse(String(input.config)), { remote: "https://example.test/notes-v2.git" });
+  assert.equal(input.schedule, "0 3 * * *");
+  assert.equal(input.enabled, true);
+  await view.unmount();
+});
+
+test("an edit keeps a disabled connection disabled", async () => {
+  const { view, operations, button } = await renderConnections(
+    () => Response.json({ data: { updateConnection: { __typename: "Connection", id: "connection-1" } } }),
+    { ...CONNECTION, enabled: false },
+  );
+  await act(async () => {
+    button("Edit").click();
+  });
+  await act(async () => {
+    button("Save").closest("form")!.requestSubmit();
+  });
+  await settle();
+
+  const update = operations.find((operation) => operation.operationName === "UpdateConnection");
+  assert.equal((update?.variables.input as Record<string, unknown>).enabled, false);
   await view.unmount();
 });
 

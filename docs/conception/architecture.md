@@ -108,7 +108,8 @@ create table connections (
     user_id      uuid not null references users on delete cascade,
     plugin       text not null references plugin_types,
     source       text not null,                -- source root: documents go to it or below it
-    config       jsonb not null,               -- secret fields encrypted, see below
+    config       jsonb not null,               -- without the secret fields
+    credentials  bytea,                        -- the secret fields, sealed (see below), null without any
     schedule     text not null,                -- cron expression
     enabled      boolean not null default true,
     next_run_at  timestamptz not null,
@@ -197,13 +198,22 @@ run is harmless.
 ### Plugin credentials
 
 Secret config fields (marked `writeOnly` in the plugin's schema) are encrypted with
-XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key mounted into the server from a Secret
-(generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start without it.
+XChaCha20-Poly1305 under `FERRET_CONFIG_KEY`, a 32-byte key in base64 mounted into the server from a
+Secret (generated once by Helm via `lookup`, or `existingSecret`). The server refuses to start
+without it.
 
-- The GraphQL API never returns secret fields. An update that omits a secret keeps the stored value.
+- They're stored apart from the rest of the config (`connections.credentials`: nonce, then
+  ciphertext), so the GraphQL API can't return them. The ciphertext is bound to its user and
+  connection (as associated data): copied to another row, it doesn't open.
+- Stored secrets survive only an update that leaves the rest of the config unchanged (schedule
+  and enabled may change). Any other config change needs every stored secret entered again, so a
+  session can't point a connection at its own server and have the next run send the secret
+  there. `null` removes a secret.
+- Validation errors under a secret field, or ones that would quote a secret, only name the path.
 - Only claimed runs get decrypted secrets, over the internal API.
 - The key must be backed up separately from the database. A database backup without it restores
-  everything except plugin credentials, which then have to be re-entered.
+  everything except plugin credentials, which then have to be re-entered: runs fail with that
+  message, and an update has to enter them.
 
 ## Embedding orchestration
 
@@ -228,7 +238,7 @@ the frontend. In development Next rewrites those paths to the local server, as i
 
 | Section | Contents |
 |---|---|
-| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as the right hit for the eval set |
+| **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
 | **Settings** (`/settings`) | Account, API keys, Models (coverage on my data and my default model in v1, recall@10 and MRR on my judgments in v2) |
@@ -277,6 +287,7 @@ replicas starting together are safe.
 | `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
 | `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
 | `FERRET_WORKER_SECRET` | yes | the plugin workers' pre-shared key for the internal API, at least 32 bytes ([auth.md](auth.md#worker-psk)) |
+| `FERRET_CONFIG_KEY` | yes | encrypts plugin credentials, 32 bytes in base64 ([Plugin credentials](#plugin-credentials)) |
 | `RUST_LOG` | no | log filter (`tracing` EnvFilter), default `info`. Logs are always JSON |
 
 ### Plugin worker environment

@@ -9,6 +9,7 @@ use ferret_api::{
 use serde_json::Value;
 
 pub mod git;
+pub mod repo;
 
 pub type PluginError = Box<dyn std::error::Error + Send + Sync>;
 

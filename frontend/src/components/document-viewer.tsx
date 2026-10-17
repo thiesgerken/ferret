@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ViewDocumentQuery } from "@/gql/graphql";
+import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
 
 const ViewDocumentQueryDocument = graphql(`
@@ -61,6 +62,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
     return <p className="p-8 text-center text-sm text-muted-foreground">This document doesn&apos;t exist (anymore).</p>;
   }
 
+  const originUrl = linkableUrl(document.url);
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
       <Link href="/" className="text-2xl font-semibold tracking-tight text-brand select-none">
@@ -71,8 +73,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
         <p className="text-xs text-muted-foreground">
           {document.source} · modified {new Date(document.modifiedAt).toLocaleString()}
         </p>
-        {document.url && (
-          <a href={document.url} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        {originUrl && (
+          <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
             <ExternalLink className="size-3.5" aria-hidden />
             Open in origin
           </a>

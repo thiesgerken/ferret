@@ -19,7 +19,7 @@ use fake_tei::FakeTei;
 use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
 use ferret_server::{
-    AppState, SessionKey, WorkerSecret,
+    AppState, ConfigKey, SessionKey, WorkerSecret,
     config::{EmbeddingConfig, ModelConfig},
     embeddings,
 };
@@ -30,6 +30,8 @@ use tokio::net::TcpListener;
 
 pub const ADMIN_PASSWORD: &str = "the bootstrap admin's password";
 const SESSION_SECRET: &str = "a session secret of at least 32 bytes";
+/// 32 bytes in base64.
+const CONFIG_KEY: &str = "dGVzdCBjb25maWcga2V5IG9mIHRoaXJ0eS10d28gYnk=";
 pub const MODEL: &str = "fake";
 pub const QUERY_PREFIX: &str = "query: ";
 pub const DOCUMENT_PREFIX: &str = "passage: ";
@@ -106,7 +108,14 @@ async fn start(pool: PgPool, tei: FakeTei, embedding: EmbeddingConfig, pump: boo
     }
     let session_key = SessionKey::new(SESSION_SECRET).unwrap();
     let worker_secret = WorkerSecret::new(WORKER_SECRET.to_owned()).unwrap();
-    let state = AppState::new(pool.clone(), session_key, worker_secret, embedding);
+    let config_key = ConfigKey::new(CONFIG_KEY).unwrap();
+    let state = AppState::new(
+        pool.clone(),
+        session_key,
+        worker_secret,
+        embedding,
+        config_key,
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let internal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
