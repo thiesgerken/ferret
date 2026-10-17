@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://github.com/thiesgerken/ferret/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/thiesgerken/ferret/ci.yml"></a>
+  <a href="https://github.com/thiesgerken/ferret/actions/workflows/release.yml"><img alt="Release workflow" src="https://img.shields.io/github/actions/workflow/status/thiesgerken/ferret/release.yml?branch=main&label=release%20build"></a>
   <a href="https://github.com/thiesgerken/ferret/releases"><img alt="Release" src="https://img.shields.io/github/v/release/thiesgerken/ferret?display_name=tag"></a>
   <a href="rust-toolchain.toml"><img alt="Rust" src="https://img.shields.io/badge/rust-stable-B7410E?logo=rust&logoColor=white"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-885629"></a>
