@@ -9,7 +9,7 @@ import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
-import { snippet } from "@/lib/snippet";
+import { plainMarkdown, snippet } from "@/lib/snippet";
 import { viewerHref } from "@/lib/viewer-url";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,7 @@ const SearchHitsQueryDocument = graphql(`
         documentId
         source
         externalId
+        contentType
         title
         url
         authors
@@ -221,7 +222,7 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
         <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
       </div>
       <p className="text-sm leading-relaxed">
-        {snippet(hit.chunk.parts).map((part, index) =>
+        {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
           part.highlight ? (
             <mark key={index} className="rounded bg-brand/20 px-0.5 text-foreground">
               {part.text}
