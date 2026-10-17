@@ -1,12 +1,14 @@
 "use client";
 
-import { Check, ExternalLink, FileText, GitBranch, KeyRound, Plug, Shell, type LucideIcon } from "lucide-react";
+import { Check, CircleDashed, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "urql";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
+import { NamedIcon } from "@/components/named-icon";
 import { RELEVANCE_BARS, relevanceBars, relevanceLabel } from "@/lib/relevance";
+import type { SourceLabel } from "@/lib/source-label";
 import { linkableUrl } from "@/lib/safe-url";
 import { plainMarkdown, snippet } from "@/lib/snippet";
 import { viewerHref } from "@/lib/viewer-url";
@@ -22,12 +24,6 @@ export type Hit = SearchHitsQuery["search"]["hits"][number];
 
 export type RelevanceContext = { minSimilarity: number; bestKeywordScore: number };
 
-const PLUGIN_ICONS: Record<string, LucideIcon> = {
-  carapace: Shell,
-  git: GitBranch,
-  paperless: FileText,
-};
-
 /** Shown on hover only, where there is hover: on a touch screen they stay. */
 const onHover = "transition-opacity [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
 
@@ -35,13 +31,13 @@ const onHover = "transition-opacity [@media(hover:hover)]:opacity-0 group-hover:
 export function HitItem({
   hit,
   search,
-  plugin,
+  source,
   relevance,
 }: {
   hit: Hit;
   search: SearchInput;
-  /** The plugin that owns the hit's source, null when an API key filled it. */
-  plugin: string | null;
+  /** The hit's source under its origin's name. */
+  source: SourceLabel;
   /** Null until the cut-off of the model that ran is known: the hit shows without bars. */
   relevance: RelevanceContext | null;
 }) {
@@ -55,9 +51,11 @@ export function HitItem({
     <article className="group">
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         {relevance && <RelevanceBars hit={hit} context={relevance} />}
-        <SourceIcon plugin={plugin} />
+        <SourceIcon icon={source.icon} />
         <p className="min-w-0 truncate">
-          <span className="text-foreground/80">{hit.source.split("/").join(" › ")}</span>
+          <span title={hit.source} className="text-foreground/80">
+            {source.text}
+          </span>
           {meta.map((part) => ` · ${part}`)}
         </p>
       </div>
@@ -137,14 +135,10 @@ function RelevanceBars({ hit, context }: { hit: Hit; context: RelevanceContext }
   );
 }
 
-function SourceIcon({ plugin }: { plugin: string | null }) {
-  const Icon = plugin === null ? KeyRound : (PLUGIN_ICONS[plugin] ?? Plug);
+function SourceIcon({ icon }: { icon: string | null }) {
   return (
-    <span
-      title={plugin ?? "API"}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-    >
-      <Icon className="size-3" aria-hidden />
+    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      {icon ? <NamedIcon name={icon} className="size-3" /> : <CircleDashed className="size-3" aria-hidden />}
     </span>
   );
 }

@@ -6,7 +6,7 @@ import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery } from "@/gql/graphql";
 import { TIME_RANGES, searchHref, type SearchState } from "@/lib/search-url";
-import { pluginOf } from "@/lib/source-plugin";
+import { sourceLabel } from "@/lib/source-label";
 import { cn } from "@/lib/utils";
 import { HomeLink } from "@/components/brand-mark";
 import { HitItem } from "@/components/search-hit";
@@ -30,6 +30,12 @@ const SearchHitsQueryDocument = graphql(`
         judged
         keywordScore
         similarity
+        origin {
+          kind
+          id
+          name
+          icon
+        }
         chunk {
           startOffset
           endOffset
@@ -50,6 +56,12 @@ const SearchHitsQueryDocument = graphql(`
         sources {
           value
           count
+          origin {
+            kind
+            id
+            name
+            icon
+          }
         }
         authors {
           value
@@ -72,13 +84,12 @@ const EmbeddingModelNamesQuery = graphql(`
   }
 `);
 
-// The plugin icon in a hit's source line comes from the connection that owns its source.
-const ConnectionSourcesQuery = graphql(`
-  query ConnectionSources {
+// A connection's root, so a source reads as the connection's name and the path below it.
+const ConnectionRootsQuery = graphql(`
+  query ConnectionRoots {
     connections {
       id
       source
-      plugin
     }
   }
 `);
@@ -115,7 +126,11 @@ export function SearchResults({
     requestPolicy: "cache-and-network",
   });
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
-  const [{ data: connections }] = useQuery({ query: ConnectionSourcesQuery });
+  const [{ data: connections }] = useQuery({ query: ConnectionRootsQuery });
+  const roots = useMemo(
+    () => new Map((connections?.connections ?? []).map((connection) => [connection.id, connection.source])),
+    [connections],
+  );
   const hits = data?.search.hits ?? [];
   // The bars need the cut-off of the model that ran. Until the models are in, hits go without.
   const minSimilarity = models?.embeddingModels.find((model) => model.name === data?.search.model)?.minSimilarity;
@@ -132,7 +147,7 @@ export function SearchResults({
     },
     [client, input],
   );
-  const pluginFor = (source: string) => pluginOf(source, connections?.connections ?? []);
+
 
   // A query typed before a chip click or Back must not land on top of it: it was typed into a
   // search that's gone.
@@ -166,6 +181,7 @@ export function SearchResults({
           <SearchFilters
             state={state}
             facets={data?.search.facets}
+            roots={roots}
             models={models?.embeddingModels.map((model) => model.name) ?? []}
             ranModel={data?.search.model}
             onChange={onChange}
@@ -196,7 +212,7 @@ export function SearchResults({
             <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>
               {hits.map((hit) => (
                 <li key={hit.documentId}>
-                  <HitItem hit={hit} search={input} plugin={pluginFor(hit.source)} relevance={relevance} />
+                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.origin, roots)} relevance={relevance} />
                 </li>
               ))}
               <MoreHits
@@ -205,7 +221,7 @@ export function SearchResults({
                 endIsCandidateLimit={data.search.totalIsLowerBound}
                 loadPage={loadPage}
                 renderHit={(hit) => (
-                  <HitItem hit={hit} search={input} plugin={pluginFor(hit.source)} relevance={relevance} />
+                  <HitItem hit={hit} search={input} source={sourceLabel(hit.source, hit.origin, roots)} relevance={relevance} />
                 )}
               />
             </ol>

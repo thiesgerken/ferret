@@ -30,10 +30,17 @@ async function scrollToEnd() {
 }
 import { SearchResults } from "./search-results";
 
+/** notes belongs to the git connection "Notes", mail/zoho came in through an API key. */
+const writerOf = (source: string) =>
+  source.startsWith("notes")
+    ? { __typename: "Origin", kind: "CONNECTION", id: "c1", name: "Notes", icon: "notebook" }
+    : { __typename: "Origin", kind: "API_KEY", id: "k1", name: "mail import", icon: "mail" };
+
 const hit = (id: string, source: string, authors: string[]) => ({
   __typename: "Hit",
   documentId: id,
   source,
+  origin: writerOf(source),
   externalId: `${id}.md`,
   title: null,
   url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
@@ -74,10 +81,8 @@ async function renderResults(
   const typed: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body));
-    if (operation.operationName === "ConnectionSources") {
-      return Response.json({
-        data: { connections: [{ __typename: "Connection", id: "c1", source: "notes", plugin: "git" }] },
-      });
+    if (operation.operationName === "ConnectionRoots") {
+      return Response.json({ data: { connections: [{ __typename: "Connection", id: "c1", source: "notes" }] } });
     }
     if (operation.operationName === "EmbeddingModelNames") {
       return Response.json({
@@ -118,8 +123,8 @@ async function renderResults(
           facets: {
             __typename: "SearchFacets",
             sources: [
-              { __typename: "FacetCount", value: "notes", count: 12 },
-              { __typename: "FacetCount", value: "mail/zoho", count: 3 },
+              { __typename: "SourceCount", value: "notes", count: 12, origin: writerOf("notes") },
+              { __typename: "SourceCount", value: "mail/zoho", count: 3, origin: writerOf("mail/zoho") },
             ],
             authors: [
               { __typename: "FacetCount", value: "thies", count: 9 },
@@ -173,7 +178,7 @@ async function pauseTyping() {
 
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
 const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
-const label = (button: Element) => button.querySelector("span")?.textContent;
+const label = (button: Element) => button.querySelector("span.truncate")?.textContent;
 
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
 
@@ -203,7 +208,7 @@ test("says how many documents matched out of how many, and how long it took", as
   await view.unmount();
 });
 
-test("each hit shows its relevance as bars, the exact values on hover, and its plugin", async () => {
+test("each hit shows its relevance as bars, the exact values on hover, and its writer", async () => {
   const { view } = await renderResults(STATE);
   const [a, b] = view.container.querySelectorAll("article");
   const bars = (item: Element) => item.querySelector("[aria-label][tabindex='0']")!;
@@ -214,15 +219,15 @@ test("each hit shows its relevance as bars, the exact values on hover, and its p
   assert.match(bars(a).className, /text-brand/, "every word matched");
   assert.equal(bars(b).getAttribute("aria-label"), "all words found (BM25 3.5)");
   assert.equal(filled(b), 2, "keyword-only: its BM25 against the best one shown");
-  assert.equal(a.querySelector("[title=git]")?.tagName, "SPAN", "notes belongs to the git connection");
-  assert.ok(b.querySelector("[title=API]"), "no connection owns mail/zoho");
+  assert.equal(a.querySelector("p span[title]")?.textContent, "Notes", "the connection's root is its name");
+  assert.equal(b.querySelector("p span[title='mail/zoho']")?.textContent, "mail import › mail › zoho");
   await view.unmount();
 });
 
 test("the source line leaves out what a hit doesn't have", async () => {
   const { view } = await renderResults({ ...STATE, q: "no authors" });
   const line = view.container.querySelector("article p")!.textContent;
-  assert.equal(line, "notes · Jan 1, 2026");
+  assert.equal(line, "Notes · Jan 1, 2026");
   await view.unmount();
 });
 
@@ -233,10 +238,10 @@ test("offers the matches' sources and authors with their counts as filters", asy
 
   assert.deepEqual(
     [...view.container.querySelectorAll(CHIPS)].map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
-    ["notes 12", "mail/zoho 3", "thies 9", "Allianz 2"],
+    ["Notes 12", "mail import › mail › zoho 3", "thies 9", "Allianz 2"],
     "sources, then authors, as the facets order them",
   );
-  await act(async () => chip("mail/zoho").click());
+  await act(async () => chip("mail import › mail › zoho").click());
   await act(async () => chip("thies").click());
 
   assert.deepEqual(changes, [
@@ -375,7 +380,7 @@ test("a late answer to an earlier query doesn't replace the newer one's hits", a
 
 test("a chip clicked while typing wins over the typed query", async () => {
   const { view, typed, changes } = await renderResults(STATE);
-  const chip = [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => label(b) === "notes")!;
+  const chip = [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => label(b) === "Notes")!;
 
   await type(view, "invoices");
   await act(async () => chip.click());

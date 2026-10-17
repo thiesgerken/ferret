@@ -1,14 +1,17 @@
 "use client";
 
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
-import type { ApiKeyScope } from "@/gql/graphql";
+import type { ApiKeyScope, ApiKeysQuery } from "@/gql/graphql";
+import { IconPicker } from "@/components/icon-picker";
+import { NamedIcon } from "@/components/named-icon";
+import { DEFAULT_API_KEY_ICON } from "@/lib/default-icons";
 import { errorMessage } from "@/lib/graphql";
 import { fieldClass } from "@/lib/utils";
 
-const ApiKeysQuery = graphql(`
+const ApiKeysQueryDocument = graphql(`
   query ApiKeys {
     me {
       isAdmin
@@ -16,6 +19,7 @@ const ApiKeysQuery = graphql(`
     apiKeys {
       id
       name
+      icon
       prefix
       scopes
       sources
@@ -29,6 +33,16 @@ const CreateApiKeyMutation = graphql(`
   mutation CreateApiKey($input: NewApiKey!) {
     createApiKey(input: $input) {
       key
+    }
+  }
+`);
+
+const UpdateApiKeyMutation = graphql(`
+  mutation UpdateApiKey($id: ID!, $name: String!, $icon: String!) {
+    updateApiKey(id: $id, name: $name, icon: $icon) {
+      id
+      name
+      icon
     }
   }
 `);
@@ -57,7 +71,7 @@ const SCOPE_LABELS: Record<ApiKeyScope, string> = {
 };
 
 export function ApiKeysSettings() {
-  const [{ data, error }, refetch] = useQuery({ query: ApiKeysQuery });
+  const [{ data, error }, refetch] = useQuery({ query: ApiKeysQueryDocument });
   const [, revoke] = useMutation(RevokeApiKeyMutation);
   const [revokeError, setRevokeError] = useState("");
   const reload = () => refetch({ requestPolicy: "network-only" });
@@ -91,28 +105,7 @@ export function ApiKeysSettings() {
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border">
           {data.apiKeys.map((key) => (
-            <li key={key.id} className="flex items-start gap-4 p-4">
-              <KeyRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <div className="min-w-0 flex-1 space-y-1 text-sm">
-                <p className="font-medium">
-                  {key.name} <span className="font-mono text-xs text-muted-foreground">fk_{key.prefix}…</span>
-                </p>
-                <p className="text-muted-foreground">
-                  {key.scopes.map((scope) => SCOPE_LABELS[scope]).join(", ")} · {key.sources?.join(", ") ?? "all sources"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Last used {key.lastUsedAt ? formatDate(key.lastUsedAt) : "never"} ·{" "}
-                  {expiryText(key.expiresAt)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRevoke(key.id, key.name)}
-                className="rounded-md px-2 py-1 text-sm text-destructive hover:bg-accent"
-              >
-                Revoke
-              </button>
-            </li>
+            <ApiKeyRow key={key.id} apiKey={key} onRevoke={() => handleRevoke(key.id, key.name)} />
           ))}
         </ul>
       )}
@@ -120,8 +113,92 @@ export function ApiKeysSettings() {
   );
 }
 
+type ApiKey = ApiKeysQuery["apiKeys"][number];
+
+function ApiKeyRow({ apiKey: key, onRevoke }: { apiKey: ApiKey; onRevoke: () => void }) {
+  const [{ fetching }, update] = useMutation(UpdateApiKeyMutation);
+  const [editing, setEditing] = useState(false);
+  const [icon, setIcon] = useState(key.icon);
+  const [error, setError] = useState("");
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = String(new FormData(event.currentTarget).get("name")).trim();
+    const result = await update({ id: key.id, name, icon });
+    if (result.error) {
+      setError(errorMessage(result.error));
+      return;
+    }
+    setError("");
+    setEditing(false);
+  }
+
+  return (
+    <li className="flex items-start gap-4 p-4">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <NamedIcon name={key.icon} className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1 text-sm">
+        {editing ? (
+          <form onSubmit={handleSave} className="flex flex-wrap items-center gap-2">
+            <IconPicker value={icon} onChange={setIcon} />
+            <input
+              name="name"
+              aria-label="Name"
+              required
+              pattern=".*\S.*"
+              defaultValue={key.name}
+              className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm"
+            />
+            <button type="submit" disabled={fetching} className="rounded-md px-2 py-1 hover:bg-accent disabled:opacity-50">
+              Save
+            </button>
+            <button type="button" onClick={() => setEditing(false)} className="rounded-md px-2 py-1 hover:bg-accent">
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <p className="font-medium">
+            {key.name} <span className="font-mono text-xs text-muted-foreground">fk_{key.prefix}…</span>
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        )}
+        <p className="text-muted-foreground">
+          {key.scopes.map((scope) => SCOPE_LABELS[scope]).join(", ")} · {key.sources?.join(", ") ?? "all sources"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Last used {key.lastUsedAt ? formatDate(key.lastUsedAt) : "never"} · {expiryText(key.expiresAt)}
+        </p>
+      </div>
+      <div className="flex gap-1">
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => {
+              setIcon(key.icon);
+              setEditing(true);
+            }}
+            aria-label={`Edit ${key.name}`}
+            className="rounded-md px-2 py-1 text-sm hover:bg-accent"
+          >
+            Edit
+          </button>
+        )}
+        <button type="button" onClick={onRevoke} className="rounded-md px-2 py-1 text-sm text-destructive hover:bg-accent">
+          Revoke
+        </button>
+      </div>
+    </li>
+  );
+}
+
 function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated: () => void }) {
   const [, create] = useMutation(CreateApiKeyMutation);
+  const [icon, setIcon] = useState(DEFAULT_API_KEY_ICON);
   const [error, setError] = useState("");
   const [createdKey, setCreatedKey] = useState("");
   const [copied, setCopied] = useState(false);
@@ -138,7 +215,8 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
     const expires = String(form.get("expires"));
     const result = await create({
       input: {
-        name: String(form.get("name")),
+        name: String(form.get("name")).trim(),
+        icon,
         scopes,
         sources: sources.length > 0 ? sources : null,
         // The end of the chosen day, in the browser's time zone.
@@ -153,6 +231,7 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
     setCopied(false);
     setCreatedKey(result.data.createApiKey.key);
     formElement.reset();
+    setIcon(DEFAULT_API_KEY_ICON);
     onCreated();
   }
 
@@ -164,11 +243,17 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border p-4">
       <h3 className="text-sm font-medium">New API key</h3>
-      <div className="space-y-1.5">
-        <label htmlFor="key-name" className="text-xs font-medium text-muted-foreground">
-          Name
-        </label>
-        <input id="key-name" name="name" required placeholder="carapace search skill" className={fieldClass} />
+      <div className="flex items-end gap-3">
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium text-muted-foreground">Icon</span>
+          <IconPicker value={icon} onChange={setIcon} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <label htmlFor="key-name" className="text-xs font-medium text-muted-foreground">
+            Name
+          </label>
+          <input id="key-name" name="name" required pattern=".*\S.*" placeholder="carapace search skill" className={fieldClass} />
+        </div>
       </div>
       <fieldset className="grid gap-3 sm:grid-cols-3">
         <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Scopes</legend>
