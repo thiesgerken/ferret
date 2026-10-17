@@ -73,7 +73,10 @@ respective sources.
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="docs/assets/screenshots/search.png" width="1000">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/search-dark.png">
+    <img src="docs/assets/screenshots/search.png" width="1000">
+  </picture>
 </p>
 
 <p align="center"><em>Results with filters by source and author, relevance bars for both halves of the search, and a snippet that opens the document at the match.</em></p>
@@ -81,7 +84,10 @@ respective sources.
 <br>
 
 <p align="center">
-  <img src="docs/assets/screenshots/activity.png" width="1000">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/activity-dark.png">
+    <img src="docs/assets/screenshots/activity.png" width="1000">
+  </picture>
 </p>
 
 <p align="center"><em>Activity: what's indexed and embedded, the TEI pool with an in-cluster server and an external one that only embeds, and every sync as it happens.</em></p>
