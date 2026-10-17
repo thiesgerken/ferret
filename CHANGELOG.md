@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #124 from thiesgerken/58-i18n-manage
+  ([`07f3875`](https://github.com/thiesgerken/ferret/commit/07f3875f733d22b77baf7696f1232ac79f4aefbd))
+
+### ✨ Features
+
+
+- ✨ feat(frontend): German UI for Activity, Connections, Admin and Explore
+  ([`07f3875`](https://github.com/thiesgerken/ferret/commit/07f3875f733d22b77baf7696f1232ac79f4aefbd))
+
+- ✨ feat(frontend): German UI for Activity, Connections, Admin and Explore
+  ([`35b2d2e`](https://github.com/thiesgerken/ferret/commit/35b2d2e3cce0350c571edaad26b2c24f04ddf186))
+
+  The rest of the UI moves to the message catalogues. Durations format with Intl.DurationFormat and relative times with the active locale; Explore's months read as "January 2026" / "Januar 2026".
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.11.0 (2026-10-17)
 
 
