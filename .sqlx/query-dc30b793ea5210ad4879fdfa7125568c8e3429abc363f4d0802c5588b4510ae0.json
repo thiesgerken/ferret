@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update connections set next_run_at = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc30b793ea5210ad4879fdfa7125568c8e3429abc363f4d0802c5588b4510ae0"
+}

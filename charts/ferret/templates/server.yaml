@@ -29,6 +29,8 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: internal
+              containerPort: 8081
           env:
             - name: RUST_LOG
               value: {{ .Values.server.logLevel | quote }}
@@ -53,6 +55,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "ferret.secretName" . }}
                   key: session-secret
+            - name: FERRET_WORKER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ferret.secretName" . }}
+                  key: worker-secret
             {{- with .Values.server.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -101,3 +108,7 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    # Not routed by the HTTPRoute. The NetworkPolicy admits only the plugin workers.
+    - name: internal
+      port: 8081
+      targetPort: internal

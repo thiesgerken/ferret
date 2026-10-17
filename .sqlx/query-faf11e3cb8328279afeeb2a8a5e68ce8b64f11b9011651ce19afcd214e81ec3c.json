@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update connections set state = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "faf11e3cb8328279afeeb2a8a5e68ce8b64f11b9011651ce19afcd214e81ec3c"
+}

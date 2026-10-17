@@ -21,11 +21,34 @@ enum ContentType {
   EMAIL
 }
 
+enum RunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  "The worker stopped sending heartbeats." LOST
+}
+
+input ConnectionUpdate {
+  config: String!
+  schedule: String!
+  enabled: Boolean!
+}
+
 input NewApiKey {
   name: String!
   scopes: [ApiKeyScope!]!
   "Restricts every scope to these source paths and below. Leave out for all sources." sources: [String!]
   expiresAt: DateTime
+}
+
+input NewConnection {
+  plugin: String!
+  """
+    The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
+    connection's root.
+  """ source: String!
+  "The plugin config as JSON text, valid against the plugin's schema." config: String!
+  "Cron expression, e.g. `0 * * * *` for hourly." schedule: String!
 }
 
 input SearchInput {
@@ -66,6 +89,22 @@ type ApiKey {
   "Updated at most once a minute."
   lastUsedAt: DateTime
   expiresAt: DateTime
+}
+
+type Connection {
+  id: ID!
+  plugin: String!
+  "The source root the connection owns: it writes to it and below it."
+  source: String!
+  "The plugin config, as JSON text."
+  config: String!
+  "Cron expression."
+  schedule: String!
+  enabled: Boolean!
+  nextRunAt: DateTime!
+  createdAt: DateTime!
+  "The latest runs, newest first."
+  runs(limit: Int! = 20): [PluginRun!]!
 }
 
 type CreatedApiKey {
@@ -118,9 +157,37 @@ type HitChunk {
 }
 
 type Mutation {
+  "Creates a connection, which runs right away and then on its schedule."
+  createConnection(input: NewConnection!): Connection!
+  updateConnection(id: ID!, input: ConnectionUpdate!): Connection!
+  "Starts a run without waiting for the schedule. Fails for a disabled connection."
+  runConnectionNow(id: ID!): ID!
+  """
+    Deletes the connection and every document below its source root, once `confirmSource`
+    repeats the root. Returns how many documents were deleted.
+  """
+  deleteConnection(id: ID!, confirmSource: String!): Int!
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!
+}
+
+type PluginRun {
+  id: ID!
+  status: RunStatus!
+  startedAt: DateTime!
+  finishedAt: DateTime
+  "Only for a run that succeeded."
+  stats: RunStats
+  "The tail of the run's log."
+  log: String!
+  error: String
+}
+
+type PluginType {
+  name: String!
+  "JSON Schema of the config, as JSON text. Secret fields are `writeOnly`."
+  configSchema: String!
 }
 
 type Query {
@@ -135,6 +202,18 @@ type Query {
   search(input: SearchInput!): SearchResult!
   "One of the signed-in user's documents, null when there is none with this id."
   document(id: ID!): Document
+  "The plugins that registered workers offer, with their config schemas."
+  pluginTypes: [PluginType!]!
+  "The signed-in user's connections, by source."
+  connections: [Connection!]!
+  connection(id: ID!): Connection
+}
+
+"What a run did to the index."
+type RunStats {
+  put: Int!
+  unchanged: Int!
+  deleted: Int!
 }
 
 "The hits of a search, and whether its semantic half ran."

@@ -259,9 +259,11 @@ async fn embed_batch(
     // Advisory locks rather than row locks: other pumps skip what this one works on, but an
     // ingest that changes or deletes one of these chunks never waits for TEI. The lock is tried
     // on a bounded set of candidates only, so a transaction never collects thousands of them.
+    // No outer `order by`: sorting would try the lock of every candidate before the limit,
+    // leaving a second pump nothing to claim.
     let chunks = sqlx::query!(
         "select id, text from (
-             select c.id, c.text, c.ts from chunks c
+             select c.id, c.text from chunks c
              where not exists (
                  select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
              )
@@ -272,7 +274,6 @@ async fn embed_batch(
              limit $2
          ) candidates
          where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
-         order by ts desc
          limit $3",
         model.config.name,
         CLAIM_CANDIDATES,

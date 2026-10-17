@@ -101,7 +101,7 @@ The queue is "chunks without an embedding for model X":
 
 ```sql
 select id, text from (
-    select c.id, c.text, c.ts from chunks c
+    select c.id, c.text from chunks c
     where not exists (
         select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
     )
@@ -112,7 +112,6 @@ select id, text from (
     limit 256
 ) candidates
 where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
-order by ts desc
 limit 32;  -- TEI's max_client_batch_size
 ```
 

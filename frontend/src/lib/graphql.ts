@@ -1,4 +1,4 @@
-import { Client, cacheExchange, fetchExchange, mapExchange } from "urql";
+import { Client, cacheExchange, fetchExchange, mapExchange, type CombinedError } from "urql";
 
 /** Dispatched on `window` whenever a GraphQL request comes back 401: the session is gone. */
 export const SESSION_ENDED_EVENT = "ferret:session-ended";
@@ -26,3 +26,8 @@ export function createGraphqlClient(fetch?: typeof globalThis.fetch): Client {
 }
 
 export const graphqlClient = createGraphqlClient();
+
+/** The server's message for the first GraphQL error, else the transport error. */
+export function errorMessage(error: CombinedError): string {
+  return error.graphQLErrors[0]?.message ?? error.message;
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update plugin_runs set heartbeat_at = now(), log = right(log || $2, $3)\n         where id = $1 and status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7377ae31c53724858d287ecd6e7980244abb3d75ee993e2a58d24fefa1173ac1"
+}

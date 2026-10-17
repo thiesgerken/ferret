@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update workers set last_seen_at = now() where id = $1 returning plugins",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "plugins",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "workers",
+            "name": "plugins"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eff44bed2b31f1517ea4da6a0b97e7c5d39030c7f0c639bf8957742ea7d6b73a"
+}

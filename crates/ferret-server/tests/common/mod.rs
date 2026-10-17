@@ -16,9 +16,10 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use fake_tei::FakeTei;
+use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
 use ferret_server::{
-    AppState, SessionKey,
+    AppState, SessionKey, WorkerSecret,
     config::{EmbeddingConfig, ModelConfig},
     embeddings,
 };
@@ -34,6 +35,7 @@ pub const QUERY_PREFIX: &str = "query: ";
 pub const DOCUMENT_PREFIX: &str = "passage: ";
 /// Generous, since a busy CI runner embeds slowly.
 const POLL_BUDGET: Duration = Duration::from_secs(30);
+pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
 
 pub struct TestServer {
     /// The machine API's client.
@@ -42,8 +44,10 @@ pub struct TestServer {
     pub tei: FakeTei,
     pool: PgPool,
     url: String,
+    /// The plugin workers' API, on its own listener like in production.
+    pub internal_url: String,
     http: reqwest::Client,
-    /// Server and pump. They hold pool connections (the pump's LISTEN one for good), which
+    /// Servers, pump and run wakeups. They hold pool connections (LISTEN ones for good), which
     /// must be back before `#[sqlx::test]` drops the test database.
     tasks: Vec<tokio::task::AbortHandle>,
 }
@@ -101,16 +105,29 @@ async fn start(pool: PgPool, tei: FakeTei, embedding: EmbeddingConfig, pump: boo
         tasks.push(pump.abort_handle());
     }
     let session_key = SessionKey::new(SESSION_SECRET).unwrap();
-    let app = ferret_server::router(AppState::new(pool.clone(), session_key, embedding));
+    let worker_secret = WorkerSecret::new(WORKER_SECRET.to_owned()).unwrap();
+    let state = AppState::new(pool.clone(), session_key, worker_secret, embedding);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
+    let internal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let internal_url = format!("http://{}", internal_listener.local_addr().unwrap());
+    let wakeups = tokio::spawn(ferret_server::listen_for_due_runs(state.clone()));
+    let internal = ferret_server::internal_router(state.clone());
+    let internal =
+        tokio::spawn(async move { axum::serve(internal_listener, internal).await.unwrap() });
+    let app = ferret_server::router(state);
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    tasks.push(server.abort_handle());
+    tasks.extend([
+        wakeups.abort_handle(),
+        internal.abort_handle(),
+        server.abort_handle(),
+    ]);
     TestServer {
         api: Client::new(url.clone()),
         tei,
         pool,
         url,
+        internal_url,
         http: reqwest::Client::new(),
         tasks,
     }
@@ -161,6 +178,16 @@ impl TestServer {
             (embedded >= count).then_some(())
         })
         .await
+    }
+
+    /// The public API's origin.
+    pub fn public_url(&self) -> String {
+        self.url.clone()
+    }
+
+    /// A plugin worker's client for the internal API.
+    pub fn internal(&self) -> InternalClient {
+        InternalClient::new(self.internal_url.clone(), WORKER_SECRET)
     }
 
     /// A machine API client that authenticates with `api_key`.
