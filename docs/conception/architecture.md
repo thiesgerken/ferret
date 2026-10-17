@@ -257,7 +257,7 @@ the frontend. In development Next rewrites those paths to the local server, as i
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, the 20 most frequent authors plus the selected ones, month in UTC), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, excluded documents and threads with "Include again", disable, delete. Document count and embedding backlog per card are post-v1 (#21) |
 | **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21) |
-| **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen |
+| **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen. A restarted worker registers anew, so it shows as a new row while its old one stays offline |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
 
