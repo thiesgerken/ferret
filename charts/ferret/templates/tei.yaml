@@ -56,7 +56,8 @@ spec:
           args:
             - --model-id
             - {{ required "embedding.models[].modelId is required" $model.modelId | quote }}
-            # Explicit on every TEI: its default (16384) gets the warmup OOM-killed on small CPU nodes.
+            # Explicit on every TEI: the default (16384) gets the warmup OOM-killed on small CPU
+            # nodes, a GPU takes it.
             - --max-batch-tokens
             {{- if $variant.gpu }}
             - {{ required "tei.gpu.maxBatchTokens is required" $gpu.maxBatchTokens | quote }}

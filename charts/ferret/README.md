@@ -54,14 +54,14 @@ tei:
       tag: "89-1.9.4"  # required: the image for your GPU generation, see values.yaml
     nodeSelector:
       nvidia.com/gpu.present: "true"
-    tolerations:
-      - key: nvidia.com/gpu
-        operator: Exists
-        effect: NoSchedule
 ```
+
+The GPU TEI tolerates the usual `nvidia.com/gpu:NoSchedule` taint by default (`tei.gpu.tolerations`).
 
 The pump doesn't fall back to the CPU: while the GPU node is missing, the GPU TEI stays Pending,
 Admin shows the pump's error, and the backlog grows. Disable it again once the backfill is done.
+A Deployment that never becomes ready also makes `helm upgrade --wait` and GitOps health checks
+(Argo CD, Flux) time out, so enable it only together with the GPU node.
 
 ## Uninstall
 

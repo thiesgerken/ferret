@@ -69,9 +69,16 @@ tei:
     maxBatchTokens: 16384
     # -- e.g. {nvidia.com/gpu.present: "true"}
     nodeSelector: {}
-    # -- e.g. the GPU node's taint
-    tolerations: []
+    # -- GPU nodes are usually tainted like this (node pools, NVIDIA's device plugin)
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+    # -- Replaces the model's resources for the GPU TEI. The memory request covers the model and
+    # TEI's buffers.
     resources:
+      requests:
+        memory: 4Gi
       limits:
         nvidia.com/gpu: 1
 
