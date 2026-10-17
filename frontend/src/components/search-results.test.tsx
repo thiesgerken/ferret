@@ -28,7 +28,10 @@ const hit = (id: string, source: string, authors: string[]) => ({
   },
 });
 
-async function renderResults(state: SearchState, semanticUnavailable: string | null = null) {
+async function renderResults(
+  state: SearchState,
+  { semanticUnavailable = null, models = ["alpha"] }: { semanticUnavailable?: string | null; models?: string[] } = {},
+) {
   const variables: unknown[] = [];
   const changes: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
@@ -39,7 +42,9 @@ async function renderResults(state: SearchState, semanticUnavailable: string | n
           __typename: "SearchResult",
           hits: [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])],
           semanticUnavailable,
+          model: state.model ?? models[0],
         },
+        embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name })),
       },
     });
   });
@@ -52,12 +57,12 @@ async function renderResults(state: SearchState, semanticUnavailable: string | n
   return { view, variables, changes };
 }
 
-const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any" };
+const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
   const { view, variables } = await renderResults(STATE);
 
-  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, from: null } });
+  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, from: null, model: null } });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
@@ -105,11 +110,34 @@ test("says when the hits are keyword matches only", async () => {
   assert.equal(available.view.container.querySelector('[role="status"]'), null);
   await available.view.unmount();
 
-  const { view } = await renderResults(STATE, "the embedding model qwen3 is unavailable");
+  const { view } = await renderResults(STATE, { semanticUnavailable: "the embedding model qwen3 is unavailable" });
   assert.equal(
     view.container.querySelector('[role="status"]')?.textContent,
     "Keyword matches only: the embedding model qwen3 is unavailable.",
   );
   assert.equal(view.container.querySelectorAll("article").length, 2);
   await view.unmount();
+});
+
+test("offers a model choice, naming the default's model, only with several models", async () => {
+  const single = await renderResults(STATE);
+  assert.equal(single.view.container.querySelector('select[aria-label="Embedding model"]'), null);
+  await single.view.unmount();
+
+  const { view, changes } = await renderResults(STATE, { models: ["alpha", "beta"] });
+  const select = view.container.querySelector<HTMLSelectElement>('select[aria-label="Embedding model"]')!;
+  assert.deepEqual(
+    [...select.options].map((option) => option.textContent),
+    ["Default model (alpha)", "alpha", "beta"],
+  );
+  await act(async () => {
+    select.value = "beta";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  assert.deepEqual(changes, [{ ...STATE, model: "beta" }]);
+  await view.unmount();
+
+  const chosen = await renderResults({ ...STATE, model: "beta" }, { models: ["alpha", "beta"] });
+  assert.equal((chosen.variables[0] as { input: { model: string } }).input.model, "beta");
+  await chosen.view.unmount();
 });

@@ -229,7 +229,7 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
   rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
   half always contributes its 100 nearest chunks, however distant (a calibrated per-model cut-off
-  is part of the model evaluation in #21), and uses the user's default model unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
+  is part of the model evaluation in #21), and uses the user's default model unless `model=` says otherwise. Filters, `-word` and
   `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding
   yet (backfill) is found by keyword only. If the query can't be embedded within 5 s (TEI down,
   stuck or broken), the
@@ -337,7 +337,7 @@ the roadmap. Details in [plugins.md](plugins.md).
   by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
   API.
 - **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
-  change, switching the default is a Settings dropdown.
+  change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).
 - **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
   counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account,

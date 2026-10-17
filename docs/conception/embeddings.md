@@ -136,13 +136,18 @@ limit 32;  -- TEI's max_client_batch_size
 
 - `users.default_embedding_model` (null = the configured default) decides which model the user's
   searches use, in the UI and through API keys.
-- `model=` on the search API and a model switch in the search UI override it per query.
-- A model can be chosen before its backfill is complete. Settings shows the coverage, so the user
-  knows the semantic half is partial.
-- The model switch in the search UI only appears once more than one model is configured.
+- `model=` on the search API (`model` in GraphQL's `SearchInput`) and a model switch in the search
+  UI override it per query. An unknown model is an error, never a silent fallback. The response
+  says which model ran (`model`).
+- A model can be chosen before its backfill is complete. Settings → Models shows each model's
+  coverage of the user's chunks, so the user knows the semantic half is partial.
+- The model switch in the search UI only appears once more than one model is configured. Its
+  default option names the model that ran.
+- At startup, users whose default model is no longer configured are reset to the configured
+  default, each with a logged warning.
 
 v1 configures a single model, but adding one is a config change plus a TEI Deployment, and
-switching to it needs nothing but the Settings dropdown once its backfill is done.
+switching to it needs nothing but a choice in Settings once its backfill is done.
 
 ## Evaluation
 

@@ -95,11 +95,13 @@ pub async fn find(
             "{invalid:?} is not a source path like `notes` or `mail/zoho`"
         )));
     }
+    let model = model(pool, embedding, user_id, request.model.as_deref()).await?;
     let roots = sources::narrow(&request.sources, allowed);
     if roots.as_ref().is_some_and(Vec::is_empty) {
         return Ok(SearchResponse {
             hits: vec![],
             semantic_unavailable: None,
+            model: model.name().to_owned(),
         });
     }
 
@@ -117,7 +119,6 @@ pub async fn find(
         excluded: &query.excluded,
         phrases: &query.phrases,
     };
-    let model = embedding.default_model();
     // The vector half gets the words without operators. Without it (TEI down or broken), the
     // keyword half still answers, and the response says so.
     let query_hash = match embedding
@@ -225,8 +226,35 @@ pub async fn find(
         hits,
         semantic_unavailable: query_hash
             .is_none()
-            .then(|| format!("the embedding model {} is unavailable", model.config.name)),
+            .then(|| format!("the embedding model {} is unavailable", model.name())),
+        model: model.name().to_owned(),
     })
+}
+
+/// The model the search asks for, else the user's default, else the configured default.
+async fn model<'a>(
+    pool: &PgPool,
+    embedding: &'a Embedding,
+    user_id: Uuid,
+    requested: Option<&str>,
+) -> Result<&'a Model, SearchError> {
+    let name = match requested {
+        Some(name) => Some(name.to_owned()),
+        None => {
+            sqlx::query_scalar!(
+                "select default_embedding_model from users where id = $1",
+                user_id
+            )
+            .fetch_one(pool)
+            .await?
+        }
+    };
+    match name {
+        None => Ok(embedding.default_model()),
+        Some(name) => embedding.model(&name).ok_or_else(|| {
+            SearchError::Invalid(format!("no embedding model {name:?} is configured"))
+        }),
+    }
 }
 
 /// The vector half: the nearest chunks to the cached query embedding, ranked.

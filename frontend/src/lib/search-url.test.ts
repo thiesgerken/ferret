@@ -4,9 +4,15 @@ import test from "node:test";
 import { parseSearch, rangeStart, searchHref, toggle } from "./search-url";
 
 test("search state round-trips through the URL", () => {
-  const state = { q: "invoice 2026", sources: ["paperless", "mail/zoho"], authors: ["Allianz"], range: "month" as const };
+  const state = {
+    q: "invoice 2026",
+    sources: ["paperless", "mail/zoho"],
+    authors: ["Allianz"],
+    range: "month" as const,
+    model: "qwen3",
+  };
   const href = searchHref(state);
-  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fzoho&author=Allianz&range=month");
+  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fzoho&author=Allianz&range=month&model=qwen3");
   assert.deepEqual(parseSearch(new URLSearchParams(href.slice(2))), state);
 });
 

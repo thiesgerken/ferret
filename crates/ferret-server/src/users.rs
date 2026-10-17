@@ -24,6 +24,25 @@ pub struct User {
     pub username: String,
     pub display_name: Option<String>,
     pub is_admin: bool,
+    /// The embedding model the user's searches use, `None` for the configured default.
+    pub default_embedding_model: Option<String>,
+}
+
+/// Sets the embedding model `user_id`'s searches use, `None` for the configured default. The
+/// caller checks that the model is configured.
+pub async fn set_default_embedding_model(
+    pool: &PgPool,
+    user_id: Uuid,
+    model: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "update users set default_embedding_model = $2 where id = $1",
+        user_id,
+        model,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// `GET /api/users`: every user, for admin tooling.

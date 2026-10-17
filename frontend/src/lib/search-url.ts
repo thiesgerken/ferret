@@ -1,10 +1,12 @@
-/** The search's state lives in the URL (`/?q=...&source=...&author=...&range=...`), so results
- * survive reloads and can be linked. */
+/** The search's state lives in the URL (`/?q=...&source=...&author=...&range=...&model=...`), so
+ * results survive reloads and can be linked. */
 export type SearchState = {
   q: string;
   sources: string[];
   authors: string[];
   range: TimeRange;
+  /** The embedding model, null for the user's default. */
+  model: string | null;
 };
 
 export const TIME_RANGES = {
@@ -24,6 +26,7 @@ export function parseSearch(params: URLSearchParams): SearchState {
     sources: params.getAll("source"),
     authors: params.getAll("author"),
     range: range in TIME_RANGES ? (range as TimeRange) : "any",
+    model: params.get("model"),
   };
 }
 
@@ -32,6 +35,7 @@ export function searchHref(state: SearchState): string {
   state.sources.forEach((source) => params.append("source", source));
   state.authors.forEach((author) => params.append("author", author));
   if (state.range !== "any") params.set("range", state.range);
+  if (state.model) params.set("model", state.model);
   return `/?${params}`;
 }
 

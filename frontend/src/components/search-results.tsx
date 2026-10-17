@@ -32,6 +32,10 @@ const SearchHitsQueryDocument = graphql(`
         }
       }
       semanticUnavailable
+      model
+    }
+    embeddingModels {
+      name
     }
   }
 `);
@@ -49,8 +53,9 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
       sources: state.sources.length > 0 ? state.sources : null,
       authors: state.authors.length > 0 ? state.authors : null,
       from,
+      model: state.model,
     }),
-    [state.q, state.sources, state.authors, from],
+    [state.q, state.sources, state.authors, from, state.model],
   );
   const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
   const hits = data?.search.hits ?? [];
@@ -65,7 +70,13 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
         <SearchField defaultValue={state.q} onSearch={(q) => onChange({ ...state, q })} />
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
-        <FilterChips state={state} hits={hits} onChange={onChange} />
+        <FilterChips
+          state={state}
+          hits={hits}
+          models={data?.embeddingModels.map((model) => model.name) ?? []}
+          ranModel={data?.search.model}
+          onChange={onChange}
+        />
         {semanticUnavailable && (
           <p role="status" className="text-sm text-muted-foreground">
             Keyword matches only: {semanticUnavailable}.
@@ -91,7 +102,19 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
   );
 }
 
-function FilterChips({ state, hits, onChange }: { state: SearchState; hits: Hit[]; onChange: (state: SearchState) => void }) {
+function FilterChips({
+  state,
+  hits,
+  models,
+  ranModel,
+  onChange,
+}: {
+  state: SearchState;
+  hits: Hit[];
+  models: string[];
+  ranModel: string | undefined;
+  onChange: (state: SearchState) => void;
+}) {
   // Chips come from the current hits; selected ones stay even when no hit has them anymore.
   const sources = unique([...state.sources, ...hits.map((hit) => hit.source)]);
   const authors = unique([...state.authors, ...byFrequency(hits.flatMap((hit) => hit.authors))]).slice(
@@ -113,6 +136,22 @@ function FilterChips({ state, hits, onChange }: { state: SearchState; hits: Hit[
           </option>
         ))}
       </select>
+      {/* With one model there's nothing to choose. The default option names the model that ran. */}
+      {models.length > 1 && (
+        <select
+          aria-label="Embedding model"
+          value={state.model ?? ""}
+          onChange={(event) => onChange({ ...state, model: event.target.value || null })}
+          className={chipClass(state.model !== null)}
+        >
+          <option value="">{!state.model && ranModel ? `Default model (${ranModel})` : "Default model"}</option>
+          {models.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
+      )}
       {sources.map((source) => (
         <Chip
           key={`source:${source}`}
