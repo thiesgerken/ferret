@@ -139,7 +139,10 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
 
     let indexing = config.indexing();
     let stats = match incremental_base(&git, dir, &run.state, &indexing).await? {
-        Ok(base) => indexer.changes_since(&git, &base).await?,
+        Ok(base) => {
+            run.log.line(format!("indexing the changes since {base}"));
+            indexer.changes_since(&git, &base).await?
+        }
         Err(reason) => {
             run.log.line(format!("full sync: {reason}"));
             indexer.full_sync().await?
