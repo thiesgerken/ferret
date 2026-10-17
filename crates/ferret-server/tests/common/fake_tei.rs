@@ -76,7 +76,6 @@ impl FakeTei {
             health: health.clone(),
         };
         let app = Router::new()
-            .route("/health", get(health_check))
             .route("/info", get(info))
             .route("/embed", post(embed))
             .with_state(fake);
@@ -107,23 +106,20 @@ impl FakeTei {
 }
 
 /// Like the embed requests: fine, a 503, or no answer.
-async fn health_check(State(fake): State<Fake>) -> StatusCode {
+async fn info(State(fake): State<Fake>) -> Result<Json<Value>, StatusCode> {
     let health = *fake.health.lock().unwrap();
     match health {
-        Health::Up => StatusCode::OK,
-        Health::Down => StatusCode::SERVICE_UNAVAILABLE,
+        Health::Up => {}
+        Health::Down => return Err(StatusCode::SERVICE_UNAVAILABLE),
         Health::Hanging => std::future::pending().await,
     }
-}
-
-async fn info(State(fake): State<Fake>) -> Json<Value> {
-    Json(json!({
+    Ok(Json(json!({
         "model_id": "fake/fake-embedding",
         "model_type": {"embedding": {"pooling": "last_token"}},
         "max_input_length": fake.max_input_length,
         "max_client_batch_size": MAX_CLIENT_BATCH_SIZE,
         "auto_truncate": true,
-    }))
+    })))
 }
 
 async fn embed(
