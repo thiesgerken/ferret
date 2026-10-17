@@ -1,6 +1,70 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #97 from thiesgerken/85-origins
+  ([`dace5b7`](https://github.com/thiesgerken/ferret/commit/dace5b7c4b27ef82b088556065a5c4d75f98007a))
+
+- Merge pull request #98 from thiesgerken/85-origins-ui
+  ([`3c6819b`](https://github.com/thiesgerken/ferret/commit/3c6819bd3e45493883d85c466fca833efd8f5609))
+
+- Merge remote-tracking branch 'origin/85-origins' into 85-origins-ui
+  ([`b234112`](https://github.com/thiesgerken/ferret/commit/b234112afbbfe0e5421dc4df9196627460805404))
+
+- Merge remote-tracking branch 'origin/main' into 85-origins
+  ([`8e84d2c`](https://github.com/thiesgerken/ferret/commit/8e84d2cc97df85100436529a0c206ef36416b440))
+
+### ✨ Features
+
+
+- ✨ feat(server): connections and API keys get a name and an icon, and hits carry their writer
+  ([`dace5b7`](https://github.com/thiesgerken/ferret/commit/dace5b7c4b27ef82b088556065a5c4d75f98007a))
+
+- ✨ feat(ui): names and icons for connections and API keys, shown wherever their documents are
+  ([`3c6819b`](https://github.com/thiesgerken/ferret/commit/3c6819bd3e45493883d85c466fca833efd8f5609))
+
+- ✨ feat(ui): names and icons for connections and API keys, shown wherever their documents are
+  ([`0c4020f`](https://github.com/thiesgerken/ferret/commit/0c4020fc5b72259d57f09ce46c536f2f6759a6b1))
+
+  Connections and API keys get a name and an icon in their forms and lists, with a per-plugin default icon and the icon picker. A hit's source line and the source filters show the writer's icon and name, then the path below a connection's root, with the full source path in a tooltip. The home screen counts writers as sources.
+
+  Part of #85
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✨ feat(ui): an icon picker over lucide's icons, loaded one by one
+  ([`89fc8e6`](https://github.com/thiesgerken/ferret/commit/89fc8e6aabe5d06c6ba409fc36d360eb18fbf38a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F (cherry picked from commit 76e4e79117ba3d93148928fc624433d2dc5b5379)
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(ui): read the API's writer, as Origin is now called
+  ([`0c95e54`](https://github.com/thiesgerken/ferret/commit/0c95e54f14288060eab43841ac8b5be973032226))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ♻️ refactor(server): connections and API keys are writers, with one writer per facet or none
+  ([`7354de2`](https://github.com/thiesgerken/ferret/commit/7354de233f7337beb1daf849d4308e31996e217c))
+
+  Origin already means the external system. Part of #85.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.3.1 (2026-10-17)
 
 
@@ -46,9 +110,6 @@
 - Merge pull request #88 from thiesgerken/84-search-facets
   ([`85b708f`](https://github.com/thiesgerken/ferret/commit/85b708f53568d312715035e64c9629db221c4264))
 
-- Merge remote-tracking branch 'origin/integration/v1' into 84-search-facets
-  ([`4812a84`](https://github.com/thiesgerken/ferret/commit/4812a84b948e04f498f04fcac09308416fc097f8))
-
 ### ✨ Features
 
 
@@ -68,27 +129,6 @@
 
 - ✨ feat(search): facet counts, paging and the model's cut-off for the results page
   ([`85b708f`](https://github.com/thiesgerken/ferret/commit/85b708f53568d312715035e64c9629db221c4264))
-
-- ✨ feat(search): facet counts, paging and the model's cut-off for the results page
-  ([`0d8c1e3`](https://github.com/thiesgerken/ferret/commit/0d8c1e30a1aeeb9a2c2c5541e3bcc2f50c7eb152))
-
-  Part of #84.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-### 🐛 Bug Fixes
-
-
-- 🐛 fix(search): facets for parent roots and thread authors, one statement per run
-  ([`0751212`](https://github.com/thiesgerken/ferret/commit/0751212b642060d9efaee0beb0201498681f013e))
-
-  Part of #84.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ## v0.2.0 (2026-10-17)
 
@@ -153,6 +193,24 @@
   ([`9b95d4b`](https://github.com/thiesgerken/ferret/commit/9b95d4b07d4f495dc73de31107794af7d80a4295))
 
   ferret v1
+
+- ✨ feat: connections and API keys get a name and an icon, and hits carry their origin
+  ([`2eda11e`](https://github.com/thiesgerken/ferret/commit/2eda11e133e7265a4e0b13f61655cdbeb591ca15))
+
+  Part of #85.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(search): facet counts, paging and the model's cut-off for the results page
+  ([`0d8c1e3`](https://github.com/thiesgerken/ferret/commit/0d8c1e30a1aeeb9a2c2c5541e3bcc2f50c7eb152))
+
+  Part of #84.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 - ✨ feat(ui): search as you type, match stats and per-hit scores
   ([`b9bab9f`](https://github.com/thiesgerken/ferret/commit/b9bab9f76d180ab294c95fcb2c44ecb8a0e0da30))
@@ -679,6 +737,9 @@
 
 - Merge pull request #91 from thiesgerken/viewer-frontmatter
   ([`247a984`](https://github.com/thiesgerken/ferret/commit/247a984428b80afd2695753333d6e1abe3b83e43))
+
+- Merge remote-tracking branch 'origin/integration/v1' into 84-search-facets
+  ([`4812a84`](https://github.com/thiesgerken/ferret/commit/4812a84b948e04f498f04fcac09308416fc097f8))
 
 - Merge pull request #90 from thiesgerken/84-home
   ([`38bd11f`](https://github.com/thiesgerken/ferret/commit/38bd11fafaf543d3e57a16a7027b153254c8c5a2))
@@ -1543,6 +1604,15 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 🐛 fix(search): facets for parent roots and thread authors, one statement per run
+  ([`0751212`](https://github.com/thiesgerken/ferret/commit/0751212b642060d9efaee0beb0201498681f013e))
+
+  Part of #84.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 - 🐛 fix(ui): every pause in typing searches, not just the first
   ([`0f69a17`](https://github.com/thiesgerken/ferret/commit/0f69a176f599e021176ea05c601473d2e88a59a9))
