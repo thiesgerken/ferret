@@ -2,7 +2,7 @@
 
 Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend, ParadeDB
 and one CPU [TEI](https://github.com/huggingface/text-embeddings-inference) per embedding model
-(`embedding.models`).
+(`embedding.models`), optionally a GPU TEI per model for backfills.
 
 ## Prerequisites
 
@@ -39,6 +39,29 @@ set `secrets.existingSecret`:
 | `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
 | `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 | `config-key` | encrypts plugin credentials, 32 bytes in base64 (`openssl rand -base64 32`); back it up apart from the database |
+
+## GPU backfills
+
+A big backfill (the first import, a new model) is slow on the CPU TEI. With `tei.gpu.enabled`, each
+model gets a second TEI on a GPU node, and the embed pump uses only that one (the model's
+`bulk_url`). Queries stay on the CPU TEI.
+
+```yaml
+tei:
+  gpu:
+    enabled: true
+    image:
+      tag: "89-1.9.4"  # required: the image for your GPU generation, see values.yaml
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+```
+
+The GPU TEI tolerates the usual `nvidia.com/gpu:NoSchedule` taint by default (`tei.gpu.tolerations`).
+
+The pump doesn't fall back to the CPU: while the GPU node is missing, the GPU TEI stays Pending,
+Admin shows the pump's error, and the backlog grows. Disable it again once the backfill is done.
+A Deployment that never becomes ready also makes `helm upgrade --wait` and GitOps health checks
+(Argo CD, Flux) time out, so enable it only together with the GPU node.
 
 ## Uninstall
 
