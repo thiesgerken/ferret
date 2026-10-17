@@ -39,3 +39,4 @@ uuid.workspace = true
 [dev-dependencies]
 ferret-plugins = { path = "../ferret-plugins" }
 tempfile.workspace = true
+yrs.workspace = true
