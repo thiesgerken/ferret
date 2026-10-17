@@ -43,7 +43,10 @@ const CONNECTION = {
 };
 
 /** Renders the page against a fake server that records every operation and answers mutations with `respond`. */
-async function renderConnections(respond: (operation: Operation) => Response = () => Response.json({ data: {} })) {
+async function renderConnections(
+  respond: (operation: Operation) => Response = () => Response.json({ data: {} }),
+  connection: typeof CONNECTION = CONNECTION,
+) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body)) as Operation;
@@ -52,7 +55,7 @@ async function renderConnections(respond: (operation: Operation) => Response = (
       return Response.json({
         data: {
           pluginTypes: [{ __typename: "PluginType", name: "git", configSchema: GIT_SCHEMA }],
-          connections: [CONNECTION],
+          connections: [connection],
         },
       });
     }
@@ -151,6 +154,24 @@ test("edits the config and schedule, starting from the stored ones", async () =>
   assert.deepEqual(JSON.parse(String(input.config)), { remote: "https://example.test/notes-v2.git" });
   assert.equal(input.schedule, "0 3 * * *");
   assert.equal(input.enabled, true);
+  await view.unmount();
+});
+
+test("an edit keeps a disabled connection disabled", async () => {
+  const { view, operations, button } = await renderConnections(
+    () => Response.json({ data: { updateConnection: { __typename: "Connection", id: "connection-1" } } }),
+    { ...CONNECTION, enabled: false },
+  );
+  await act(async () => {
+    button("Edit").click();
+  });
+  await act(async () => {
+    button("Save").closest("form")!.requestSubmit();
+  });
+  await settle();
+
+  const update = operations.find((operation) => operation.operationName === "UpdateConnection");
+  assert.equal((update?.variables.input as Record<string, unknown>).enabled, false);
   await view.unmount();
 });
 

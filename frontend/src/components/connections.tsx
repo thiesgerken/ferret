@@ -122,7 +122,7 @@ export function Connections() {
             <ConnectionCard
               key={connection.id}
               connection={connection}
-              configSchema={data.pluginTypes.find(({ name }) => name === connection.plugin)?.configSchema}
+              configSchema={configSchemaOf(data.pluginTypes, connection.plugin)}
               onChanged={reload}
             />
           ))}
@@ -225,6 +225,16 @@ function CreateConnectionForm({
       </button>
     </form>
   );
+}
+
+/** A connection's plugin type always exists: `connections.plugin` references `plugin_types`,
+ * whose rows are never deleted. */
+function configSchemaOf(pluginTypes: ConnectionsData["pluginTypes"], plugin: string): string {
+  const pluginType = pluginTypes.find(({ name }) => name === plugin);
+  if (!pluginType) {
+    throw new Error(`The server listed no plugin type "${plugin}".`);
+  }
+  return pluginType.configSchema;
 }
 
 function parseConfigSchema(
@@ -335,8 +345,7 @@ function ConnectionCard({
   onChanged,
 }: {
   connection: Connection;
-  /** Undefined while no registered worker offers the connection's plugin. */
-  configSchema: string | undefined;
+  configSchema: string;
   onChanged: () => void;
 }) {
   const [, update] = useMutation(UpdateConnectionMutation);
@@ -388,8 +397,6 @@ function ConnectionCard({
           </button>
           <button
             type="button"
-            disabled={configSchema === undefined}
-            title={configSchema === undefined ? "No worker offers this plugin right now." : undefined}
             onClick={() => setEditing(true)}
             aria-label={`Edit ${connection.source}`}
             className={buttonClass}
@@ -419,7 +426,7 @@ function ConnectionCard({
           {error}
         </p>
       )}
-      {editing && configSchema !== undefined && (
+      {editing && (
         <EditConnectionForm
           connection={connection}
           configSchema={configSchema}
