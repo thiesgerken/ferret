@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.6.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #105 from thiesgerken/writers-in-documents-ui
+  ([`e94e4b8`](https://github.com/thiesgerken/ferret/commit/e94e4b818493a2de291f19a4a92561adcd4b08b8))
+
+- Merge remote-tracking branch 'origin/main' into writers-in-documents-ui
+  ([`73bde54`](https://github.com/thiesgerken/ferret/commit/73bde54ccd77e33982d22e57e0604c2b92cf0305))
+
+- Merge remote-tracking branch 'origin/writer-on-documents' into writers-in-documents-ui
+  ([`dfc71bd`](https://github.com/thiesgerken/ferret/commit/dfc71bdfe47a2f318dca2f3e37fe635b72440d07))
+
+### 💄 UI/UX
+
+
+- 💄 style(ui): Explore's table and the viewer show a document's writer
+  ([`e94e4b8`](https://github.com/thiesgerken/ferret/commit/e94e4b818493a2de291f19a4a92561adcd4b08b8))
+
+- 💄 style(ui): Explore's table and the viewer show a document's writer
+  ([`c2082d9`](https://github.com/thiesgerken/ferret/commit/c2082d9a5743556e108c46a85bdd840a3e403e32))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.6.0 (2026-10-17)
 
 
