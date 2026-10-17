@@ -2,11 +2,13 @@ import Link from "next/link";
 import { AccountSettings } from "@/components/account-settings";
 import { ApiKeysSettings } from "@/components/api-keys-settings";
 import { ModelsSettings } from "@/components/models-settings";
+import { BrandMark } from "@/components/brand-mark";
 
 export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-6">
-      <Link href="/" className="text-2xl font-semibold tracking-tight text-brand">
+      <Link href="/" className="inline-flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight text-brand">
+        <BrandMark className="h-[0.8em] w-auto" />
         ferret
       </Link>
       <h1 className="text-xl font-semibold">Settings</h1>

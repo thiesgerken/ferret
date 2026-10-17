@@ -12,6 +12,7 @@ import { errorMessage } from "@/lib/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
 import { viewerHref } from "@/lib/viewer-url";
+import { BrandMark } from "@/components/brand-mark";
 
 const ViewDocumentQueryDocument = graphql(`
   query ViewDocument($id: ID!) {
@@ -82,7 +83,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
   const originUrl = linkableUrl(document.url);
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-      <Link href="/" className="text-2xl font-semibold tracking-tight text-brand select-none">
+      <Link href="/" className="inline-flex items-baseline gap-1.5 text-2xl font-semibold tracking-tight text-brand select-none">
+        <BrandMark className="h-[0.8em] w-auto" />
         ferret
       </Link>
       <header className="space-y-1 border-b border-border pb-4">
