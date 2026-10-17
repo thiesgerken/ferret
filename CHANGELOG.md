@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #111 from thiesgerken/search-mode-ui
+  ([`385f8d0`](https://github.com/thiesgerken/ferret/commit/385f8d02a49a2ce4c074847e4b448eae250ab233))
+
+### ✨ Features
+
+
+- ✨ feat(frontend): switch keyword and semantic matching on and off
+  ([`385f8d0`](https://github.com/thiesgerken/ferret/commit/385f8d02a49a2ce4c074847e4b448eae250ab233))
+
+- ✨ feat(frontend): switch keyword and semantic matching on and off
+  ([`99564ce`](https://github.com/thiesgerken/ferret/commit/99564ce74485a1c148a9f897b87397f3a56c03e1))
+
+  The results page's filters get a "Matching" group with Keyword and Semantic toggles, both on by default. The one left on can't go off. The choice lives in the URL as mode=keyword|semantic (hybrid stays out of it) and goes to the search as its mode. The stats line says "keyword matches" or "semantic matches", the empty state names the mode's rule, and the model select hides while only keyword matching runs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.7.0 (2026-10-17)
 
 
