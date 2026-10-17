@@ -71,7 +71,7 @@ pub struct ApiCaller {
 pub enum CallerKind {
     ApiKey(Uuid),
     /// A plugin run's token: `ingest:write` below its connection's root.
-    PluginRun,
+    PluginRun(Uuid),
 }
 
 impl ApiCaller {
@@ -90,14 +90,18 @@ impl ApiCaller {
     }
 
     pub fn is_plugin_run(&self) -> bool {
-        self.kind == CallerKind::PluginRun
+        matches!(self.kind, CallerKind::PluginRun(_))
+    }
+
+    pub fn kind(&self) -> CallerKind {
+        self.kind
     }
 
     /// The key the caller authenticated with, `None` for a plugin run.
     pub fn api_key_id(&self) -> Option<Uuid> {
         match self.kind {
             CallerKind::ApiKey(id) => Some(id),
-            CallerKind::PluginRun => None,
+            CallerKind::PluginRun(_) => None,
         }
     }
 

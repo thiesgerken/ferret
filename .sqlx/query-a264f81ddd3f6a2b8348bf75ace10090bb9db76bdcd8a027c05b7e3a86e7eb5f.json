@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update plugin_runs\n                 set put = put + $2, unchanged = unchanged + $3, deleted = deleted + $4\n                 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a264f81ddd3f6a2b8348bf75ace10090bb9db76bdcd8a027c05b7e3a86e7eb5f"
+}

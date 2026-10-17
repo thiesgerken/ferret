@@ -10,6 +10,7 @@ use axum::{
 };
 use sqlx::{PgPool, migrate::MigrateError};
 
+mod activity;
 mod api_auth;
 mod api_keys;
 mod auth;
@@ -33,6 +34,7 @@ mod search_query;
 mod sources;
 mod syncs;
 mod tei;
+mod tei_load;
 mod users;
 mod writers;
 

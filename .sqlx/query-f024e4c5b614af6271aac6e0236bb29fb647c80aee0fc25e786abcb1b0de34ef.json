@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update api_ingests\n                 set put = put + $2, unchanged = unchanged + $3, deleted = deleted + $4,\n                     last_at = now()\n                 where id = (\n                     select id from api_ingests\n                     where api_key_id = $1 and last_at > now() - interval '10 minutes'\n                     order by last_at desc limit 1\n                 )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f024e4c5b614af6271aac6e0236bb29fb647c80aee0fc25e786abcb1b0de34ef"
+}
