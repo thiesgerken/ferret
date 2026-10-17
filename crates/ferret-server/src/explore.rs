@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::{content_type, sources};
 
 pub const MAX_LIMIT: i64 = 100;
-/// Authors are the one facet that grows with the data, so only the most frequent ones count.
+/// Authors are the one facet that grows with the data, so only the most frequent ones count,
+/// plus the selected ones.
 const MAX_AUTHOR_FACETS: i64 = 20;
 
 #[derive(Default)]
@@ -66,7 +67,7 @@ pub struct Facets {
     pub sources: Vec<FacetCount>,
     /// The stored names: `markdown`, `plain`, `email`.
     pub content_types: Vec<FacetCount>,
-    /// The most frequent ones.
+    /// The most frequent ones and the selected ones.
     pub authors: Vec<FacetCount>,
     /// `YYYY-MM` of `created_at` in UTC, newest first.
     pub months: Vec<FacetCount>,
@@ -99,6 +100,8 @@ enum Facet {
     Month,
 }
 
+// ponytail: every page view scans the user's filtered documents once per facet. Fine for a
+// household's index; materialized facet counts (or sampling) if Explore gets slow.
 pub async fn explore(
     pool: &PgPool,
     user_id: Uuid,
@@ -149,6 +152,20 @@ pub async fn explore(
     push_filters(&mut by_source, user_id, filter, Some(Facet::Source));
     by_source.push(" group by 1 order by 2 desc, 1");
 
+    // A selected source may be a parent of the stored ones, so count it as the filter matches.
+    let mut by_selected_source =
+        QueryBuilder::new("select root as value, (select count(*) from documents d");
+    push_filters(
+        &mut by_selected_source,
+        user_id,
+        filter,
+        Some(Facet::Source),
+    );
+    by_selected_source
+        .push(" and source_covers(root, d.source)) as count from unnest(")
+        .push_bind(filter.sources.clone())
+        .push("::text[]) root");
+
     let mut by_content_type =
         QueryBuilder::new("select d.content_type as value, count(*) from documents d");
     push_filters(
@@ -160,12 +177,18 @@ pub async fn explore(
     by_content_type.push(" group by 1 order by 2 desc, 1");
 
     let mut by_author = QueryBuilder::new(
-        "select author as value, count(*) from documents d cross join unnest(d.authors) author",
+        "select value, count from (
+             select author as value, count(*),
+                    row_number() over (order by count(*) desc, author) as rank
+             from documents d cross join unnest(d.authors) author",
     );
     push_filters(&mut by_author, user_id, filter, Some(Facet::Author));
     by_author
-        .push(" group by 1 order by 2 desc, 1 limit ")
-        .push_bind(MAX_AUTHOR_FACETS);
+        .push(" group by 1) authors where rank <= ")
+        .push_bind(MAX_AUTHOR_FACETS)
+        .push(" or value = any(")
+        .push_bind(filter.authors.clone())
+        .push("::text[]) order by count desc, value");
 
     let mut by_month = QueryBuilder::new(
         "select to_char(d.created_at at time zone 'UTC', 'YYYY-MM') as value, count(*)
@@ -174,14 +197,39 @@ pub async fn explore(
     push_filters(&mut by_month, user_id, filter, Some(Facet::Month));
     by_month.push(" group by 1 order by 1 desc");
 
-    let (total, documents, sources, content_types, authors, months) = tokio::try_join!(
-        total.build_query_scalar::<i64>().fetch_one(pool),
-        documents.build_query_as().fetch_all(pool),
-        by_source.build_query_as().fetch_all(pool),
-        by_content_type.build_query_as().fetch_all(pool),
-        by_author.build_query_as().fetch_all(pool),
-        by_month.build_query_as().fetch_all(pool),
-    )?;
+    // One after another on one connection, so a page view never holds more than one of the pool's.
+    let mut connection = pool.acquire().await?;
+    let total = total
+        .build_query_scalar::<i64>()
+        .fetch_one(&mut *connection)
+        .await?;
+    let documents = documents
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    let mut sources: Vec<FacetCount> = by_source
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    let selected_sources: Vec<FacetCount> = by_selected_source
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    let content_types = by_content_type
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    let authors = by_author
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    let months = by_month
+        .build_query_as()
+        .fetch_all(&mut *connection)
+        .await?;
+    sources.retain(|source| !filter.sources.contains(&source.value));
+    sources.extend(selected_sources);
+    sources.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
     Ok(Exploration {
         total,
         documents,

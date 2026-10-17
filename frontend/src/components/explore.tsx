@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ContentType, DocumentOrder, ExploreDocumentsQuery } from "@/gql/graphql";
+import { errorMessage } from "@/lib/graphql";
 import { PAGE_SIZE, monthRange, type ExploreState } from "@/lib/explore-url";
 import { toggle } from "@/lib/search-url";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
   if (error) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        {error.graphQLErrors[0]?.message ?? error.message}
+        {errorMessage(error)}
       </p>
     );
   }
@@ -292,6 +293,7 @@ function Pager({
   );
 }
 
+/** In UTC, like the month facet, so a document shows the date of the month it's counted in. */
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
+  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium", timeZone: "UTC" });
 }

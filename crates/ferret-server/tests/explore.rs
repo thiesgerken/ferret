@@ -137,15 +137,46 @@ async fn filters_like_search_and_counts_each_facet_without_its_own_filter(pool: 
     assert_eq!(external_ids(&exploration), ["a", "c"]);
     let facets = &exploration["facets"];
     // Sources ignore the source filter but keep the author one: Ada wrote in both notes sources.
+    // The selected parent counts what it matches.
     assert_eq!(
         facets["sources"],
-        json!([{"value": "notes/home", "count": 1}, {"value": "notes/work", "count": 1}])
+        json!([
+            {"value": "notes", "count": 2},
+            {"value": "notes/home", "count": 1},
+            {"value": "notes/work", "count": 1},
+        ])
     );
     // Authors ignore the author filter but keep the source one: Linus only wrote mail.
     assert_eq!(
         facets["authors"],
         json!([{"value": "Ada", "count": 2}, {"value": "Grace", "count": 1}])
     );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_selected_author_counts_beyond_the_most_frequent_ones(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for author in 0..20 {
+        for copy in 0..2 {
+            let mut put = document("notes", &format!("{author}-{copy}"), "Some text.");
+            put.authors = vec![format!("Author {author:02}")];
+            api.put_document(&put).await.unwrap();
+        }
+    }
+    let mut rare = document("notes", "rare", "Some text.");
+    rare.authors = vec!["Zed".to_owned()];
+    api.put_document(&rare).await.unwrap();
+
+    let all = explore(&server, json!({})).await;
+    let selected = explore(&server, json!({"authors": ["Zed"]})).await;
+
+    let authors =
+        |exploration: &Value| exploration["facets"]["authors"].as_array().unwrap().clone();
+    assert_eq!(authors(&all).len(), 20);
+    assert!(!authors(&all).contains(&json!({"value": "Zed", "count": 1})));
+    assert_eq!(authors(&selected).len(), 21);
+    assert_eq!(authors(&selected)[20], json!({"value": "Zed", "count": 1}));
 }
 
 #[sqlx::test(migrations = false)]
