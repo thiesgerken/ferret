@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { useQuery } from "urql";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useClient, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery } from "@/gql/graphql";
@@ -10,6 +10,7 @@ import { pluginOf } from "@/lib/source-plugin";
 import { cn } from "@/lib/utils";
 import { HomeLink } from "@/components/brand-mark";
 import { HitItem } from "@/components/search-hit";
+import { MoreHits } from "@/components/more-hits";
 import { SearchFilters } from "@/components/search-filters";
 import { SearchX, TriangleAlert } from "lucide-react";
 
@@ -44,6 +45,18 @@ const SearchHitsQueryDocument = graphql(`
       totalIsLowerBound
       documentsInScope
       tookMs
+      hasMore
+      facets {
+        sources {
+          value
+          count
+        }
+        authors {
+          value
+          count
+        }
+        areLowerBounds
+      }
     }
   }
 `);
@@ -54,6 +67,7 @@ const EmbeddingModelNamesQuery = graphql(`
   query EmbeddingModelNames {
     embeddingModels {
       name
+      minSimilarity
     }
   }
 `);
@@ -71,9 +85,7 @@ const ConnectionSourcesQuery = graphql(`
 
 type Result = SearchHitsQuery["search"];
 
-// ponytail: docker/ferret.yaml's cut-off, until EmbeddingModel.minSimilarity
-// is in the API.
-const MIN_SIMILARITY = 0.42;
+
 
 export function SearchResults({
   state,
@@ -105,10 +117,22 @@ export function SearchResults({
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
   const [{ data: connections }] = useQuery({ query: ConnectionSourcesQuery });
   const hits = data?.search.hits ?? [];
-  const relevance = {
-    minSimilarity: MIN_SIMILARITY,
-    bestKeywordScore: Math.max(0, ...hits.map((hit) => hit.keywordScore ?? 0)),
-  };
+  // The bars need the cut-off of the model that ran. Until the models are in, hits go without.
+  const minSimilarity = models?.embeddingModels.find((model) => model.name === data?.search.model)?.minSimilarity;
+  const relevance =
+    minSimilarity === undefined
+      ? null
+      : { minSimilarity, bestKeywordScore: Math.max(0, ...hits.map((hit) => hit.keywordScore ?? 0)) };
+  const client = useClient();
+  const loadPage = useCallback(
+    async (offset: number) => {
+      const page = await client.query(SearchHitsQueryDocument, { input: { ...input, offset } }).toPromise();
+      if (!page.data) throw page.error ?? new Error("the next page didn't load");
+      return page.data.search;
+    },
+    [client, input],
+  );
+  const pluginFor = (source: string) => pluginOf(source, connections?.connections ?? []);
 
   // A query typed before a chip click or Back must not land on top of it: it was typed into a
   // search that's gone.
@@ -141,7 +165,7 @@ export function SearchResults({
         <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
           <SearchFilters
             state={state}
-            hits={hits}
+            facets={data?.search.facets}
             models={models?.embeddingModels.map((model) => model.name) ?? []}
             ranModel={data?.search.model}
             onChange={onChange}
@@ -172,14 +196,18 @@ export function SearchResults({
             <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>
               {hits.map((hit) => (
                 <li key={hit.documentId}>
-                  <HitItem
-                    hit={hit}
-                    search={input}
-                    plugin={pluginOf(hit.source, connections?.connections ?? [])}
-                    relevance={relevance}
-                  />
+                  <HitItem hit={hit} search={input} plugin={pluginFor(hit.source)} relevance={relevance} />
                 </li>
               ))}
+              <MoreHits
+                firstPage={hits}
+                hasMore={data.search.hasMore}
+                endIsCandidateLimit={data.search.totalIsLowerBound}
+                loadPage={loadPage}
+                renderHit={(hit) => (
+                  <HitItem hit={hit} search={input} plugin={pluginFor(hit.source)} relevance={relevance} />
+                )}
+              />
             </ol>
           )}
         </main>

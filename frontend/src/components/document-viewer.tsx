@@ -3,7 +3,8 @@
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
+import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
@@ -158,11 +159,39 @@ const markdownComponents: Components = {
   ),
 };
 
+// A YAML frontmatter (only at the very start, as remark-frontmatter reads it) shows as a code
+// block. Without it the closing `---` turns the frontmatter into a setext heading. The block keeps
+// the frontmatter's position, so a hit inside it marks it like any other block.
+const remarkPlugins = [remarkGfm, remarkFrontmatter];
+const remarkRehypeOptions: Options["remarkRehypeOptions"] = {
+  handlers: {
+    yaml: (_state, node) => ({
+      type: "element",
+      tagName: "pre",
+      properties: {},
+      position: node.position,
+      children: [
+        {
+          type: "element",
+          tagName: "code",
+          properties: { className: ["language-yaml"] },
+          children: [{ type: "text", value: node.value }],
+        },
+      ],
+    }),
+  },
+};
+
 function MarkdownBody({ text, range }: { text: string; range: HitRange | null }) {
   const rehypePlugins = useMemo(() => (range ? [rehypeMarkHit(range)] : []), [range]);
   return (
     <div className="prose">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={rehypePlugins} components={markdownComponents}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        remarkRehypeOptions={remarkRehypeOptions}
+        rehypePlugins={rehypePlugins}
+        components={markdownComponents}
+      >
         {text}
       </ReactMarkdown>
     </div>

@@ -81,6 +81,25 @@ test("Markdown marks the blocks of the hit and never loads images", async () => 
   await view.unmount();
 });
 
+test("Markdown shows a frontmatter at the very start as a YAML block, not as a heading", async () => {
+  const text = "---\nname: paperless\ndescription: Search the archive\n---\n\n# Paperless\n\nBody text.";
+  const start = text.indexOf("description");
+  const view = await renderViewer("MARKDOWN", text, { start, end: start + 11 });
+
+  const yaml = view.container.querySelector(".prose > pre code.language-yaml");
+  assert.equal(yaml?.textContent, "name: paperless\ndescription: Search the archive");
+  assert.equal(view.container.querySelector(".prose > pre")?.id, "hit", "the hit in the frontmatter marks its block");
+  assert.equal(view.container.querySelector("hr"), null);
+  assert.deepEqual([...view.container.querySelectorAll(".prose h1, .prose h2")].map((h) => h.textContent), ["Paperless"]);
+  await view.unmount();
+});
+
+test("a rule further down isn't a frontmatter", async () => {
+  const view = await renderViewer("MARKDOWN", "Intro\n\n---\nkey: value\n---", null);
+  assert.equal(view.container.querySelector("code.language-yaml"), null);
+  await view.unmount();
+});
+
 test("email shows its headers above the body", async () => {
   const view = await renderViewer("EMAIL", "Hello,\nthe invoice.", null);
 

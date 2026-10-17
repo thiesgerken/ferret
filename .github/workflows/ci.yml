@@ -174,7 +174,7 @@ jobs:
       - run: helm template ferret charts/ferret --set ingress.hostname=ferret.example.com > /dev/null
 
   # A chart per PR that points at its images: <version>-pr.<N> follows the mutable :pr<N> tags,
-  # <version>-pr.<N>.<sha> pins the immutable :pr<N>-<sha> ones (an ArgoCD pin then also re-pulls).
+  # <version>-pr.<N>.g<sha> pins the immutable :pr<N>-<sha> ones (an ArgoCD pin then also re-pulls).
   helm-publish-pr:
     runs-on: ubuntu-latest
     needs: [helm-lint, docker-server, docker-plugins, docker-frontend]
@@ -190,7 +190,9 @@ jobs:
           pr_number='${{ github.event.pull_request.number }}'
           short_sha=$(echo '${{ github.event.pull_request.head.sha }}' | cut -c1-7)
           chart_version="${base_version}-pr.${pr_number}"
-          chart_version_sha="${chart_version}.${short_sha}"
+          # The g (as in git describe) keeps the SHA alphanumeric: SemVer rejects an all-digit
+          # pre-release segment with a leading zero, and one SHA in 16 starts with 0.
+          chart_version_sha="${chart_version}.g${short_sha}"
 
           mkdir -p dist
           helm package charts/ferret --destination dist \

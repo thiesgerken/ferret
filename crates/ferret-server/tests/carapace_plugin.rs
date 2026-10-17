@@ -59,7 +59,11 @@ fn repository(dir: &Path) {
         std::fs::copy(&entry, target).unwrap();
     }
     std::fs::create_dir_all(dir.join("skills/brag")).unwrap();
-    std::fs::write(dir.join("skills/brag/SKILL.md"), "# Brag\n\nCollects wins.").unwrap();
+    std::fs::write(
+        dir.join("skills/brag/SKILL.md"),
+        "---\nname: brag\ndescription: Collects wins.\n---\n# Brag\n\nCollects wins.",
+    )
+    .unwrap();
     std::fs::write(dir.join("skills/brag/uv.lock"), "version = 1\n").unwrap();
     std::fs::create_dir_all(dir.join("sessions/2026/09/s-trip")).unwrap();
     std::fs::write(dir.join(DUMP), r#"[{"role": "user", "content": "trip"}]"#).unwrap();
@@ -111,7 +115,7 @@ async fn latest_run(server: &TestServer, cookie: &str) -> Value {
 }
 
 #[sqlx::test(migrations = false)]
-async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(pool: PgPool) {
+async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(pool: PgPool) {
     let repo = tempfile::tempdir().unwrap();
     repository(repo.path());
     let server = start_server(pool.clone()).await;
@@ -154,15 +158,18 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         BTreeMap::from([
             ("carapace/digests".to_owned(), 2),
             ("carapace/facts".to_owned(), 5),
-            ("carapace/files".to_owned(), 2),
+            ("carapace/files".to_owned(), 1),
             ("carapace/sessions".to_owned(), 2),
+            ("carapace/skills".to_owned(), 1),
         ])
     );
-    let skill_url: String =
-        sqlx::query_scalar("select url from documents where external_id = 'skills/brag/SKILL.md'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (skill_title, skill_url): (String, String) = sqlx::query_as(
+        "select title, url from documents where external_id = 'skills/brag/SKILL.md'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(skill_title, "brag", "the skill's front matter names it");
     assert_eq!(
         skill_url,
         "https://carapace.example/knowledge?path=skills%2Fbrag%2FSKILL.md"
