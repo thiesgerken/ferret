@@ -2,7 +2,7 @@
 //! `sys:flavour`, its `sys:children` and its `prop:*` properties, rooted in one `affine:page`.
 //! Rich text is a Y.Text whose formatting lives in the attributes of its deltas.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use chrono::DateTime;
 use yrs::types::ToJson;
@@ -20,6 +20,9 @@ pub struct Page {
     pub markdown: String,
     /// Flavours this converter doesn't know, for the run log. Their text, if any, is kept.
     pub unknown: BTreeSet<String>,
+    /// Blocks met again among their own descendants (a corrupt doc, or two moves merged into a
+    /// cycle), rendered only the first time.
+    pub repeated: usize,
 }
 
 /// Where linked docs point: their titles, and the address a doc id is appended to.
@@ -58,6 +61,8 @@ pub fn to_markdown(update: &[u8], links: &Links) -> Result<Page, PluginError> {
         blocks: &blocks,
         links,
         unknown: BTreeSet::new(),
+        visited: HashSet::new(),
+        repeated: 0,
     };
     let page = blocks
         .iter(&txn)
@@ -68,6 +73,7 @@ pub fn to_markdown(update: &[u8], links: &Links) -> Result<Page, PluginError> {
         .find(|block| renderer.flavour(block) == "affine:page")
         .ok_or("the doc has no page block")?;
     let title = renderer.plain(&page, "prop:title");
+    renderer.visited.extend(renderer.string(&page, "sys:id"));
     let mut chunks = Vec::new();
     let children = renderer.children(&page);
     // The canvas comes last: in page mode it isn't shown at all.
@@ -82,6 +88,7 @@ pub fn to_markdown(update: &[u8], links: &Links) -> Result<Page, PluginError> {
         title,
         markdown: join(&chunks),
         unknown: renderer.unknown,
+        repeated: renderer.repeated,
     })
 }
 
@@ -108,6 +115,10 @@ struct Renderer<'a, T: ReadTxn> {
     blocks: &'a MapRef,
     links: &'a Links<'a>,
     unknown: BTreeSet<String>,
+    /// Every block rendered so far: a CRDT merge can put a block among its own descendants,
+    /// which would otherwise recurse until the stack overflows.
+    visited: HashSet<String>,
+    repeated: usize,
 }
 
 impl<T: ReadTxn> Renderer<'_, T> {
@@ -198,6 +209,10 @@ impl<T: ReadTxn> Renderer<'_, T> {
     fn render(&mut self, ids: &[&String], depth: usize, chunks: &mut Vec<Chunk>) {
         let mut number = 0;
         for id in ids {
+            if !self.visited.insert(id.to_string()) {
+                self.repeated += 1;
+                continue;
+            }
             let Some(block) = self.block(id) else {
                 continue;
             };
@@ -729,5 +744,44 @@ mod tests {
             page.markdown,
             "See [Shopping](https://affine.example/workspace/w1/shop), where $x^2$"
         );
+    }
+
+    #[test]
+    fn a_block_among_its_own_descendants_renders_once() {
+        let flavour = |name: &str| ("sys:flavour", In::Any(name.into()));
+        let update = doc(
+            &["a"],
+            vec![
+                (
+                    "a",
+                    vec![
+                        flavour("affine:list"),
+                        ("prop:type", In::Any("bulleted".into())),
+                        ("prop:text", In::Text(TextPrelim::new("Outer").into())),
+                        (
+                            "sys:children",
+                            In::Array(ArrayPrelim::from(vec![Any::from("b")])),
+                        ),
+                    ],
+                ),
+                (
+                    "b",
+                    vec![
+                        flavour("affine:list"),
+                        ("prop:type", In::Any("bulleted".into())),
+                        ("prop:text", In::Text(TextPrelim::new("Inner").into())),
+                        (
+                            "sys:children",
+                            In::Array(ArrayPrelim::from(vec![Any::from("a")])),
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        let page = to_markdown(&update, &links(&HashMap::new())).unwrap();
+
+        assert_eq!(page.markdown, "- Outer\n    - Inner");
+        assert_eq!(page.repeated, 1);
     }
 }

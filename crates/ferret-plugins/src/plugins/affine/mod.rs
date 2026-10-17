@@ -23,12 +23,13 @@ use workspace::DocMeta;
 
 pub const NAME: &str = "affine";
 
-/// The most docs AFFiNE returns per page.
+/// The most docs AFFiNE returns per page. It can return fewer, and says when more follow.
 const PAGE_SIZE: usize = 100;
 /// `seen` takes the ids in batches, so a large workspace doesn't make one huge request.
 const SEEN_BATCH: usize = 1000;
-/// Fetching this window before the cursor again catches a doc saved while the last run listed.
-/// Unchanged docs only cost a no-op `PUT`.
+/// Fetching this window before the cursor again catches a doc saved while the last run listed, and
+/// AFFiNE's merge lag: a doc's `updatedAt` is the time of its newest merged update, which only shows
+/// once the server has merged it. Unchanged docs only cost a no-op `PUT`.
 const CURSOR_OVERLAP: TimeDelta = TimeDelta::minutes(10);
 
 /// Indexes the docs of a workspace on a self-hosted AFFiNE.
@@ -75,7 +76,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     // workspace change.
     let settings =
         json!({"url": config.url, "public_url": config.public_url, "workspace_id": workspace});
-    let mut cursor = match run.state.get("updated") {
+    let cursor = match run.state.get("updated") {
         Some(updated) if run.state.get("settings") == Some(&settings) => {
             Some(serde_json::from_value::<DateTime<Utc>>(updated.clone())?)
         }
@@ -95,21 +96,42 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     })?;
     let docs = workspace::docs(&root)?;
     let live: Vec<&DocMeta> = docs.iter().filter(|doc| !doc.trashed).collect();
-    // Leaving the trash doesn't change a doc on the server, so a restored doc is only found by
-    // fetching everything once.
     let trashed_before: HashSet<String> = match run.state.get("trashed") {
         Some(trashed) => serde_json::from_value(trashed.clone())?,
         None => HashSet::new(),
     };
-    if cursor.is_some() && live.iter().any(|doc| trashed_before.contains(&doc.id)) {
-        run.log.line("a doc left the trash: fetching every doc");
-        cursor = None;
-    }
 
     let updated = affine
         .updated_since(workspace, cursor.map(|cursor| cursor - CURSOR_OVERLAP))
         .await?;
-    let changed = changed(&live, &updated, cursor);
+    let mut changed = changed(&live, &updated, cursor);
+    if cursor.is_none() {
+        // The listing only has docs with content on the server, which a doc the root doc lists
+        // may not have yet.
+        let listed: HashSet<&str> = updated.iter().map(|doc| doc.id.as_str()).collect();
+        let missing = live
+            .iter()
+            .filter(|doc| !listed.contains(doc.id.as_str()))
+            .count();
+        if missing > 0 {
+            run.log.line(format!(
+                "{missing} docs have no content on the server yet and are skipped"
+            ));
+        }
+    }
+    // Leaving the trash doesn't change a doc on the server, so the listing can't tell.
+    for doc in live.iter().filter(|doc| trashed_before.contains(&doc.id)) {
+        if changed.iter().any(|(changed, _)| changed.id == doc.id) {
+            continue;
+        }
+        match affine.updated_at(workspace, &doc.id).await? {
+            Some(updated_at) => changed.push((doc, updated_at)),
+            None => run.log.line(format!(
+                "doc {} left the trash without content on the server",
+                doc.id
+            )),
+        }
+    }
     run.log.line(format!(
         "{} docs in the workspace, {} in the trash, {} changed since the last run",
         live.len(),
@@ -146,6 +168,12 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
                 "doc {}: block types this plugin doesn't know, kept as their text: {}",
                 doc.id,
                 page.unknown.iter().cloned().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        if page.repeated > 0 {
+            run.log.line(format!(
+                "doc {}: {} blocks sit among their own descendants, rendered once",
+                doc.id, page.repeated
             ));
         }
         let title = [page.title.trim(), doc.title.as_str()]
@@ -277,7 +305,7 @@ impl Affine {
     /// The docs whose content changed after `since`, newest first, or every doc without it.
     /// AFFiNE pages with `updatedAt < after`, so ties at a page's end could fall between two
     /// pages. Each page asks for everything up to and including the last one's time instead,
-    /// and repeats are dropped.
+    /// and repeats are dropped. Only a full page of a single time can't be paged past.
     async fn updated_since(
         &self,
         workspace: &str,
@@ -287,19 +315,18 @@ impl Affine {
         let mut docs = Vec::new();
         let mut after: Option<String> = None;
         loop {
-            let page = self.updated_page(workspace, after.as_deref()).await?;
-            let Some(oldest) = page.last().map(|doc| doc.updated_at) else {
+            let (page, more) = self.updated_page(workspace, after.as_deref()).await?;
+            let (Some(newest), Some(oldest)) = (page.first(), page.last()) else {
                 break;
             };
-            let full = page.len() == PAGE_SIZE;
-            let before = docs.len();
+            let (newest, oldest) = (newest.updated_at, oldest.updated_at);
             docs.extend(page.into_iter().filter(|doc| seen.insert(doc.id.clone())));
-            if !full || since.is_some_and(|since| oldest <= since) {
+            if !more || since.is_some_and(|since| oldest <= since) {
                 break;
             }
-            if docs.len() == before {
+            if newest == oldest {
                 return Err(format!(
-                    "more than {PAGE_SIZE} docs share the modification time {oldest}"
+                    "a whole page of docs shares the modification time {oldest}, which paging can't get past"
                 )
                 .into());
             }
@@ -308,23 +335,54 @@ impl Affine {
         Ok(docs)
     }
 
+    /// A page of `recentlyUpdatedDocs`, and whether more follow.
     async fn updated_page(
         &self,
         workspace: &str,
         after: Option<&str>,
-    ) -> Result<Vec<Updated>, PluginError> {
-        let query = "query($workspace: String!, $after: String) {
+    ) -> Result<(Vec<Updated>, bool), PluginError> {
+        let query = "query($workspace: String!, $first: Int!, $after: String) {
             workspace(id: $workspace) {
-                recentlyUpdatedDocs(pagination: {first: 100, after: $after}) {
+                recentlyUpdatedDocs(pagination: {first: $first, after: $after}) {
                     edges { node { id updatedAt } }
+                    pageInfo { hasNextPage }
                 }
             }
         }";
+        let body = self
+            .graphql(
+                query,
+                json!({"workspace": workspace, "first": PAGE_SIZE, "after": after}),
+            )
+            .await?;
+        parse_updated_page(&body)
+    }
+
+    /// When the server last changed a doc, `None` when it has no content for it.
+    async fn updated_at(
+        &self,
+        workspace: &str,
+        doc: &str,
+    ) -> Result<Option<DateTime<Utc>>, PluginError> {
+        let query = "query($workspace: String!, $doc: String!) {
+            workspace(id: $workspace) { doc(docId: $doc) { updatedAt } }
+        }";
+        let body = self
+            .graphql(query, json!({"workspace": workspace, "doc": doc}))
+            .await?;
+        match body.pointer("/data/workspace/doc/updatedAt") {
+            Some(Value::Null) | None => Ok(None),
+            Some(updated_at) => Ok(Some(DateTime::deserialize(updated_at)?)),
+        }
+    }
+
+    /// A GraphQL answer's body, or the first of its errors.
+    async fn graphql(&self, query: &str, variables: Value) -> Result<Value, PluginError> {
         let response = self
             .http
             .post(format!("{}/graphql", self.base_url))
             .header(reqwest::header::COOKIE, &self.cookies)
-            .json(&json!({"query": query, "variables": {"workspace": workspace, "after": after}}))
+            .json(&json!({"query": query, "variables": variables}))
             .send()
             .await?;
         let status = response.status();
@@ -335,22 +393,25 @@ impl Affine {
             .json()
             .await
             .map_err(|_| "AFFiNE's GraphQL API answered with something that isn't JSON")?;
-        parse_updated_page(&body)
+        if let Some(message) = body.pointer("/errors/0/message").and_then(Value::as_str) {
+            return Err(format!("AFFiNE's GraphQL API: {message}").into());
+        }
+        Ok(body)
     }
 }
 
-fn parse_updated_page(body: &Value) -> Result<Vec<Updated>, PluginError> {
-    if let Some(message) = body.pointer("/errors/0/message").and_then(Value::as_str) {
-        return Err(format!("AFFiNE's GraphQL API: {message}").into());
-    }
-    let edges = body
-        .pointer("/data/workspace/recentlyUpdatedDocs/edges")
-        .and_then(Value::as_array)
+fn parse_updated_page(body: &Value) -> Result<(Vec<Updated>, bool), PluginError> {
+    let docs = body
+        .pointer("/data/workspace/recentlyUpdatedDocs")
         .ok_or("AFFiNE's GraphQL API answered without the workspace's docs")?;
-    edges
+    let edges = docs["edges"]
+        .as_array()
+        .ok_or("AFFiNE's GraphQL API answered without the workspace's docs")?;
+    let page = edges
         .iter()
         .map(|edge| Ok(Updated::deserialize(&edge["node"])?))
-        .collect()
+        .collect::<Result<_, PluginError>>()?;
+    Ok((page, docs["pageInfo"]["hasNextPage"] == true))
 }
 
 #[cfg(test)]
@@ -374,20 +435,15 @@ mod tests {
     }
 
     #[test]
-    fn a_listing_page_parses_and_errors_surface() {
-        let page = parse_updated_page(
-            &json!({"data": {"workspace": {"recentlyUpdatedDocs": {"edges": [
-                {"node": {"id": "a", "updatedAt": "2026-10-17T18:09:34.345Z"}},
-            ]}}}}),
-        )
-        .unwrap();
+    fn a_listing_page_parses_with_whether_more_follow() {
+        let (page, more) =
+            parse_updated_page(&json!({"data": {"workspace": {"recentlyUpdatedDocs": {
+                "edges": [{"node": {"id": "a", "updatedAt": "2026-10-17T18:09:34.345Z"}}],
+                "pageInfo": {"hasNextPage": true},
+            }}}}))
+            .unwrap();
         assert_eq!(page, [updated("a", "2026-10-17T18:09:34.345Z")]);
-
-        let error = parse_updated_page(
-            &json!({"errors": [{"message": "You do not have permission to access Space w."}]}),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("permission"));
+        assert!(more);
     }
 
     #[test]
