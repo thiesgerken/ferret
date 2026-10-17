@@ -13,56 +13,82 @@ marks. Turning them into metrics is post-v1 (#21).
 
 ## Models
 
-Models are configuration, not database state, because each one needs a TEI Deployment from the Helm
-chart:
+Models and TEIs are configuration, not database state, because the Helm chart deploys them:
 
 ```yaml
 embedding:
   default: qwen3-embedding-0.6b
   models:
     - name: qwen3-embedding-0.6b
-      url: http://ferret-tei-qwen3-embedding-0-6b:80          # queries, and the pump unless bulk_url is set
-      bulk_url: http://ferret-tei-qwen3-embedding-0-6b-gpu:80 # optional: the pump only
+      model_id: Qwen/Qwen3-Embedding-0.6B    # what a TEI serving it reports in /info
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
-      min_similarity: 0.42                                   # see Similarity cut-off
+      min_similarity: 0.42                   # see Similarity cut-off
+  teis:
+    - url: http://ferret-tei-qwen3-embedding-0-6b:80
+    - url: http://192.168.1.20:8080          # e.g. a laptop's GPU in the LAN
+      external: true                         # starts with queries off
 ```
 
-The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap). At
-startup the server reads each model's `max_input_length` from TEI's `/info` and its dimension from
-embedding a probe text, since `/info` doesn't report it. The server waits up to 10 minutes for an
-unreachable model (TEI downloads its model on first start), then stops. Model names end up in index
-names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`, ending in a letter or digit,
-at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
+The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap).
+Model names end up in index names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`,
+ending in a letter or digit, at most 40 characters, and no two names may differ only in `.`, `_`
+and `-`. No two models may share a `model_id`.
 
-- **No silent truncation**: every embed request sets `truncate: false`, so TEI rejects an
-  over-long text instead of embedding its beginning.
+### The TEI pool
+
+A TEI isn't tied to a model: every TEI works for whichever configured model it currently serves.
+A laptop is listed once and helps with whatever model it has loaded.
+
+- **Discovery**: at startup and every 10 seconds, the server asks every TEI's `/info` for its
+  `model_id` and matches it with the configured models. A TEI that doesn't answer is offline, one
+  serving a model no configured one has is unused (Admin shows its model), one whose
+  `max_input_length` is too short is unsuitable (see below). A TEI that switches models moves to
+  the other model with the next look. TEIs that are down don't keep the server from starting:
+  searches answer by keyword until a TEI serves the model.
+- **Every answer is checked**: embeddings go through TEI's OpenAI-compatible `/v1/embeddings`,
+  whose answer names the model that computed them (TEI's `served_model_name`, the model id unless
+  TEI was started with `--served-model-name`). An answer from another model than discovered, with
+  another dimension than the model's, or with a vector missing is discarded, never written, and
+  the TEI is asked again at once. Vectors of two models can therefore never mix, however TEIs come
+  and go. The route normalizes like `/embed`.
+- **Dimension**: `/info` doesn't report it. The first embedding of a model sets it and creates the
+  model's partial HNSW index. At startup it is read from `embedding_cache`.
+- **Switches** (Admin, table `teis`): per TEI, on/off, queries, embedding. New TEIs of the
+  deployment get all three, external ones (`external: true`) no queries, so searches don't depend
+  on a laptop that may go to sleep. A change takes effect at once on the server that made it,
+  within 10 seconds on the others, without a restart. Rows of TEIs that left the config go at
+  startup.
+- **Queries** go to an enabled query TEI of the model, one without a pump batch in flight first,
+  then the others in config order, until one answers within the 5 s query timeout.
+- **The pump** runs one loop per TEI that may embed, for the model it serves. A faster TEI simply
+  claims more batches. On a TEI that also answers queries, batches stay short (about 2 s), so a
+  query never waits long behind one.
+
+- **No silent truncation**: a TEI started without `--auto-truncate` (the default) rejects an
+  over-long text instead of embedding its beginning. With it, the length check below still keeps
+  every input within the limit.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
   part of the cache key (`text_hash` covers the whole input: prefix, title and text), so changing
   it never serves stale vectors.
-- **`bulk_url`**: online embedding (queries, incremental ingest) runs on CPU. Big backfills run on a
-  GPU node that joins the cluster temporarily. With `bulk_url` set, the pump uses only that
-  endpoint. If it is unreachable the pump fails loudly (error in Admin, backlog grows) instead of
-  falling back to the CPU endpoint, which would slow the backfill to days without anyone noticing.
-  Queries are unaffected either way. One Service over CPU and GPU pods doesn't work: HTTP keep-alive
-  pins connections to pods, so the split would be random. In the Helm chart, `tei.gpu.enabled`
-  adds a GPU TEI per model (a Deployment pinned to the GPU node) and sets each model's `bulk_url`
-  to it. Turning it off after the backfill removes `bulk_url`, and the server restarts with the
-  CPU endpoint for the pump. Instead, a model's `bulkUrl` in the chart sets `bulk_url` to a TEI
-  outside the cluster (e.g. a laptop's GPU in the LAN). The pump uses only it, so it is removed
-  again once the backfill is done. The chart refuses both at once. The compose dev setup sets it to a second CPU TEI: a query that
-  queues behind a backfill batch there would run into the 5 s query timeout.
+- **Backfills**: big ones (the first import, a new model) run on a GPU TEI listed as external,
+  e.g. a laptop's. It embeds next to the CPU TEI, taking most batches. Switching the CPU TEI's
+  embedding off in Admin leaves it all to the GPU and keeps the CPU for queries. One Service over
+  CPU and GPU pods wouldn't work: HTTP keep-alive pins connections to pods, so the split would be
+  random. The compose dev setup lists a second CPU TEI (`tei-bulk`) as external, to show both
+  kinds.
 
-- **A model whose `max_input_length` is below the longest embedded input is rejected** and the
-  server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
+- **A TEI whose `max_input_length` is below the longest embedded input is unsuitable**: it serves
+  the model but isn't used. TEI would otherwise reject or truncate long chunks. The embedded input is the
   model's `document_prefix`, the title capped at 200 characters, a blank line and the chunk (at
   most 2000 characters). The check covers title and chunk, 2202 characters, and leaves the prefix
   out. It compares them one to one with `max_input_length` tokens: Latin
   text never takes more than one token per character, so a model that accepts 2202 tokens takes
   every input.
-- **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
+- **Adding a model**: once a TEI serves it, the pump backfills it, and the first embedding creates
+  its partial HNSW index.
 - **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
 ## Storage
@@ -126,30 +152,32 @@ select id, text, title from (
     limit 256
 ) candidates
 where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
-limit $2;  -- the model's batch size, at most 32 (TEI's max_client_batch_size)
+limit $2;  -- the TEI's batch size, at most 32 and TEI's max_client_batch_size
 ```
 
-- The pump serves the default model first, then the others. Within a model, newest chunks first.
-- Each batch: look up `embedding_cache`, send the misses to that model's TEI, write
-  `chunk_embeddings` and `embedding_cache` in one transaction.
-- `LISTEN chunks_pending` wakes the pump after an ingest. Several pumps share the queue through
-  the advisory locks.
+- Each TEI's loop claims chunks of the model the TEI serves, newest first.
+- Each batch: look up `embedding_cache`, send the misses to the TEI, write `chunk_embeddings` and
+  `embedding_cache` in one transaction.
+- `LISTEN chunks_pending` wakes the loops after an ingest, so does a TEI that changed. All loops of
+  all replicas share the queue through the advisory locks.
 - A statement trigger on `chunks` sends the notification, delivered when the ingest commits. The
   pump also polls every 30 s, which picks up after outages.
-- A failed batch is logged and stored in `embedding_errors` (model, error, time) until the model's
-  next successful batch, for Admin. The pump keeps retrying, an unreachable `bulk_url` therefore
-  shows as an error and a growing backlog.
-- TEI rejecting a batch (4xx) makes the pump retry its texts one by one. Texts TEI rejects alone
+- A failed batch or query is logged and stored with the TEI (`teis.last_error`) until its next
+  success, for Admin. The pump keeps retrying while the TEI is listed as serving.
+- TEI rejecting a batch (413 too long, 422 untokenizable) makes the pump retry its texts one by
+  one. Texts TEI rejects alone
   (more tokens than characters, e.g. emoji or CJK) land in `embedding_failures` (chunk, model,
   error) and leave the queue. A changed text is a new chunk and a changed title deletes the
   failure, so either gets another chance.
 - Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
   The final insert locks the chunks `for share` and skips those deleted meanwhile.
 - Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
-- The batch size adapts per model and server: a timeout halves it (down to 1), a batch that took
-  less than 30 s adds one (up to 32). TEI computes a request to the end even after the pump gave
-  up on it, so on a CPU too slow for 32 long chunks, retrying the same batch would queue behind
-  the abandoned one and time out again, forever. A GPU TEI stays at 32.
+- The batch size adapts per TEI and server: a timeout, or a batch that took longer than its target,
+  halves it (down to 1), a batch that took less than half the target adds one (up to 32). The
+  target is the 60 s timeout, and about 2 s on a TEI that also answers queries. TEI computes a
+  request to the end even after the pump gave up on it, so on a CPU too slow for 32 long chunks,
+  retrying the same batch would queue behind the abandoned one and time out again, forever. A GPU
+  TEI stays at 32.
 
 ### Progress
 

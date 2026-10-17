@@ -246,16 +246,16 @@ without it.
 
 ## Embedding orchestration
 
-- **TEI** runs as its own Deployment per configured model, one CPU replica each
-  ([embeddings.md](embeddings.md#models)). Backfills speed up by pointing the model's `bulk_url` at
-  a GPU TEI (`tei.gpu.enabled` in the chart).
+- **TEI** runs as its own Deployment per configured model, one CPU replica each, plus any TEIs
+  outside the chart, e.g. a laptop's GPU for backfills. They form a pool: each works for whichever
+  model it serves, which the server discovers ([embeddings.md](embeddings.md#the-tei-pool)).
 - **The embed pump** is a tokio task in ferret-server. `LISTEN chunks_pending` wakes it (polling as
-  fallback). It claims up to 32 chunks a model hasn't embedded yet, newest first, under
-  transaction-scoped advisory locks, sends them to that model's TEI (its `bulk_url` if set), and
-  writes `chunk_embeddings` and `embedding_cache` in one transaction. Default model first. Chunks
+  fallback). It runs one loop per TEI that may embed: each claims up to 32 chunks the
+  TEI's model hasn't embedded yet, newest first, under transaction-scoped advisory locks, sends them
+  to the TEI, and writes `chunk_embeddings` and `embedding_cache` in one transaction. Chunks
   TEI rejects (a 4xx) go to `embedding_failures` and are skipped from then on, so one bad chunk
   can't block the rest.
-- **Several pumps** (one per server replica) share the queue through those advisory locks: they
+- **Several pumps** (one per TEI and server replica) share the queue through those advisory locks: they
   skip each other's chunks, and an ingest never waits for a pump's TEI call. No worker protocol:
   routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
@@ -297,10 +297,8 @@ The Helm chart, modelled on carapace's:
 - `ferret-plugins` Deployment, without a service account token: runs read files from repositories
   they don't control.
 - `frontend` Deployment.
-- One TEI Deployment per configured embedding model, on CPU.
-- Optionally (`tei.gpu.enabled`) a GPU TEI Deployment per model for backfills, pinned to a tainted
-  GPU node that joins the cluster temporarily. It sets the model's `bulk_url`. The image tag
-  depends on the GPU architecture and is a value.
+- With `tei.internal.enabled`, one TEI Deployment per configured embedding model, on CPU.
+  `externalTeis` lists TEIs outside the chart, e.g. a GPU for backfills.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
 - Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.
