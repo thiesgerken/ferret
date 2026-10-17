@@ -227,8 +227,17 @@ context.
 GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&model=&k=
 ```
 
-- **Hybrid**: BM25 top N and vector top N, fused with reciprocal rank fusion (k = 60) in one SQL
-  query. The vector half uses the user's default model unless `model=` says otherwise.
+- **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
+  rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
+  half always contributes its 100 nearest chunks, however distant (a calibrated per-model cut-off
+  is part of the model evaluation in #21), and uses the user's default model unless `model=` says otherwise (v1 so far: the configured default). Filters, `-word` and
+  `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding
+  yet (backfill) is found by keyword only. If the query can't be embedded within 5 s (TEI down,
+  stuck or broken), the
+  search answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
+  `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
+  a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
+  a restarting TEI shouldn't make ferret useless.
 - **Filters**: core columns plus equality on `meta` keys, `source` by path prefix. No query
   language.
 - **Filtered vector search** needs pgvector's iterative index scans
@@ -258,7 +267,7 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
   word, share its German or English stem, or contain it (compounds).
-- **Size**: `k` hits, 10 by default, at most 100. Hits are aggregated from the 1000 best chunks.
+- **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
   email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing

@@ -1,6 +1,8 @@
 //! The UI's API. Every request needs a valid session, which the transport checks before juniper
 //! sees the request.
 
+use std::sync::Arc;
+
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
@@ -21,6 +23,7 @@ use crate::{
     auth,
     connections::{self, Connection, ConnectionError, PluginRun, PluginType},
     documents,
+    embeddings::Embedding,
     error::ApiError,
     search::{self, SearchError},
     users::User,
@@ -43,6 +46,7 @@ pub fn sdl() -> String {
 pub struct Context {
     user: User,
     pool: PgPool,
+    embedding: Arc<Embedding>,
 }
 
 impl juniper::Context for Context {}
@@ -65,7 +69,7 @@ impl Query {
 
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
-    async fn search(context: &Context, input: SearchInput) -> FieldResult<Vec<Hit>> {
+    async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
         let request = ferret_api::SearchQuery {
             q: input.q,
             sources: input.sources.unwrap_or_default(),
@@ -82,8 +86,19 @@ impl Query {
             k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
             collapse: input.collapse,
         };
-        match search::find(&context.pool, context.user.id, None, &request).await {
-            Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
+        match search::find(
+            &context.pool,
+            &context.embedding,
+            context.user.id,
+            None,
+            &request,
+        )
+        .await
+        {
+            Ok(response) => Ok(SearchResult {
+                hits: response.hits.into_iter().map(Hit::from).collect(),
+                semantic_unavailable: response.semantic_unavailable,
+            }),
             Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
             Err(SearchError::Database(error)) => Err(internal(error)),
         }
@@ -320,6 +335,15 @@ impl From<ferret_api::ContentType> for ContentType {
             ferret_api::ContentType::Email => Self::Email,
         }
     }
+}
+
+/// The hits of a search, and whether its semantic half ran.
+#[derive(GraphQLObject)]
+struct SearchResult {
+    hits: Vec<Hit>,
+    /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
+    /// keyword matches only. Null when it ran.
+    semantic_unavailable: Option<String>,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -676,6 +700,7 @@ pub async fn handle(
     let context = Context {
         user,
         pool: state.pool.clone(),
+        embedding: state.embedding.clone(),
     };
     let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {

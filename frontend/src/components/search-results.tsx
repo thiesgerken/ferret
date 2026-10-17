@@ -14,27 +14,30 @@ import { cn } from "@/lib/utils";
 const SearchHitsQueryDocument = graphql(`
   query SearchHits($input: SearchInput!) {
     search(input: $input) {
-      documentId
-      source
-      externalId
-      title
-      url
-      authors
-      createdAt
-      collapsed
-      chunk {
-        startOffset
-        endOffset
-        parts {
-          text
-          highlight
+      hits {
+        documentId
+        source
+        externalId
+        title
+        url
+        authors
+        createdAt
+        collapsed
+        chunk {
+          startOffset
+          endOffset
+          parts {
+            text
+            highlight
+          }
         }
       }
+      semanticUnavailable
     }
   }
 `);
 
-type Hit = SearchHitsQuery["search"][number];
+type Hit = SearchHitsQuery["search"]["hits"][number];
 
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
@@ -51,7 +54,8 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
     [state.q, state.sources, state.authors, from],
   );
   const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
-  const hits = data?.search ?? [];
+  const hits = data?.search.hits ?? [];
+  const semanticUnavailable = data?.search.semanticUnavailable;
 
   return (
     <div className="min-h-dvh">
@@ -63,6 +67,11 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
         <FilterChips state={state} hits={hits} onChange={onChange} />
+        {semanticUnavailable && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Keyword matches only: {semanticUnavailable}.
+          </p>
+        )}
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error.graphQLErrors[0]?.message ?? error.message}

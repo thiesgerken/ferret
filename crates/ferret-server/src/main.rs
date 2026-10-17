@@ -1,6 +1,6 @@
-use std::{env, future::IntoFuture};
+use std::{env, future::IntoFuture, path::Path, sync::Arc};
 
-use ferret_server::{AppState, SessionKey, StartupError, WorkerSecret};
+use ferret_server::{AppState, SessionKey, StartupError, WorkerSecret, config::Config, embeddings};
 use sqlx::PgPool;
 use tokio::{net::TcpListener, signal, sync::watch};
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
@@ -35,6 +35,7 @@ async fn serve() -> Result<(), StartupError> {
 
     let database_url = required_env("FERRET_DATABASE_URL")?;
     let session_key = SessionKey::new(&required_env("FERRET_SESSION_SECRET")?)?;
+    let config = Config::load(Path::new(&required_env("FERRET_CONFIG_FILE")?))?;
     let worker_secret = WorkerSecret::new(required_env("FERRET_WORKER_SECRET")?)?;
     // Only needed while no enabled admin exists, so its absence is judged by the bootstrap.
     let bootstrap_password = env::var("FERRET_BOOTSTRAP_PASSWORD").ok();
@@ -42,8 +43,10 @@ async fn serve() -> Result<(), StartupError> {
     let pool = PgPool::connect(&database_url).await?;
     ferret_server::migrate(&pool).await?;
     ferret_server::bootstrap_admin(&pool, bootstrap_password.as_deref()).await?;
+    let embedding = Arc::new(embeddings::prepare(&pool, config.embedding).await?);
+    tokio::spawn(embeddings::run_pump(pool.clone(), embedding.clone()));
 
-    let state = AppState::new(pool, session_key, worker_secret);
+    let state = AppState::new(pool, session_key, worker_secret, embedding);
     let public = TcpListener::bind(PUBLIC_ADDR).await?;
     let internal = TcpListener::bind(INTERNAL_ADDR).await?;
     tracing::info!(public = PUBLIC_ADDR, internal = INTERNAL_ADDR, "listening");

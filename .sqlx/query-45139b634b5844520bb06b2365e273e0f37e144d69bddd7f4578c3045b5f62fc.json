@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select text_hash from embedding_cache where model = $1 and text_hash = any($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "text_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "embedding_cache",
+            "name": "text_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "45139b634b5844520bb06b2365e273e0f37e144d69bddd7f4578c3045b5f62fc"
+}
