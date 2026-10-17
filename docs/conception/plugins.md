@@ -45,7 +45,11 @@ are the files plugin's job ([Roadmap](#roadmap)).
   own files), so are files above 1 MiB and files that aren't UTF-8 text. Each skip is a line in
   the run log.
 - Remotes are limited to HTTPS, so a connection can't reach the worker's filesystem or plain-HTTP
-  services in the cluster. A git command that runs longer than 30 minutes fails the run.
+  services in the cluster. The worker's `FERRET_GIT_PROTOCOLS` (colon-separated, as git's
+  `GIT_ALLOW_PROTOCOL` takes them, default `https`) widens that per deployment, e.g. to
+  `https:file` for the compose demo's local repository. It applies to every user's connections
+  on that worker, so with `file` any connection can read any repository the worker can. A git
+  command that runs longer than 30 minutes fails the run.
 - First run: full ingest inside a sync, commit at the end. Later runs:
   `git diff --name-status --no-renames <cursor> HEAD`, `PUT` changed files, `DELETE` removed ones
   (and files that can't be indexed any more), renames are both. The state stores the cursor

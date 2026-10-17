@@ -1,0 +1,12 @@
+{
+  "source": "demo/chat",
+  "external_id": "harz-trip/3",
+  "content_type": "plain",
+  "text": "Booked it for 16 to 19 October, 340 EUR in total. I'll send everyone the bank details.",
+  "thread": "harz-trip",
+  "authors": [
+    "Anna"
+  ],
+  "created_at": "2026-08-03T19:14:00Z",
+  "modified_at": "2026-08-03T19:14:00Z"
+}

@@ -1,0 +1,12 @@
+{
+  "source": "demo/chat",
+  "external_id": "harz-trip/4",
+  "content_type": "plain",
+  "text": "I'm in. Brocken hike on Saturday if the weather holds?",
+  "thread": "harz-trip",
+  "authors": [
+    "Jonas"
+  ],
+  "created_at": "2026-08-04T07:30:00Z",
+  "modified_at": "2026-08-04T07:30:00Z"
+}

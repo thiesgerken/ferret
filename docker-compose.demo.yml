@@ -1,0 +1,15 @@
+# Development only: lets the plugin worker index a local carapace knowledge repository.
+#   CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me \
+#     docker compose -f docker-compose.yml -f docker-compose.demo.yml up
+# then scripts/demo-seed.sh with the same CARAPACE_KNOWLEDGE_DIR.
+services:
+  plugins:
+    environment:
+      FERRET_GIT_PROTOCOLS: https:file
+      # The mounted repository belongs to the host user, not the worker's `nobody`, and git won't
+      # read a repository someone else owns unless it's marked safe in command-line config.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /demo/carapace
+    volumes:
+      - ${CARAPACE_KNOWLEDGE_DIR:?set CARAPACE_KNOWLEDGE_DIR to a carapace knowledge repository}:/demo/carapace:ro

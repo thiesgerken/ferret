@@ -1,4 +1,4 @@
-use std::env;
+use std::env::{self, VarError};
 
 use ferret_api::internal::InternalClient;
 use ferret_plugins::{plugins::PluginOptions, worker::Worker};
@@ -25,9 +25,18 @@ async fn main() -> Result<(), StartupError> {
         public_url: required_env("FERRET_SERVER_URL")?,
         // Informational, so the pod's name is good enough.
         name: env::var("HOSTNAME").unwrap_or_else(|_| "ferret-plugins".to_owned()),
-        options: PluginOptions::default(),
+        options: plugin_options()?,
     };
     worker.work().await
+}
+
+fn plugin_options() -> Result<PluginOptions, String> {
+    match env::var("FERRET_GIT_PROTOCOLS") {
+        Err(VarError::NotPresent) => Ok(PluginOptions::default()),
+        Ok(git_protocols) if !git_protocols.is_empty() => Ok(PluginOptions { git_protocols }),
+        // Empty would let git use no transport at all, and every run would fail far from here.
+        _ => Err("FERRET_GIT_PROTOCOLS is empty or not Unicode".to_owned()),
+    }
 }
 
 fn required_env(name: &str) -> Result<String, String> {
