@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into connections\n             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)\n         values (uuidv7(), $1, $2, $3, $4, $5, $6, now(), now())\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+  "query": "insert into connections\n             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)\n         values ($1, $2, $3, $4, $5, $6, $7, now(), now())\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
   "describe": {
     "columns": [
       {
@@ -95,6 +95,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Uuid",
         "Text",
         "Text",
         "Jsonb",
@@ -113,5 +114,5 @@
       false
     ]
   },
-  "hash": "25f856d66e5aa995522d7c279c5a30bf46869b693a13d29011215e4171d7fe97"
+  "hash": "dfc334e4c0aed354a6cdf3fe8b1e19b6979e37ca7542f1ee20a18ec05ae29a4a"
 }

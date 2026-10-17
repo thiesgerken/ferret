@@ -298,29 +298,52 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
     // Nothing excluded: the note, the todo and the settings file.
     assert_eq!(invoice_hits(&server).await.len(), 3);
 
-    // An update that leaves the token out keeps it.
-    let updated = server
-        .graphql(
-            &cookie,
-            "mutation ($id: ID!, $input: ConnectionUpdate!) {
-                updateConnection(id: $id, input: $input) { config }
-            }",
-            json!({"id": id, "input": {
-                "config": json!({"remote": remote, "include": ["notes/**"]}).to_string(),
-                "schedule": "0 * * * *",
-                "enabled": true,
-            }}),
-        )
-        .await;
-    assert_eq!(updated["errors"], Value::Null, "{updated}");
-    server
-        .graphql(
-            &cookie,
-            "mutation ($id: ID!) { runConnectionNow(id: $id) }",
-            json!({"id": id}),
-        )
-        .await;
-    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+    let update = |config: Value| {
+        let server = &server;
+        let cookie = &cookie;
+        let id = id.clone();
+        async move {
+            server
+                .graphql(
+                    cookie,
+                    "mutation ($id: ID!, $input: ConnectionUpdate!) {
+                        updateConnection(id: $id, input: $input) { config }
+                    }",
+                    json!({"id": id, "input": {
+                        "config": config.to_string(),
+                        "schedule": "30 * * * *",
+                        "enabled": true,
+                    }}),
+                )
+                .await
+        }
+    };
+    let run_again = || async {
+        server
+            .graphql(
+                &cookie,
+                "mutation ($id: ID!) { runConnectionNow(id: $id) }",
+                json!({"id": id}),
+            )
+            .await;
+        assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+    };
+
+    // A new schedule with the same config keeps the token.
+    let rescheduled = update(json!({"remote": remote})).await;
+    assert_eq!(rescheduled["errors"], Value::Null, "{rescheduled}");
+    run_again().await;
+    assert_eq!(invoice_hits(&server).await.len(), 3);
+
+    // A changed config needs the token again: else a session could send it to another remote.
+    let elsewhere = update(json!({"remote": "https://attacker.example/x.git"})).await;
+    assert_eq!(
+        elsewhere["errors"][0]["message"],
+        "a changed configuration needs its credentials again: enter token"
+    );
+    let narrowed = update(json!({"remote": remote, "include": ["notes/**"], "token": "s3cret-token"})).await;
+    assert_eq!(narrowed["errors"], Value::Null, "{narrowed}");
+    run_again().await;
     assert_eq!(invoice_hits(&server).await.len(), 1);
 
     let runs = server
@@ -332,7 +355,11 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
         .await;
     assert_eq!(
         runs["data"]["connections"][0]["runs"],
-        json!([{"status": "SUCCEEDED", "error": null}, {"status": "SUCCEEDED", "error": null}])
+        json!([
+            {"status": "SUCCEEDED", "error": null},
+            {"status": "SUCCEEDED", "error": null},
+            {"status": "SUCCEEDED", "error": null},
+        ])
     );
     assert!(!runs.to_string().contains("s3cret-token"));
     let (config, credentials): (String, Vec<u8>) =

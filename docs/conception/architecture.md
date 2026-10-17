@@ -108,7 +108,8 @@ create table connections (
     user_id      uuid not null references users on delete cascade,
     plugin       text not null references plugin_types,
     source       text not null,                -- source root: documents go to it or below it
-    config       jsonb not null,               -- secret fields encrypted, see below
+    config       jsonb not null,               -- without the secret fields
+    credentials  bytea,                        -- the secret fields, sealed (see below), null without any
     schedule     text not null,                -- cron expression
     enabled      boolean not null default true,
     next_run_at  timestamptz not null,
@@ -202,8 +203,13 @@ Secret (generated once by Helm via `lookup`, or `existingSecret`). The server re
 without it.
 
 - They're stored apart from the rest of the config (`connections.credentials`: nonce, then
-  ciphertext), so the GraphQL API can't return them. An update that omits a secret keeps the stored
-  value; `null` clears it.
+  ciphertext), so the GraphQL API can't return them. The ciphertext is bound to its user and
+  connection (as associated data): copied to another row, it doesn't open.
+- Stored secrets survive only an update that leaves the rest of the config unchanged (schedule
+  and enabled may change). Any other config change needs every stored secret entered again, so a
+  session can't point a connection at its own server and have the next run send the secret
+  there. `null` removes a secret.
+- Validation errors under a secret field, or ones that would quote a secret, only name the path.
 - Only claimed runs get decrypted secrets, over the internal API.
 - The key must be backed up separately from the database. A database backup without it restores
   everything except plugin credentials, which then have to be re-entered: runs fail with that

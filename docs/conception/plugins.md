@@ -33,7 +33,7 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone over HTTPS (token write-only, [#11](https://github.com/thiesgerken/ferret/issues/11)) |
+| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule) needs it entered again |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
 | `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |

@@ -321,7 +321,7 @@ function ConfigInput({
     );
   }
   const placeholder = keepsStoredSecret
-    ? "Leave empty to keep the stored one"
+    ? "Leave empty to keep the stored one, unless the configuration changes"
     : Array.isArray(field.default)
       ? field.default.join("\n")
       : typeof field.default === "string"
@@ -550,6 +550,12 @@ function EditConnectionForm({
           className={cn(fieldClass, "font-mono")}
         />
       </div>
+      {fields.some((field) => field.secret) && (
+        <p className="text-xs text-muted-foreground">
+          Changing the configuration (not the schedule) needs every stored secret entered again, so
+          an edit can&apos;t send them somewhere new.
+        </p>
+      )}
       <ConfigFieldset
         idPrefix={`edit-${connection.id}`}
         fields={fields}
