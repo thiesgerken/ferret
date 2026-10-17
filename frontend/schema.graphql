@@ -142,6 +142,8 @@ type Connection {
   createdAt: DateTime!
   "The latest runs, newest first."
   runs(limit: Int! = 20): [PluginRun!]!
+  "What the user excluded from this connection's source, newest first."
+  exclusions: [Exclusion!]!
 }
 
 type ContentTypeCount {
@@ -189,6 +191,27 @@ type EmbeddingModel {
   embedded: Int!
   "How many chunks the user has."
   chunks: Int!
+}
+
+type ExcludedDocuments {
+  "One, or the documents of the whole thread."
+  deleted: Int!
+  """
+    False when no connection owns the source (an API key wrote it): the documents are
+    deleted, but nothing stops whatever wrote them from writing them again.
+  """
+  remembered: Boolean!
+}
+
+"A document, or a whole thread, that the connection never ingests again."
+type Exclusion {
+  id: ID!
+  source: String!
+  "Set for an excluded document, null for a thread."
+  externalId: String
+  "Set for an excluded thread, null for a document."
+  thread: String
+  createdAt: DateTime!
 }
 
 "A page of the user's documents with the counts to narrow them down."
@@ -277,6 +300,16 @@ type Mutation {
     repeats the root. Returns how many documents were deleted.
   """
   deleteConnection(id: ID!, confirmSource: String!): Int!
+  """
+    Removes a document, or with `wholeThread` its whole thread, from the index for good: it's
+    deleted, and its connection drops it from now on.
+  """
+  excludeDocument(id: ID!, wholeThread: Boolean! = false): ExcludedDocuments!
+  """
+    Lets the connection ingest an excluded document or thread again. Its next run starts over
+    from scratch, so even a plugin that only fetches changes puts it again.
+  """
+  removeExclusion(id: ID!): ID!
   """
     Sets the embedding model the signed-in user's searches use (UI and API keys), null for the
     configured default. Returns it.

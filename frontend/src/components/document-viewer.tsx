@@ -2,12 +2,13 @@
 
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useQuery } from "urql";
+import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ViewDocumentQuery } from "@/gql/graphql";
+import { errorMessage } from "@/lib/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
 import { viewerHref } from "@/lib/viewer-url";
@@ -17,6 +18,7 @@ const ViewDocumentQueryDocument = graphql(`
     document(id: $id) {
       id
       source
+      thread
       contentType
       title
       text
@@ -36,7 +38,17 @@ const ViewDocumentQueryDocument = graphql(`
   }
 `);
 
+const ExcludeDocumentMutation = graphql(`
+  mutation ExcludeDocument($id: ID!, $wholeThread: Boolean!) {
+    excludeDocument(id: $id, wholeThread: $wholeThread) {
+      deleted
+      remembered
+    }
+  }
+`);
+
 type ViewedDocument = NonNullable<ViewDocumentQuery["document"]>;
+type Excluded = { deleted: number; remembered: boolean };
 
 /** Character offsets of the hit in the document's text, as the search returns them. */
 export type HitOffsets = { start: number; end: number };
@@ -44,6 +56,7 @@ export type HitOffsets = { start: number; end: number };
 export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null }) {
   const [{ data, error }] = useQuery({ query: ViewDocumentQueryDocument, variables: { id } });
   const document = data?.document;
+  const [excluded, setExcluded] = useState<Excluded | null>(null);
   const range = useMemo(
     () => (document && hit ? toHitRange(document.text, hit.start, hit.end) : null),
     [document, hit],
@@ -58,6 +71,9 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
   }
   if (!data) {
     return null;
+  }
+  if (excluded) {
+    return <ExcludedNotice excluded={excluded} />;
   }
   if (!document) {
     return <p className="p-8 text-center text-sm text-muted-foreground">This document doesn&apos;t exist (anymore).</p>;
@@ -83,6 +99,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
       </header>
       <DocumentBody document={document} range={range} />
       <ThreadNavigation previous={document.previousInThread} next={document.nextInThread} />
+      <ExcludeControls document={document} onExcluded={setExcluded} />
     </div>
   );
 }
@@ -175,5 +192,62 @@ function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: 
         </Link>
       )}
     </nav>
+  );
+}
+
+/** Removes the document, or its whole thread, from the index for good. */
+function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; onExcluded: (excluded: Excluded) => void }) {
+  const [{ fetching }, exclude] = useMutation(ExcludeDocumentMutation);
+  const [error, setError] = useState("");
+
+  async function handleExclude(wholeThread: boolean) {
+    const what = wholeThread ? "this document and the rest of its thread" : "this document";
+    if (!window.confirm(`Delete ${what} from ferret, and don't ingest it again?`)) {
+      return;
+    }
+    const result = await exclude({ id: document.id, wholeThread });
+    if (result.error || !result.data) {
+      setError(result.error ? errorMessage(result.error) : "Nothing was excluded.");
+      return;
+    }
+    onExcluded(result.data.excludeDocument);
+  }
+
+  const buttonClass = "rounded-md px-2 py-1 text-destructive hover:bg-accent disabled:opacity-50";
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
+      <span className="text-muted-foreground">Exclude from index:</span>
+      <button type="button" disabled={fetching} onClick={() => handleExclude(false)} className={buttonClass}>
+        This document
+      </button>
+      {document.thread && (
+        <button type="button" disabled={fetching} onClick={() => handleExclude(true)} className={buttonClass}>
+          Its whole thread
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ExcludedNotice({ excluded }: { excluded: Excluded }) {
+  return (
+    <div className="mx-auto max-w-3xl space-y-3 px-4 py-8 text-sm">
+      <p role="status">
+        {excluded.deleted === 1 ? "1 document" : `${excluded.deleted} documents`} removed from the index.
+      </p>
+      <p className="text-muted-foreground">
+        {excluded.remembered
+          ? "Its connection won't ingest it again. Undo that on the Connections page."
+          : "No connection owns its source, so nothing remembers this: whatever wrote it there can write it again."}
+      </p>
+      <Link href="/" className="text-brand hover:underline">
+        Back to search
+      </Link>
+    </div>
   );
 }

@@ -59,7 +59,8 @@ async fn a_judgment_belongs_to_its_query_and_filters_and_can_be_taken_back(pool:
         .put_document(&document("paperless", "invoice", "The invoice is paid."))
         .await
         .unwrap()
-        .id
+        .id()
+        .unwrap()
         .to_string();
     api.put_document(&document("notes", "note", "An invoice to pay."))
         .await
@@ -110,7 +111,8 @@ async fn judgments_disappear_with_their_document(pool: PgPool) {
         .put_document(&document("notes", "a", "An invoice."))
         .await
         .unwrap()
-        .id
+        .id()
+        .unwrap()
         .to_string();
     let cookie = server.sign_in().await;
     set_judgment(&server, &cookie, json!({"q": "invoice"}), &id, true).await;
@@ -129,7 +131,8 @@ async fn only_ones_own_documents_can_be_judged(pool: PgPool) {
         .put_document(&document("notes", "a", "An invoice."))
         .await
         .unwrap()
-        .id;
+        .id()
+        .unwrap();
     sqlx::query(
         "insert into users (id, username, password_hash, created_at, password_changed_at)
          values (gen_random_uuid(), 'other', 'x', now(), now())",
@@ -167,7 +170,8 @@ async fn judgments_are_per_user(pool: PgPool) {
         .put_document(&document("notes", "a", "An invoice."))
         .await
         .unwrap()
-        .id;
+        .id()
+        .unwrap();
     // No user management yet, so the other user and their judgment come straight from SQL.
     sqlx::query(
         r#"with bob as (
@@ -210,7 +214,8 @@ async fn whitespace_doesnt_split_a_search_and_unanswerable_searches_are_refused(
         .put_document(&document("notes", "a", "A paid invoice."))
         .await
         .unwrap()
-        .id
+        .id()
+        .unwrap()
         .to_string();
     let cookie = server.sign_in().await;
 
@@ -236,7 +241,13 @@ async fn relative_ranges_are_judged_as_presets(pool: PgPool) {
     let api = server.admin_api().await;
     let mut recent = document("notes", "a", "A recent invoice.");
     recent.created_at = chrono::Utc::now();
-    let id = api.put_document(&recent).await.unwrap().id.to_string();
+    let id = api
+        .put_document(&recent)
+        .await
+        .unwrap()
+        .id()
+        .unwrap()
+        .to_string();
     let cookie = server.sign_in().await;
     let past_week = json!({"q": "invoice", "range": "WEEK"});
 

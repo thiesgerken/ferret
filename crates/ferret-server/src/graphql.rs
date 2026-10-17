@@ -27,6 +27,7 @@ use crate::{
     documents,
     embeddings::{self, Embedding},
     error::ApiError,
+    exclusions::{self, ExclusionError},
     explore::{self, ExploreError, ExploreFilter, Order, Page},
     judgments,
     search::{self, RelativeRange, SearchError},
@@ -254,6 +255,47 @@ impl Connection {
             .await
             .map_err(internal)
     }
+
+    /// What the user excluded from this connection's source, newest first.
+    async fn exclusions(&self, context: &Context) -> FieldResult<Vec<Exclusion>> {
+        let exclusions = exclusions::list(&context.pool, self.id)
+            .await
+            .map_err(internal)?;
+        Ok(exclusions.into_iter().map(Exclusion::from).collect())
+    }
+}
+
+/// A document, or a whole thread, that the connection never ingests again.
+#[derive(GraphQLObject)]
+struct Exclusion {
+    id: ID,
+    source: String,
+    /// Set for an excluded document, null for a thread.
+    external_id: Option<String>,
+    /// Set for an excluded thread, null for a document.
+    thread: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+impl From<exclusions::Exclusion> for Exclusion {
+    fn from(exclusion: exclusions::Exclusion) -> Self {
+        Self {
+            id: ID::new(exclusion.id.to_string()),
+            source: exclusion.source,
+            external_id: exclusion.external_id,
+            thread: exclusion.thread,
+            created_at: exclusion.created_at,
+        }
+    }
+}
+
+#[derive(GraphQLObject)]
+struct ExcludedDocuments {
+    /// One, or the documents of the whole thread.
+    deleted: i32,
+    /// False when no connection owns the source (an API key wrote it): the documents are
+    /// deleted, but nothing stops whatever wrote them from writing them again.
+    remembered: bool,
 }
 
 #[derive(GraphQLEnum)]
@@ -878,6 +920,40 @@ impl Mutation {
         Ok(i32::try_from(deleted).unwrap_or(i32::MAX))
     }
 
+    /// Removes a document, or with `wholeThread` its whole thread, from the index for good: it's
+    /// deleted, and its connection drops it from now on.
+    async fn exclude_document(
+        context: &Context,
+        id: ID,
+        #[graphql(default = false)] whole_thread: bool,
+    ) -> FieldResult<ExcludedDocuments> {
+        let Ok(id) = id.parse::<Uuid>() else {
+            return Err(no_such_document());
+        };
+        match exclusions::exclude(&context.pool, context.user.id, id, whole_thread).await {
+            Ok(Some(excluded)) => Ok(ExcludedDocuments {
+                deleted: i32::try_from(excluded.deleted).unwrap_or(i32::MAX),
+                remembered: excluded.remembered,
+            }),
+            Ok(None) => Err(no_such_document()),
+            Err(ExclusionError::Invalid(message)) => Err(invalid_input(message)),
+            Err(ExclusionError::Database(error)) => Err(internal(error)),
+        }
+    }
+
+    /// Lets the connection ingest an excluded document or thread again. Its next run starts over
+    /// from scratch, so even a plugin that only fetches changes puts it again.
+    async fn remove_exclusion(context: &Context, id: ID) -> FieldResult<ID> {
+        let not_found = || FieldError::new("no such exclusion", graphql_value!(null));
+        let parsed = id.parse::<Uuid>().map_err(|_| not_found())?;
+        match exclusions::remove(&context.pool, context.user.id, parsed).await {
+            Ok(true) => Ok(id),
+            Ok(false) => Err(not_found()),
+            Err(ExclusionError::Invalid(message)) => Err(invalid_input(message)),
+            Err(ExclusionError::Database(error)) => Err(internal(error)),
+        }
+    }
+
     /// Sets the embedding model the signed-in user's searches use (UI and API keys), null for the
     /// configured default. Returns it.
     async fn set_default_embedding_model(
@@ -983,6 +1059,10 @@ fn parse_config(config: &str) -> FieldResult<serde_json::Value> {
 
 fn parse_id(id: &ID) -> FieldResult<Uuid> {
     id.parse().map_err(|_| no_such_connection())
+}
+
+fn no_such_document() -> FieldError {
+    FieldError::new("no such document", graphql_value!(null))
 }
 
 fn no_such_connection() -> FieldError {
