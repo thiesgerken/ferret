@@ -8,8 +8,10 @@ set -euo pipefail
 url=${FERRET_URL:-http://127.0.0.1:3380}
 demo=$(cd "$(dirname "$0")/../docker/demo" && pwd)
 
-# The session cookie is `Secure`, which curl's cookie jar won't send over plain http.
-cookie=$(curl -fsS -o /dev/null -D - "$url/auth/login" -H 'content-type: application/json' \
+# The session cookie is `Secure`, which curl's cookie jar won't send over plain http. The retries
+# cover a server that is still starting (connection refused, or 502 from the proxy).
+cookie=$(curl -fsS --retry 90 --retry-delay 2 --retry-connrefused -o /dev/null -D - "$url/auth/login" \
+  -H 'content-type: application/json' \
   -d "$(jq -n --arg password "${FERRET_PASSWORD:-ferret-development}" \
     '{username: "admin", password: $password}')" |
   grep -i '^set-cookie:' | sed 's/^[^:]*: *//; s/;.*//')
@@ -42,10 +44,21 @@ connect() { # plugin, source, config
     echo "connection $2: exists"
     return
   fi
-  graphql 'mutation($input: NewConnection!) { createConnection(input: $input) { id } }' \
-    "$(jq -n --arg plugin "$1" --arg source "$2" --argjson config "$3" \
-      '{input: {$plugin, $source, config: ($config | tojson), schedule: "0 * * * *"}}')" >/dev/null
-  echo "connection $2: created, first run starts now"
+  local input error
+  input=$(jq -n --arg plugin "$1" --arg source "$2" --argjson config "$3" \
+    '{input: {$plugin, $source, config: ($config | tojson), schedule: "0 * * * *"}}')
+  # Right after `docker compose up`, the worker may not have registered its plugins yet.
+  for _ in {1..30}; do
+    if error=$(graphql 'mutation($input: NewConnection!) { createConnection(input: $input) { id } }' \
+      "$input" 2>&1 >/dev/null); then
+      echo "connection $2: created, first run starts now"
+      return
+    fi
+    [[ $error == *"no worker offers the plugin"* ]] || break
+    sleep 2
+  done
+  echo "connection $2: $error" >&2
+  return 1
 }
 
 connect git ferret '{
