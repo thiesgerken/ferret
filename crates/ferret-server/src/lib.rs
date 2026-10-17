@@ -17,12 +17,14 @@ mod chunking;
 pub mod config;
 mod connections;
 mod content_type;
+mod credentials;
 mod documents;
 pub mod embeddings;
 mod error;
 mod exclusions;
 pub mod graphql;
 mod highlight;
+mod judgments;
 mod runs;
 mod search;
 mod search_query;
@@ -32,6 +34,7 @@ mod tei;
 mod users;
 
 pub use auth::SessionKey;
+pub use credentials::ConfigKey;
 use embeddings::Embedding;
 pub use runs::WorkerSecret;
 pub use users::bootstrap_admin;
@@ -52,6 +55,7 @@ pub struct AppState {
     pool: PgPool,
     session_key: Arc<SessionKey>,
     worker_secret: Arc<WorkerSecret>,
+    config_key: Arc<ConfigKey>,
     /// Wakes waiting claims, fed by [`listen_for_due_runs`].
     run_wakeup: Arc<Notify>,
     schema: Arc<graphql::Schema>,
@@ -64,11 +68,13 @@ impl AppState {
         session_key: SessionKey,
         worker_secret: WorkerSecret,
         embedding: Arc<Embedding>,
+        config_key: ConfigKey,
     ) -> Self {
         Self {
             pool,
             session_key: Arc::new(session_key),
             worker_secret: Arc::new(worker_secret),
+            config_key: Arc::new(config_key),
             run_wakeup: Arc::new(Notify::new()),
             schema: Arc::new(graphql::schema()),
             embedding,

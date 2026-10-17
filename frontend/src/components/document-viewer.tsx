@@ -8,7 +8,10 @@ import remarkGfm from "remark-gfm";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ViewDocumentQuery } from "@/gql/graphql";
+import { errorMessage } from "@/lib/graphql";
+import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
+import { viewerHref } from "@/lib/viewer-url";
 
 const ViewDocumentQueryDocument = graphql(`
   query ViewDocument($id: ID!) {
@@ -76,6 +79,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
     return <p className="p-8 text-center text-sm text-muted-foreground">This document doesn&apos;t exist (anymore).</p>;
   }
 
+  const originUrl = linkableUrl(document.url);
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
       <Link href="/" className="text-2xl font-semibold tracking-tight text-brand select-none">
@@ -86,8 +90,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
         <p className="text-xs text-muted-foreground">
           {document.source} · modified {new Date(document.modifiedAt).toLocaleString()}
         </p>
-        {document.url && (
-          <a href={document.url} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        {originUrl && (
+          <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
             <ExternalLink className="size-3.5" aria-hidden />
             Open in origin
           </a>
@@ -191,10 +195,6 @@ function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: 
   );
 }
 
-function viewerHref(id: string): string {
-  return `/view?${new URLSearchParams({ id })}`;
-}
-
 /** Removes the document, or its whole thread, from the index for good. */
 function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; onExcluded: (excluded: Excluded) => void }) {
   const [{ fetching }, exclude] = useMutation(ExcludeDocumentMutation);
@@ -207,7 +207,7 @@ function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; o
     }
     const result = await exclude({ id: document.id, wholeThread });
     if (result.error || !result.data) {
-      setError(result.error?.graphQLErrors[0]?.message ?? result.error?.message ?? "Nothing was excluded.");
+      setError(result.error ? errorMessage(result.error) : "Nothing was excluded.");
       return;
     }
     onExcluded(result.data.excludeDocument);

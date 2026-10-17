@@ -112,6 +112,30 @@ async fn search_collapses_a_thread_into_its_best_hit(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
+async fn k_counts_threads_not_documents(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+
+    let hits = api
+        .search(&SearchQuery {
+            sources: vec!["mail/zoho".to_owned()],
+            k: Some(2),
+            ..invoices()
+        })
+        .await
+        .unwrap()
+        .hits;
+
+    let mut groups: Vec<_> = hits
+        .iter()
+        .map(|hit| (hit.thread.as_deref(), hit.collapsed))
+        .collect();
+    groups.sort();
+    assert_eq!(groups, [(None, 0), (Some("invoices"), 2)]);
+}
+
+#[sqlx::test(migrations = false)]
 async fn the_viewer_steps_through_a_thread(pool: PgPool) {
     let server = start_server(pool).await;
     let thread = ingest(&server.admin_api().await).await;

@@ -25,7 +25,7 @@ use crate::{
     AppState,
     api_auth::{ApiCaller, CallerKind, Scope},
     auth::{ISSUER, SessionKey},
-    connections,
+    connections, credentials,
     error::ApiError,
 };
 
@@ -197,7 +197,7 @@ async fn try_claim(
     .execute(&mut *tx)
     .await?;
     let Some(connection) = sqlx::query!(
-        "select c.id, c.user_id, c.plugin, c.source, c.config, c.schedule, c.state
+        "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state
          from connections c
          where c.enabled and c.plugin = any($1) and c.next_run_at <= now()
            and not exists (select 1 from plugin_runs r
@@ -214,15 +214,41 @@ async fn try_claim(
         return Ok(None);
     };
 
-    let run_id = sqlx::query_scalar!(
-        "insert into plugin_runs (id, connection_id, worker_id, status, started_at, heartbeat_at)
-         values (uuidv7(), $1, $2, 'running', now(), now())
-         returning id",
-        connection.id,
-        worker_id,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let config = match &connection.credentials {
+        None => Ok(connection.config),
+        Some(sealed) => {
+            let owner = credentials::Owner {
+                user_id: connection.user_id,
+                connection_id: connection.id,
+            };
+            (state.config_key.open(sealed, owner))
+                .map(|credentials| credentials::merge(connection.config, credentials))
+        }
+    };
+    // A run that can't get its credentials fails right here, so its connection doesn't block the
+    // queue and the user sees why in the run history.
+    let run_id = match &config {
+        Ok(_) => sqlx::query_scalar!(
+            "insert into plugin_runs (id, connection_id, worker_id, status, started_at, heartbeat_at)
+             values (uuidv7(), $1, $2, 'running', now(), now())
+             returning id",
+            connection.id,
+            worker_id,
+        )
+        .fetch_one(&mut *tx)
+        .await?,
+        Err(error) => sqlx::query_scalar!(
+            "insert into plugin_runs
+                 (id, connection_id, worker_id, status, started_at, heartbeat_at, finished_at, error)
+             values (uuidv7(), $1, $2, 'failed', now(), now(), now(), $3)
+             returning id",
+            connection.id,
+            worker_id,
+            error.to_string(),
+        )
+        .fetch_one(&mut *tx)
+        .await?,
+    };
     match connections::next_slot(&connection.schedule, Utc::now()) {
         Ok(next_run_at) => {
             sqlx::query!(
@@ -245,6 +271,9 @@ async fn try_claim(
         }
     }
     tx.commit().await?;
+    let Ok(config) = config else {
+        return Ok(None);
+    };
 
     let token = issue_token(
         &state.session_key,
@@ -258,7 +287,7 @@ async fn try_claim(
         connection_id: connection.id,
         plugin: connection.plugin,
         source: connection.source,
-        config: connection.config,
+        config,
         state: connection.state,
         token,
     }))

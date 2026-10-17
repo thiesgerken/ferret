@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (select 1 from documents where id = $1 and user_id = $2) as \"owned!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "owned!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1faed479e5aba7ae2fbc5e29cc8be8771f7cf856f58c9f2a5db26b2540c6f993"
+}

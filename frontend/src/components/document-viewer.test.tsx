@@ -15,6 +15,7 @@ async function renderViewer(
   text: string,
   hit: { start: number; end: number } | null,
   operations: Operation[] = [],
+  url = "obsidian://open?file=note.md",
 ) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const client = createGraphqlClient(async (_url, init) => {
@@ -33,7 +34,7 @@ async function renderViewer(
           contentType,
           title: "A note",
           text,
-          url: "obsidian://open?file=note.md",
+          url,
           authors: ["thies"],
           createdAt: "2026-01-01T12:00:00Z",
           modifiedAt: "2026-01-02T12:00:00Z",
@@ -57,6 +58,14 @@ test("plain text marks the hit by character offsets", async () => {
 
   assert.equal(view.container.querySelector("#hit")?.textContent, "invoice");
   assert.equal(view.container.querySelector("a[href^='obsidian:']")?.textContent, "Open in origin");
+  await view.unmount();
+});
+
+test("an origin url with a dangerous scheme isn't a link", async () => {
+  const view = await renderViewer("PLAIN", "text", null, [], "javascript:alert(document.cookie)");
+
+  assert.doesNotMatch(view.container.textContent ?? "", /Open in origin/);
+  assert.equal(view.container.querySelector("a[href^='javascript:']"), null);
   await view.unmount();
 });
 

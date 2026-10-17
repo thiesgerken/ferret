@@ -196,7 +196,8 @@ mounted into server and workers from the same Secret (generated once by Helm via
 
 ferret is Kubernetes-native: a Helm chart is the deployment, docker-compose exists for development
 only. All auth secrets (`FERRET_BOOTSTRAP_PASSWORD`, `FERRET_SESSION_SECRET`,
-`FERRET_WORKER_SECRET`) come from Secrets generated once via `lookup`, or from `existingSecret`.
+`FERRET_WORKER_SECRET`) and the plugin credentials' `FERRET_CONFIG_KEY` come from Secrets generated
+once via `lookup`, or from `existingSecret`.
 A fresh install needs no manual step: log in as `admin`, add connections.
 
 ## Later

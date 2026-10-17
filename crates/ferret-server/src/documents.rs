@@ -378,10 +378,28 @@ async fn sync_chunks(
     sqlx::query!("delete from chunks where id = any($1)", &stale)
         .execute(&mut *tx)
         .await?;
+    // The title is part of the embedded input: a new title is a new input, embedded or rejected
+    // afresh.
+    sqlx::query!(
+        "delete from chunk_embeddings e using chunks c
+         where c.id = e.chunk_id and c.id = any($1) and c.title is distinct from $2",
+        &kept_ids,
+        document.title,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "delete from embedding_failures f using chunks c
+         where c.id = f.chunk_id and c.id = any($1) and c.title is distinct from $2",
+        &kept_ids,
+        document.title,
+    )
+    .execute(&mut *tx)
+    .await?;
     sqlx::query!(
         "update chunks c set
              ordinal = k.ordinal, start_offset = k.start_offset, end_offset = k.end_offset,
-             content_type = $5, ts = $6
+             content_type = $5, ts = $6, title = $7
          from unnest($1::uuid[], $2::int[], $3::int[], $4::int[])
              as k(id, ordinal, start_offset, end_offset)
          where c.id = k.id",
@@ -391,6 +409,7 @@ async fn sync_chunks(
         &kept.end_offsets,
         content_type::as_str(document.content_type),
         document.created_at,
+        document.title,
     )
     .execute(&mut *tx)
     .await?;
@@ -404,17 +423,18 @@ async fn sync_chunks(
     .await?;
     sqlx::query!(
         "insert into chunks
-             (id, document_id, user_id, source, content_type, ts,
+             (id, document_id, user_id, source, content_type, ts, title,
               ordinal, start_offset, end_offset, text, text_hash)
-         select uuidv7(), $1, $2, $3, $4, $5,
+         select uuidv7(), $1, $2, $3, $4, $5, $6,
                 n.ordinal, n.start_offset, n.end_offset, n.text, n.text_hash
-         from unnest($6::int[], $7::int[], $8::int[], $9::text[], $10::bytea[])
+         from unnest($7::int[], $8::int[], $9::int[], $10::text[], $11::bytea[])
              as n(ordinal, start_offset, end_offset, text, text_hash)",
         document_id,
         user_id,
         document.source,
         content_type::as_str(document.content_type),
         document.created_at,
+        document.title,
         &new.ordinals,
         &new.start_offsets,
         &new.end_offsets,
