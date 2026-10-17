@@ -4,8 +4,11 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    sync::Arc,
-    time::Duration,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
@@ -19,8 +22,8 @@ use crate::{
     tei,
 };
 
-/// Chunks per pump transaction, within TEI's default client batch size (32).
-const BATCH_SIZE: i64 = 32;
+/// Chunks per pump transaction at most, TEI's default client batch size.
+const MAX_BATCH_SIZE: usize = 32;
 const MAX_EMBEDDED_TITLE_CHARS: usize = 200;
 const TITLE_SEPARATOR: &str = "\n\n";
 /// The longest embedded input, without the model's document prefix. Every model must take it.
@@ -29,7 +32,7 @@ const MAX_EMBEDDED_CHARS: usize =
 /// A search waits this long for its query embedding, then answers by keyword only. A CPU TEI
 /// that's busy with pump batches answers slower than an idle one.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
-/// A pump batch of up to 32 chunks may take this long on a CPU.
+/// A pump batch may take this long, see `BatchSize` for a TEI that is slower.
 const BATCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// `/info` and the probe embedding at startup.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -46,6 +49,38 @@ pub struct Model {
     pub config: ModelConfig,
     /// Probed at startup: TEI's `/info` doesn't report it.
     pub dimension: usize,
+    batch_size: BatchSize,
+}
+
+/// How many chunks the pump claims per batch. TEI doesn't cancel a request the pump gave up on,
+/// so on a CPU that needs longer than `BATCH_TIMEOUT` for a full batch, retrying the same size
+/// queues behind the abandoned one and times out again, forever. Halving on a timeout lets the
+/// abandoned work drain. Growing only after a batch that took less than half the timeout keeps
+/// the size below the next timeout, and a GPU TEI at the maximum.
+struct BatchSize(AtomicUsize);
+
+impl BatchSize {
+    fn new() -> Self {
+        Self(AtomicUsize::new(MAX_BATCH_SIZE))
+    }
+
+    fn get(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    fn timed_out(&self) {
+        self.0.update(Ordering::Relaxed, Ordering::Relaxed, |size| {
+            (size / 2).max(1)
+        });
+    }
+
+    fn succeeded(&self, took: Duration) {
+        if took < BATCH_TIMEOUT / 2 {
+            self.0.update(Ordering::Relaxed, Ordering::Relaxed, |size| {
+                (size + 1).min(MAX_BATCH_SIZE)
+            });
+        }
+    }
 }
 
 impl Model {
@@ -131,6 +166,7 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
         let model = Model {
             dimension: probe[0].len(),
             config,
+            batch_size: BatchSize::new(),
         };
         create_index(pool, &model).await?;
         tracing::info!(model = %model.config.name, dimension = model.dimension, max_input_length, "embedding model ready");
@@ -432,7 +468,7 @@ async fn embed_batch(
          limit $3",
         model.config.name,
         CLAIM_CANDIDATES,
-        BATCH_SIZE,
+        model.batch_size.get() as i64,
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -511,7 +547,7 @@ async fn embed_batch(
 
 /// Embeds `missing` texts and caches their vectors. Returns the texts TEI rejected (a 4xx, e.g.
 /// too long for the model) with TEI's answer: one bad text must not keep the others, and every
-/// newer chunk, from ever being embedded.
+/// newer chunk, from ever being embedded. Adapts the model's batch size to how long TEI took.
 async fn cache_embeddings(
     tx: &mut PgConnection,
     http: &reqwest::Client,
@@ -523,8 +559,16 @@ async fn cache_embeddings(
         return Ok(rejected);
     }
     let (hashes, texts): (Vec<_>, Vec<_>) = missing.into_iter().unzip();
+    let started = Instant::now();
     let (hashes, vectors) = match tei::embed(http, model.pump_url(), &texts, BATCH_TIMEOUT).await {
-        Ok(vectors) => (hashes, vectors),
+        Ok(vectors) => {
+            model.batch_size.succeeded(started.elapsed());
+            (hashes, vectors)
+        }
+        Err(error) if error.is_timeout() => {
+            model.batch_size.timed_out();
+            return Err(error.into());
+        }
         Err(error) if is_rejection(&error) => {
             // Find the culprits one by one.
             let mut embedded_hashes = Vec::new();
@@ -620,4 +664,46 @@ fn text_hash(prefixed: &str) -> Vec<u8> {
 fn vector_literal(vector: &[f32]) -> String {
     let values: Vec<String> = vector.iter().map(f32::to_string).collect();
     format!("[{}]", values.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A TEI that computes every request to the end, one after another, even the ones the pump
+    /// gave up on. Returns how many chunks the pump embedded within `within`.
+    fn pump_against(size: &BatchSize, per_chunk: Duration, within: Duration) -> usize {
+        let (mut now, mut tei_busy_until, mut embedded) = (Duration::ZERO, Duration::ZERO, 0);
+        while now < within {
+            let batch = size.get();
+            tei_busy_until = now.max(tei_busy_until) + per_chunk * batch as u32;
+            let took = tei_busy_until - now;
+            if took > BATCH_TIMEOUT {
+                size.timed_out();
+                now += BATCH_TIMEOUT;
+            } else {
+                size.succeeded(took);
+                embedded += batch;
+                now = tei_busy_until;
+            }
+        }
+        embedded
+    }
+
+    #[test]
+    fn a_tei_too_slow_for_a_full_batch_still_makes_progress_and_a_fast_one_gets_full_batches() {
+        let size = BatchSize::new();
+        // A CPU that needs 70 s for 32 long chunks. A fixed batch of 32 embeds nothing.
+        let slow = Duration::from_secs(70) / 32;
+        let ten_minutes = Duration::from_secs(600);
+        let embedded = pump_against(&size, slow, ten_minutes);
+        // At least three quarters of what the TEI could compute in that time.
+        assert!(
+            embedded * 4 >= (ten_minutes.as_secs_f64() / slow.as_secs_f64()) as usize * 3,
+            "{embedded}"
+        );
+
+        pump_against(&size, Duration::from_millis(10), Duration::from_secs(60));
+        assert_eq!(size.get(), MAX_BATCH_SIZE);
+    }
 }
