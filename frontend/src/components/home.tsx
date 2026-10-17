@@ -30,7 +30,7 @@ export function Home({ onSearch }: { onSearch: (q: string) => void }) {
       <BrandMark className="h-24 w-auto drop-shadow-sm select-none" />
       <h1 className="mt-4 text-5xl font-semibold tracking-tight text-brand select-none">ferret</h1>
       <p className="mt-3 text-center text-muted-foreground">Your notes, documents, mail and chats in one search.</p>
-      <SearchField onSearch={onSearch} placeholder="Try “the invoice for the heating repair”" className="mt-10" />
+      <SearchField onSearch={onSearch} className="mt-10" />
       <IndexSummary />
     </main>
   );
