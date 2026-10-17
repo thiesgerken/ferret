@@ -29,7 +29,7 @@ The body colour is the UI's `--brand`.
 
 ## Wordmark
 
-"ferret" is set in Alegreya Bold, lowercase, in `--brand` (Tailwind's `font-wordmark`). Next to the
+"ferret" is set in Alegreya SemiBold, lowercase, in `--brand` (Tailwind's `font-wordmark`). Next to the
 mark it sits on the mark's flat base, with the mark at 0.8 em.
 
 ## Using it

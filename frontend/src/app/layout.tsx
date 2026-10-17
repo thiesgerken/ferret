@@ -11,7 +11,7 @@ const geistMono = Geist_Mono({
 const alegreya = Alegreya({
   variable: "--font-alegreya",
   subsets: ["latin"],
-  weight: "700",
+  weight: "600",
 });
 
 export const metadata: Metadata = {

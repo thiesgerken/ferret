@@ -28,7 +28,7 @@ export function Home({ onSearch }: { onSearch: (q: string) => void }) {
   return (
     <main className="flex min-h-dvh flex-col items-center bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,color-mix(in_oklch,var(--brand)_14%,transparent),transparent)] px-4 pt-[16vh]">
       <BrandMark className="h-24 w-auto drop-shadow-sm select-none" />
-      <h1 className="mt-4 font-wordmark text-5xl font-bold text-brand select-none">ferret</h1>
+      <h1 className="mt-4 font-wordmark text-5xl font-semibold text-brand select-none">ferret</h1>
       <p className="mt-3 text-center text-muted-foreground">Your notes, documents, mail and chats in one search.</p>
       <SearchField onSearch={onSearch} className="mt-10" />
       <IndexSummary />
