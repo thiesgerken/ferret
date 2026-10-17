@@ -278,7 +278,13 @@ type Hit {
   authors: [String!]!
   createdAt: DateTime!
   modifiedAt: DateTime!
-  score: Float!
+  "The best BM25 score among the document's chunks, null when the keywords didn't match."
+  keywordScore: Float
+  """
+    The best cosine similarity to the query among the document's chunks (0 to 1), null when
+    no chunk passed the model's cut-off or the semantic half didn't run.
+  """
+  similarity: Float
   "How many more documents of the same thread matched and were folded into this hit."
   collapsed: Int!
   chunk: HitChunk!
@@ -419,6 +425,23 @@ type RunStats {
 "The hits of a search, and whether its semantic half ran."
 type SearchResult {
   hits: [Hit!]!
+  """
+    Matching documents after the similarity cut-off, exclusions and collapsing, not only the
+    hits returned.
+  """
+  total: Int!
+  """
+    True when `total` is a minimum: the keyword half filled its candidates, or the vector half
+    didn't reach the model's similarity cut-off within its candidates.
+  """
+  totalIsLowerBound: Boolean!
+  """
+    Documents the user may read in the selected sources (all sources when none are selected).
+    The other filters don't narrow it.
+  """
+  documentsInScope: Int!
+  "The search's time on the server, in milliseconds."
+  tookMs: Int!
   """
     Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
     keyword matches only. Null when it ran.

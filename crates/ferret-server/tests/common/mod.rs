@@ -165,6 +165,8 @@ pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
         bulk_url: None,
         query_prefix: QUERY_PREFIX.to_owned(),
         document_prefix: DOCUMENT_PREFIX.to_owned(),
+        // The fake's vectors are never negative, so no candidate is dropped.
+        min_similarity: 0.0,
     }
 }
 

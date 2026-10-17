@@ -35,6 +35,9 @@ pub struct ModelConfig {
     pub query_prefix: String,
     #[serde(default)]
     pub document_prefix: String,
+    /// Semantic candidates less similar to the query (cosine) are dropped. Where noise begins
+    /// depends on the model, see embeddings.md for how to calibrate it.
+    pub min_similarity: f64,
 }
 
 impl Config {
@@ -57,6 +60,13 @@ impl EmbeddingConfig {
                 return Err(format!(
                     "embedding model name {:?} must match [a-z0-9][a-z0-9._-]*, end in a letter \
                      or digit and have at most {MAX_NAME_CHARS} characters",
+                    model.name
+                )
+                .into());
+            }
+            if !(0.0..1.0).contains(&model.min_similarity) {
+                return Err(format!(
+                    "embedding model {:?}: min_similarity must be at least 0 and below 1",
                     model.name
                 )
                 .into());
@@ -121,6 +131,7 @@ mod tests {
                     bulk_url: None,
                     query_prefix: String::new(),
                     document_prefix: String::new(),
+                    min_similarity: 0.5,
                 })
                 .collect(),
         }
@@ -137,6 +148,7 @@ embedding:
       url: http://ferret-tei-qwen3:80
       bulk_url: http://ferret-tei-qwen3-gpu:80
       query_prefix: "Instruct: Given a search query\nQuery: "
+      min_similarity: 0.4
 "#,
         )
         .unwrap();
@@ -152,6 +164,7 @@ embedding:
             "Instruct: Given a search query\nQuery: "
         );
         assert_eq!(model.document_prefix, "");
+        assert_eq!(model.min_similarity, 0.4);
     }
 
     #[test]
@@ -175,6 +188,15 @@ embedding:
                 models(names, default).validate().is_err(),
                 "{names:?} {default}"
             );
+        }
+    }
+
+    #[test]
+    fn rejects_a_min_similarity_outside_0_to_1() {
+        for min_similarity in [-0.1, 1.0] {
+            let mut config = models(&["a"], "a");
+            config.models[0].min_similarity = min_similarity;
+            assert!(config.validate().is_err(), "{min_similarity}");
         }
     }
 }
