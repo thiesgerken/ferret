@@ -1,0 +1,30 @@
+From: Alice Example <alice@example.com>
+To: Bob Builder <bob@gmail.example>
+Subject: WG: Ihre Rechnung Januar 2025
+Date: Wed, 15 Jan 2025 18:20:00 +0100
+Message-ID: <forward@alice.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="fw"
+
+--fw
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Zur Info, die Stadtwerke sind teurer geworden.
+
+---------- Forwarded message ---------
+From: Stadtwerke <rechnung@stadtwerke.example>
+Date: Wed, 15 Jan 2025 at 06:00
+Subject: Ihre Rechnung Januar 2025
+To: <alice@example.com>
+
+Rechnungsnummer: RE-2025-0117
+Betrag: 84,20 €
+
+--fw
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div dir="ltr">Zur Info, die Stadtwerke sind teurer geworden.<br><br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>From: <strong class="gmail_sendername" dir="auto">Stadtwerke</strong> <span dir="auto">&lt;rechnung@stadtwerke.example&gt;</span><br>Date: Wed, 15 Jan 2025 at 06:00<br>Subject: Ihre Rechnung Januar 2025<br>To: &lt;alice@example.com&gt;<br></div><br><br>Rechnungsnummer: RE-2025-0117<br>Betrag: 84,20 €</div></div>
+
+--fw--

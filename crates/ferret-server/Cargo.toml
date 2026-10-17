@@ -37,6 +37,8 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+async-imap.workspace = true
 ferret-plugins = { path = "../ferret-plugins" }
+futures-util.workspace = true
 tempfile.workspace = true
 yrs.workspace = true

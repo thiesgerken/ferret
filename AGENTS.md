@@ -19,7 +19,8 @@ Keep `docs/` up to date when a change alters what it describes.
 ## Commands
 
 - Start everything for development: `docker compose up`
-- Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`
+- Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`, plus
+  `docker compose up -d --scale dovecot=1 dovecot` for the IMAP plugin's tests
 - Build: `cargo build --workspace`
 - Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
   The config file's TEI URLs must be reachable from the host (compose's `docker/ferret.yaml` uses
@@ -57,7 +58,10 @@ docker-compose.yml   development only, the deployment is the Helm chart
 - Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005), except search, which is
   built with `QueryBuilder`. Builds read their metadata from `.sqlx/` (`SQLX_OFFLINE`), so only
   tests need a database.
-- Plugin parsers are tested against fixtures, the frontend with `node --test`.
+- Plugin parsers are tested against fixtures, the frontend with `node --test`. The IMAP plugin's
+  tests also need the compose Dovecot, which is scaled to 0 by default
+  (`docker compose up -d --scale dovecot=1 dovecot`, `FERRET_TEST_IMAP` in `.cargo/config.toml`),
+  each test logging in as a user of its own.
 
 ## CI
 

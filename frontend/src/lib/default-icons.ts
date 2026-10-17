@@ -4,6 +4,7 @@ const PLUGIN_ICONS: Record<string, string> = {
   git: "git-branch",
   carapace: "brain",
   paperless: "file-text",
+  imap: "mail",
 };
 
 export function defaultPluginIcon(plugin: string): string {

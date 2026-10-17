@@ -2,6 +2,10 @@
 # The ParadeDB of docker-compose.yml (and of CI's service container). `#[sqlx::test]` creates a
 # database per test in it. An exported DATABASE_URL takes precedence.
 DATABASE_URL = "postgres://ferret:ferret@localhost:5439/ferret"
+# The Dovecot of docker-compose.yml (and of CI), for the IMAP plugin's tests. Compose scales it to 0,
+# start it with `docker compose up -d --scale dovecot=1 dovecot`. Each test logs in as a user of its
+# own. An exported FERRET_TEST_IMAP takes precedence.
+FERRET_TEST_IMAP = "localhost:3143"
 # Queries are checked against the metadata in .sqlx, so building needs no database. After changing
 # a query or a migration, regenerate it with `cargo sqlx prepare --workspace` (see AGENTS.md).
 SQLX_OFFLINE = "true"
