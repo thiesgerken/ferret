@@ -14,6 +14,13 @@ enum ApiKeyScope {
   ADMIN_WRITE
 }
 
+"How the viewer renders a document."
+enum ContentType {
+  MARKDOWN
+  PLAIN
+  EMAIL
+}
+
 enum RunStatus {
   RUNNING
   SUCCEEDED
@@ -42,6 +49,16 @@ input NewConnection {
   """ source: String!
   "The plugin config as JSON text, valid against the plugin's schema." config: String!
   "Cron expression, e.g. `0 * * * *` for hourly." schedule: String!
+}
+
+input SearchInput {
+  "Words, `\"exact phrases\"` and `-excluded` words." q: String!
+  "Only documents in these sources or below them. Leave out for all sources." sources: [String!]
+  "Only documents with at least one of these authors. Leave out for any author." authors: [String!]
+  "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
+  "Only documents created at or after this time." from: DateTime
+  "Only documents created before this time." to: DateTime
+  "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
 }
 
 """
@@ -96,6 +113,49 @@ type CreatedApiKey {
   key: String!
 }
 
+type Document {
+  id: ID!
+  source: String!
+  externalId: String!
+  contentType: ContentType!
+  title: String
+  text: String!
+  "Deep link to the origin, null when ferret's viewer is the origin."
+  url: String
+  thread: String
+  authors: [String!]!
+  createdAt: DateTime!
+  modifiedAt: DateTime!
+}
+
+"A document returned by a search, with its best-matching chunk."
+type Hit {
+  documentId: ID!
+  source: String!
+  externalId: String!
+  contentType: ContentType!
+  title: String
+  "Deep link to the origin, null when ferret's viewer is the origin."
+  url: String
+  thread: String
+  authors: [String!]!
+  createdAt: DateTime!
+  modifiedAt: DateTime!
+  score: Float!
+  chunk: HitChunk!
+}
+
+"""
+  The best-matching chunk of a hit. Offsets count characters (Unicode code points) into the
+  document's text.
+"""
+type HitChunk {
+  startOffset: Int!
+  endOffset: Int!
+  "The chunk's text, cut into parts that match the query and parts that don't."
+  parts: [TextPart!]!
+}
+
 type Mutation {
   "Creates a connection, which runs right away and then on its schedule."
   createConnection(input: NewConnection!): Connection!
@@ -117,7 +177,7 @@ type PluginRun {
   status: RunStatus!
   startedAt: DateTime!
   finishedAt: DateTime
-  "Null until the run finished."
+  "Only for a run that succeeded."
   stats: RunStats
   "The tail of the run's log."
   log: String!
@@ -135,6 +195,13 @@ type Query {
   me: User!
   "The signed-in user's API keys, newest first."
   apiKeys: [ApiKey!]!
+  """
+    Searches the signed-in user's documents, one hit per document. The same search as
+    `GET /api/search`.
+  """
+  search(input: SearchInput!): [Hit!]!
+  "One of the signed-in user's documents, null when there is none with this id."
+  document(id: ID!): Document
   "The plugins that registered workers offer, with their config schemas."
   pluginTypes: [PluginType!]!
   "The signed-in user's connections, by source."
@@ -147,6 +214,11 @@ type RunStats {
   put: Int!
   unchanged: Int!
   deleted: Int!
+}
+
+type TextPart {
+  text: String!
+  highlight: Boolean!
 }
 
 type User {

@@ -136,6 +136,15 @@ pub async fn find(
             .push_bind(content_types)
             .push("::text[])");
     }
+    // Authors live on documents only: a join, inside the candidates, so a rare author doesn't
+    // lose hits to the limit.
+    if !request.authors.is_empty() {
+        sql.push(
+            " and exists (select 1 from documents d where d.id = c.document_id and d.authors && ",
+        )
+        .push_bind(&request.authors)
+        .push("::text[])");
+    }
     if let Some(from) = request.from {
         sql.push(" and ts >= ").push_bind(from);
     }
