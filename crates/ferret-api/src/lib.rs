@@ -120,6 +120,8 @@ pub struct SearchQuery {
     pub to: Option<DateTime<Utc>>,
     /// How many hits at most. The server's default applies when `None`.
     pub k: Option<u32>,
+    /// The embedding model of the semantic half. The user's default model when `None`.
+    pub model: Option<String>,
     /// Whether hits of one thread fold into the best one, `true` when `None`.
     pub collapse: Option<bool>,
 }
@@ -130,6 +132,8 @@ pub struct SearchResponse {
     /// Why the semantic half didn't run (e.g. TEI is down), so the hits are keyword matches
     /// only. `None` when it ran.
     pub semantic_unavailable: Option<String>,
+    /// The embedding model the semantic half used, or would have.
+    pub model: String,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -326,6 +330,7 @@ impl Client {
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
+        params.extend(query.model.clone().map(|model| ("model", model)));
         params.extend(
             query
                 .collapse

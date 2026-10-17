@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ApiKeysSettings } from "@/components/api-keys-settings";
+import { ModelsSettings } from "@/components/models-settings";
 
 export default function SettingsPage() {
   return (
@@ -17,6 +18,17 @@ export default function SettingsPage() {
           </p>
         </div>
         <ApiKeysSettings />
+      </section>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-medium">Models</h2>
+          <p className="text-sm text-muted-foreground">
+            The embedding model your searches use, in the UI and through your API keys. A model
+            can be chosen before it has embedded everything: until then its semantic matches are
+            partial.
+          </p>
+        </div>
+        <ModelsSettings />
       </section>
     </main>
   );

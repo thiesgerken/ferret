@@ -24,11 +24,11 @@ use crate::{
     connections::{self, Connection, ConnectionError, PluginRun, PluginType},
     credentials::ConfigKey,
     documents,
-    embeddings::Embedding,
+    embeddings::{self, Embedding},
     error::ApiError,
     judgments,
     search::{self, RelativeRange, SearchError},
-    users::User,
+    users::{self, User},
 };
 
 pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
@@ -100,7 +100,23 @@ impl Query {
                 })
                 .collect(),
             semantic_unavailable: response.semantic_unavailable,
+            model: response.model,
         })
+    }
+
+    /// The configured embedding models, the configured default first, with how much of the
+    /// signed-in user's data each covers.
+    fn embedding_models(context: &Context) -> Vec<EmbeddingModel> {
+        let default = context.embedding.default_model().name();
+        context
+            .embedding
+            .models()
+            .iter()
+            .map(|model| EmbeddingModel {
+                name: model.name().to_owned(),
+                configured_default: model.name() == default,
+            })
+            .collect()
     }
 
     /// One of the signed-in user's documents, null when there is none with this id.
@@ -306,6 +322,8 @@ struct SearchInput {
     range: Option<TimeRange>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
+    /// The embedding model of the semantic half. The user's default model when left out.
+    model: Option<String>,
     /// Whether hits of one thread fold into the best one. Yes when left out.
     collapse: Option<bool>,
 }
@@ -354,6 +372,7 @@ impl SearchInput {
             to: self.to,
             // A negative k becomes 0, which the search rejects like any k out of range.
             k: self.k.map(|k| u32::try_from(k).unwrap_or(0)),
+            model: self.model,
             collapse: self.collapse,
         };
         Ok((query, range))
@@ -395,6 +414,44 @@ struct SearchResult {
     /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
     /// keyword matches only. Null when it ran.
     semantic_unavailable: Option<String>,
+    /// The embedding model the semantic half used, or would have.
+    model: String,
+}
+
+struct EmbeddingModel {
+    name: String,
+    configured_default: bool,
+}
+
+/// A configured embedding model and how much of the signed-in user's data it covers. A model
+/// can be chosen before it covers everything, its semantic half is partial until then.
+#[graphql_object(context = Context)]
+impl EmbeddingModel {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Whether searches use it when the user chose no default.
+    fn configured_default(&self) -> bool {
+        self.configured_default
+    }
+
+    /// How many of the user's chunks the model has embedded. Counted only when asked for, the
+    /// search page lists the models without it.
+    async fn embedded(&self, context: &Context) -> FieldResult<i32> {
+        embeddings::embedded_chunks(&context.pool, context.user.id, &self.name)
+            .await
+            .map(count)
+            .map_err(internal)
+    }
+
+    /// How many chunks the user has.
+    async fn chunks(&self, context: &Context) -> FieldResult<i32> {
+        embeddings::chunks(&context.pool, context.user.id)
+            .await
+            .map(count)
+            .map_err(internal)
+    }
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -657,6 +714,25 @@ impl Mutation {
         Ok(i32::try_from(deleted).unwrap_or(i32::MAX))
     }
 
+    /// Sets the embedding model the signed-in user's searches use (UI and API keys), null for the
+    /// configured default. Returns it.
+    async fn set_default_embedding_model(
+        context: &Context,
+        model: Option<String>,
+    ) -> FieldResult<Option<String>> {
+        if let Some(name) = &model
+            && context.embedding.model(name).is_none()
+        {
+            return Err(invalid_input(format!(
+                "no embedding model {name:?} is configured"
+            )));
+        }
+        users::set_default_embedding_model(&context.pool, context.user.id, model.as_deref())
+            .await
+            .map_err(internal)?;
+        Ok(model)
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
@@ -756,6 +832,11 @@ fn connection_error(error: ConnectionError) -> FieldError {
     }
 }
 
+/// GraphQL's Int is 32 bits.
+fn count(n: i64) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 fn invalid_input(message: String) -> FieldError {
     FieldError::new(message, graphql_value!({ "code": "INVALID_INPUT" }))
 }
@@ -782,6 +863,11 @@ impl User {
 
     fn is_admin(&self) -> bool {
         self.is_admin
+    }
+
+    /// The embedding model the user's searches use, null for the configured default.
+    fn default_embedding_model(&self) -> Option<&str> {
+        self.default_embedding_model.as_deref()
     }
 }
 
