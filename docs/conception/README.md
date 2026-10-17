@@ -244,7 +244,7 @@ don't change.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=&mode=
 ```
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
@@ -258,6 +258,12 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&col
   so: `semantic_unavailable` (REST) and `semanticUnavailable` (GraphQL) carry the reason, `null`
   when the semantic half ran, the UI shows a notice above the hits, and the server logs a warning.
   Keyword search is complete on its own, a restarting TEI shouldn't make ferret useless.
+- **Mode**: `mode=hybrid` (the default) runs both halves as above. `keyword` runs BM25 alone and
+  doesn't embed the query, so it never touches TEI. `semantic` runs the vector half alone with the
+  model's cut-off, and fails with 503 (GraphQL: an `UNAVAILABLE` error) when the query can't be
+  embedded: falling back to keywords would answer a different question than the one asked. The
+  ranking, `total`, the facets, paging and `total_is_lower_bound` all come from the halves that
+  ran, and `semantic_unavailable` is only ever set in hybrid mode. Judgments ignore the mode.
 - **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No query language.
   Equality filters on `meta` keys (`meta.<key>=<value>`, with a GIN index on `documents.meta`)
   are post-v1 (#21).

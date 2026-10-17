@@ -29,6 +29,20 @@ pub enum ContentType {
     Email,
 }
 
+/// Which halves of a search run.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    /// Both, fused. Without the embedding model, the keyword half alone, and the response says so.
+    #[default]
+    Hybrid,
+    /// BM25 alone. The query isn't embedded.
+    Keyword,
+    /// The vector half alone, above the model's similarity cut-off. Fails without the embedding
+    /// model.
+    Semantic,
+}
+
 /// The body of `PUT /api/documents`: a document, identified by `(source, external_id)`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,6 +155,8 @@ pub struct SearchQuery {
     pub model: Option<String>,
     /// Whether hits of one thread fold into the best one, `true` when `None`.
     pub collapse: Option<bool>,
+    #[serde(default)]
+    pub mode: SearchMode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,8 +176,8 @@ pub struct SearchResponse {
     pub facets: SearchFacets,
     /// The search's time on the server.
     pub took_ms: u32,
-    /// Why the semantic half didn't run (e.g. TEI is down), so the hits are keyword matches
-    /// only. `None` when it ran.
+    /// Why the semantic half of a hybrid search didn't run (e.g. TEI is down), so the hits are
+    /// keyword matches only. `None` when it ran, and in the other modes.
     pub semantic_unavailable: Option<String>,
     /// The embedding model the semantic half used, or would have.
     pub model: String,
@@ -419,6 +435,9 @@ impl Client {
         params.extend(query.k.map(|k| ("k", k.to_string())));
         params.extend(query.offset.map(|offset| ("offset", offset.to_string())));
         params.extend(query.model.clone().map(|model| ("model", model)));
+        let mode = serde_json::to_value(query.mode).expect("a search mode serializes");
+        let mode = mode.as_str().expect("search modes serialize as strings");
+        params.push(("mode", mode.to_owned()));
         params.extend(
             query
                 .collapse
