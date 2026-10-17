@@ -189,6 +189,8 @@ type CreatedApiKey {
 type Document {
   id: ID!
   source: String!
+  "The connection or API key that put it, null for one from before writers were recorded."
+  writer: Writer
   externalId: String!
   contentType: ContentType!
   title: String
@@ -257,6 +259,8 @@ type Exploration {
 type ExploredDocument {
   id: ID!
   source: String!
+  "The connection or API key that put it, null for one from before writers were recorded."
+  writer: Writer
   externalId: String!
   contentType: ContentType!
   title: String

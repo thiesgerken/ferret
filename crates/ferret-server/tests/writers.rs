@@ -41,10 +41,13 @@ async fn notes_connection(server: &TestServer, source: &str) -> ferret_api::Clie
 
 const SEARCH: &str = "query ($q: String!) {
     search(input: {q: $q}) {
-        hits { externalId writer { kind name icon } }
+        hits { documentId externalId writer { kind name icon } }
         facets { sources { value writer { kind name icon } } }
     }
-    explore(input: {}) { facets { sources { value writer { kind name } } } }
+    explore(input: {}) {
+        documents { externalId writer { kind name } }
+        facets { sources { value writer { kind name } } }
+    }
 }";
 
 #[sqlx::test(migrations = false)]
@@ -94,6 +97,28 @@ async fn hits_and_source_facets_come_with_their_connection_or_api_key(pool: PgPo
             .contains(&json!({"value": "notes", "writer": connection})),
         "{sources}"
     );
+    let documents = &body["data"]["explore"]["documents"];
+    assert!(
+        documents.as_array().unwrap().contains(
+            &json!({"externalId": "note", "writer": {"kind": "CONNECTION", "name": "Notes"}})
+        ),
+        "{documents}"
+    );
+    let scan = body["data"]["search"]["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|hit| hit["externalId"] == "scan")
+        .unwrap()["documentId"]
+        .clone();
+    let viewed = server
+        .graphql(
+            &cookie,
+            "query ($id: ID!) { document(id: $id) { writer { kind name icon } } }",
+            json!({"id": scan}),
+        )
+        .await;
+    assert_eq!(viewed["data"]["document"]["writer"], key, "{viewed}");
     let explored = &body["data"]["explore"]["facets"]["sources"];
     assert!(
         explored.as_array().unwrap().contains(

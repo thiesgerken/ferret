@@ -3,7 +3,7 @@
 //! `created_at` from inclusive to exclusive.
 
 use chrono::{DateTime, Utc};
-use ferret_api::{ContentType, SourceCount};
+use ferret_api::{ContentType, SourceCount, Writer};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -53,6 +53,10 @@ pub struct ExploredDocument {
     pub authors: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
+    api_key_id: Option<Uuid>,
+    /// Resolved from `api_key_id` and the source once the query ran.
+    #[sqlx(skip)]
+    pub writer: Option<Writer>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -135,7 +139,7 @@ pub async fn explore(
 
     let mut documents = QueryBuilder::new(
         "select d.id, d.source, d.external_id, d.content_type, d.title, d.authors, d.created_at,
-                d.modified_at
+                d.modified_at, d.api_key_id
          from documents d",
     );
     push_filters(&mut documents, user_id, filter, None);
@@ -220,7 +224,7 @@ pub async fn explore(
         .build_query_scalar::<i64>()
         .fetch_one(&mut *connection)
         .await?;
-    let documents = documents
+    let mut documents: Vec<ExploredDocument> = documents
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
@@ -245,6 +249,9 @@ pub async fn explore(
         .fetch_all(&mut *connection)
         .await?;
     let writers = Writers::load(&mut connection, user_id).await?;
+    for document in &mut documents {
+        document.writer = writers.of(&document.source, document.api_key_id);
+    }
     sources.retain(|source| !filter.sources.contains(&source.value));
     sources.extend(selected_sources);
     sources.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
