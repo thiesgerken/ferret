@@ -38,7 +38,11 @@ embedding:
     {{- range .Values.embedding.models }}
     - name: {{ .name | quote }}
       url: "http://{{ include "ferret.teiName" (dict "root" $ "model" . "suffix" "") }}:80"
-      {{- if $.Values.tei.gpu.enabled }}
+      {{- if and .bulkUrl $.Values.tei.gpu.enabled }}
+      {{- fail (printf "model %q: set either bulkUrl or tei.gpu.enabled, the pump uses only one TEI" .name) }}
+      {{- else if .bulkUrl }}
+      bulk_url: {{ .bulkUrl | quote }}
+      {{- else if $.Values.tei.gpu.enabled }}
       bulk_url: "http://{{ include "ferret.teiName" (dict "root" $ "model" . "suffix" "-gpu") }}:80"
       {{- end }}
       {{- with .queryPrefix }}

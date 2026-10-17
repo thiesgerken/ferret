@@ -41,6 +41,10 @@ embedding:
       maxBatchTokens: 4096
       # -- Room for the downloaded model. A full cache evicts only this pod.
       cacheSize: 4Gi
+      # -- An external TEI with the same model for a backfill, e.g. one on a laptop's GPU in the
+      # LAN (`http://192.168.1.20:8080`). The embed pump then uses only it, like with
+      # tei.gpu.enabled, which it excludes. Remove it once the backfill is done.
+      bulkUrl: ""
       # -- The request is the RSS measured after warmup (1.93 GiB).
       resources:
         requests:
