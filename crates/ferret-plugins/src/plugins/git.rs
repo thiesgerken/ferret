@@ -73,6 +73,7 @@ impl GitConfig {
             "exclude": self.exclude,
             "markdown": self.markdown,
             "url_template": self.url_template,
+            "titles": TITLES,
         })
     }
 }
@@ -266,15 +267,49 @@ impl Indexer<'_> {
 }
 
 /// The first Markdown heading, or the file name.
+/// How `title` names documents, part of the indexing settings: a new rule renames every document.
+pub(super) const TITLES: &str = "first heading, else the Markdown file's name in words";
+
+/// A Markdown file's first `# ` heading, else its name in words (`tavascan_review.md` becomes
+/// "Tavascan Review"). Other files keep their name, which says what they are (`main.rs`).
 pub(super) fn title(path: &str, text: &str, content_type: ContentType) -> String {
-    let heading = (content_type == ContentType::Markdown)
-        .then(|| text.lines().find_map(|line| line.strip_prefix("# ")))
-        .flatten()
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    if content_type != ContentType::Markdown {
+        return file_name.to_owned();
+    }
+    let heading = text
+        .lines()
+        .find_map(|line| line.strip_prefix("# "))
         .map(str::trim)
         .filter(|heading| !heading.is_empty());
-    heading
-        .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path))
-        .to_owned()
+    heading.map_or_else(|| in_words(file_name), str::to_owned)
+}
+
+/// The name without its extension, `_` and `-` as spaces, and each lowercase word capitalized.
+/// Words with capitals of their own keep them (`README`, `iOS`).
+fn in_words(file_name: &str) -> String {
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    let words: Vec<String> = stem
+        .split(['_', '-', ' '])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            if word.chars().any(char::is_uppercase) {
+                return word.to_owned();
+            }
+            let mut chars = word.chars();
+            chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    if words.is_empty() {
+        file_name.to_owned()
+    } else {
+        words.join(" ")
+    }
 }
 
 fn file_url(template: &str, path: &str, commit: &str) -> String {
@@ -307,9 +342,19 @@ mod tests {
             "The Title"
         );
         assert_eq!(
-            title("notes/a.md", "no heading", ContentType::Markdown),
-            "a.md"
+            title(
+                "research/tavascan_review.md",
+                "no heading",
+                ContentType::Markdown
+            ),
+            "Tavascan Review"
         );
+        assert_eq!(
+            title("notes/2026-07-klima-anlage.md", "", ContentType::Markdown),
+            "2026 07 Klima Anlage"
+        );
+        assert_eq!(title("README.md", "", ContentType::Markdown), "README");
+        assert_eq!(title("notes/.md", "", ContentType::Markdown), ".md");
         assert_eq!(
             title("src/main.rs", "# not a heading in Rust", ContentType::Plain),
             "main.rs"
