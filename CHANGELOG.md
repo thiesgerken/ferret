@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #115 from thiesgerken/chart-bulk-url
+  ([`ebe4d48`](https://github.com/thiesgerken/ferret/commit/ebe4d48606e8b6ccd9807690c7fb5d5818467312))
+
+### ✨ Features
+
+
+- ✨ feat(chart): an external TEI per model for backfills
+  ([`ebe4d48`](https://github.com/thiesgerken/ferret/commit/ebe4d48606e8b6ccd9807690c7fb5d5818467312))
+
+- ✨ feat(chart): an external TEI per model for backfills
+  ([`8e08a0a`](https://github.com/thiesgerken/ferret/commit/8e08a0a68b25b5de2f91215c90f74b8cbaa35db1))
+
+  A model's bulkUrl renders into the config's bulk_url, so the embed pump can use a TEI outside the cluster (e.g. a laptop's GPU in the LAN) for a backfill. The render fails when it is set together with tei.gpu.enabled.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.8.1 (2026-10-17)
 
 
