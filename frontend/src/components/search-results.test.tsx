@@ -20,6 +20,8 @@ const hit = (id: string, source: string, authors: string[]) => ({
   createdAt: "2026-01-01T12:00:00Z",
   collapsed: id === "b" ? 2 : 0,
   judged: false,
+  keywordScore: id === "c" ? null : id === "a" ? 7.25 : 3.5,
+  similarity: id === "b" ? null : 0.834,
   chunk: {
     __typename: "HitChunk",
     startOffset: 10,
@@ -74,6 +76,10 @@ async function renderResults(
               : [hit("c", "notes", [])],
           semanticUnavailable,
           model: state.model ?? models[0],
+          total: 37,
+          totalIsLowerBound: false,
+          documentsInScope: 526,
+          tookMs: 84,
         },
       },
     });
@@ -136,6 +142,27 @@ test("shows one hit per document with its highlighted snippet and links", async 
   assert.doesNotMatch(items[1].textContent ?? "", /Open in origin/);
   assert.doesNotMatch(items[0].textContent ?? "", /in this thread/);
   assert.match(items[1].textContent ?? "", /2 more in this thread/);
+  await view.unmount();
+});
+
+test("says how many documents matched out of how many, and how long it took", async () => {
+  const all = await renderResults(STATE);
+  assert.match(all.view.container.textContent ?? "", /37 matches · 526 documents in all sources · 84 ms/);
+  await all.view.unmount();
+
+  const { view } = await renderResults({ ...STATE, sources: ["carapace", "demo"] });
+  assert.match(view.container.textContent ?? "", /37 matches · 526 documents in carapace, demo · 84 ms/);
+  await view.unmount();
+});
+
+test("each hit shows its similarity and whether its keywords matched", async () => {
+  const { view } = await renderResults(STATE);
+  const [a, b] = view.container.querySelectorAll("article");
+
+  assert.match(a.textContent ?? "", /83% similar/);
+  assert.equal(a.querySelector("[title='BM25 7.25']")?.textContent, "keyword match");
+  assert.doesNotMatch(b.textContent ?? "", /similar/, "keyword matches only");
+  assert.match(b.textContent ?? "", /keyword match/);
   await view.unmount();
 });
 

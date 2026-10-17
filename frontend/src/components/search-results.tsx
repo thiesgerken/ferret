@@ -28,6 +28,8 @@ const SearchHitsQueryDocument = graphql(`
         createdAt
         collapsed
         judged
+        keywordScore
+        similarity
         chunk {
           startOffset
           endOffset
@@ -39,6 +41,10 @@ const SearchHitsQueryDocument = graphql(`
       }
       semanticUnavailable
       model
+      total
+      totalIsLowerBound
+      documentsInScope
+      tookMs
     }
   }
 `);
@@ -59,7 +65,8 @@ const SetJudgmentMutation = graphql(`
   }
 `);
 
-type Hit = SearchHitsQuery["search"]["hits"][number];
+type Result = SearchHitsQuery["search"];
+type Hit = Result["hits"][number];
 
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
@@ -107,6 +114,7 @@ export function SearchResults({
           ranModel={data?.search.model}
           onChange={onChange}
         />
+        {data && <Stats result={data.search} sources={state.sources} />}
         {semanticUnavailable && (
           <p role="status" className="text-sm text-muted-foreground">
             Keyword matches only: {semanticUnavailable}.
@@ -232,6 +240,7 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
           {hit.title || hit.externalId}
         </Link>
         <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
+        <Scores hit={hit} />
       </div>
       <p className="text-sm leading-relaxed">
         {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
@@ -256,6 +265,32 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
         </a>
       )}
     </article>
+  );
+}
+
+/** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. */
+function Stats({ result, sources }: { result: Result; sources: string[] }) {
+  const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${result.total === 1 ? "match" : "matches"}`;
+  const documents = `${result.documentsInScope} ${result.documentsInScope === 1 ? "document" : "documents"}`;
+  const scope = sources.length > 0 ? sources.join(", ") : "all sources";
+  return (
+    <p className="text-xs text-muted-foreground">
+      {matches} · {documents} in {scope} · {result.tookMs} ms
+    </p>
+  );
+}
+
+/** The document's best similarity and whether its keywords matched, not necessarily the snippet's. */
+function Scores({ hit }: { hit: Hit }) {
+  const similarity = hit.similarity ?? null;
+  const keywordScore = hit.keywordScore ?? null;
+  return (
+    <span className="shrink-0 space-x-2 text-xs text-muted-foreground tabular-nums">
+      {similarity !== null && (
+        <span title="Semantic similarity of the document's best chunk">{Math.round(similarity * 100)}% similar</span>
+      )}
+      {keywordScore !== null && <span title={`BM25 ${keywordScore.toFixed(2)}`}>keyword match</span>}
+    </span>
   );
 }
 
