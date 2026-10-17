@@ -1,6 +1,71 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #92 from thiesgerken/84-facets-ui
+  ([`c1e9c4c`](https://github.com/thiesgerken/ferret/commit/c1e9c4c9aa80f4dcbe4a3fe887b4d8a95e7bfdf5))
+
+- Merge remote-tracking branch 'origin/84-search-facets' into 84-facets-ui
+  ([`41d6140`](https://github.com/thiesgerken/ferret/commit/41d61402bfc8ebef07daab9708454ef5d42a1d54))
+
+- Merge remote-tracking branch 'origin/84-search-facets' into 84-facets-ui
+  ([`3090986`](https://github.com/thiesgerken/ferret/commit/3090986747d7214a6926d27f3603d39e718d7575))
+
+- Merge remote-tracking branch 'origin/integration/v1' into 84-facets-ui
+  ([`66349e9`](https://github.com/thiesgerken/ferret/commit/66349e9b010a1fa7e55debde6004a6fc9adfb775))
+
+- Merge pull request #88 from thiesgerken/84-search-facets
+  ([`85b708f`](https://github.com/thiesgerken/ferret/commit/85b708f53568d312715035e64c9629db221c4264))
+
+- Merge remote-tracking branch 'origin/integration/v1' into 84-search-facets
+  ([`4812a84`](https://github.com/thiesgerken/ferret/commit/4812a84b948e04f498f04fcac09308416fc097f8))
+
+### ✨ Features
+
+
+- ✨ feat(ui): endless scrolling, match counts in the filters, the model's own cut-off
+  ([`c1e9c4c`](https://github.com/thiesgerken/ferret/commit/c1e9c4c9aa80f4dcbe4a3fe887b4d8a95e7bfdf5))
+
+- ✨ feat(ui): endless scrolling, match counts in the filters, the model's own cut-off
+  ([`d02ea8c`](https://github.com/thiesgerken/ferret/commit/d02ea8cbfa4732579c606dc29a6710f5c7aaeec9))
+
+  The next page of hits loads when the end of the list scrolls into view, without repeating a hit the index shifted onto a later page, and a quiet marker says when the list ends, or when it ends at the search's candidate limit. The filter column and chips list the matches' sources and authors from the search's facets, with their counts. The relevance bars stretch from the cut-off of the model that ran instead of a fixed 0.42.
+
+  Part of #84
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✨ feat(search): facet counts, paging and the model's cut-off for the results page
+  ([`85b708f`](https://github.com/thiesgerken/ferret/commit/85b708f53568d312715035e64c9629db221c4264))
+
+- ✨ feat(search): facet counts, paging and the model's cut-off for the results page
+  ([`0d8c1e3`](https://github.com/thiesgerken/ferret/commit/0d8c1e30a1aeeb9a2c2c5541e3bcc2f50c7eb152))
+
+  Part of #84.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(search): facets for parent roots and thread authors, one statement per run
+  ([`0751212`](https://github.com/thiesgerken/ferret/commit/0751212b642060d9efaee0beb0201498681f013e))
+
+  Part of #84.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.2.0 (2026-10-17)
 
 
