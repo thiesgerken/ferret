@@ -163,12 +163,27 @@ pub async fn find(
              best as (
                  select distinct on (document_id) * from matches
                  order by document_id, score desc
+             ),
+             hits as (
+                 select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
+                        d.authors, d.created_at, d.modified_at,
+                        b.score, b.text as chunk_text, b.start_offset, b.end_offset,
+                        row_number() over thread_hits as thread_rank,
+                        count(*) over thread_hits - 1 as collapsed
+                 from best b join documents d on d.id = b.document_id
+                 window thread_hits as (partition by ",
+        )
+        // A document without a thread is a group of its own.
+        .push(if request.collapse.unwrap_or(true) {
+            "d.source, d.thread, case when d.thread is null then d.id end"
+        } else {
+            "d.id"
+        })
+        .push(
+            " order by b.score desc)
              )
-             select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                    d.authors, d.created_at, d.modified_at,
-                    b.score, b.text as chunk_text, b.start_offset, b.end_offset
-             from best b join documents d on d.id = b.document_id
-             order by b.score desc
+             select * from hits where thread_rank = 1
+             order by score desc
              limit ",
         )
         .push_bind(i64::from(k));
@@ -188,6 +203,8 @@ pub async fn find(
             created_at: row.created_at,
             modified_at: row.modified_at,
             score: row.score,
+            collapsed: u32::try_from(row.collapsed)
+                .expect("at most CANDIDATE_CHUNKS hits collapse"),
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),
@@ -210,6 +227,7 @@ struct HitRow {
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     score: f32,
+    collapsed: i64,
     chunk_text: String,
     start_offset: i32,
     end_offset: i32,

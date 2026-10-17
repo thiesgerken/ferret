@@ -78,6 +78,7 @@ impl Query {
             to: input.to,
             // A negative k becomes 0, which the search rejects like any k out of range.
             k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
+            collapse: input.collapse,
         };
         match search::find(&context.pool, context.user.id, None, &request).await {
             Ok(hits) => Ok(hits.into_iter().map(Hit::from).collect()),
@@ -91,10 +92,16 @@ impl Query {
         let Ok(id) = id.parse::<Uuid>() else {
             return Ok(None);
         };
-        let document = documents::find(&context.pool, context.user.id, None, id)
+        let Some(document) = documents::find(&context.pool, context.user.id, None, id)
+            .await
+            .map_err(internal)?
+        else {
+            return Ok(None);
+        };
+        let neighbors = documents::thread_neighbors(&context.pool, context.user.id, &document)
             .await
             .map_err(internal)?;
-        Ok(document.map(Document::from))
+        Ok(Some(Document::new(document, neighbors)))
     }
 }
 
@@ -114,6 +121,8 @@ struct SearchInput {
     to: Option<DateTime<Utc>>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
+    /// Whether hits of one thread fold into the best one. Yes when left out.
+    collapse: Option<bool>,
 }
 
 /// How the viewer renders a document.
@@ -159,6 +168,8 @@ struct Hit {
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     score: f64,
+    /// How many more documents of the same thread matched and were folded into this hit.
+    collapsed: i32,
     chunk: HitChunk,
 }
 
@@ -192,6 +203,7 @@ impl From<ferret_api::Hit> for Hit {
             created_at: hit.created_at,
             modified_at: hit.modified_at,
             score: hit.score.into(),
+            collapsed: graphql_int(hit.collapsed),
             chunk: HitChunk {
                 start_offset: graphql_int(hit.chunk.start_offset),
                 end_offset: graphql_int(hit.chunk.end_offset),
@@ -223,10 +235,30 @@ struct Document {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
+    /// The document before this one in its thread, null at its start or without a thread.
+    previous_in_thread: Option<ThreadNeighbor>,
+    /// The document after this one in its thread, null at its end or without a thread.
+    next_in_thread: Option<ThreadNeighbor>,
 }
 
-impl From<ferret_api::Document> for Document {
-    fn from(document: ferret_api::Document) -> Self {
+/// Enough of a thread's neighboring document to link to it.
+#[derive(GraphQLObject)]
+struct ThreadNeighbor {
+    id: ID,
+    title: Option<String>,
+}
+
+impl From<documents::ThreadNeighbor> for ThreadNeighbor {
+    fn from(neighbor: documents::ThreadNeighbor) -> Self {
+        Self {
+            id: ID::new(neighbor.id.to_string()),
+            title: neighbor.title,
+        }
+    }
+}
+
+impl Document {
+    fn new(document: ferret_api::Document, neighbors: documents::ThreadNeighbors) -> Self {
         Self {
             id: ID::new(document.id.to_string()),
             source: document.source,
@@ -239,13 +271,16 @@ impl From<ferret_api::Document> for Document {
             authors: document.authors,
             created_at: document.created_at,
             modified_at: document.modified_at,
+            previous_in_thread: neighbors.previous.map(ThreadNeighbor::from),
+            next_in_thread: neighbors.next.map(ThreadNeighbor::from),
         }
     }
 }
 
-/// GraphQL's `Int` is 32 bits. Chunk offsets beyond that would need a 2 GB document.
-fn graphql_int(offset: u32) -> i32 {
-    i32::try_from(offset).expect("chunk offsets fit into 32 bits")
+/// GraphQL's `Int` is 32 bits. Chunk offsets beyond that would need a 2 GB document, collapsed
+/// counts stay below the candidate limit.
+fn graphql_int(value: u32) -> i32 {
+    i32::try_from(value).expect("fits into 32 bits")
 }
 
 pub struct Mutation;

@@ -79,6 +79,20 @@ pub struct Document {
     pub meta: Map<String, Value>,
 }
 
+/// The parameters of `GET /api/documents?source=&thread=`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThreadQuery {
+    /// The thread's source exactly, not a root above it: a thread lives in one source.
+    pub source: String,
+    pub thread: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThreadResponse {
+    /// Oldest first.
+    pub documents: Vec<Document>,
+}
+
 /// The parameters of `GET /api/search`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,6 +116,8 @@ pub struct SearchQuery {
     pub to: Option<DateTime<Utc>>,
     /// How many hits at most. The server's default applies when `None`.
     pub k: Option<u32>,
+    /// Whether hits of one thread fold into the best one, `true` when `None`.
+    pub collapse: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -123,6 +139,8 @@ pub struct Hit {
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
     pub score: f32,
+    /// How many more documents of the same thread matched and were folded into this hit.
+    pub collapsed: u32,
     pub chunk: HitChunk,
 }
 
@@ -260,6 +278,17 @@ impl Client {
             .await
     }
 
+    /// A thread's documents, oldest first. Needs the `search:read` or `ingest:read` scope.
+    pub async fn thread(&self, query: &ThreadQuery) -> Result<ThreadResponse, reqwest::Error> {
+        self.api(reqwest::Method::GET, "/api/documents")
+            .query(query)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
     /// Needs the `search:read` scope.
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResponse, reqwest::Error> {
         let mut params = vec![("q", query.q.clone())];
@@ -283,6 +312,11 @@ impl Client {
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
+        params.extend(
+            query
+                .collapse
+                .map(|collapse| ("collapse", collapse.to_string())),
+        );
         self.api(reqwest::Method::GET, "/api/search")
             .query(&params)
             .send()

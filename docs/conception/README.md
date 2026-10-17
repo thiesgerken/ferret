@@ -129,6 +129,7 @@ POST   /api/syncs/{id}/commit                   sweep documents below the sync's
                                                 -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
 GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
+                                                -> {documents}, full documents as above
 ```
 
 `seen` names the source of its external ids: a sync over `carapace` covers `carapace/facts` and
@@ -260,8 +261,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Size**: `k` hits, 10 by default, at most 100. Hits are aggregated from the 1000 best chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
-  email stripping and consecutive chat segments. The API returns the collapsed count, and
-  `collapse=false` turns it off.
+  email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing
+  happens before `k`, so `k` counts threads. The hit's `collapsed` says how many more documents of
+  its thread matched, and `collapse=false` turns it off.
 
 ## Users
 

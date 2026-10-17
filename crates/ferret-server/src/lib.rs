@@ -66,7 +66,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/users", get(users::list))
         .route(
             "/api/documents",
-            axum::routing::put(documents::put).delete(documents::delete),
+            axum::routing::put(documents::put)
+                .delete(documents::delete)
+                .get(documents::thread),
         )
         .route("/api/documents/{id}", get(documents::get))
         .route("/api/search", get(search::handle))
