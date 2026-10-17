@@ -24,6 +24,7 @@ use crate::{
     chunking, connections, content_type,
     error::ApiError,
     exclusions, sources,
+    writers::Writers,
 };
 
 pub async fn put(
@@ -125,7 +126,8 @@ pub async fn find(
     let document = sqlx::query_as!(
         DocumentRow,
         r#"select id, source, external_id, content_type, title, text, url, thread, authors,
-                  created_at, modified_at, meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
+                  created_at, modified_at, api_key_id,
+                  meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
            from documents
            where id = $1 and user_id = $2
              and ($3::text[] is null or exists (
@@ -136,7 +138,11 @@ pub async fn find(
     )
     .fetch_optional(pool)
     .await?;
-    Ok(document.map(Document::from))
+    let Some(document) = document else {
+        return Ok(None);
+    };
+    let writers = Writers::load(&mut *pool.acquire().await?, user_id).await?;
+    Ok(Some(document.into_document(&writers)))
 }
 
 /// `GET /api/documents?source=&thread=`: a thread's documents, oldest first.
@@ -154,7 +160,8 @@ pub async fn thread(
     let documents = sqlx::query_as!(
         DocumentRow,
         r#"select id, source, external_id, content_type, title, text, url, thread, authors,
-                  created_at, modified_at, meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
+                  created_at, modified_at, api_key_id,
+                  meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
            from documents
            where user_id = $1 and source = $2 and thread = $3
              and ($4::text[] is null or exists (
@@ -167,8 +174,12 @@ pub async fn thread(
     )
     .fetch_all(&state.pool)
     .await?;
+    let writers = Writers::load(&mut *state.pool.acquire().await?, caller.user_id).await?;
     Ok(Json(ThreadResponse {
-        documents: documents.into_iter().map(Document::from).collect(),
+        documents: documents
+            .into_iter()
+            .map(|row| row.into_document(&writers))
+            .collect(),
     }))
 }
 
@@ -236,12 +247,15 @@ struct DocumentRow {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
+    api_key_id: Option<Uuid>,
     meta: Jsonb<serde_json::Map<String, serde_json::Value>>,
 }
 
-impl From<DocumentRow> for Document {
-    fn from(row: DocumentRow) -> Self {
-        Self {
+impl DocumentRow {
+    fn into_document(self, writers: &Writers) -> Document {
+        let row = self;
+        Document {
+            writer: writers.of(&row.source, row.api_key_id),
             id: row.id,
             source: row.source,
             external_id: row.external_id,
