@@ -170,7 +170,7 @@ pub struct SearchResponse {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SearchFacets {
     /// By source path, most matches first.
-    pub sources: Vec<FacetCount>,
+    pub sources: Vec<SourceCount>,
     /// The 20 most frequent authors and the selected ones.
     pub authors: Vec<FacetCount>,
     /// The counts may be short, as `total_is_lower_bound` says for `total`.
@@ -181,6 +181,33 @@ pub struct SearchFacets {
 pub struct FacetCount {
     pub value: String,
     pub count: u32,
+}
+
+/// A source path's count, with where its documents come from, for grouping.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SourceCount {
+    pub value: String,
+    pub count: u32,
+    /// The connection whose root covers the source, else the API key that put its most recently
+    /// modified match. `None` when no key is known (documents from before keys were recorded).
+    pub origin: Option<Origin>,
+}
+
+/// Where documents come from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Origin {
+    pub kind: OriginKind,
+    pub id: Uuid,
+    pub name: String,
+    /// A lucide icon name, e.g. `git-branch`.
+    pub icon: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OriginKind {
+    Connection,
+    ApiKey,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -203,6 +230,9 @@ pub struct Hit {
     /// candidates above the model's `min_similarity`, `None` when none of them is or the semantic
     /// half didn't run.
     pub similarity: Option<f32>,
+    /// The connection or API key the document comes from, `None` when no key is known
+    /// (documents from before keys were recorded).
+    pub origin: Option<Origin>,
     /// How many more documents of the same thread matched and were folded into this hit.
     pub collapsed: u32,
     pub chunk: HitChunk,

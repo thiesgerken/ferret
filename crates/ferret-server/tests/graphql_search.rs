@@ -236,6 +236,13 @@ async fn graphql_returns_a_whole_document_or_null(pool: PgPool) {
     assert_eq!(missing["data"]["document"], Value::Null);
 }
 
+fn source_counts(facets: &[ferret_api::SourceCount]) -> Vec<(&str, u32)> {
+    facets
+        .iter()
+        .map(|facet| (facet.value.as_str(), facet.count))
+        .collect()
+}
+
 fn counts(facets: &[ferret_api::FacetCount]) -> Vec<(&str, u32)> {
     facets
         .iter()
@@ -259,7 +266,7 @@ async fn each_facet_counts_the_matches_under_every_filter_but_its_own(pool: PgPo
         .unwrap();
     assert_eq!(response.total, 1);
     assert_eq!(
-        counts(&response.facets.sources),
+        source_counts(&response.facets.sources),
         [("mail/zoho", 1), ("notes", 1), ("paperless/2026", 1)]
     );
     assert_eq!(counts(&response.facets.authors), [("someone", 1)]);
@@ -273,7 +280,10 @@ async fn each_facet_counts_the_matches_under_every_filter_but_its_own(pool: PgPo
         })
         .await
         .unwrap();
-    assert_eq!(counts(&response.facets.sources), [("paperless/2026", 1)]);
+    assert_eq!(
+        source_counts(&response.facets.sources),
+        [("paperless/2026", 1)]
+    );
     assert_eq!(
         counts(&response.facets.authors),
         [
@@ -372,7 +382,7 @@ async fn a_selected_parent_root_gets_its_covering_count(pool: PgPool) {
         .unwrap();
 
     assert_eq!(
-        counts(&response.facets.sources),
+        source_counts(&response.facets.sources),
         [
             ("mail", 1),
             ("mail/zoho", 1),

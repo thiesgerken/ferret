@@ -130,7 +130,7 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
             json!({"input": {
-                "plugin": "carapace",
+                "name": "test", "icon": "plug", "plugin": "carapace",
                 "source": "carapace",
                 "config": json!({
                     "remote": format!("file://{}", repo.path().display()),

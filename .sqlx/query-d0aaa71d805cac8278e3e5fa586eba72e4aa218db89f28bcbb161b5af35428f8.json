@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update api_keys set name = $3, icon = $4\n         where id = $1 and user_id = $2 and revoked_at is null",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0aaa71d805cac8278e3e5fa586eba72e4aa218db89f28bcbb161b5af35428f8"
+}

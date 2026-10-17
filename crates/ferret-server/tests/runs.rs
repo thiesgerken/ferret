@@ -50,7 +50,7 @@ async fn create_connection(server: &TestServer, source: &str, schedule: &str) ->
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id source } }",
             json!({"input": {
-                "plugin": "fake",
+                "name": "test", "icon": "plug", "plugin": "fake",
                 "source": source,
                 "config": r#"{"path": "/data"}"#,
                 "schedule": schedule,
@@ -446,7 +446,7 @@ async fn configs_and_schedules_are_validated(pool: PgPool) {
         server.graphql(
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
-            json!({"input": {"plugin": plugin, "source": "notes", "config": config, "schedule": schedule}}),
+            json!({"input": {"name": "test", "icon": "plug", "plugin": plugin, "source": "notes", "config": config, "schedule": schedule}}),
         )
     };
 
@@ -486,7 +486,7 @@ async fn update_config(server: &TestServer, id: &str, config: Value) -> Value {
         .graphql(
             &cookie,
             "mutation ($id: ID!, $input: ConnectionUpdate!) { updateConnection(id: $id, input: $input) { id } }",
-            json!({"id": id, "input": {"config": config.to_string(), "schedule": "0 * * * *", "enabled": true}}),
+            json!({"id": id, "input": {"name": "test", "icon": "plug", "config": config.to_string(), "schedule": "0 * * * *", "enabled": true}}),
         )
         .await
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, name, prefix, scopes, sources, created_at, last_used_at, expires_at\n         from api_keys where user_id = $1 order by created_at desc",
+  "query": "select id, name, icon, prefix, scopes, sources, created_at, last_used_at, expires_at\n         from api_keys where user_id = $1 and revoked_at is null order by created_at desc",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "icon",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "api_keys",
+            "name": "icon"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "prefix",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "scopes",
         "type_info": "TextArray",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "sources",
         "type_info": "TextArray",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "last_used_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -102,11 +113,12 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       true,
       true
     ]
   },
-  "hash": "f4c250e9497088d0952562223b8c1a8fe848abe44323f20c845d2fabb06b91af"
+  "hash": "cf6d83db3e9d96b479f002beddfb285fadf55173456ba2dffdb116fceefd00e1"
 }

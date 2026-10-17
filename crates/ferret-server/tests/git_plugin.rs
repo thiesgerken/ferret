@@ -89,7 +89,7 @@ impl<'a> GitConnection<'a> {
                 &cookie,
                 "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
                 json!({"input": {
-                    "plugin": "git",
+                    "name": "test", "icon": "plug", "plugin": "git",
                     "source": "repo",
                     "config": config.to_string(),
                     "schedule": "0 * * * *",
@@ -115,6 +115,8 @@ impl<'a> GitConnection<'a> {
                     updateConnection(id: $id, input: $input) { id }
                 }",
                 json!({"id": self.id, "input": {
+                    "name": "test",
+                    "icon": "plug",
                     "config": config.to_string(),
                     "schedule": "0 * * * *",
                     "enabled": true,
@@ -439,7 +441,7 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id config } }",
             json!({"input": {
-                "plugin": "git",
+                "name": "test", "icon": "plug", "plugin": "git",
                 "source": "private",
                 "config": json!({"remote": remote, "token": "s3cret-token"}).to_string(),
                 "schedule": "0 * * * *",
@@ -469,6 +471,8 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
                         updateConnection(id: $id, input: $input) { config }
                     }",
                     json!({"id": id, "input": {
+                        "name": "test",
+                        "icon": "plug",
                         "config": config.to_string(),
                         "schedule": "30 * * * *",
                         "enabled": true,

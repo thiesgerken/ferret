@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into connections\n             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)\n         values ($1, $2, $3, $4, $5, $6, $7, now(), now())\n         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+  "query": "select id, name, icon, plugin, source, config, schedule, enabled, next_run_at, created_at\n         from connections where id = $1 and user_id = $2",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,28 @@
       },
       {
         "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "icon",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "icon"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "plugin",
         "type_info": "Text",
         "origin": {
@@ -26,7 +48,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 4,
         "name": "source",
         "type_info": "Text",
         "origin": {
@@ -37,7 +59,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "config",
         "type_info": "Jsonb",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "schedule",
         "type_info": "Text",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "enabled",
         "type_info": "Bool",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "next_run_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -95,12 +117,7 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Jsonb",
-        "Bytea",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -111,8 +128,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "dfc334e4c0aed354a6cdf3fe8b1e19b6979e37ca7542f1ee20a18ec05ae29a4a"
+  "hash": "7c71e1db771e1d07c66b33bf8e03235df7c178c240d17239a10fa89bf8402a97"
 }

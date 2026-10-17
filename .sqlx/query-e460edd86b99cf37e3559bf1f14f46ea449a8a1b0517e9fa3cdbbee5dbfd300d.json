@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into documents\n                     (id, user_id, source, external_id, content_type, title, url, thread,\n                      authors, created_at, modified_at, meta, text, content_hash, seen_at)\n                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())\n                 returning id",
+  "query": "insert into documents\n                     (id, user_id, source, external_id, content_type, title, url, thread,\n                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id)\n                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14)\n                 returning id",
   "describe": {
     "columns": [
       {
@@ -29,12 +29,13 @@
         "Timestamptz",
         "Jsonb",
         "Text",
-        "Bytea"
+        "Bytea",
+        "Uuid"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "cdbd363816d28ffc74b1849cde4a90fbb72a189c21761be7bb31049aa695e364"
+  "hash": "e460edd86b99cf37e3559bf1f14f46ea449a8a1b0517e9fa3cdbbee5dbfd300d"
 }

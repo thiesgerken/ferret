@@ -14,10 +14,15 @@ const CREATE: &str = "mutation ($input: NewApiKey!) {
 async fn create_key(server: &TestServer, input: Value) -> Value {
     let cookie = server.sign_in().await;
     let body = server
-        .graphql(&cookie, CREATE, json!({"input": input}))
+        .graphql(&cookie, CREATE, json!({"input": with_icon(input)}))
         .await;
     assert_eq!(body["errors"], Value::Null, "{body}");
     body["data"]["createApiKey"].clone()
+}
+
+fn with_icon(mut input: Value) -> Value {
+    input["icon"] = json!("key-round");
+    input
 }
 
 async fn admin_key(server: &TestServer, scopes: &[&str]) -> String {
@@ -181,7 +186,7 @@ async fn admin_scopes_need_an_admin_owner(pool: PgPool) {
         .graphql(
             &cookie,
             CREATE,
-            json!({"input": {"name": "sneaky", "scopes": ["ADMIN_WRITE"]}}),
+            json!({"input": {"name": "sneaky", "icon": "key-round", "scopes": ["ADMIN_WRITE"]}}),
         )
         .await;
     assert_eq!(
@@ -222,7 +227,7 @@ async fn invalid_keys_are_refused_at_creation(pool: PgPool) {
         ),
     ] {
         let body = server
-            .graphql(&cookie, CREATE, json!({"input": input}))
+            .graphql(&cookie, CREATE, json!({"input": with_icon(input.clone())}))
             .await;
         assert_eq!(body["errors"][0]["message"], message, "{input}");
     }
@@ -265,8 +270,9 @@ async fn users_neither_see_nor_revoke_each_others_keys(pool: PgPool) {
              values (uuidv7(), 'bob', 'unused', true, now(), now())
              returning id
          )
-         insert into api_keys (id, user_id, name, prefix, secret_hash, scopes, created_at)
-         select uuidv7(), id, 'bob tooling', '0b0b0b0b', sha256('bobsecret'), '{admin:read}', now()
+         insert into api_keys (id, user_id, name, icon, prefix, secret_hash, scopes, created_at)
+         select uuidv7(), id, 'bob tooling', 'key-round', '0b0b0b0b', sha256('bobsecret'),
+                '{admin:read}', now()
          from other
          returning id",
     )

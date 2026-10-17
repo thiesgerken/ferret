@@ -28,6 +28,11 @@ enum DocumentOrder {
   SOURCE
 }
 
+enum OriginKind {
+  CONNECTION
+  API_KEY
+}
+
 enum RunStatus {
   RUNNING
   SUCCEEDED
@@ -44,6 +49,8 @@ enum TimeRange {
 }
 
 input ConnectionUpdate {
+  name: String!
+  icon: String!
   config: String!
   schedule: String!
   enabled: Boolean!
@@ -70,12 +77,15 @@ input JudgmentInput {
 
 input NewApiKey {
   name: String!
+  "A lucide icon name in kebab-case, e.g. `key-round`." icon: String!
   scopes: [ApiKeyScope!]!
   "Restricts every scope to these source paths and below. Leave out for all sources." sources: [String!]
   expiresAt: DateTime
 }
 
 input NewConnection {
+  "What the UI shows instead of the source path, e.g. `Notes`." name: String!
+  "A lucide icon name in kebab-case, e.g. `git-branch`." icon: String!
   plugin: String!
   """
     The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
@@ -131,6 +141,8 @@ scalar DateTime
 type ApiKey {
   id: ID!
   name: String!
+  "A lucide icon name."
+  icon: String!
   "The non-secret part after `fk_`, to tell keys apart."
   prefix: String!
   scopes: [ApiKeyScope!]!
@@ -144,6 +156,9 @@ type ApiKey {
 
 type Connection {
   id: ID!
+  name: String!
+  "A lucide icon name."
+  icon: String!
   plugin: String!
   "The source root the connection owns: it writes to it and below it."
   source: String!
@@ -260,7 +275,7 @@ type FacetCount {
   so they show what choosing another value of it would give.
 """
 type Facets {
-  sources: [FacetCount!]!
+  sources: [SourceCount!]!
   contentTypes: [ContentTypeCount!]!
   "The 20 most frequent authors."
   authors: [FacetCount!]!
@@ -284,7 +299,10 @@ type Hit {
   """
     The best BM25 score among the document's chunks in the keyword half's candidates, null
     when none of them is.
+    The connection or API key the document comes from. Null when no key is known (documents
+    from before keys were recorded).
   """
+  origin: Origin
   keywordScore: Float
   """
     The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
@@ -365,8 +383,23 @@ type Mutation {
   """
   setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
-  "Revokes one of the signed-in user's keys and returns its id."
+  "Renames one of the signed-in user's keys or changes its icon."
+  updateApiKey(id: ID!, name: String!, icon: String!): ApiKey!
+  """
+    Revokes one of the signed-in user's keys and returns its id. It stays the origin of the
+    documents it put.
+  """
   revokeApiKey(id: ID!): ID!
+}
+
+"Where documents come from."
+type Origin {
+  kind: OriginKind!
+  "The connection's or API key's id."
+  id: ID!
+  name: String!
+  "A lucide icon name."
+  icon: String!
 }
 
 type PluginRun {
@@ -435,7 +468,7 @@ type RunStats {
 """
 type SearchFacets {
   "By source path, most matches first."
-  sources: [FacetCount!]!
+  sources: [SourceCount!]!
   "The 20 most frequent authors and the selected ones."
   authors: [FacetCount!]!
   "True when the counts may be short, as `totalIsLowerBound` says for `total`."
@@ -480,6 +513,17 @@ type SourceBacklog {
   pending: Int!
   "Refused by TEI, so the pump leaves them out."
   failed: Int!
+}
+
+"A source path's count, with where its documents come from, for grouping."
+type SourceCount {
+  value: String!
+  count: Int!
+  """
+    The connection whose root covers the source, else the API key that put its most recently
+    modified document. Null when no key is known (documents from before keys were recorded).
+  """
+  origin: Origin
 }
 
 type TextPart {

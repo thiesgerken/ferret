@@ -107,6 +107,8 @@ create table workers (
 create table connections (
     id           uuid primary key,
     user_id      uuid not null references users on delete cascade,
+    name         text not null,                -- shown instead of the source path
+    icon         text not null,                -- lucide icon name, e.g. 'git-branch'
     plugin       text not null references plugin_types,
     source       text not null,                -- source root: documents go to it or below it
     config       jsonb not null,               -- without the secret fields

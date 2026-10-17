@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into api_keys\n             (id, user_id, name, prefix, secret_hash, scopes, sources, created_at, expires_at)\n         values (uuidv7(), $1, $2, $3, $4, $5, $6, now(), $7)\n         returning id, created_at",
+  "query": "insert into api_keys\n             (id, user_id, name, icon, prefix, secret_hash, scopes, sources, created_at, expires_at)\n         values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, now(), $8)\n         returning id, created_at",
   "describe": {
     "columns": [
       {
@@ -31,6 +31,7 @@
         "Uuid",
         "Text",
         "Text",
+        "Text",
         "Bytea",
         "TextArray",
         "TextArray",
@@ -42,5 +43,5 @@
       false
     ]
   },
-  "hash": "71fa749a5c47e95aec9208f079061fab2a48ebc1424ba147f4302b8cc91fd9e5"
+  "hash": "51dce4ce480ad9a4a624edb9137b1d595501c910928a1f03fe5d602122eb4011"
 }

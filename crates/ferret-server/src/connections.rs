@@ -13,7 +13,7 @@ use crate::{
     api_auth::ApiCaller,
     credentials::{self, ConfigKey, Owner},
     error::ApiError,
-    sources,
+    icons, sources,
 };
 
 /// The channel that wakes waiting claims: a connection became due (run now, a new or changed
@@ -27,6 +27,9 @@ pub struct PluginType {
 
 pub struct Connection {
     pub id: Uuid,
+    pub name: String,
+    /// A lucide icon name, see `icons`.
+    pub icon: String,
     pub plugin: String,
     pub source: String,
     /// Without the credentials, which never leave the server except to a claimed run.
@@ -48,6 +51,8 @@ pub struct PluginRun {
 }
 
 pub struct NewConnection {
+    pub name: String,
+    pub icon: String,
     pub plugin: String,
     pub source: String,
     pub config: Value,
@@ -55,6 +60,8 @@ pub struct NewConnection {
 }
 
 pub struct ConnectionUpdate {
+    pub name: String,
+    pub icon: String,
     pub config: Value,
     pub schedule: String,
     pub enabled: bool,
@@ -76,6 +83,16 @@ fn invalid<T>(message: impl Into<String>) -> Result<T, ConnectionError> {
     Err(ConnectionError::Invalid(message.into()))
 }
 
+fn validate_label(name: &str, icon: &str) -> Result<(), ConnectionError> {
+    if name.trim().is_empty() {
+        return invalid("a connection needs a name");
+    }
+    if !icons::is_valid(icon) {
+        return invalid(format!("{icon:?} is not an icon name like `git-branch`"));
+    }
+    Ok(())
+}
+
 pub async fn plugin_types(pool: &PgPool) -> Result<Vec<PluginType>, sqlx::Error> {
     sqlx::query_as!(
         PluginType,
@@ -88,7 +105,7 @@ pub async fn plugin_types(pool: &PgPool) -> Result<Vec<PluginType>, sqlx::Error>
 pub async fn list(pool: &PgPool, user_id: Uuid) -> Result<Vec<Connection>, sqlx::Error> {
     sqlx::query_as!(
         Connection,
-        "select id, plugin, source, config, schedule, enabled, next_run_at, created_at
+        "select id, name, icon, plugin, source, config, schedule, enabled, next_run_at, created_at
          from connections where user_id = $1 order by source",
         user_id,
     )
@@ -103,7 +120,7 @@ pub async fn find(
 ) -> Result<Option<Connection>, sqlx::Error> {
     sqlx::query_as!(
         Connection,
-        "select id, plugin, source, config, schedule, enabled, next_run_at, created_at
+        "select id, name, icon, plugin, source, config, schedule, enabled, next_run_at, created_at
          from connections where id = $1 and user_id = $2",
         id,
         user_id,
@@ -119,6 +136,7 @@ pub async fn create(
     user_id: Uuid,
     new: NewConnection,
 ) -> Result<Connection, ConnectionError> {
+    validate_label(&new.name, &new.icon)?;
     if !sources::is_valid(&new.source) {
         return invalid(format!(
             "{:?} is not a source path like `notes` or `mail/zoho`",
@@ -170,9 +188,10 @@ pub async fn create(
     let connection = sqlx::query_as!(
         Connection,
         "insert into connections
-             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, now(), now())
-         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+             (id, user_id, plugin, source, config, credentials, schedule, next_run_at, created_at,
+              name, icon)
+         values ($1, $2, $3, $4, $5, $6, $7, now(), now(), $8, $9)
+         returning id, name, icon, plugin, source, config, schedule, enabled, next_run_at, created_at",
         owner.connection_id,
         user_id,
         new.plugin,
@@ -180,6 +199,8 @@ pub async fn create(
         config,
         seal(config_key, &credentials, owner),
         new.schedule,
+        new.name.trim(),
+        new.icon,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -188,7 +209,8 @@ pub async fn create(
     Ok(connection)
 }
 
-/// Changes config, schedule and whether the connection runs. A new schedule takes effect from now.
+/// Changes name, icon, config, schedule and whether the connection runs. A new schedule takes
+/// effect from now.
 ///
 /// Stored credentials survive only an update that leaves the rest of the config as it is
 /// (schedule and enabled may change). Any other change needs every stored credential entered
@@ -202,6 +224,7 @@ pub async fn update(
     id: Uuid,
     update: ConnectionUpdate,
 ) -> Result<Option<Connection>, ConnectionError> {
+    validate_label(&update.name, &update.icon)?;
     let Some(current) = find(pool, user_id, id).await? else {
         return Ok(None);
     };
@@ -235,9 +258,10 @@ pub async fn update(
     let connection = sqlx::query_as!(
         Connection,
         "update connections
-         set config = $3, credentials = $4, schedule = $5, enabled = $6, next_run_at = $7
+         set config = $3, credentials = $4, schedule = $5, enabled = $6, next_run_at = $7,
+             name = $8, icon = $9
          where id = $1 and user_id = $2
-         returning id, plugin, source, config, schedule, enabled, next_run_at, created_at",
+         returning id, name, icon, plugin, source, config, schedule, enabled, next_run_at, created_at",
         id,
         user_id,
         config,
@@ -245,6 +269,8 @@ pub async fn update(
         update.schedule,
         update.enabled,
         next_run_at,
+        update.name.trim(),
+        update.icon,
     )
     .fetch_optional(&mut *tx)
     .await?;

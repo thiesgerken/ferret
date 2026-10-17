@@ -141,7 +141,7 @@ impl Query {
             documents_in_scope: graphql_int(response.documents_in_scope),
             has_more: response.has_more,
             facets: SearchFacets {
-                sources: search_facet_counts(response.facets.sources),
+                sources: source_counts(response.facets.sources),
                 authors: search_facet_counts(response.facets.authors),
                 are_lower_bounds: response.facets.are_lower_bounds,
             },
@@ -257,6 +257,15 @@ impl PluginType {
 impl Connection {
     fn id(&self) -> ID {
         ID::new(self.id.to_string())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// A lucide icon name.
+    fn icon(&self) -> &str {
+        &self.icon
     }
 
     fn plugin(&self) -> &str {
@@ -409,6 +418,10 @@ impl PluginRun {
 
 #[derive(GraphQLInputObject)]
 struct NewConnection {
+    /// What the UI shows instead of the source path, e.g. `Notes`.
+    name: String,
+    /// A lucide icon name in kebab-case, e.g. `git-branch`.
+    icon: String,
     plugin: String,
     /// The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
     /// connection's root.
@@ -421,6 +434,8 @@ struct NewConnection {
 
 #[derive(GraphQLInputObject)]
 struct ConnectionUpdate {
+    name: String,
+    icon: String,
     config: String,
     schedule: String,
     enabled: bool,
@@ -511,12 +526,64 @@ struct ExploredDocument {
 /// so they show what choosing another value of it would give.
 #[derive(GraphQLObject)]
 struct Facets {
-    sources: Vec<FacetCount>,
+    sources: Vec<SourceCount>,
     content_types: Vec<ContentTypeCount>,
     /// The 20 most frequent authors.
     authors: Vec<FacetCount>,
     /// `YYYY-MM` of `createdAt` in UTC, newest first.
     months: Vec<FacetCount>,
+}
+
+/// A source path's count, with where its documents come from, for grouping.
+#[derive(GraphQLObject)]
+struct SourceCount {
+    value: String,
+    count: i32,
+    /// The connection whose root covers the source, else the API key that put its most recently
+    /// modified document. Null when no key is known (documents from before keys were recorded).
+    origin: Option<Origin>,
+}
+
+/// Where documents come from.
+#[derive(GraphQLObject)]
+struct Origin {
+    kind: OriginKind,
+    /// The connection's or API key's id.
+    id: ID,
+    name: String,
+    /// A lucide icon name.
+    icon: String,
+}
+
+#[derive(GraphQLEnum)]
+enum OriginKind {
+    Connection,
+    ApiKey,
+}
+
+impl From<ferret_api::Origin> for Origin {
+    fn from(origin: ferret_api::Origin) -> Self {
+        Self {
+            kind: match origin.kind {
+                ferret_api::OriginKind::Connection => OriginKind::Connection,
+                ferret_api::OriginKind::ApiKey => OriginKind::ApiKey,
+            },
+            id: ID::new(origin.id.to_string()),
+            name: origin.name,
+            icon: origin.icon,
+        }
+    }
+}
+
+fn source_counts(counts: Vec<ferret_api::SourceCount>) -> Vec<SourceCount> {
+    counts
+        .into_iter()
+        .map(|count| SourceCount {
+            value: count.value,
+            count: graphql_int(count.count),
+            origin: count.origin.map(Origin::from),
+        })
+        .collect()
 }
 
 #[derive(GraphQLObject)]
@@ -560,7 +627,7 @@ impl From<explore::Exploration> for Exploration {
                 })
                 .collect(),
             facets: Facets {
-                sources: counts(facets.sources),
+                sources: source_counts(facets.sources),
                 content_types: facets
                     .content_types
                     .into_iter()
@@ -695,7 +762,7 @@ struct SearchResult {
 #[derive(GraphQLObject)]
 struct SearchFacets {
     /// By source path, most matches first.
-    sources: Vec<FacetCount>,
+    sources: Vec<SourceCount>,
     /// The 20 most frequent authors and the selected ones.
     authors: Vec<FacetCount>,
     /// True when the counts may be short, as `totalIsLowerBound` says for `total`.
@@ -770,6 +837,9 @@ struct Hit {
     modified_at: DateTime<Utc>,
     /// The best BM25 score among the document's chunks in the keyword half's candidates, null
     /// when none of them is.
+    /// The connection or API key the document comes from. Null when no key is known (documents
+    /// from before keys were recorded).
+    origin: Option<Origin>,
     keyword_score: Option<f64>,
     /// The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
     /// half's candidates above the model's cut-off, null when none of them is or the semantic
@@ -811,6 +881,7 @@ impl From<ferret_api::Hit> for Hit {
             authors: hit.authors,
             created_at: hit.created_at,
             modified_at: hit.modified_at,
+            origin: hit.origin.map(Origin::from),
             keyword_score: hit.keyword_score.map(f64::from),
             similarity: hit.similarity.map(f64::from),
             collapsed: graphql_int(hit.collapsed),
@@ -909,6 +980,8 @@ struct JudgmentInput {
 #[derive(GraphQLInputObject)]
 struct NewApiKey {
     name: String,
+    /// A lucide icon name in kebab-case, e.g. `key-round`.
+    icon: String,
     scopes: Vec<Scope>,
     /// Restricts every scope to these source paths and below. Leave out for all sources.
     sources: Option<Vec<String>>,
@@ -955,6 +1028,8 @@ impl Mutation {
     /// Creates a connection, which runs right away and then on its schedule.
     async fn create_connection(context: &Context, input: NewConnection) -> FieldResult<Connection> {
         let new = connections::NewConnection {
+            name: input.name,
+            icon: input.icon,
             plugin: input.plugin,
             source: input.source,
             config: parse_config(&input.config)?,
@@ -971,6 +1046,8 @@ impl Mutation {
         input: ConnectionUpdate,
     ) -> FieldResult<Connection> {
         let update = connections::ConnectionUpdate {
+            name: input.name,
+            icon: input.icon,
             config: parse_config(&input.config)?,
             schedule: input.schedule,
             enabled: input.enabled,
@@ -1123,6 +1200,7 @@ impl Mutation {
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
+            icon: input.icon,
             scopes: input.scopes,
             sources: input.sources,
             expires_at: input.expires_at,
@@ -1134,7 +1212,25 @@ impl Mutation {
         }
     }
 
-    /// Revokes one of the signed-in user's keys and returns its id.
+    /// Renames one of the signed-in user's keys or changes its icon.
+    async fn update_api_key(
+        context: &Context,
+        id: ID,
+        name: String,
+        icon: String,
+    ) -> FieldResult<ApiKey> {
+        let not_found = || FieldError::new("no such API key", graphql_value!(null));
+        let key_id = id.parse::<Uuid>().map_err(|_| not_found())?;
+        match api_keys::update(&context.pool, context.user.id, key_id, &name, &icon).await {
+            Ok(Some(api_key)) => Ok(api_key),
+            Ok(None) => Err(not_found()),
+            Err(api_keys::CreateError::Invalid(message)) => Err(invalid_input(message)),
+            Err(api_keys::CreateError::Database(error)) => Err(internal(error)),
+        }
+    }
+
+    /// Revokes one of the signed-in user's keys and returns its id. It stays the origin of the
+    /// documents it put.
     async fn revoke_api_key(context: &Context, id: ID) -> FieldResult<ID> {
         let not_found = || FieldError::new("no such API key", graphql_value!(null));
         let key_id = id.parse::<Uuid>().map_err(|_| not_found())?;
@@ -1169,6 +1265,11 @@ impl ApiKey {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    /// A lucide icon name.
+    fn icon(&self) -> &str {
+        &self.icon
     }
 
     /// The non-secret part after `fk_`, to tell keys apart.

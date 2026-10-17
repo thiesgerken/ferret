@@ -264,7 +264,7 @@ async fn a_worker_is_offline_once_it_stops_asking_unless_it_is_running_a_run(poo
         .graphql(
             &admin,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
-            json!({"input": {"plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
+            json!({"input": {"name": "test", "icon": "plug", "plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
         )
         .await;
     assert_eq!(created["errors"], Value::Null, "{created}");

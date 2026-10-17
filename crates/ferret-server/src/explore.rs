@@ -3,11 +3,11 @@
 //! `created_at` from inclusive to exclusive.
 
 use chrono::{DateTime, Utc};
-use ferret_api::ContentType;
+use ferret_api::{ContentType, SourceCount};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use crate::{content_type, sources};
+use crate::{content_type, origins::Origins, sources};
 
 pub const MAX_LIMIT: i64 = 100;
 /// Authors are the one facet that grows with the data, so only the most frequent ones count,
@@ -56,6 +56,13 @@ pub struct ExploredDocument {
 }
 
 #[derive(sqlx::FromRow)]
+struct SourceRow {
+    value: String,
+    count: i64,
+    api_key_id: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
 pub struct FacetCount {
     pub value: String,
     pub count: i64,
@@ -64,7 +71,7 @@ pub struct FacetCount {
 /// How many documents each facet value has. A facet's counts apply every filter except its own,
 /// so they show what choosing another value of it would give.
 pub struct Facets {
-    pub sources: Vec<FacetCount>,
+    pub sources: Vec<SourceCount>,
     /// The stored names: `markdown`, `plain`, `email`.
     pub content_types: Vec<FacetCount>,
     /// The most frequent ones and the selected ones.
@@ -148,23 +155,31 @@ pub async fn explore(
         .push(" limit ")
         .push_bind(page.limit);
 
-    let mut by_source = QueryBuilder::new("select d.source as value, count(*) from documents d");
+    // The most recently modified document's key is the origin of a source no connection covers.
+    let mut by_source = QueryBuilder::new(
+        "select d.source as value, count(*),
+                (array_agg(d.api_key_id order by d.modified_at desc))[1] as api_key_id
+         from documents d",
+    );
     push_filters(&mut by_source, user_id, filter, Some(Facet::Source));
     by_source.push(" group by 1 order by 2 desc, 1");
 
     // A selected source may be a parent of the stored ones, so count it as the filter matches.
     let mut by_selected_source =
-        QueryBuilder::new("select root as value, (select count(*) from documents d");
+        QueryBuilder::new("select root as value, covered.count, covered.api_key_id from unnest(");
+    by_selected_source.push_bind(filter.sources.clone()).push(
+        "::text[]) root cross join lateral (
+                 select count(*),
+                        (array_agg(d.api_key_id order by d.modified_at desc))[1] as api_key_id
+                 from documents d",
+    );
     push_filters(
         &mut by_selected_source,
         user_id,
         filter,
         Some(Facet::Source),
     );
-    by_selected_source
-        .push(" and source_covers(root, d.source)) as count from unnest(")
-        .push_bind(filter.sources.clone())
-        .push("::text[]) root");
+    by_selected_source.push(" and source_covers(root, d.source)) covered");
 
     let mut by_content_type =
         QueryBuilder::new("select d.content_type as value, count(*) from documents d");
@@ -207,11 +222,11 @@ pub async fn explore(
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
-    let mut sources: Vec<FacetCount> = by_source
+    let mut sources: Vec<SourceRow> = by_source
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
-    let selected_sources: Vec<FacetCount> = by_selected_source
+    let selected_sources: Vec<SourceRow> = by_selected_source
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
@@ -227,9 +242,18 @@ pub async fn explore(
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
+    let origins = Origins::load(&mut connection, user_id).await?;
     sources.retain(|source| !filter.sources.contains(&source.value));
     sources.extend(selected_sources);
     sources.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
+    let sources = sources
+        .into_iter()
+        .map(|source| SourceCount {
+            origin: origins.of(&source.value, source.api_key_id),
+            count: u32::try_from(source.count).expect("a count is never negative"),
+            value: source.value,
+        })
+        .collect();
     Ok(Exploration {
         total,
         documents,
