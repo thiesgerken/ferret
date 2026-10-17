@@ -1,0 +1,85 @@
+{{- $teiNames := dict }}
+{{- range .Values.embedding.models }}
+{{- $name := include "ferret.teiName" (dict "root" $ "model" .) }}
+{{- if hasKey $teiNames $name }}
+{{- fail (printf "models %q and %q share the TEI name %q" (get $teiNames $name) .name $name) }}
+{{- end }}
+{{- $_ := set $teiNames $name .name }}
+{{- $component := trimPrefix (printf "%s-" $.Release.Name) $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 8 }}
+    spec:
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      # The image is amd64 only. arm64 nodes need TEI's cpu-arm64 tag instead.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      containers:
+        - name: tei
+          image: {{ include "ferret.image" (dict "root" $ "image" $.Values.tei.image) }}
+          imagePullPolicy: {{ $.Values.tei.image.pullPolicy }}
+          args:
+            - --model-id
+            - {{ required "embedding.models[].modelId is required" .modelId | quote }}
+            - --max-batch-tokens
+            - {{ required "embedding.models[].maxBatchTokens is required" .maxBatchTokens | quote }}
+          ports:
+            - name: http
+              containerPort: 80
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: models
+              mountPath: /data
+          # The first start downloads the model.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        # ponytail: re-downloaded on every pod start. A PVC per model if restarts get slow.
+        - name: models
+          emptyDir:
+            sizeLimit: {{ required "embedding.models[].cacheSize is required" .cacheSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ferret.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}

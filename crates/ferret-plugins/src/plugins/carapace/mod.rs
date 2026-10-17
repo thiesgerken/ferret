@@ -11,8 +11,8 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    Outcome, PluginError, Run,
-    git::{self, FileHistory, Git},
+    Outcome, PluginError, Run, git,
+    repo::{Checkout, FileHistory},
 };
 use mirror::{Digest, Fact, Session};
 
@@ -39,30 +39,21 @@ pub struct CarapaceConfig {
 }
 
 // ponytail: a full sync every run, whose sweep also removes facts a changed session file
-// dropped. Diffing against the last commit comes with the shared repository module (#10).
+// dropped. Diffing against the last commit (repo::Checkout::changes_since) is a follow-up.
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: CarapaceConfig = serde_json::from_value(run.config.clone())?;
-    let git = Git {
-        protocols: &run.options.git_protocols,
-    };
-    let (checkout, commit) = git::clone(
-        &git,
+    let checkout = Checkout::clone(
         &config.remote,
         config.branch.as_deref(),
         config.token.as_deref(),
+        &run.options.git_protocols,
     )
     .await?;
-    let dir = checkout.path();
     run.log
-        .line(format!("cloned {} at {commit}", config.remote));
-    let listing = git.run(dir, &["ls-files", "--stage", "-z"]).await?;
-    let history = git::parse_history(
-        &git.run(
-            dir,
-            &["log", "-z", "--format=%x1e%an%x1f%aI", "--name-only"],
-        )
-        .await?,
-    )?;
+        .line(format!("cloned {} at {}", config.remote, checkout.head));
+    let mut modes: Vec<(String, String)> = checkout.modes().await?.into_iter().collect();
+    modes.sort();
+    let history = checkout.history().await?;
     let target = Target {
         root: &run.source,
         carapace_url: config.carapace_url.trim_end_matches('/'),
@@ -70,12 +61,12 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
 
     let sync = run.api.start_sync(&run.source).await?.sync_id;
     let mut stats = RunStats::default();
-    for (mode, path) in git::tracked_files(&listing)? {
+    for (path, mode) in &modes {
         let kind = kind(path);
         if kind == Kind::Ignored {
             continue;
         }
-        let text = match git::read_text(dir, mode, path).await? {
+        let text = match checkout.text(path, mode).await? {
             Ok(text) => text,
             Err(skipped) => {
                 run.log.line(format!("skipped {path}: {skipped}"));
@@ -112,7 +103,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         stats.put, stats.unchanged, stats.deleted
     ));
     Ok(Outcome {
-        state: json!({ "commit": commit }),
+        state: json!({ "commit": checkout.head }),
         stats,
     })
 }

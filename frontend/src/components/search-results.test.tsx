@@ -14,7 +14,7 @@ const hit = (id: string, source: string, authors: string[]) => ({
   source,
   externalId: `${id}.md`,
   title: null,
-  url: id === "a" ? "obsidian://open?file=a.md" : null,
+  url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
   authors,
   createdAt: "2026-01-01T12:00:00Z",
   chunk: {
@@ -28,13 +28,19 @@ const hit = (id: string, source: string, authors: string[]) => ({
   },
 });
 
-async function renderResults(state: SearchState) {
+async function renderResults(state: SearchState, semanticUnavailable: string | null = null) {
   const variables: unknown[] = [];
   const changes: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     variables.push(JSON.parse(String(init?.body)).variables);
     return Response.json({
-      data: { search: [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])] },
+      data: {
+        search: {
+          __typename: "SearchResult",
+          hits: [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])],
+          semanticUnavailable,
+        },
+      },
     });
   });
   const view = await renderReact(
@@ -91,5 +97,19 @@ test("selected filters go into the query and stay as pressed chips", async () =>
   assert.equal(typeof input.from, "string");
   const pressed = [...view.container.querySelectorAll("button[aria-pressed=true]")].map((b) => b.textContent);
   assert.deepEqual(pressed, ["paperless", "Allianz"]);
+  await view.unmount();
+});
+
+test("says when the hits are keyword matches only", async () => {
+  const available = await renderResults(STATE);
+  assert.equal(available.view.container.querySelector('[role="status"]'), null);
+  await available.view.unmount();
+
+  const { view } = await renderResults(STATE, "the embedding model qwen3 is unavailable");
+  assert.equal(
+    view.container.querySelector('[role="status"]')?.textContent,
+    "Keyword matches only: the embedding model qwen3 is unavailable.",
+  );
+  assert.equal(view.container.querySelectorAll("article").length, 2);
   await view.unmount();
 });

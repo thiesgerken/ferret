@@ -122,7 +122,7 @@ export function Connections() {
             <ConnectionCard
               key={connection.id}
               connection={connection}
-              configSchema={data.pluginTypes.find(({ name }) => name === connection.plugin)?.configSchema}
+              configSchema={configSchemaOf(data.pluginTypes, connection.plugin)}
               onChanged={reload}
             />
           ))}
@@ -227,6 +227,16 @@ function CreateConnectionForm({
   );
 }
 
+/** A connection's plugin type always exists: `connections.plugin` references `plugin_types`,
+ * whose rows are never deleted. */
+function configSchemaOf(pluginTypes: ConnectionsData["pluginTypes"], plugin: string): string {
+  const pluginType = pluginTypes.find(({ name }) => name === plugin);
+  if (!pluginType) {
+    throw new Error(`The server listed no plugin type "${plugin}".`);
+  }
+  return pluginType.configSchema;
+}
+
 function parseConfigSchema(
   plugin: string,
   schema: string | undefined,
@@ -311,7 +321,7 @@ function ConfigInput({
     );
   }
   const placeholder = keepsStoredSecret
-    ? "Leave empty to keep the stored one"
+    ? "Leave empty to keep the stored one, unless the configuration changes"
     : Array.isArray(field.default)
       ? field.default.join("\n")
       : typeof field.default === "string"
@@ -360,8 +370,7 @@ function ConnectionCard({
   onChanged,
 }: {
   connection: Connection;
-  /** Undefined while no registered worker offers the connection's plugin. */
-  configSchema: string | undefined;
+  configSchema: string;
   onChanged: () => void;
 }) {
   const [, update] = useMutation(UpdateConnectionMutation);
@@ -413,8 +422,6 @@ function ConnectionCard({
           </button>
           <button
             type="button"
-            disabled={configSchema === undefined}
-            title={configSchema === undefined ? "No worker offers this plugin right now." : undefined}
             onClick={() => setEditing(true)}
             aria-label={`Edit ${connection.source}`}
             className={buttonClass}
@@ -444,7 +451,7 @@ function ConnectionCard({
           {error}
         </p>
       )}
-      {editing && configSchema !== undefined && (
+      {editing && (
         <EditConnectionForm
           connection={connection}
           configSchema={configSchema}
@@ -543,6 +550,12 @@ function EditConnectionForm({
           className={cn(fieldClass, "font-mono")}
         />
       </div>
+      {fields.some((field) => field.secret) && (
+        <p className="text-xs text-muted-foreground">
+          Changing the configuration (not the schedule) needs every stored secret entered again, so
+          an edit can&apos;t send them somewhere new.
+        </p>
+      )}
       <ConfigFieldset
         idPrefix={`edit-${connection.id}`}
         fields={fields}

@@ -7,9 +7,10 @@ use std::fmt;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
-    aead::{Aead, Generate, KeyInit},
+    aead::{Aead, Generate, KeyInit, Payload},
 };
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 const NONCE_LEN: usize = 24;
 
@@ -26,27 +27,59 @@ impl ConfigKey {
         Ok(Self(cipher))
     }
 
-    /// The nonce, then the ciphertext.
-    pub fn seal(&self, credentials: &Map<String, Value>) -> Vec<u8> {
+    /// The nonce, then the ciphertext. Sealed for one connection of one user: copied to another
+    /// row, it doesn't open. The field names are part of what's sealed.
+    pub fn seal(&self, credentials: &Map<String, Value>, owner: Owner) -> Vec<u8> {
         let nonce = XNonce::generate();
         let plaintext = serde_json::to_vec(credentials).expect("a JSON map serializes");
         let ciphertext = self
             .0
-            .encrypt(&nonce, plaintext.as_slice())
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: &plaintext,
+                    aad: &owner.bytes(),
+                },
+            )
             .expect("encrypting a buffer can't fail");
         [nonce.as_slice(), &ciphertext].concat()
     }
 
-    pub fn open(&self, sealed: &[u8]) -> Result<Map<String, Value>, OpenError> {
+    pub fn open(&self, sealed: &[u8], owner: Owner) -> Result<Map<String, Value>, OpenError> {
         let (nonce, ciphertext) = sealed.split_at_checked(NONCE_LEN).ok_or(OpenError)?;
         let nonce = XNonce::try_from(nonce).map_err(|_| OpenError)?;
-        let plaintext = self.0.decrypt(&nonce, ciphertext).map_err(|_| OpenError)?;
+        let plaintext = self
+            .0
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: ciphertext,
+                    aad: &owner.bytes(),
+                },
+            )
+            .map_err(|_| OpenError)?;
         serde_json::from_slice(&plaintext).map_err(|_| OpenError)
     }
 }
 
-/// Sealed under another key or damaged. After restoring a database without its key, this is how
-/// stored credentials show up.
+/// The connection credentials are sealed for.
+#[derive(Clone, Copy)]
+pub struct Owner {
+    pub user_id: Uuid,
+    pub connection_id: Uuid,
+}
+
+impl Owner {
+    fn bytes(self) -> [u8; 32] {
+        let mut bytes = [0; 32];
+        bytes[..16].copy_from_slice(self.user_id.as_bytes());
+        bytes[16..].copy_from_slice(self.connection_id.as_bytes());
+        bytes
+    }
+}
+
+/// Sealed under another key, for another connection, or damaged. After restoring a database
+/// without its key, this is how stored credentials show up.
 #[derive(Debug)]
 pub struct OpenError;
 
@@ -58,17 +91,24 @@ impl fmt::Display for OpenError {
     }
 }
 
+/// The config fields the schema marks `writeOnly`.
+pub fn secret_fields(schema: &Value) -> Vec<&str> {
+    schema["properties"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, property)| property["writeOnly"] == true)
+        .map(|(name, _)| name.as_str())
+        .collect()
+}
+
 /// Splits `config` into the fields stored as they are and the credentials.
 pub fn split(schema: &Value, mut config: Value) -> (Value, Map<String, Value>) {
     let mut credentials = Map::new();
-    if let (Some(properties), Some(fields)) =
-        (schema["properties"].as_object(), config.as_object_mut())
-    {
-        for (name, property) in properties {
-            if property["writeOnly"] == true
-                && let Some(value) = fields.remove(name)
-            {
-                credentials.insert(name.clone(), value);
+    if let Some(fields) = config.as_object_mut() {
+        for name in secret_fields(schema) {
+            if let Some(value) = fields.remove(name) {
+                credentials.insert(name.to_owned(), value);
             }
         }
     }
@@ -96,13 +136,25 @@ mod tests {
     fn credentials_open_only_with_the_key_that_sealed_them() {
         let key = ConfigKey::new(KEY).unwrap();
         let other = ConfigKey::new(&STANDARD.encode([7; 32])).unwrap();
+        let owner = Owner {
+            user_id: Uuid::now_v7(),
+            connection_id: Uuid::now_v7(),
+        };
+        let elsewhere = Owner {
+            connection_id: Uuid::now_v7(),
+            ..owner
+        };
         let credentials = Map::from_iter([("token".to_owned(), json!("s3cret"))]);
 
-        let sealed = key.seal(&credentials);
+        let sealed = key.seal(&credentials, owner);
 
-        assert_eq!(key.open(&sealed).unwrap(), credentials);
-        assert!(other.open(&sealed).is_err());
-        assert!(key.open(&sealed[..10]).is_err());
+        assert_eq!(key.open(&sealed, owner).unwrap(), credentials);
+        assert!(other.open(&sealed, owner).is_err());
+        assert!(
+            key.open(&sealed, elsewhere).is_err(),
+            "bound to its connection"
+        );
+        assert!(key.open(&sealed[..10], owner).is_err());
         assert!(!sealed.windows(6).any(|window| window == b"s3cret"));
     }
 
