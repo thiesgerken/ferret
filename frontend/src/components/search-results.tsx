@@ -2,13 +2,13 @@
 
 import { Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { linkableUrl } from "@/lib/safe-url";
-import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import { TIME_RANGES, searchHref, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { plainMarkdown, snippet } from "@/lib/snippet";
 import { viewerHref } from "@/lib/viewer-url";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ const SearchHitsQueryDocument = graphql(`
         createdAt
         collapsed
         judged
+        keywordScore
+        similarity
         chunk {
           startOffset
           endOffset
@@ -39,6 +41,10 @@ const SearchHitsQueryDocument = graphql(`
       }
       semanticUnavailable
       model
+      total
+      totalIsLowerBound
+      documentsInScope
+      tookMs
     }
   }
 `);
@@ -59,12 +65,22 @@ const SetJudgmentMutation = graphql(`
   }
 `);
 
-type Hit = SearchHitsQuery["search"]["hits"][number];
+type Result = SearchHitsQuery["search"];
+type Hit = Result["hits"][number];
 
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
 
-export function SearchResults({ state, onChange }: { state: SearchState; onChange: (state: SearchState) => void }) {
+export function SearchResults({
+  state,
+  onChange,
+  onType,
+}: {
+  state: SearchState;
+  onChange: (state: SearchState) => void;
+  /** A query typed into the field, before it's submitted. */
+  onType: (state: SearchState) => void;
+}) {
   const input = useMemo(
     () => ({
       q: state.q,
@@ -75,16 +91,37 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
     }),
     [state.q, state.sources, state.authors, state.range, state.model],
   );
-  const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
+  // Typing revisits queries all the time, and a cached answer would pass off an old `tookMs` and
+  // `semanticUnavailable` as current.
+  const [{ data, error, fetching }] = useQuery({
+    query: SearchHitsQueryDocument,
+    variables: { input },
+    requestPolicy: "cache-and-network",
+  });
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
   const hits = data?.search.hits ?? [];
+
+  // A query typed before a chip click or Back must not land on top of it: it was typed into a
+  // search that's gone.
+  const href = searchHref(state);
+  const shownHref = useRef(href);
+  useEffect(() => {
+    shownHref.current = href;
+  });
+  function handleType(q: string) {
+    if (shownHref.current === href) onType({ ...state, q });
+  }
   const semanticUnavailable = data?.search.semanticUnavailable;
 
   return (
     <div className="min-h-dvh">
       <header className="flex items-center gap-6 border-b border-border px-4 py-3 pr-16">
         <HomeLink />
-        <SearchField defaultValue={state.q} onSearch={(q) => onChange({ ...state, q })} />
+        <SearchField
+          defaultValue={state.q}
+          onSearch={(q) => onChange({ ...state, q })}
+          onType={handleType}
+        />
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
         <FilterChips
@@ -94,6 +131,7 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
           ranModel={data?.search.model}
           onChange={onChange}
         />
+        {data && <Stats result={data.search} sources={state.sources} className={cn(fetching && "opacity-60")} />}
         {semanticUnavailable && (
           <p role="status" className="text-sm text-muted-foreground">
             Keyword matches only: {semanticUnavailable}.
@@ -219,6 +257,7 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
           {hit.title || hit.externalId}
         </Link>
         <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
+        <Scores hit={hit} />
       </div>
       <p className="text-sm leading-relaxed">
         {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
@@ -243,6 +282,32 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
         </a>
       )}
     </article>
+  );
+}
+
+/** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. */
+function Stats({ result, sources, className }: { result: Result; sources: string[]; className?: string }) {
+  const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${result.total === 1 ? "match" : "matches"}`;
+  const documents = `${result.documentsInScope} ${result.documentsInScope === 1 ? "document" : "documents"}`;
+  const scope = sources.length > 0 ? sources.join(", ") : "all sources";
+  return (
+    <p className={cn("text-xs text-muted-foreground", className)}>
+      {matches} · {documents} in {scope} · {result.tookMs} ms
+    </p>
+  );
+}
+
+/** The document's best similarity and whether its keywords matched, not necessarily the snippet's. */
+function Scores({ hit }: { hit: Hit }) {
+  const similarity = hit.similarity ?? null;
+  const keywordScore = hit.keywordScore ?? null;
+  return (
+    <span className="shrink-0 space-x-2 text-xs text-muted-foreground tabular-nums">
+      {similarity !== null && (
+        <span title="Semantic similarity of the document's best chunk">{Math.round(similarity * 100)}% similar</span>
+      )}
+      {keywordScore !== null && <span title={`BM25 ${keywordScore.toFixed(2)}`}>keyword match</span>}
+    </span>
   );
 }
 
