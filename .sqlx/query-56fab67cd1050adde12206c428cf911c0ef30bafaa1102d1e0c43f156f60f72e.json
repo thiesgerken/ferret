@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, name, plugins, last_seen_at from workers\n         where last_seen_at > now() - interval '1 day'\n         order by last_seen_at desc",
+  "query": "select id, name, plugins, last_seen_at, online as \"online!\" from (\n               select w.*,\n                      w.last_seen_at > now() - make_interval(secs => $1)\n                      or exists (select 1 from plugin_runs r\n                                 where r.worker_id = w.id and r.status = 'running') as online\n               from workers w\n           ) workers\n           where online or last_seen_at > now() - interval '1 day'\n           order by online desc, last_seen_at desc",
   "describe": {
     "columns": [
       {
@@ -46,17 +46,26 @@
             "name": "last_seen_at"
           }
         }
+      },
+      {
+        "ordinal": 4,
+        "name": "online!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Float8"
+      ]
     },
     "nullable": [
       false,
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "9446f0891ced7a03ac84b0949e10768791e0ae500283a9ac062ea5010d4a0756"
+  "hash": "56fab67cd1050adde12206c428cf911c0ef30bafaa1102d1e0c43f156f60f72e"
 }

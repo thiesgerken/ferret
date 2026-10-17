@@ -23,6 +23,7 @@ const AdminQuery = graphql(`
       name
       plugins
       lastSeenAt
+      online
     }
     embeddingStatus {
       name
@@ -370,14 +371,16 @@ function Workers({ workers }: { workers: AdminData["workers"] }) {
         <tr>
           <th className="py-2 pr-3 font-medium">Worker</th>
           <th className="py-2 pr-3 font-medium">Plugins</th>
+          <th className="py-2 pr-3 font-medium">Status</th>
           <th className="py-2 font-medium">Last seen</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
         {workers.map((worker) => (
-          <tr key={worker.id}>
+          <tr key={worker.id} className={cn(!worker.online && "text-muted-foreground")}>
             <td className="py-2 pr-3 font-mono text-xs">{worker.name}</td>
             <td className="py-2 pr-3">{worker.plugins.join(", ")}</td>
+            <td className="py-2 pr-3">{worker.online ? "online" : "offline"}</td>
             <td className="py-2">{formatDateTime(worker.lastSeenAt)}</td>
           </tr>
         ))}

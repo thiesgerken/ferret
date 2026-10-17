@@ -34,6 +34,9 @@ const LEASE: Duration = Duration::from_secs(120);
 /// Hard cap on a run token's life. Liveness is the heartbeat's job, this only bounds a leak.
 const RUN_TOKEN_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_WAIT: Duration = Duration::from_secs(60);
+/// A worker that hasn't asked for a run for this long is offline: an idle worker asks at least
+/// every claim wait (30 s), a busy one holds a running run instead.
+const WORKER_OFFLINE_AFTER: Duration = Duration::from_secs(120);
 /// The tail of a run's log that is kept.
 const LOG_CAP_CHARS: i32 = 64 * 1024;
 const RUN_TOKEN_AUDIENCE: &str = "ferret-run";
@@ -77,16 +80,24 @@ pub struct WorkerInfo {
     pub name: String,
     pub plugins: Vec<String>,
     pub last_seen_at: DateTime<Utc>,
+    pub online: bool,
 }
 
-/// The workers seen in the last day, the most recently seen first. A restarted worker registers
-/// anew, so older rows are mostly gone pods.
+/// The workers seen in the last day, online ones first, then the most recently seen. A restarted
+/// worker registers anew, so its old row stays behind offline until the day is over.
 pub async fn workers(pool: &PgPool) -> Result<Vec<WorkerInfo>, sqlx::Error> {
     sqlx::query_as!(
         WorkerInfo,
-        "select id, name, plugins, last_seen_at from workers
-         where last_seen_at > now() - interval '1 day'
-         order by last_seen_at desc"
+        r#"select id, name, plugins, last_seen_at, online as "online!" from (
+               select w.*,
+                      w.last_seen_at > now() - make_interval(secs => $1)
+                      or exists (select 1 from plugin_runs r
+                                 where r.worker_id = w.id and r.status = 'running') as online
+               from workers w
+           ) workers
+           where online or last_seen_at > now() - interval '1 day'
+           order by online desc, last_seen_at desc"#,
+        WORKER_OFFLINE_AFTER.as_secs_f64(),
     )
     .fetch_all(pool)
     .await

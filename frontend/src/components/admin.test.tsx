@@ -29,6 +29,15 @@ const ADMIN_DATA = {
       name: "ferret-plugins-0",
       plugins: ["git", "paperless"],
       lastSeenAt: "2026-01-02T12:00:00Z",
+      online: true,
+    },
+    {
+      __typename: "Worker",
+      id: "w-0",
+      name: "ferret-plugins-old",
+      plugins: ["git"],
+      lastSeenAt: "2026-01-02T09:00:00Z",
+      online: false,
     },
   ],
   embeddingStatus: [
@@ -74,7 +83,8 @@ test("shows users, embedding health with its backlog, and the workers", async ()
   assert.match(text, /Queries: online · Bulk: offline/);
   assert.match(text, /TEI answered 503/);
   assert.match(text, /notes71/);
-  assert.match(text, /ferret-plugins-0git, paperless/);
+  assert.match(text, /ferret-plugins-0git, paperlessonline/);
+  assert.match(text, /ferret-plugins-oldgitoffline/);
   await view.unmount();
 });
 
