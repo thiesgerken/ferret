@@ -101,7 +101,7 @@ export function CreateConnectionForm({
         <Field
           id="connection-source"
           label="Source"
-          help={withCode("A path like `notes` or `mail/work`. The connection owns it and everything below it: no other connection or API key can write there.")}
+          help={withCode("Where this connection's documents live in ferret, like `notes` or `mail/work`. Searches narrow by it, and API keys can be limited to it. The plugin may add sources below it, like `carapace/facts`. Only this connection writes here, so when something disappears at the origin, ferret removes it without touching anything else.")}
         >
           <input id="connection-source" name="source" required placeholder="notes" className={cn(fieldClass, "font-mono")} />
         </Field>
