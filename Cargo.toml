@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.12.5"
+version = "0.13.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -53,6 +53,7 @@ tokio-rustls = "0.26"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["serde", "v7"] }
+yrs = "0.28"
 
 # Unoptimized, Argon2 takes seconds per hash, which makes every login in tests and `cargo run`
 # crawl.

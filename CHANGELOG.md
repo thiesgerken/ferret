@@ -1,6 +1,67 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #118 from thiesgerken/113-affine-plugin
+  ([`788d640`](https://github.com/thiesgerken/ferret/commit/788d64054db56da4b46e6d60ccf4a15183d22fc4))
+
+- 📝 docs(plugins): what goes stale in AFFiNE documents, and why there's no meta
+  ([`f770b6b`](https://github.com/thiesgerken/ferret/commit/f770b6bbdac5311227e142d84adf2ae86565a129))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✅ test(plugins): sync the AFFiNE plugin against a fake AFFiNE
+  ([`e97ca41`](https://github.com/thiesgerken/ferret/commit/e97ca4110e0c2156daca5c33574d05fa477193ea))
+
+  Pages of three with a tie across a page's end, the cursor and its overlap, trash and restore, a doc without content, a page of one modification time, and a login proxy in front of AFFiNE.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index AFFiNE workspaces
+  ([`788d640`](https://github.com/thiesgerken/ferret/commit/788d64054db56da4b46e6d60ccf4a15183d22fc4))
+
+- ✨ feat(plugins): index AFFiNE workspaces
+  ([`6c8f2a4`](https://github.com/thiesgerken/ferret/commit/6c8f2a49f52c5545686a363cae1ec2b963801f50))
+
+  An `affine` plugin: one Markdown document per doc of a self-hosted AFFiNE workspace. It signs in as a user (AFFiNE 0.27 has no personal access tokens for its API), lists the docs and their trash flags from the workspace's root doc, finds changed docs through GraphQL `recentlyUpdatedDocs`, and turns each doc's Yjs state into Markdown with its own converter on `yrs`. Every run is a sync, so deleted and trashed docs leave the index.
+
+  Closes #113
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): fetch only restored AFFiNE docs and guard against block cycles
+  ([`5130707`](https://github.com/thiesgerken/ferret/commit/51307074a6339ccced45e94f482efc912004e563))
+
+  - A doc that left the trash is fetched by itself, with its updatedAt from
+    `workspace.doc(docId)`, instead of a full fetch of the workspace.
+  - Paging follows AFFiNE's own hasNextPage, so it doesn't depend on the page
+    size the server actually serves. Only a full page of one modification time
+    fails the run.
+  - A full fetch logs how many docs have no content on the server yet.
+  - The converter renders a block among its own descendants once instead of
+    recursing until the worker's stack overflows.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.12.5 (2026-10-17)
 
 

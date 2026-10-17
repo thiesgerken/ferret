@@ -8,6 +8,7 @@ use ferret_api::{
 };
 use serde_json::Value;
 
+pub mod affine;
 pub mod carapace;
 pub mod git;
 pub mod imap;
@@ -19,6 +20,11 @@ pub type PluginError = Box<dyn std::error::Error + Send + Sync>;
 /// Every plugin this binary knows, as the server learns them at registration.
 pub fn registrations() -> Vec<PluginRegistration> {
     vec![
+        PluginRegistration {
+            name: affine::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(affine::AffineConfig))
+                .expect("a schema serializes"),
+        },
         PluginRegistration {
             name: carapace::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(carapace::CarapaceConfig))
@@ -104,6 +110,7 @@ impl Log {
 
 pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
     match plugin {
+        affine::NAME => affine::run(run).await,
         carapace::NAME => carapace::run(run).await,
         git::NAME => git::run(run).await,
         imap::NAME => imap::run(run).await,
