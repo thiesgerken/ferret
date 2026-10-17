@@ -3,6 +3,8 @@ export type ConfigField = {
   name: string;
   kind: "text" | "lines" | "checkbox";
   required: boolean;
+  /** `writeOnly` in the schema: the server stores it encrypted and never returns it. */
+  secret: boolean;
   description: string;
   default: unknown;
 };
@@ -12,6 +14,7 @@ type Property = {
   items?: { type?: string };
   description?: string;
   default?: unknown;
+  writeOnly?: boolean;
 };
 
 /**
@@ -28,6 +31,7 @@ export function configFields(schemaJson: string): ConfigField[] {
       name,
       kind: fieldKind(name, property),
       required: required.has(name),
+      secret: property.writeOnly === true,
       description: property.description ?? "",
       default: property.default,
     }))

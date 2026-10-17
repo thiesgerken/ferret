@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select credentials from connections where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credentials",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "credentials"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b9e22948fbbe5154b071b594cc26599cbf1e4cc5ce052a32b5884a5b98a655c3"
+}

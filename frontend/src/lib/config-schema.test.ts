@@ -10,6 +10,7 @@ const SCHEMA = JSON.stringify({
     branch: { type: ["string", "null"], default: null, description: "The branch." },
     exclude: { type: "array", items: { type: "string" }, default: [] },
     remote: { type: "string", description: "The repository." },
+    token: { type: ["string", "null"], writeOnly: true },
     shallow: { type: "boolean", default: true },
   },
 });
@@ -18,12 +19,13 @@ test("maps the schema's properties to fields, required ones first", () => {
   const fields = configFields(SCHEMA);
 
   assert.deepEqual(
-    fields.map(({ name, kind, required }) => [name, kind, required]),
+    fields.map(({ name, kind, required, secret }) => [name, kind, required, secret]),
     [
-      ["remote", "text", true],
-      ["branch", "text", false],
-      ["exclude", "lines", false],
-      ["shallow", "checkbox", false],
+      ["remote", "text", true, false],
+      ["branch", "text", false, false],
+      ["exclude", "lines", false, false],
+      ["token", "text", false, true],
+      ["shallow", "checkbox", false, false],
     ],
   );
 });

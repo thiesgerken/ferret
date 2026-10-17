@@ -15,13 +15,16 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// A plugin whose config needs a `path`.
+/// A plugin whose config needs a `path` and may have a `secret` of at least 8 characters.
 fn fake_plugin() -> PluginRegistration {
     PluginRegistration {
         name: "fake".to_owned(),
         config_schema: json!({
             "type": "object",
-            "properties": {"path": {"type": "string"}},
+            "properties": {
+                "path": {"type": "string"},
+                "secret": {"type": "string", "writeOnly": true, "minLength": 8},
+            },
             "required": ["path"],
             "additionalProperties": false,
         }),
@@ -440,6 +443,142 @@ async fn configs_and_schedules_are_validated(pool: PgPool) {
             .starts_with("\"every hour\" is not a cron schedule"),
         "{schedule}"
     );
+}
+
+async fn update_config(server: &TestServer, id: &str, config: Value) -> Value {
+    let cookie = server.sign_in().await;
+    server
+        .graphql(
+            &cookie,
+            "mutation ($id: ID!, $input: ConnectionUpdate!) { updateConnection(id: $id, input: $input) { id } }",
+            json!({"id": id, "input": {"config": config.to_string(), "schedule": "0 * * * *", "enabled": true}}),
+        )
+        .await
+}
+
+async fn credentials_of(pool: &PgPool, id: &str) -> Option<Vec<u8>> {
+    sqlx::query_scalar("select credentials from connections where id = $1::uuid")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_again(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let internal = server.internal();
+    let worker = register(&internal).await;
+    let id = connection_id(&server, "notes").await;
+    // As after restoring the database without its FERRET_CONFIG_KEY.
+    sqlx::query("update connections set credentials = $1")
+        .bind(vec![7u8; 64])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(claim_now(&internal, worker).await.is_none());
+    let (status, error): (String, String) = sqlx::query_as("select status, error from plugin_runs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "failed");
+    assert!(error.contains("enter them again"), "{error}");
+
+    let unchanged = update_config(&server, &id, json!({"path": "/data"})).await;
+    let entered = update_config(
+        &server,
+        &id,
+        json!({"path": "/data", "secret": "a new secret"}),
+    )
+    .await;
+
+    assert_eq!(
+        unchanged["errors"][0]["message"],
+        "the stored credentials can't be decrypted with FERRET_CONFIG_KEY: enter secret"
+    );
+    assert_eq!(entered["errors"], Value::Null, "{entered}");
+}
+
+#[sqlx::test(migrations = false)]
+async fn credentials_open_only_for_the_connection_they_were_sealed_for(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let internal = server.internal();
+    let worker = register(&internal).await;
+    let notes = connection_id(&server, "notes").await;
+    let mail = connection_id(&server, "mail").await;
+    update_config(
+        &server,
+        &notes,
+        json!({"path": "/data", "secret": "notes secret"}),
+    )
+    .await;
+    // Someone with write access to the database copies one connection's credentials to another.
+    sqlx::query("update connections set credentials = $1 where id = $2::uuid")
+        .bind(credentials_of(&pool, &notes).await)
+        .bind(&mail)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "update connections set next_run_at = now() + interval '1 day' where id = $1::uuid",
+    )
+    .bind(&notes)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    while claim_now(&internal, worker).await.is_some() {}
+
+    let failed: Vec<String> = sqlx::query_scalar(
+        "select c.source from plugin_runs r join connections c on c.id = r.connection_id
+         where r.status = 'failed'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(failed, ["mail"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn null_removes_a_stored_credential(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    register(&server.internal()).await;
+    let id = connection_id(&server, "notes").await;
+    update_config(
+        &server,
+        &id,
+        json!({"path": "/data", "secret": "a stored secret"}),
+    )
+    .await;
+    assert!(credentials_of(&pool, &id).await.is_some());
+
+    let cleared = update_config(&server, &id, json!({"path": "/data", "secret": null})).await;
+
+    assert_eq!(cleared["errors"], Value::Null, "{cleared}");
+    assert_eq!(credentials_of(&pool, &id).await, None);
+}
+
+#[sqlx::test(migrations = false)]
+async fn validation_errors_never_quote_a_credential(pool: PgPool) {
+    let server = start_server(pool).await;
+    register(&server.internal()).await;
+    let id = connection_id(&server, "notes").await;
+
+    let too_short = update_config(&server, &id, json!({"path": "/data", "secret": "s3cr3t"})).await;
+    let wrong_type =
+        update_config(&server, &id, json!({"path": 42, "secret": "a long secret"})).await;
+
+    assert_eq!(
+        too_short["errors"][0]["message"],
+        "invalid config at /secret"
+    );
+    let message = wrong_type["errors"][0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("invalid config at /path: "),
+        "{message}"
+    );
+    assert!(!message.contains("a long secret"), "{message}");
 }
 
 #[sqlx::test(migrations = false)]

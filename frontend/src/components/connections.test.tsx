@@ -16,6 +16,7 @@ const GIT_SCHEMA = JSON.stringify({
     branch: { type: ["string", "null"], default: null, description: "The branch to index." },
     exclude: { type: "array", items: { type: "string" }, default: [], description: "Globs of files to skip." },
     remote: { type: "string", description: "The repository to clone." },
+    token: { type: ["string", "null"], writeOnly: true, description: "For a private repository." },
   },
 });
 
@@ -90,7 +91,7 @@ test("creates a connection with the config from the plugin's schema", async () =
   const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
   assert.deepEqual(
     [...view.container.querySelectorAll("fieldset [name]")].map((element) => element.getAttribute("name")),
-    ["config.remote", "config.branch", "config.exclude"],
+    ["config.remote", "config.branch", "config.exclude", "config.token"],
   );
   field<HTMLInputElement>("#connection-source").value = "code/ferret";
   field<HTMLInputElement>("#config-remote").value = "https://example.test/ferret.git";
@@ -141,6 +142,10 @@ test("edits the config and schedule, starting from the stored ones", async () =>
   const field = <T extends Element>(selector: string) => view.container.querySelector<T>(selector)!;
   const remote = field<HTMLInputElement>("#edit-connection-1-remote");
   assert.equal(remote.value, "https://example.test/notes.git");
+  const token = field<HTMLInputElement>("#edit-connection-1-token");
+  assert.equal(token.type, "password");
+  assert.equal(token.value, "");
+  assert.equal(token.required, false, "an empty secret keeps the stored one");
   remote.value = "https://example.test/notes-v2.git";
   field<HTMLInputElement>("#schedule-connection-1").value = "0 3 * * *";
 
