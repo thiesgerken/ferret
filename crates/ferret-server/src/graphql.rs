@@ -18,7 +18,9 @@ use crate::{
     AppState,
     api_auth::Scope,
     api_keys::{self, ApiKey},
-    auth, documents,
+    auth,
+    connections::{self, Connection, ConnectionError, PluginRun, PluginType},
+    documents,
     error::ApiError,
     search::{self, SearchError},
     users::User,
@@ -96,6 +98,173 @@ impl Query {
             .map_err(internal)?;
         Ok(document.map(Document::from))
     }
+
+    /// The plugins that registered workers offer, with their config schemas.
+    async fn plugin_types(context: &Context) -> FieldResult<Vec<PluginType>> {
+        connections::plugin_types(&context.pool)
+            .await
+            .map_err(internal)
+    }
+
+    /// The signed-in user's connections, by source.
+    async fn connections(context: &Context) -> FieldResult<Vec<Connection>> {
+        connections::list(&context.pool, context.user.id)
+            .await
+            .map_err(internal)
+    }
+
+    async fn connection(context: &Context, id: ID) -> FieldResult<Option<Connection>> {
+        let Ok(id) = id.parse::<Uuid>() else {
+            return Ok(None);
+        };
+        connections::find(&context.pool, context.user.id, id)
+            .await
+            .map_err(internal)
+    }
+}
+
+#[graphql_object(context = Context)]
+impl PluginType {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// JSON Schema of the config, as JSON text. Secret fields are `writeOnly`.
+    fn config_schema(&self) -> String {
+        self.config_schema.to_string()
+    }
+}
+
+#[graphql_object(context = Context)]
+impl Connection {
+    fn id(&self) -> ID {
+        ID::new(self.id.to_string())
+    }
+
+    fn plugin(&self) -> &str {
+        &self.plugin
+    }
+
+    /// The source root the connection owns: it writes to it and below it.
+    fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// The plugin config, as JSON text.
+    fn config(&self) -> String {
+        self.config.to_string()
+    }
+
+    /// Cron expression.
+    fn schedule(&self) -> &str {
+        &self.schedule
+    }
+
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn next_run_at(&self) -> DateTime<Utc> {
+        self.next_run_at
+    }
+
+    fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+
+    /// The latest runs, newest first.
+    async fn runs(
+        &self,
+        context: &Context,
+        #[graphql(default = 20)] limit: i32,
+    ) -> FieldResult<Vec<PluginRun>> {
+        connections::runs(&context.pool, self.id, i64::from(limit.clamp(1, 100)))
+            .await
+            .map_err(internal)
+    }
+}
+
+#[derive(GraphQLEnum)]
+enum RunStatus {
+    Running,
+    Succeeded,
+    Failed,
+    /// The worker stopped sending heartbeats.
+    Lost,
+}
+
+/// What a run did to the index.
+#[derive(GraphQLObject)]
+struct RunStats {
+    put: i32,
+    unchanged: i32,
+    deleted: i32,
+}
+
+#[graphql_object(context = Context)]
+impl PluginRun {
+    fn id(&self) -> ID {
+        ID::new(self.id.to_string())
+    }
+
+    fn status(&self) -> RunStatus {
+        match self.status.as_str() {
+            "running" => RunStatus::Running,
+            "succeeded" => RunStatus::Succeeded,
+            "failed" => RunStatus::Failed,
+            "lost" => RunStatus::Lost,
+            // The table's check constraint admits no other value.
+            status => panic!("unknown run status {status:?} in the database"),
+        }
+    }
+
+    fn started_at(&self) -> DateTime<Utc> {
+        self.started_at
+    }
+
+    fn finished_at(&self) -> Option<DateTime<Utc>> {
+        self.finished_at
+    }
+
+    /// Only for a run that succeeded.
+    fn stats(&self) -> Option<RunStats> {
+        let stats: ferret_api::internal::RunStats =
+            serde_json::from_value(self.stats.clone()?).expect("stored stats are RunStats");
+        let count = |n: u64| i32::try_from(n).unwrap_or(i32::MAX);
+        Some(RunStats {
+            put: count(stats.put),
+            unchanged: count(stats.unchanged),
+            deleted: count(stats.deleted),
+        })
+    }
+
+    /// The tail of the run's log.
+    fn log(&self) -> &str {
+        &self.log
+    }
+
+    fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+}
+
+#[derive(GraphQLInputObject)]
+struct NewConnection {
+    plugin: String,
+    /// The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
+    /// connection's root.
+    source: String,
+    /// The plugin config as JSON text, valid against the plugin's schema.
+    config: String,
+    /// Cron expression, e.g. `0 * * * *` for hourly.
+    schedule: String,
+}
+
+#[derive(GraphQLInputObject)]
+struct ConnectionUpdate {
+    config: String,
+    schedule: String,
+    enabled: bool,
 }
 
 #[derive(GraphQLInputObject)]
@@ -267,6 +436,69 @@ struct CreatedApiKey {
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    /// Creates a connection, which runs right away and then on its schedule.
+    async fn create_connection(context: &Context, input: NewConnection) -> FieldResult<Connection> {
+        let new = connections::NewConnection {
+            plugin: input.plugin,
+            source: input.source,
+            config: parse_config(&input.config)?,
+            schedule: input.schedule,
+        };
+        connections::create(&context.pool, context.user.id, new)
+            .await
+            .map_err(connection_error)
+    }
+
+    async fn update_connection(
+        context: &Context,
+        id: ID,
+        input: ConnectionUpdate,
+    ) -> FieldResult<Connection> {
+        let update = connections::ConnectionUpdate {
+            config: parse_config(&input.config)?,
+            schedule: input.schedule,
+            enabled: input.enabled,
+        };
+        connections::update(&context.pool, context.user.id, parse_id(&id)?, update)
+            .await
+            .map_err(connection_error)?
+            .ok_or_else(no_such_connection)
+    }
+
+    /// Starts a run without waiting for the schedule. Fails for a disabled connection.
+    async fn run_connection_now(context: &Context, id: ID) -> FieldResult<ID> {
+        if connections::run_now(&context.pool, context.user.id, parse_id(&id)?)
+            .await
+            .map_err(internal)?
+        {
+            Ok(id)
+        } else {
+            Err(FieldError::new(
+                "no such enabled connection",
+                graphql_value!(null),
+            ))
+        }
+    }
+
+    /// Deletes the connection and every document below its source root, once `confirmSource`
+    /// repeats the root. Returns how many documents were deleted.
+    async fn delete_connection(
+        context: &Context,
+        id: ID,
+        confirm_source: String,
+    ) -> FieldResult<i32> {
+        let deleted = connections::delete(
+            &context.pool,
+            context.user.id,
+            parse_id(&id)?,
+            &confirm_source,
+        )
+        .await
+        .map_err(connection_error)?
+        .ok_or_else(no_such_connection)?;
+        Ok(i32::try_from(deleted).unwrap_or(i32::MAX))
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
@@ -343,6 +575,26 @@ impl ApiKey {
 
     fn expires_at(&self) -> Option<DateTime<Utc>> {
         self.expires_at
+    }
+}
+
+fn parse_config(config: &str) -> FieldResult<serde_json::Value> {
+    serde_json::from_str(config)
+        .map_err(|error| invalid_input(format!("the config isn't JSON: {error}")))
+}
+
+fn parse_id(id: &ID) -> FieldResult<Uuid> {
+    id.parse().map_err(|_| no_such_connection())
+}
+
+fn no_such_connection() -> FieldError {
+    FieldError::new("no such connection", graphql_value!(null))
+}
+
+fn connection_error(error: ConnectionError) -> FieldError {
+    match error {
+        ConnectionError::Invalid(message) => invalid_input(message),
+        ConnectionError::Database(error) => internal(error),
     }
 }
 

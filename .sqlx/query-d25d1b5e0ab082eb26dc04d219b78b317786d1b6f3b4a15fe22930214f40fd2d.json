@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update connections set enabled = false where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d25d1b5e0ab082eb26dc04d219b78b317786d1b6f3b4a15fe22930214f40fd2d"
+}

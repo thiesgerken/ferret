@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select source from connections where id = $1 and user_id = $2 for update",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "43eaf30afbf7fcdb10eaf07679f0bc09170e1e323a2070f67443b9cad281f4fb"
+}

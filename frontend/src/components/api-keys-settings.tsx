@@ -2,10 +2,11 @@
 
 import { Check, Copy, KeyRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useMutation, useQuery, type CombinedError } from "urql";
+import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { ApiKeyScope } from "@/gql/graphql";
-import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/graphql";
+import { fieldClass } from "@/lib/utils";
 
 const ApiKeysQuery = graphql(`
   query ApiKeys {
@@ -54,11 +55,6 @@ const SCOPE_LABELS: Record<ApiKeyScope, string> = {
   ADMIN_READ: "admin:read",
   ADMIN_WRITE: "admin:write",
 };
-
-const fieldClass = cn(
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm",
-  "outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/30",
-);
 
 export function ApiKeysSettings() {
   const [{ data, error }, refetch] = useQuery({ query: ApiKeysQuery });
@@ -233,10 +229,6 @@ function CreateApiKeyForm({ isAdmin, onCreated }: { isAdmin: boolean; onCreated:
       )}
     </form>
   );
-}
-
-function errorMessage(error: CombinedError): string {
-  return error.graphQLErrors[0]?.message ?? error.message;
 }
 
 function formatDate(iso: string): string {

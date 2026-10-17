@@ -152,7 +152,7 @@ create table api_keys (
 `sources` restricts a key to source paths and everything below them, for reading, searching and
 writing alike, enforced by the server. Admin scopes act on users, which have no source, so a key
 with an admin scope can't have `sources`: the server refuses the combination at creation. A leaked key for one ingester can't overwrite or sweep
-chats, and an agent's key only finds what it was given. Sources owned by a connection are off-limits to API keys
+chats, and an agent's key only finds what it was given. API keys can't write below a connection's root
 ([architecture.md](architecture.md#source-ownership)).
 
 Typical keys:
@@ -166,13 +166,16 @@ A key acts as its owner: it only ever sees and writes that user's documents.
 ## Plugin run tokens
 
 Built-in plugins don't use API keys. When a worker claims a run ([architecture.md](architecture.md#plugin-orchestration)),
-the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `typ = plugin_run`, `sub` (the
-connection's user), `run` (run id), `source` (the connection's source root), `exp` (run timeout).
+the server issues an HS256 JWT signed with `FERRET_SESSION_SECRET`: `iss = ferret`,
+`aud = ferret-run` (so a session JWT can't pass as one, or the other way round), `typ = plugin_run`,
+`sub` (the connection's user), `run` (run id), `source` (the connection's source root), `iat`, and
+`exp` 24 hours later as an upper bound. Runs have no timeout of their own.
 
 - It grants `ingest:write` on that source root and everything below it, for that user, nothing
   else.
-- On every request the server also checks that the run is still `running`. Finishing or losing a
-  run ends the token immediately.
+- On every request the server also checks that the run is still `running` and sent a heartbeat
+  within the two-minute lease. Finishing or losing a run ends the token immediately, a worker that
+  went silent ends it within the lease.
 - Users never see or manage these tokens. Activating a plugin in the UI is all it takes.
 
 ## Worker PSK

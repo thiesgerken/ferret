@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select config_schema from plugin_types where name = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "config_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugin_types",
+            "name": "config_schema"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "45e34d2e5d7d4218969a59b0874456e4c6fb21fbc7c341b23e41a5b0b5d79338"
+}

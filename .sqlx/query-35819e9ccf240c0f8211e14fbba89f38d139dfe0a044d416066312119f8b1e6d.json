@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select source from connections\n         where user_id = $1 and (source_covers(source, $2) or source_covers($2, source))\n         limit 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "connections",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "35819e9ccf240c0f8211e14fbba89f38d139dfe0a044d416066312119f8b1e6d"
+}

@@ -7,7 +7,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::{AppState, api_keys, error::ApiError, sources};
+use crate::{AppState, api_keys, error::ApiError, runs, sources};
 
 /// What a key may do: `<scope>:<access>`, where write implies read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, juniper::GraphQLEnum)]
@@ -63,15 +63,34 @@ pub struct ApiCaller {
     pub user_id: Uuid,
     scopes: Vec<Scope>,
     sources: Option<Vec<String>>,
+    kind: CallerKind,
+}
+
+/// Which credential authenticated the caller.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CallerKind {
+    ApiKey,
+    /// A plugin run's token: `ingest:write` below its connection's root.
+    PluginRun,
 }
 
 impl ApiCaller {
-    pub fn new(user_id: Uuid, scopes: Vec<Scope>, sources: Option<Vec<String>>) -> Self {
+    pub fn new(
+        user_id: Uuid,
+        scopes: Vec<Scope>,
+        sources: Option<Vec<String>>,
+        kind: CallerKind,
+    ) -> Self {
         Self {
             user_id,
             scopes,
             sources,
+            kind,
         }
+    }
+
+    pub fn is_plugin_run(&self) -> bool {
+        self.kind == CallerKind::PluginRun
     }
 
     /// Fails with 403 unless one of the caller's scopes grants `needed`.
@@ -121,10 +140,13 @@ impl FromRequestParts<AppState> for ApiCaller {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "));
         let caller = match token {
-            Some(token) => api_keys::authenticate(&state.pool, token).await?,
+            Some(token) if token.starts_with(api_keys::KEY_TAG) => {
+                api_keys::authenticate(&state.pool, token).await?
+            }
+            Some(token) => runs::authenticate(&state.pool, &state.session_key, token).await?,
             None => None,
         };
-        caller.ok_or_else(|| ApiError::unauthorized("missing or invalid API key"))
+        caller.ok_or_else(|| ApiError::unauthorized("missing or invalid API key or run token"))
     }
 }
 
