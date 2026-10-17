@@ -96,9 +96,10 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
       <HomeLink />
       <header className="space-y-1 border-b border-border pb-4">
         <h1 className="text-xl font-semibold">{document.title || "Untitled"}</h1>
-        <p className="text-xs text-muted-foreground">
-          <SourceName source={document.source} writer={document.writer} roots={roots} /> · modified{" "}
-          {new Date(document.modifiedAt).toLocaleString()}
+        {/* A flex line: inline, the source's icon would set its baseline and lift it above the text. */}
+        <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+          <SourceName source={document.source} writer={document.writer} roots={roots} />
+          <span>· modified {new Date(document.modifiedAt).toLocaleString()}</span>
         </p>
         {originUrl && (
           <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
