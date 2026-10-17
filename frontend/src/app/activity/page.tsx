@@ -4,7 +4,7 @@ import { PageShell } from "@/components/page-shell";
 
 export default function ActivityPage() {
   return (
-    <PageShell href="/activity" description="What ferret ingested and embedded, live.">
+    <PageShell href="/activity">
       <Suspense>
         <ActivityRoute />
       </Suspense>

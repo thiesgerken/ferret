@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
@@ -28,6 +29,7 @@ const SetDefaultModelMutation = graphql(`
 /** The configured embedding models with how much of the user's data each covers, and which one
  * the user's searches use. */
 export function ModelsSettings() {
+  const t = useTranslations("settings.models");
   const [{ data, error }, refetch] = useQuery({ query: ModelsQuery });
   const [, setDefault] = useMutation(SetDefaultModelMutation);
   const [setError, setSetError] = useState("");
@@ -45,11 +47,11 @@ export function ModelsSettings() {
     return null;
   }
   const chosen = data.me.defaultEmbeddingModel;
-  const configured = data.embeddingModels.find((model) => model.configuredDefault)?.name;
+  const configured = data.embeddingModels.find((model) => model.configuredDefault)!.name;
 
   return (
     <fieldset className="space-y-2">
-      <legend className="sr-only">Default model</legend>
+      <legend className="sr-only">{t("legend")}</legend>
       {setError && (
         <p role="alert" className="text-sm text-destructive">
           {setError}
@@ -59,7 +61,7 @@ export function ModelsSettings() {
         <li className="p-4 text-sm">
           <label className="flex items-center gap-3">
             <input type="radio" name="model" checked={chosen === null} onChange={() => choose(null)} />
-            <span>Configured default ({configured})</span>
+            <span>{t("configuredDefault", { model: configured })}</span>
           </label>
         </li>
         {data.embeddingModels.map((model) => (
@@ -67,7 +69,7 @@ export function ModelsSettings() {
             <label className="flex items-center gap-3">
               <input type="radio" name="model" checked={chosen === model.name} onChange={() => choose(model.name)} />
               <span className="flex-1 font-medium">{model.name}</span>
-              <span className="text-muted-foreground">{coverage(model.embedded, model.chunks)}</span>
+              <span className="text-muted-foreground"><Coverage embedded={model.embedded} chunks={model.chunks} /></span>
             </label>
           </li>
         ))}
@@ -76,8 +78,9 @@ export function ModelsSettings() {
   );
 }
 
-export function coverage(embedded: number, chunks: number): string {
-  if (chunks === 0) return "no chunks yet";
-  const percent = Math.floor((embedded / chunks) * 100);
-  return `${embedded.toLocaleString("en")} of ${chunks.toLocaleString("en")} chunks embedded (${percent} %)`;
+function Coverage({ embedded, chunks }: { embedded: number; chunks: number }) {
+  const t = useTranslations("settings.models");
+  if (chunks === 0) return t("noChunks");
+  // Floored, so a model that's nearly done doesn't read as done.
+  return t("coverage", { embedded, chunks, share: Math.floor((embedded / chunks) * 100) / 100 });
 }

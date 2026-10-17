@@ -1,0 +1,171 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "name": "Name",
+    "icon": "Icon",
+    "openInOrigin": "Open in origin",
+    "allSources": "all sources",
+    "never": "never"
+  },
+  "pages": {
+    "nav": "Pages",
+    "search": { "title": "Search" },
+    "explore": { "title": "Explore" },
+    "activity": { "title": "Activity", "description": "What ferret ingested and embedded, live." },
+    "connections": { "title": "Connections", "description": "Plugins that keep a source in sync with an origin, on a schedule." },
+    "settings": { "title": "Settings", "description": "Your account, the keys your agents and scripts use, the model your searches use, and the language." },
+    "admin": { "title": "Admin", "description": "Users, the embedding pipeline and the plugin workers." }
+  },
+  "app": {
+    "menu": "App menu",
+    "signedInAs": "Signed in as {name}",
+    "signOut": "Sign out",
+    "failed": "Something went wrong: {message}"
+  },
+  "login": {
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "pending": "Signing in…"
+  },
+  "home": {
+    "summary": "{chunks, plural, one {# chunk} other {# chunks}} · {documents, plural, one {# document} other {# documents}} · {sources, plural, one {# source} other {# sources}}"
+  },
+  "search": {
+    "field": "Search",
+    "loading": "Loading",
+    "semanticUnavailable": "Keyword matches only: {reason}.",
+    "noMatches": "No documents match “{q}”",
+    "filtersTooNarrow": "The filters may be too narrow.",
+    "tryOtherWords": {
+      "hybrid": "Try fewer or other words: every word has to match, or the meaning has to be close.",
+      "keyword": "Try fewer or other words: every word has to match.",
+      "semantic": "Try other words: the meaning has to be close."
+    },
+    "clearFilters": "Clear filters",
+    "matches": {
+      "hybrid": "{count, plural, one {#{more} match} other {#{more} matches}}",
+      "keyword": "{count, plural, one {#{more} keyword match} other {#{more} keyword matches}}",
+      "semantic": "{count, plural, one {#{more} semantic match} other {#{more} semantic matches}}"
+    },
+    "stats": "{matches} · {documents, plural, one {# document} other {# documents}} in {scope} · {ms} ms",
+    "loadingMore": "Loading more…",
+    "end": "That's all",
+    "endAtLimit": "That's as deep as this search goes",
+    "hit": {
+      "moreInThread": "{count} more in this thread",
+      "similar": "{similarity, number, percent} similar",
+      "allWordsFound": "all words found (BM25 {score, number, ::.0})",
+      "judge": "Right hit for this search",
+      "judged": "Marked as the right hit for this search",
+      "unjudged": "Mark as the right hit for this search"
+    },
+    "filters": {
+      "label": "Filters",
+      "matching": "Matching",
+      "keyword": "Keyword",
+      "semantic": "Semantic",
+      "keywordHint": "Every word found in the document, ranked by BM25",
+      "semanticHint": "The meaning close to the query, by embedding similarity",
+      "lastMatching": "At least one kind of matching stays on",
+      "time": "Time",
+      "timeRange": "Time range",
+      "ranges": {
+        "any": "Any time",
+        "day": "Past day",
+        "week": "Past week",
+        "month": "Past month",
+        "year": "Past year"
+      },
+      "model": "Model",
+      "embeddingModel": "Embedding model",
+      "defaultModel": "Default model",
+      "defaultModelRan": "Default model ({model})",
+      "sources": "Sources",
+      "allOfWriter": "All",
+      "authors": "Authors"
+    }
+  },
+  "viewer": {
+    "noDocumentGiven": "No document given.",
+    "gone": "This document doesn't exist (anymore).",
+    "untitled": "Untitled",
+    "modified": "· modified {date, date, medium} {date, time, short}",
+    "from": "From",
+    "subject": "Subject",
+    "date": "Date",
+    "image": "image",
+    "thread": "Thread",
+    "previous": "Previous in thread",
+    "next": "Next in thread",
+    "exclude": "Exclude from index:",
+    "excludeDocument": "This document",
+    "excludeThread": "Its whole thread",
+    "confirmDocument": "Delete this document from ferret, and don't ingest it again?",
+    "confirmThread": "Delete this document and the rest of its thread from ferret, and don't ingest them again?",
+    "nothingExcluded": "Nothing was excluded.",
+    "removed": "{count, plural, one {# document} other {# documents}} removed from the index.",
+    "remembered": "Its connection won't ingest it again. Undo that on the Connections page.",
+    "notRemembered": "No connection owns its source, so nothing remembers this: whatever wrote it there can write it again.",
+    "backToSearch": "Back to search"
+  },
+  "settings": {
+    "account": {
+      "title": "Account",
+      "description": "A new password signs you out everywhere else. This browser stays signed in.",
+      "current": "Current password",
+      "new": "New password (at least 12 characters)",
+      "repeat": "New password again",
+      "mismatch": "The new passwords don't match.",
+      "changed": "Password changed. Other sessions are signed out.",
+      "submit": "Change password"
+    },
+    "apiKeys": {
+      "title": "API keys",
+      "description": "For agents, scripts and external ingesters. Send a key as <code>Authorization: Bearer fk_…</code>.",
+      "confirmRevoke": "Revoke “{name}”? Anything using this key stops working.",
+      "none": "No API keys yet.",
+      "editName": "Edit {name}",
+      "revoke": "Revoke",
+      "lastUsed": "Last used {date}",
+      "neverExpires": "never expires",
+      "expires": "expires {date}",
+      "expired": "expired {date}",
+      "notCreated": "The key wasn't created.",
+      "new": "New API key",
+      "namePlaceholder": "carapace search skill",
+      "scopes": "Scopes",
+      "scope": {
+        "SEARCH": "Search",
+        "INGEST": "Ingest",
+        "ADMIN": "Admin"
+      },
+      "noAccess": "No access",
+      "read": "Read",
+      "readWrite": "Read and write",
+      "sources": "Sources (optional, restricts every scope to these and below; not with admin scopes)",
+      "expiresLabel": "Expires (optional)",
+      "create": "Create key",
+      "copyNow": "Copy the key now. It won't be shown again.",
+      "copy": "Copy key"
+    },
+    "models": {
+      "title": "Models",
+      "description": "The embedding model your searches use, in the UI and through your API keys. A model can be chosen before it has embedded everything: until then its semantic matches are partial.",
+      "legend": "Default model",
+      "configuredDefault": "Configured default ({model})",
+      "noChunks": "no chunks yet",
+      "coverage": "{embedded, number} of {chunks, number} chunks embedded ({share, number, percent})"
+    },
+    "language": {
+      "title": "Language",
+      "description": "For this browser. System follows the browser's language.",
+      "label": "Language",
+      "system": "System ({language})",
+      "en": "English",
+      "de": "Deutsch"
+    }
+  }
+}

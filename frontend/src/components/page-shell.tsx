@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import { useQuery } from "urql";
 import { HomeLink } from "@/components/brand-mark";
@@ -22,7 +23,8 @@ const ShellUserQuery = graphql(`
  * pages next to the content on wide screens, above it on narrow ones, and a title with its icon.
  * The columns match the search results', so moving between them doesn't shift the page.
  */
-export function PageShell({ href, description, children }: { href: string; description: string; children: ReactNode }) {
+export function PageShell({ href, children }: { href: string; children: ReactNode }) {
+  const t = useTranslations("pages");
   const [{ data }] = useQuery({ query: ShellUserQuery });
   // Null outside Next's router (tests).
   const pathname = usePathname();
@@ -40,10 +42,10 @@ export function PageShell({ href, description, children }: { href: string; descr
       </header>
       <div className={cn(columns, "pt-4 pb-16 lg:pt-8")}>
         <nav
-          aria-label="Pages"
+          aria-label={t("nav")}
           className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] lg:sticky lg:top-8 lg:mx-0 lg:flex-col lg:self-start lg:px-0"
         >
-          {pages.map(({ href, label, icon: PageIcon }) => (
+          {pages.map(({ href, key, icon: PageIcon }) => (
             <Link
               key={href}
               href={href}
@@ -56,7 +58,7 @@ export function PageShell({ href, description, children }: { href: string; descr
               )}
             >
               <PageIcon className="size-4" aria-hidden />
-              {label}
+              {t(`${key}.title`)}
             </Link>
           ))}
         </nav>
@@ -66,8 +68,8 @@ export function PageShell({ href, description, children }: { href: string; descr
               <Icon className="size-5" aria-hidden />
             </span>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{page.label}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+              <h1 className="text-2xl font-semibold tracking-tight">{t(`${page.key}.title`)}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{t(`${page.key}.description`)}</p>
             </div>
           </div>
           {children}

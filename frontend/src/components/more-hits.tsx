@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Hit } from "@/components/search-hit";
 
@@ -27,6 +28,7 @@ export function MoreHits({
   loadPage: (offset: number) => Promise<Page>;
   renderHit: (hit: Hit) => ReactNode;
 }) {
+  const t = useTranslations("search");
   const [more, setMore] = useState<Hit[]>([]);
   const [hasMore, setHasMore] = useState(firstHasMore);
   const [loading, setLoading] = useState(false);
@@ -76,9 +78,9 @@ export function MoreHits({
               {error}
             </span>
           ) : loading ? (
-            <span aria-live="polite">Loading more…</span>
+            <span aria-live="polite">{t("loadingMore")}</span>
           ) : (
-            <span>{endIsCandidateLimit ? "That's as deep as this search goes" : "That's all"}</span>
+            <span>{endIsCandidateLimit ? t("endAtLimit") : t("end")}</span>
           )}
           <span className="h-px flex-1 bg-border" />
         </li>

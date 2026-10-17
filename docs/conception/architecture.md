@@ -274,10 +274,16 @@ the frontend. In development Next rewrites those paths to the local server, as i
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top and searches as you type (after a 250 ms pause; the first pause after a submitted query adds a history entry, later ones replace it), a stats line (matches, documents in the selected sources, server time), filter chips (source, time range, author), model switch, snippets with highlighting, each hit's similarity and keyword match, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, the 20 most frequent authors plus the selected ones, month in UTC), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, excluded documents and threads with "Include again", disable, delete. Document count and embedding backlog per card are post-v1 (#21) |
-| **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21) |
+| **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21), Language |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen. A restarted worker registers anew, so it shows as a new row while its old one stays offline |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
+
+**Languages.** The UI speaks German and English (next-intl, catalogues in `frontend/messages/`, as
+in carapace). It follows the browser's languages until the user picks one in Settings. The choice is
+stored per browser, like the theme: the static export has no locale routes, and the sign-in page
+needs the language before there's an account to ask. Dates and numbers format with the active
+locale. Server error messages stay English and are shown verbatim.
 
 **The viewer** is shared by Search and Explore. It renders a document by content type (Markdown,
 plain text, email with headers), scrolled to the hit. Documents with a `thread` get previous and

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useClient, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
@@ -97,6 +98,7 @@ export function SearchResults({
   /** A query typed into the field, before it's submitted. */
   onType: (state: SearchState) => void;
 }) {
+  const t = useTranslations("search");
   const input = useMemo(
     () => ({
       q: state.q,
@@ -190,7 +192,7 @@ export function SearchResults({
               {semanticUnavailable && (
                 <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
-                  Keyword matches only: {semanticUnavailable}.
+                  {t("semanticUnavailable", { reason: semanticUnavailable })}
                 </p>
               )}
             </div>
@@ -233,8 +235,9 @@ const columns = "mx-auto max-w-3xl px-4 lg:grid lg:max-w-6xl lg:grid-cols-[14rem
 
 /** Placeholders shaped like hits, so the page doesn't jump when they arrive. */
 function HitSkeletons() {
+  const t = useTranslations("search");
   return (
-    <ol aria-busy="true" aria-label="Loading" className="space-y-7">
+    <ol aria-busy="true" aria-label={t("loading")} className="space-y-7">
       {[0, 1, 2, 3].map((index) => (
         <li key={index} className="animate-pulse space-y-2.5">
           <div className="h-3 w-48 rounded bg-muted" />
@@ -247,25 +250,20 @@ function HitSkeletons() {
   );
 }
 
-const MATCH_RULES: Record<SearchMode, string> = {
-  hybrid: "every word has to match, or the meaning has to be close",
-  keyword: "every word has to match",
-  semantic: "the meaning has to be close",
-};
-
 function NoMatches({ q, mode, onClearFilters }: { q: string; mode: SearchMode; onClearFilters: (() => void) | null }) {
+  const t = useTranslations("search");
   return (
     <div className="flex flex-col items-center gap-3 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <SearchX className="size-6" aria-hidden />
       </span>
-      <p className="font-medium">No documents match “{q}”</p>
+      <p className="font-medium">{t("noMatches", { q })}</p>
       <p className="max-w-sm text-sm text-muted-foreground">
-        {onClearFilters ? "The filters may be too narrow." : `Try fewer or other words: ${MATCH_RULES[mode]}.`}
+        {onClearFilters ? t("filtersTooNarrow") : t(`tryOtherWords.${mode}`)}
       </p>
       {onClearFilters && (
         <button type="button" onClick={onClearFilters} className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-accent">
-          Clear filters
+          {t("clearFilters")}
         </button>
       )}
     </div>
@@ -275,13 +273,12 @@ function NoMatches({ q, mode, onClearFilters }: { q: string; mode: SearchMode; o
 /** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. With
  * one half of the search off, "37 keyword matches". */
 function Stats({ result, mode, sources, className }: { result: Result; mode: SearchMode; sources: string[]; className?: string }) {
-  const kind = mode === "hybrid" ? "" : `${mode} `;
-  const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${kind}${result.total === 1 ? "match" : "matches"}`;
-  const documents = `${result.documentsInScope} ${result.documentsInScope === 1 ? "document" : "documents"}`;
-  const scope = sources.length > 0 ? sources.join(", ") : "all sources";
+  const t = useTranslations();
+  const matches = t(`search.matches.${mode}`, { count: result.total, more: result.totalIsLowerBound ? "+" : "" });
+  const scope = sources.length > 0 ? sources.join(", ") : t("common.allSources");
   return (
     <p className={cn("text-xs text-muted-foreground", className)}>
-      {matches} · {documents} in {scope} · {result.tookMs} ms
+      {t("search.stats", { matches, documents: result.documentsInScope, scope, ms: result.tookMs })}
     </p>
   );
 }

@@ -29,11 +29,11 @@ export function matchingOn(mode: SearchMode, matching: "keyword" | "semantic"): 
 
 /** The server resolves a range against its own clock, and judgments keep the preset. */
 export const TIME_RANGES = {
-  any: { label: "Any time", preset: null },
-  day: { label: "Past day", preset: "DAY" },
-  week: { label: "Past week", preset: "WEEK" },
-  month: { label: "Past month", preset: "MONTH" },
-  year: { label: "Past year", preset: "YEAR" },
+  any: { preset: null },
+  day: { preset: "DAY" },
+  week: { preset: "WEEK" },
+  month: { preset: "MONTH" },
+  year: { preset: "YEAR" },
 } as const;
 
 export type TimeRange = keyof typeof TIME_RANGES;

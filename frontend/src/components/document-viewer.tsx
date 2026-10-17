@@ -2,6 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkFrontmatter from "remark-frontmatter";
@@ -64,6 +65,7 @@ type Excluded = { deleted: number; remembered: boolean };
 export type HitOffsets = { start: number; end: number };
 
 export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null }) {
+  const t = useTranslations();
   const [{ data, error }] = useQuery({ query: ViewDocumentQueryDocument, variables: { id } });
   const roots = useConnectionRoots();
   const document = data?.document;
@@ -87,7 +89,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
     return <ExcludedNotice excluded={excluded} />;
   }
   if (!document) {
-    return <p className="p-8 text-center text-sm text-muted-foreground">This document doesn&apos;t exist (anymore).</p>;
+    return <p className="p-8 text-center text-sm text-muted-foreground">{t("viewer.gone")}</p>;
   }
 
   const originUrl = linkableUrl(document.url);
@@ -95,16 +97,16 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
       <HomeLink />
       <header className="space-y-1 border-b border-border pb-4">
-        <h1 className="text-xl font-semibold">{document.title || "Untitled"}</h1>
+        <h1 className="text-xl font-semibold">{document.title || t("viewer.untitled")}</h1>
         {/* A flex line: inline, the source's icon would set its baseline and lift it above the text. */}
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           <SourceName source={document.source} writer={document.writer} roots={roots} />
-          <span>· modified {new Date(document.modifiedAt).toLocaleString()}</span>
+          <span>{t("viewer.modified", { date: new Date(document.modifiedAt) })}</span>
         </p>
         {originUrl && (
           <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
             <ExternalLink className="size-3.5" aria-hidden />
-            Open in origin
+            {t("common.openInOrigin")}
           </a>
         )}
       </header>
@@ -116,6 +118,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
 }
 
 function DocumentBody({ document, range }: { document: ViewedDocument; range: HitRange | null }) {
+  const t = useTranslations("viewer");
+  const format = useFormatter();
   switch (document.contentType) {
     case "MARKDOWN":
       return <MarkdownBody text={document.text} range={range} />;
@@ -125,12 +129,12 @@ function DocumentBody({ document, range }: { document: ViewedDocument; range: Hi
       return (
         <div className="space-y-4">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-muted p-3 text-sm">
-            <dt className="text-muted-foreground">From</dt>
+            <dt className="text-muted-foreground">{t("from")}</dt>
             <dd>{document.authors.join(", ")}</dd>
-            <dt className="text-muted-foreground">Subject</dt>
+            <dt className="text-muted-foreground">{t("subject")}</dt>
             <dd>{document.title}</dd>
-            <dt className="text-muted-foreground">Date</dt>
-            <dd>{new Date(document.createdAt).toLocaleString()}</dd>
+            <dt className="text-muted-foreground">{t("date")}</dt>
+            <dd>{format.dateTime(new Date(document.createdAt), { dateStyle: "medium", timeStyle: "short" })}</dd>
           </dl>
           <PlainBody text={document.text} range={range} />
         </div>
@@ -156,13 +160,18 @@ function PlainBody({ text, range }: { text: string; range: HitRange | null }) {
   );
 }
 
+function ImageLink({ src, alt }: { src?: unknown; alt?: string }) {
+  const t = useTranslations("viewer");
+  return (
+    <a href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer">
+      {alt || t("image")}
+    </a>
+  );
+}
+
 const markdownComponents: Components = {
   // Images become links: loading them would tell any remote server that this document was read.
-  img: ({ src, alt }) => (
-    <a href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer">
-      {alt || "image"}
-    </a>
-  ),
+  img: ({ src, alt }) => <ImageLink src={src} alt={alt} />,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer">
       {children}
@@ -213,21 +222,22 @@ type ThreadNeighbor = ViewedDocument["previousInThread"];
 
 /** Steps through the document's thread: a chat channel reads as a conversation, mails as a thread. */
 function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: ThreadNeighbor }) {
+  const t = useTranslations("viewer");
   if (!previous && !next) {
     return null;
   }
   return (
-    <nav aria-label="Thread" className="flex justify-between gap-4 border-t border-border pt-4 text-sm">
+    <nav aria-label={t("thread")} className="flex justify-between gap-4 border-t border-border pt-4 text-sm">
       {previous ? (
         <Link href={viewerHref(previous.id)} rel="prev" className="text-brand hover:underline">
-          ← {previous.title || "Previous in thread"}
+          ← {previous.title || t("previous")}
         </Link>
       ) : (
         <span />
       )}
       {next && (
         <Link href={viewerHref(next.id)} rel="next" className="text-right text-brand hover:underline">
-          {next.title || "Next in thread"} →
+          {next.title || t("next")} →
         </Link>
       )}
     </nav>
@@ -236,17 +246,17 @@ function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: 
 
 /** Removes the document, or its whole thread, from the index for good. */
 function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; onExcluded: (excluded: Excluded) => void }) {
+  const t = useTranslations("viewer");
   const [{ fetching }, exclude] = useMutation(ExcludeDocumentMutation);
   const [error, setError] = useState("");
 
   async function handleExclude(wholeThread: boolean) {
-    const what = wholeThread ? "this document and the rest of its thread" : "this document";
-    if (!window.confirm(`Delete ${what} from ferret, and don't ingest it again?`)) {
+    if (!window.confirm(wholeThread ? t("confirmThread") : t("confirmDocument"))) {
       return;
     }
     const result = await exclude({ id: document.id, wholeThread });
     if (result.error || !result.data) {
-      setError(result.error ? errorMessage(result.error) : "Nothing was excluded.");
+      setError(result.error ? errorMessage(result.error) : t("nothingExcluded"));
       return;
     }
     onExcluded(result.data.excludeDocument);
@@ -255,13 +265,13 @@ function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; o
   const buttonClass = "rounded-md px-2 py-1 text-destructive hover:bg-accent disabled:opacity-50";
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
-      <span className="text-muted-foreground">Exclude from index:</span>
+      <span className="text-muted-foreground">{t("exclude")}</span>
       <button type="button" disabled={fetching} onClick={() => handleExclude(false)} className={buttonClass}>
-        This document
+        {t("excludeDocument")}
       </button>
       {document.thread && (
         <button type="button" disabled={fetching} onClick={() => handleExclude(true)} className={buttonClass}>
-          Its whole thread
+          {t("excludeThread")}
         </button>
       )}
       {error && (
@@ -274,18 +284,19 @@ function ExcludeControls({ document, onExcluded }: { document: ViewedDocument; o
 }
 
 function ExcludedNotice({ excluded }: { excluded: Excluded }) {
+  const t = useTranslations("viewer");
   return (
     <div className="mx-auto max-w-3xl space-y-3 px-4 py-8 text-sm">
       <p role="status">
-        {excluded.deleted === 1 ? "1 document" : `${excluded.deleted} documents`} removed from the index.
+        {t("removed", { count: excluded.deleted })}
       </p>
       <p className="text-muted-foreground">
         {excluded.remembered
-          ? "Its connection won't ingest it again. Undo that on the Connections page."
-          : "No connection owns its source, so nothing remembers this: whatever wrote it there can write it again."}
+          ? t("remembered")
+          : t("notRemembered")}
       </p>
       <Link href="/" className="text-brand hover:underline">
-        Back to search
+        {t("backToSearch")}
       </Link>
     </div>
   );

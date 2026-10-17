@@ -12,6 +12,7 @@ const globals = {
   self: dom.window,
   document: dom.window.document,
   navigator: dom.window.navigator,
+  localStorage: dom.window.localStorage,
   HTMLElement: dom.window.HTMLElement,
   Node: dom.window.Node,
   Event: dom.window.Event,
