@@ -7,6 +7,27 @@ import { renderReact, settle } from "../../test/react-test-utils";
 import { createGraphqlClient } from "@/lib/graphql";
 import type { SearchState } from "@/lib/search-url";
 import { TYPING_DEBOUNCE_MS } from "./search-field";
+
+/** jsdom has no IntersectionObserver: this one reports an intersection when the test scrolls. */
+const observers = new Set<IntersectionObserverCallback>();
+globalThis.IntersectionObserver = class {
+  constructor(private callback: IntersectionObserverCallback) {}
+  observe() {
+    observers.add(this.callback);
+  }
+  disconnect() {
+    observers.delete(this.callback);
+  }
+} as unknown as typeof IntersectionObserver;
+
+async function scrollToEnd() {
+  await act(async () => {
+    for (const callback of [...observers]) {
+      callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    }
+  });
+  await settle();
+}
 import { SearchResults } from "./search-results";
 
 const hit = (id: string, source: string, authors: string[]) => ({
@@ -60,7 +81,9 @@ async function renderResults(
     }
     if (operation.operationName === "EmbeddingModelNames") {
       return Response.json({
-        data: { embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name })) },
+        data: {
+          embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name, minSimilarity: 0.42 })),
+        },
       });
     }
     variables.push(operation.variables);
@@ -76,7 +99,11 @@ async function renderResults(
         search: {
           __typename: "SearchResult",
           hits:
-            operation.variables.input.q === "invoice"
+            operation.variables.input.q === "many"
+              ? operation.variables.input.offset
+                ? [hit("b", "mail/zoho", []), hit("d", "notes", [])]
+                : [hit("a", "notes", []), hit("b", "mail/zoho", [])]
+              : operation.variables.input.q === "invoice"
               ? [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])]
               : operation.variables.input.q === "nothing"
                 ? []
@@ -87,6 +114,19 @@ async function renderResults(
           totalIsLowerBound: false,
           documentsInScope: 526,
           tookMs: 84,
+          hasMore: operation.variables.input.q === "many" && !operation.variables.input.offset,
+          facets: {
+            __typename: "SearchFacets",
+            sources: [
+              { __typename: "FacetCount", value: "notes", count: 12 },
+              { __typename: "FacetCount", value: "mail/zoho", count: 3 },
+            ],
+            authors: [
+              { __typename: "FacetCount", value: "thies", count: 9 },
+              { __typename: "FacetCount", value: "Allianz", count: 2 },
+            ],
+            areLowerBounds: false,
+          },
         },
       },
     });
@@ -133,6 +173,7 @@ async function pauseTyping() {
 
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
 const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
+const label = (button: Element) => button.querySelector("span")?.textContent;
 
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
 
@@ -185,15 +226,15 @@ test("the source line leaves out what a hit doesn't have", async () => {
   await view.unmount();
 });
 
-test("offers the hits' sources and authors as chips that filter", async () => {
+test("offers the matches' sources and authors with their counts as filters", async () => {
   const { view, changes } = await renderResults(STATE);
-  const chip = (label: string) =>
-    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => b.textContent === label)!;
+  const chip = (name: string) =>
+    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => label(b) === name)!;
 
   assert.deepEqual(
-    [...view.container.querySelectorAll(CHIPS)].map((b) => b.textContent),
-    ["notes", "mail/zoho", "thies", "Allianz"],
-    "sources, then authors by frequency",
+    [...view.container.querySelectorAll(CHIPS)].map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
+    ["notes 12", "mail/zoho 3", "thies 9", "Allianz 2"],
+    "sources, then authors, as the facets order them",
   );
   await act(async () => chip("mail/zoho").click());
   await act(async () => chip("thies").click());
@@ -212,7 +253,7 @@ test("selected filters go into the query and stay as pressed chips", async () =>
   assert.deepEqual(input.sources, ["paperless"]);
   assert.deepEqual(input.authors, ["Allianz"]);
   assert.equal(input.range, "WEEK");
-  const pressed = [...view.container.querySelectorAll("button[aria-pressed=true]")].map((b) => b.textContent);
+  const pressed = [...view.container.querySelectorAll("button[aria-pressed=true]")].map(label);
   assert.deepEqual(pressed, ["paperless", "Allianz"]);
   await view.unmount();
 });
@@ -334,7 +375,7 @@ test("a late answer to an earlier query doesn't replace the newer one's hits", a
 
 test("a chip clicked while typing wins over the typed query", async () => {
   const { view, typed, changes } = await renderResults(STATE);
-  const chip = [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => b.textContent === "notes")!;
+  const chip = [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => label(b) === "notes")!;
 
   await type(view, "invoices");
   await act(async () => chip.click());
@@ -367,5 +408,20 @@ test("no matches says so, and offers to clear the filters when there are any", a
   const clear = [...view.container.querySelectorAll("main button")].find((b) => b.textContent === "Clear filters")!;
   await act(async () => (clear as HTMLButtonElement).click());
   assert.deepEqual(changes, [{ ...STATE, q: "nothing" }]);
+  await view.unmount();
+});
+
+test("the next page loads when the list's end scrolls into view, without repeating a hit", async () => {
+  const { view, variables } = await renderResults({ ...STATE, q: "many" });
+  const ids = () => [...view.container.querySelectorAll("article h3 a, article a[href^='/view']")].map((a) => a.textContent);
+
+  assert.deepEqual(ids(), ["a.md", "b.md"]);
+  assert.doesNotMatch(view.container.textContent ?? "", /That's all/);
+  await scrollToEnd();
+
+  assert.deepEqual(ids(), ["a.md", "b.md", "d.md"], "b came again on the second page");
+  const searches = variables.filter((v) => (v as { input: { q?: string } }).input.q === "many");
+  assert.equal((searches.at(-1) as { input: { offset: number } }).input.offset, 2);
+  assert.match(view.container.textContent ?? "", /That's all/);
   await view.unmount();
 });

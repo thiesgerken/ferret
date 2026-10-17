@@ -42,7 +42,8 @@ export function HitItem({
   search: SearchInput;
   /** The plugin that owns the hit's source, null when an API key filled it. */
   plugin: string | null;
-  relevance: RelevanceContext;
+  /** Null until the cut-off of the model that ran is known: the hit shows without bars. */
+  relevance: RelevanceContext | null;
 }) {
   const originUrl = linkableUrl(hit.url);
   const meta = [
@@ -53,7 +54,7 @@ export function HitItem({
   return (
     <article className="group">
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        <RelevanceBars hit={hit} context={relevance} />
+        {relevance && <RelevanceBars hit={hit} context={relevance} />}
         <SourceIcon plugin={plugin} />
         <p className="min-w-0 truncate">
           <span className="text-foreground/80">{hit.source.split("/").join(" › ")}</span>

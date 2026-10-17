@@ -2,12 +2,15 @@
 
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Hit } from "@/components/search-hit";
+import type { SearchHitsQuery } from "@/gql/graphql";
 import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { cn } from "@/lib/utils";
 
-/** How many authors get a filter, most frequent among the hits first. */
+/** How many authors get a filter, most matches first. The facet has more, the column stays short. */
 const MAX_AUTHORS = 8;
+
+type Facets = SearchHitsQuery["search"]["facets"];
+type FacetCount = Facets["sources"][number];
 
 /**
  * The filters. One set of elements for both layouts: a single horizontally scrolling chip row on
@@ -15,23 +18,22 @@ const MAX_AUTHORS = 8;
  */
 export function SearchFilters({
   state,
-  hits,
+  facets,
   models,
   ranModel,
   onChange,
 }: {
   state: SearchState;
-  hits: Hit[];
+  /** Undefined until the first answer. */
+  facets: Facets | undefined;
   models: string[];
   ranModel: string | undefined;
   onChange: (state: SearchState) => void;
 }) {
-  // Filters come from the current hits; selected ones stay even when no hit has them anymore.
-  const sources = unique([...state.sources, ...hits.map((hit) => hit.source)]);
-  const authors = unique([...state.authors, ...byFrequency(hits.flatMap((hit) => hit.authors))]).slice(
-    0,
-    Math.max(MAX_AUTHORS, state.authors.length),
-  );
+  // Selected values stay even when nothing matches them anymore, so they can be unselected.
+  const sources = withSelected(facets?.sources ?? [], state.sources);
+  const authors = withSelected(facets?.authors ?? [], state.authors).slice(0, Math.max(MAX_AUTHORS, state.authors.length));
+  const counted = (count: number | null) => (count === null ? null : `${count}${facets?.areLowerBounds ? "+" : ""}`);
 
   return (
     <nav
@@ -72,24 +74,26 @@ export function SearchFilters({
       )}
       {sources.length > 0 && (
         <FilterGroup title="Sources">
-          {sources.map((source) => (
+          {sources.map(({ value, count }) => (
             <FilterButton
-              key={source}
-              label={source}
-              pressed={state.sources.includes(source)}
-              onClick={() => onChange({ ...state, sources: toggle(state.sources, source) })}
+              key={value}
+              label={value}
+              count={counted(count)}
+              pressed={state.sources.includes(value)}
+              onClick={() => onChange({ ...state, sources: toggle(state.sources, value) })}
             />
           ))}
         </FilterGroup>
       )}
       {authors.length > 0 && (
         <FilterGroup title="Authors">
-          {authors.map((author) => (
+          {authors.map(({ value, count }) => (
             <FilterButton
-              key={author}
-              label={author}
-              pressed={state.authors.includes(author)}
-              onClick={() => onChange({ ...state, authors: toggle(state.authors, author) })}
+              key={value}
+              label={value}
+              count={counted(count)}
+              pressed={state.authors.includes(value)}
+              onClick={() => onChange({ ...state, authors: toggle(state.authors, value) })}
             />
           ))}
         </FilterGroup>
@@ -110,7 +114,18 @@ function FilterGroup({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function FilterButton({ label, pressed, onClick }: { label: string; pressed: boolean; onClick: () => void }) {
+function FilterButton({
+  label,
+  count,
+  pressed,
+  onClick,
+}: {
+  label: string;
+  /** Null for a selected value the facet doesn't list. */
+  count: string | null;
+  pressed: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -125,7 +140,8 @@ function FilterButton({ label, pressed, onClick }: { label: string; pressed: boo
       )}
     >
       <span className="min-w-0 truncate">{label}</span>
-      {pressed && <Check className="ml-auto hidden size-3.5 shrink-0 lg:block" aria-hidden />}
+      {count !== null && <span className="ml-auto text-xs tabular-nums opacity-60">{count}</span>}
+      {pressed && <Check className={cn("hidden size-3.5 shrink-0 lg:block", count === null && "ml-auto")} aria-hidden />}
     </button>
   );
 }
@@ -137,12 +153,7 @@ function selectClass(active: boolean) {
   );
 }
 
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function byFrequency(values: string[]): string[] {
-  const counts = new Map<string, number>();
-  values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
-  return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)!);
+function withSelected(counts: FacetCount[], selected: string[]): { value: string; count: number | null }[] {
+  const missing = selected.filter((value) => !counts.some((count) => count.value === value));
+  return [...missing.map((value) => ({ value, count: null })), ...counts];
 }
