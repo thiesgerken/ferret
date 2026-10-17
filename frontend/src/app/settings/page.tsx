@@ -1,14 +1,12 @@
-import Link from "next/link";
 import { AccountSettings } from "@/components/account-settings";
 import { ApiKeysSettings } from "@/components/api-keys-settings";
 import { ModelsSettings } from "@/components/models-settings";
+import { HomeLink } from "@/components/brand-mark";
 
 export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-6">
-      <Link href="/" className="text-2xl font-semibold tracking-tight text-brand">
-        ferret
-      </Link>
+      <HomeLink />
       <h1 className="text-xl font-semibold">Settings</h1>
       <section className="space-y-4">
         <div>

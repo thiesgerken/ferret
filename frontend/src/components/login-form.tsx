@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { login } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/brand-mark";
 
 const inputClass = cn(
   "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm",
@@ -32,7 +33,10 @@ export function LoginForm({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <h1 className="text-center text-4xl font-semibold tracking-tight text-brand select-none">ferret</h1>
+        <h1 className="flex items-baseline justify-center gap-2 text-4xl font-semibold tracking-tight text-brand select-none">
+          <BrandMark className="h-[0.8em] w-auto" />
+          ferret
+        </h1>
         <div className="space-y-1.5">
           <label htmlFor="username" className="text-xs font-medium text-muted-foreground">
             Username

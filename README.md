@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/mark-dark.svg">
+  <img src="docs/brand/mark-light.svg" alt="" width="96" height="96">
+</picture>
+
 # ferret
 
 ferret makes everything that describes me instantly searchable: notes, documents (Paperless), email,
