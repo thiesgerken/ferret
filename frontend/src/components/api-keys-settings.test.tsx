@@ -13,6 +13,7 @@ const KEY = {
   __typename: "ApiKey",
   id: "key-1",
   name: "carapace search skill",
+  icon: "brain",
   prefix: "0a1b2c3d",
   scopes: ["SEARCH_READ"],
   sources: null,
@@ -74,7 +75,13 @@ test("creates a key from the form and shows it once", async () => {
 
   const create = operations.find((operation) => operation.operationName === "CreateApiKey");
   assert.deepEqual(create?.variables, {
-    input: { name: "paperless", scopes: ["INGEST_WRITE"], sources: ["paperless", "notes"], expiresAt: null },
+    input: {
+      name: "paperless",
+      icon: "key-round",
+      scopes: ["INGEST_WRITE"],
+      sources: ["paperless", "notes"],
+      expiresAt: null,
+    },
   });
   assert.equal(field("#created-key").textContent, "fk_0a1b2c3d.secret");
   await view.unmount();
@@ -113,5 +120,25 @@ test("shows the server's reason when it rejects a new key", async () => {
 
   assert.equal(view.container.querySelector("[role=alert]")?.textContent, '"notes/" is not a source path');
   assert.equal(view.container.querySelector("#created-key"), null);
+  await view.unmount();
+});
+
+test("renames a key and changes its icon", async () => {
+  const { view, operations } = await renderSettings(false, () =>
+    Response.json({
+      data: { updateApiKey: { ...KEY, name: "carapace", icon: "bot" } },
+    }),
+  );
+  await act(async () => view.container.querySelector<HTMLButtonElement>("button[aria-label='Edit carapace search skill']")!.click());
+  const row = view.container.querySelector("li")!;
+  await act(async () => row.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+  await act(async () => row.querySelector<HTMLButtonElement>("[role=option][aria-label=bot]")!.click());
+  row.querySelector<HTMLInputElement>("input[name=name]")!.value = "carapace";
+  await act(async () => row.querySelector("form")!.requestSubmit());
+  await settle();
+
+  const update = operations.find((operation) => operation.operationName === "UpdateApiKey");
+  assert.deepEqual(update?.variables, { id: "key-1", name: "carapace", icon: "bot" });
+  assert.equal(row.querySelector("form"), null, "back to the row");
   await view.unmount();
 });
