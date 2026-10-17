@@ -31,10 +31,12 @@ scripts/demo-seed.sh
 
 ## Tests
 
-Tests need only the database:
+Tests need the database, and the IMAP plugin's tests a Dovecot, which compose leaves out of a plain
+`docker compose up`:
 
 ```sh
 docker compose up -d paradedb
+docker compose up -d --scale dovecot=1 dovecot
 cargo test --workspace
 ```
 

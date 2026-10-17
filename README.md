@@ -168,6 +168,7 @@ pool of TEI servers turns chunks and queries into embeddings. More in
 
 ```sh
 docker compose up -d paradedb
+docker compose up -d --scale dovecot=1 dovecot
 cargo test --workspace
 ```
 

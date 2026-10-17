@@ -1,8 +1,10 @@
 /** The icon a new connection starts with, by plugin. The user can pick another. */
 const PLUGIN_ICONS: Record<string, string> = {
+  affine: "notebook-pen",
   git: "git-branch",
   carapace: "brain",
   paperless: "file-text",
+  imap: "mail",
 };
 
 export function defaultPluginIcon(plugin: string): string {

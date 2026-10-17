@@ -3,8 +3,8 @@
 ## TLDR
 
 A plugin turns one kind of origin into documents. It decides what a document is, the server only
-chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**. Further
-plugins follow continuously, see [Roadmap](#roadmap).
+chunks and indexes. v1 ships the bare minimum: **git** (repositories), **Paperless** and **carapace**.
+[IMAP](#imap) and [AFFiNE](#affine) followed. Further plugins follow continuously, see [Roadmap](#roadmap).
 
 ## Contract
 
@@ -158,6 +158,134 @@ change its rendering freely.
   full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
   a commit.
 
+## After v1
+
+### IMAP
+
+Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing with
+[`mail-parser`](https://crates.io/crates/mail-parser).
+
+| Config | Meaning |
+|---|---|
+| `server` | e.g. `imap.zoho.eu`, with `:port` unless it's 993 |
+| `tls` | default on. Off sends the password in plain text: only for a server next to the worker (the compose Dovecot, tests) |
+| `username`, `password` | `password` is write-only, an app password where the provider has them |
+| `exclude_folders` | by name, default Trash, Spam, Junk, Drafts, compared case-insensitively with the last segment of a folder's path (`INBOX.Trash` is `Trash`), decoded from IMAP's modified UTF-7 (`Entwürfe`, not `Entw&APw-rfe`). Folders the server marks `\Trash`, `\Junk` or `\Drafts` (RFC 6154) are always left out, whatever their name |
+| `url_template` | deep link with `{message_id}` (percent-encoded, `@` kept), e.g. `mid:{message_id}` (RFC 2392). Without one, ferret's viewer is the origin |
+
+**Identity**
+
+- `external_id` = Message-ID without its angle brackets, so a mail in several folders is one
+  document and a move to another folder is invisible to ferret. A mail without one gets a
+  stand-in from the hash of its `Date`, `Subject` and sender (`no-message-id-…`), which survives
+  moves as well.
+- Source = the connection's root, e.g. `mail/zoho`. Folders are not recorded (a folder filter
+  would require tracking moves).
+- `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
+- `content_type = email`, `title` = subject, `authors` = the senders' names (their addresses where
+  a name is missing), `meta`: `to` and `cc` (`Name <address>`), `attachments` (file names).
+  `created_at` = `modified_at` = the `Date` header, else when the mail arrived (`INTERNALDATE`).
+- The text comes from the HTML body when there is one (its quote containers are more reliable
+  than text markers), with a line break around every block element, else from the plain-text
+  body.
+
+**Sync and deletions**
+
+- Every run is a sync over the account: per folder, `UID FETCH 1:* (UID INTERNALDATE ENVELOPE)`
+  lists every mail's Message-ID (a few MB for 50k mails), `seen` goes out for all of them, the
+  new ones are `PUT`, commit. Deleted mails, and mails moved into an excluded folder, disappear
+  with the sweep.
+- Per folder, `UIDVALIDITY` and the last UID are the cursor. A mail is new when its UID is above
+  the cursor and its Message-ID is in no indexed UID of any folder: a mail moved or copied into
+  another folder gets a new UID there, but isn't fetched again. A changed `UIDVALIDITY` (a folder
+  recreated under the same name) makes all of that folder's mails new.
+- New mails are fetched 50 at a time (`BODY.PEEK[]`, so they stay unread), in the order they were
+  written (`Date` from the envelope, else when they arrived): the thread diff needs a thread's
+  earlier mails indexed before its later ones, by the same date it compares.
+- The state stores the cursors and the indexing settings (server, username, `url_template`, the
+  quote rule). When those change, every mail is fetched again.
+- The cursors are stored only with a successful run: a first sync that fails at 90% starts over.
+  It fetches every mail again, the `PUT`s then come back unchanged, so it costs time, not data.
+- No noise filter: unwanted mails get deleted at the origin.
+
+**Stripping quoted text**, in this order:
+
+1. **HTML quote containers** before the HTML-to-text conversion: `blockquote[type=cite]` (Apple
+   Mail, Thunderbird), `.gmail_quote`, and Outlook's `#divRplyFwdMsg` reply header with everything
+   after it (Outlook doesn't wrap the quoted mail).
+2. **Text markers**, German and English: lines starting with `>`, attribution lines `On … wrote:`
+   / `Am … schrieb …:` (also wrapped onto a second line), and everything from
+   `-----Original Message-----` / `-----Ursprüngliche Nachricht-----` or a `From:`/`Von:` line
+   followed by `Sent:`, `Date:`, `Gesendet:` or `Datum:` on.
+3. **Thread diff**: the plugin loads the thread's earlier mails from ferret
+   (`GET /api/documents?source=&thread=`, already stripped, earlier by `created_at`). From each
+   new mail it removes every run of at least 3 consecutive lines that also appears in an earlier
+   mail of the thread, after normalizing (`>` removed, whitespace collapsed, blank lines skipped).
+   Diffing against the whole thread, not just the parent, also catches the parent's quote of the
+   grandparent. Runs of 3 protect short lines like "Thanks!" that parent and reply happen to
+   share. Top-posting and inline replies both work, only matching runs go. A thread's first mail
+   skips this step. A run asks ferret once per thread and keeps the mails it puts itself.
+
+Forwards (subject `Fwd:`, `Fw:`, `WG:`) skip steps 1 and 2: the forwarded mail is new to me. A
+mail's text depends on which earlier mails of its thread ferret holds when it's put: an older mail
+that turns up after its replies (moved in from elsewhere) doesn't retroactively strip them. A
+refetch (a new `UIDVALIDITY`, new indexing settings) diffs a mail again against the thread as it
+is then, so a reply first indexed whole can come back stripped. Accepted, it's a heuristic. Leftover duplicates are caught at search time by collapsing hits
+per thread ([README](README.md#search)).
+
+Tests run against the Dovecot of `docker-compose.yml` (scaled to 0 by default, started with
+`docker compose up -d --scale dovecot=1 dovecot`) and CI with the fixture mails in
+`crates/ferret-plugins/fixtures/imap`, never against a real mailbox.
+
+**Wishlist**: attachment text (PDFs, Office documents).
+
+### AFFiNE
+
+Indexes the docs of a workspace on a self-hosted AFFiNE (checked against 0.27.3). AFFiNE has no
+Markdown export for private docs and no personal access tokens for its API, so the plugin signs in
+as a user and turns each doc's Yjs state into Markdown itself.
+
+| Config | Meaning |
+|---|---|
+| `url` | AFFiNE as the worker reaches it, e.g. the in-cluster service. Not behind a login proxy: a redirect fails the run |
+| `public_url` | the address people open, which documents link to. `url` when left out |
+| `workspace_id` | the id in the workspace's address, `/workspace/<id>/…` |
+| `email`, `password` | the user the plugin signs in as, `password` write-only. Invite a ferret user with read access to the workspace rather than using your own account |
+
+- One document per doc outside the trash, `external_id` = doc id, `content_type = markdown`,
+  `title` from the page (the root doc's title when the page has none), `created_at` from the root
+  doc, `modified_at` = the server's `updatedAt`, `url` = `{public_url}/workspace/{workspace}/{doc}`.
+- Every run signs in (`POST /api/auth/sign-in`, session cookie) and is a sync:
+  - The workspace's root doc (`GET /api/workspaces/{ws}/docs/{ws}`, Yjs) lists every doc
+    (`meta.pages`) and whether it's in the trash. The trash lives only there.
+  - `seen` for every doc outside the trash. Trashed and deleted docs disappear with the sweep.
+  - GraphQL `recentlyUpdatedDocs`, newest first, finds the docs the server changed after the cursor.
+    Those are fetched (`GET /api/workspaces/{ws}/docs/{doc}`) and `PUT`. It pages with
+    `updatedAt < after`, so each page asks up to and including the last one's time, and repeats are
+    dropped: ties at a page's end are never skipped. A full page of docs with one and the same time
+    can't be paged past and fails the run.
+  - A doc the root doc lists but the server has no content for yet (no client synced it) is
+    skipped. A full fetch logs how many.
+- Cursor = the newest `updatedAt`, minus 10 minutes on the next run: a save during the last
+  listing, and AFFiNE's merge lag (`updatedAt` is the newest merged update's time, visible once the
+  server merged it). The state also stores the settings (`url`, `public_url`, `workspace_id`),
+  whose change fetches every doc again, and the trashed doc ids: leaving the trash doesn't change a
+  doc on the server, so a doc that left it is fetched by itself (`workspace.doc(docId)` for its
+  `updatedAt`).
+- What only the root doc knows doesn't change a doc on the server, so it shows on the doc's next
+  edit (or a full fetch): a linked doc's new title in the docs that link to it. For the same reason
+  the documents carry no `meta`: AFFiNE's tags and a doc's mode (page or edgeless) live in the root
+  doc too, and would go stale the same way.
+- Yjs → Markdown (`affine/markdown.rs`, on `yrs`): paragraphs (text, headings, quotes), lists
+  (bulleted, numbered, todo, toggle, nested), code, dividers, tables, databases (title, then a table
+  of the rows with their cells, select options by name), equations, images by caption, attachments
+  by name, bookmarks and embeds as links. Linked docs, inline references and synced docs become
+  `[title](link)`. Inline bold, italic, strike, code and links keep their Markdown. Canvas-only
+  elements of edgeless docs (shapes, connectors, frames) are left out, their notes read like a page.
+  A block type the plugin doesn't know keeps its text, and the run log names it. A block among its
+  own descendants (a corrupt doc, or two moves merged into a cycle) renders once.
+- Not AFFiNE's own converter (`affine_doc_loader`): it's AGPL-3.0-only, and ferret is MIT.
+
 ## Roadmap
 
 In rough order of value per effort:
@@ -166,62 +294,9 @@ In rough order of value per effort:
    in the cluster syncs them into a PVC, mounted read-only into a dedicated worker. Every run is a
    full sync (`PUT` everything, the server skips unchanged files), excluding `.stfolder`,
    `.stversions` and `.obsidian`.
-2. **Email (IMAP)**, starting with the private Zoho mailbox, see [Email](#email). Outlook (work)
-   follows as its own plugin (Microsoft Graph rather than IMAP).
+2. **Outlook** (work), as its own plugin: Microsoft Graph rather than [IMAP](#imap).
 3. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
-4. **AFFiNE** (self-hosted): there is no official Markdown export, documents are Yjs CRDTs. lumi
-   already talks to AFFiNE through an MCP server, which shows a working API and auth path. Worst
-   case, the MCP server is the API.
-5. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
-
-### Email
-
-IMAP, MIME parsing with [`mail-parser`](https://crates.io/crates/mail-parser), which also turns HTML
-into text.
-
-**Identity**
-
-- `external_id` = Message-ID, so a mail in several folders is one document and a move to another
-  folder is invisible to ferret.
-- Source = `mail/<account>`, e.g. `mail/zoho`. Folders are not recorded in v1 (a folder filter
-  would require tracking moves).
-- `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
-- `title` = subject, `authors` = From, `meta`: To, Cc, attachment names. `created_at` =
-  the `Date` header.
-- `url` from an optional `url_template` with `{message_id}` (e.g. `mid:{message_id}`, RFC 2392).
-  Without one, ferret's viewer is the origin.
-
-**Sync and deletions**
-
-- Per folder, `UIDVALIDITY` and the last UID are the cursor. New mails come in through
-  `UID FETCH`. A changed `UIDVALIDITY` refetches that folder.
-- Every run is a sync over the account: fetch the Message-IDs of all UIDs (`ENVELOPE`, a few MB for
-  50k mails), `seen` for all of them, `PUT` the new ones, commit. Deleted mails disappear with the
-  sweep.
-- Trash, Spam and Drafts are excluded (configurable), so a mail moved to Trash counts as deleted.
-- No noise filter: unwanted mails get deleted at the origin.
-
-**Stripping quoted text**, in this order:
-
-1. **HTML quote containers** before the HTML-to-text conversion: `blockquote[type=cite]` (Apple
-   Mail, Thunderbird), `div.gmail_quote`, Outlook's `#divRplyFwdMsg` and reply header block.
-2. **Text markers**, German and English: lines starting with `>`, `On ... wrote:` /
-   `Am ... schrieb ...:`, `-----Original Message-----` / `-----Ursprüngliche Nachricht-----`,
-   `From:`/`Sent:` and `Von:`/`Gesendet:` header blocks.
-3. **Thread diff**: the plugin processes a thread's new mails in date order and loads the thread's
-   earlier mails from ferret (`GET /api/documents?source=&thread=`, already stripped). From each new
-   mail it removes every run of at least 3 consecutive lines that already appeared in an earlier
-   mail of the thread, after normalizing (`>` removed, whitespace collapsed). Diffing against the
-   whole thread, not just the parent, also catches the parent's quote of the grandparent. Runs of 3
-   protect short lines like "Thanks!" that parent and reply happen to share. Top-posting and inline
-   replies both work, only matching runs go.
-
-Forwards (`Fwd:`, `WG:`) keep the forwarded content, it's new to me. An older mail that turns up
-after its replies (moved in from elsewhere) doesn't retroactively strip them. Accepted, it's a
-heuristic. Leftover duplicates are caught at search time by collapsing hits per thread
-([README](README.md#search)).
-
-**Wishlist**: attachment text (PDFs, Office documents).
+4. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.
 
 ### Chats
 
