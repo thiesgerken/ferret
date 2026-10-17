@@ -14,7 +14,7 @@
 </p>
 <p align="center"><strong>A personal search index over everything that describes you.</strong></p>
 
-<p align="center">Hybrid search. Deep links to the origin. One API for you and your agents.</p>
+<p align="center">Hybrid search. Deep links to the origin. One API and MCP server for you and your agents.</p>
 
 <p align="center">
   <a href="#-getting-started">🚀 Getting started</a>
@@ -23,15 +23,16 @@
   ·
   <a href="docs/conception/architecture.md#apis">🤖 API</a>
   ·
+  <a href="#-mcp">🧩 MCP</a>
+  ·
   <a href="charts/ferret/README.md">⚓ Helm chart</a>
 </p>
 
-Your notes, documents, mail, chats and your agent's memory are spread over Paperless, git, a
-mailbox, carapace and more, each with its own search, mostly not a good one. ferret is the
-**discovery layer** on top: one index over all of them that answers *"what do I have about this,
-and where?"* in a single query. It shows the passage that matched and links straight back to the
-origin, where that source's own tools take over. You search it in the browser; your agents search
-the same index through the same API instead of guessing which tool to try first.
+Your notes and documents are spread over a DMS, git repos, email, chats, agent sessions and more,
+each with its own search, mostly not a good one. ferret is the **discovery layer** on top, built
+agents-first: one index over all of them that answers *"what do I have about this, and where?"* in
+a single query. Your agent gets the passage that matched and a link straight back to the origin,
+where that source's own tools take over, instead of guessing which tool's search to try first.
 
 ## ✨ Highlights
 
@@ -41,12 +42,14 @@ the same index through the same API instead of guessing which tool to try first.
 - 🔗 **Find it here, open it there.** Every hit deep-links to its origin: the Paperless document,
   the file in your git forge or Obsidian vault, the carapace session. ferret keeps a copy to search
   it, never to become the place you read it.
-- 🔌 **Plugins for your systems, a REST API for everything else.** git, Paperless and carapace sync
-  on a schedule; IMAP and AFFiNE are coming. Anything else sends documents with a plain HTTP `PUT`.
+- 🔌 **Plugins for your systems, a REST API for everything else.** git repos, Paperless, carapace,
+  IMAP mailboxes and AFFiNE workspaces sync on a schedule. Anything else sends documents with a
+  plain HTTP `PUT`.
 - 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
   recipe and the note about your home bar in the same query, and the agent knows where to dig
-  deeper with that source's own tools. It's the search you use too. API keys are scoped to sources
-  and to read or write, so an agent sees exactly what you hand it.
+  deeper with that source's own tools. It's the search you use too, through the REST API or as an
+  MCP server. API keys are scoped to sources and to read or write, so an agent sees exactly what
+  you hand it.
 - ⚡ **Embeddings on your own hardware.** A pool of TEI servers, in the cluster and on your
   laptop's GPU for big backfills, switched on and off live from Admin. Activity shows the progress.
 - ☸️ **Self-hosted, Kubernetes-native.** A Helm chart, Postgres (ParadeDB and pgvector) as the only
@@ -100,11 +103,21 @@ respective sources.
 | git | Markdown and text files of a repository, e.g. an Obsidian vault | the file in your forge or vault, at its commit |
 | Paperless | documents with their OCR text | the document in Paperless |
 | carapace | facts, skills and archived sessions of a knowledge repository | the file or session in carapace |
-| IMAP (coming) | a mailbox, with its threads kept together | the mail, e.g. as a `mid:` link |
-| AFFiNE (coming) | the docs of a workspace | the doc in AFFiNE |
+| IMAP | a mailbox, with its threads kept together | the mail, e.g. as a `mid:` link |
+| AFFiNE | the docs of a workspace | the doc in AFFiNE |
 
 Everything else goes through the [ingest API](docs/conception/README.md#ingest-api): a `PUT` per
 document with an API key, from a script, a cron job or an agent.
+
+## 🧩 MCP
+
+ferret speaks MCP (Streamable HTTP) at `/mcp`, with an API key as the bearer token. Its tools are
+`search`, `get_document` and `list_sources`. In Claude Code, for example:
+
+```sh
+claude mcp add --transport http ferret https://ferret.example.com/mcp \
+  --header "Authorization: Bearer fk_…"
+```
 
 ## 🚀 Getting started
 
@@ -121,7 +134,7 @@ For a real deployment, install the [Helm chart](charts/ferret/README.md).
 
 ## 🏗️ How it works
 
-The server (Rust, axum) serves the UI's GraphQL API and the REST API, schedules plugin runs and
+The server (Rust, axum) serves the UI's GraphQL API, the REST API and MCP, schedules plugin runs and
 runs the embed pump. Plugin workers pull runs from the server and write through the same ingest API
 anyone else uses. Postgres holds everything: documents, chunks, the BM25 index and the vectors. A
 pool of TEI servers turns chunks and queries into embeddings. More in
