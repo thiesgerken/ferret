@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation } from "urql";
 import { graphql } from "@/gql";
@@ -42,10 +43,10 @@ export const primaryButtonClass =
 const secondaryButtonClass = "rounded-lg px-4 py-2 text-sm hover:bg-accent";
 
 const SCHEDULE_PRESETS = [
-  { label: "Every 15 minutes", cron: "*/15 * * * *" },
-  { label: "Hourly", cron: "0 * * * *" },
-  { label: "Nightly", cron: "0 3 * * *" },
-];
+  { label: "quarterHourly", cron: "*/15 * * * *" },
+  { label: "hourly", cron: "0 * * * *" },
+  { label: "nightly", cron: "0 3 * * *" },
+] as const;
 
 export function CreateConnectionForm({
   pluginTypes,
@@ -56,13 +57,19 @@ export function CreateConnectionForm({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const t = useTranslations();
   const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
   // Follows the plugin's default until the user picks one.
   const [pickedIcon, setPickedIcon] = useState<string | null>(null);
   const icon = pickedIcon ?? defaultPluginIcon(plugin);
   const [error, setError] = useState("");
-  const { fields, schemaError } = parseConfigSchema(plugin, pluginTypes.find(({ name }) => name === plugin)?.configSchema);
+  const configSchema = pluginTypes.find(({ name }) => name === plugin)?.configSchema;
+  // The plugin list can outlive the worker that offered a plugin.
+  const { fields, schemaError } =
+    configSchema === undefined
+      ? { fields: [], schemaError: t("connections.form.pluginGone", { plugin }) }
+      : parseConfigSchema(configSchema);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,11 +94,11 @@ export function CreateConnectionForm({
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-border p-5 sm:p-6">
       <div className="mb-5">
-        <h2 className="text-base font-semibold">New connection</h2>
-        <p className="text-sm text-muted-foreground">A plugin that keeps a source in ferret in sync with where its documents live.</p>
+        <h2 className="text-base font-semibold">{t("connections.form.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("connections.form.description")}</p>
       </div>
-      <FormSection title="Plugin and source" description="What fetches the documents, and where in ferret they land.">
-        <Field id="connection-plugin" label="Plugin">
+      <FormSection title={t("connections.form.pluginAndSource")} description={t("connections.form.pluginAndSourceHint")}>
+        <Field id="connection-plugin" label={t("connections.form.plugin")}>
           <select id="connection-plugin" value={plugin} onChange={(event) => setPlugin(event.target.value)} className={fieldClass}>
             {pluginTypes.map(({ name }) => (
               <option key={name}>{name}</option>
@@ -100,8 +107,8 @@ export function CreateConnectionForm({
         </Field>
         <Field
           id="connection-source"
-          label="Source"
-          help={withCode("Where this connection's documents live in ferret, like `notes` or `mail/work`. Searches narrow by it, and API keys can be limited to it. The plugin may add sources below it, like `carapace/facts`. Only this connection writes here, so when something disappears at the origin, ferret removes it without touching anything else.")}
+          label={t("connections.form.source")}
+          help={withCode(t("connections.form.sourceHelp"))}
         >
           <input id="connection-source" name="source" required placeholder="notes" className={cn(fieldClass, "font-mono")} />
         </Field>
@@ -112,10 +119,10 @@ export function CreateConnectionForm({
       <ConfigSection key={plugin} plugin={plugin} idPrefix="config" fields={fields} schemaError={schemaError} />
       <FormFooter error={error}>
         <button type="submit" disabled={Boolean(schemaError) || fetching} className={primaryButtonClass}>
-          Create connection
+          {t("connections.form.create")}
         </button>
         <button type="button" onClick={onCancel} className={secondaryButtonClass}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </FormFooter>
     </form>
@@ -133,9 +140,10 @@ export function EditConnectionForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const t = useTranslations("common");
   const [{ fetching }, update] = useMutation(UpdateConnectionMutation);
   const [error, setError] = useState("");
-  const { fields, schemaError } = parseConfigSchema(connection.plugin, configSchema);
+  const { fields, schemaError } = parseConfigSchema(configSchema);
   const [icon, setIcon] = useState(connection.icon);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -171,10 +179,10 @@ export function EditConnectionForm({
       />
       <FormFooter error={error}>
         <button type="submit" disabled={Boolean(schemaError) || fetching} className={primaryButtonClass}>
-          Save
+          {t("save")}
         </button>
         <button type="button" onClick={onCancel} className={secondaryButtonClass}>
-          Cancel
+          {t("cancel")}
         </button>
       </FormFooter>
     </form>
@@ -190,6 +198,7 @@ export function DeleteConnectionForm({
   onCancel: () => void;
   onDeleted: () => void;
 }) {
+  const t = useTranslations();
   const [, remove] = useMutation(DeleteConnectionMutation);
   const [confirmSource, setConfirmSource] = useState("");
   const [error, setError] = useState("");
@@ -206,11 +215,8 @@ export function DeleteConnectionForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-destructive/50 bg-destructive/5 p-4 text-sm">
-      <p>
-        This deletes the connection and every document below <code className="font-mono">{connection.source}</code>.
-        Documents the origin no longer has exist only in ferret and are gone for good.
-      </p>
-      <Field id={`confirm-${connection.id}`} label={<>Type <code className="font-mono">{connection.source}</code> to confirm</>}>
+      <p>{t.rich("connections.form.deleteWarning", { source: connection.source, code })}</p>
+      <Field id={`confirm-${connection.id}`} label={t.rich("connections.form.confirm", { source: connection.source, code })}>
         <input
           id={`confirm-${connection.id}`}
           value={confirmSource}
@@ -231,10 +237,10 @@ export function DeleteConnectionForm({
           disabled={confirmSource !== connection.source}
           className="rounded-lg bg-destructive px-4 py-2 font-medium text-white disabled:opacity-50"
         >
-          Delete connection and documents
+          {t("connections.form.deleteAll")}
         </button>
         <button type="button" onClick={onCancel} className={secondaryButtonClass}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </form>
@@ -251,10 +257,7 @@ export function configSchemaOf(pluginTypes: PluginType[], plugin: string): strin
   return pluginType.configSchema;
 }
 
-function parseConfigSchema(plugin: string, schema: string | undefined): { fields: ConfigField[]; schemaError: string } {
-  if (schema === undefined) {
-    return { fields: [], schemaError: `No worker offers the plugin "${plugin}" anymore.` };
-  }
+function parseConfigSchema(schema: string): { fields: ConfigField[]; schemaError: string } {
   try {
     return { fields: configFields(schema), schemaError: "" };
   } catch (err) {
@@ -311,16 +314,25 @@ function IdentitySection({
   onIconChange: (icon: string) => void;
   defaultName?: string;
 }) {
+  const t = useTranslations();
   return (
-    <FormSection title="Name and icon" description="How the connection shows up in search filters and on Activity.">
+    <FormSection title={t("connections.form.identity")} description={t("connections.form.identityHint")}>
       <div className="flex items-end gap-3">
         <div className="space-y-1.5">
-          <span className="block text-sm font-medium">Icon</span>
+          <span className="block text-sm font-medium">{t("common.icon")}</span>
           <IconPicker value={icon} onChange={onIconChange} />
         </div>
         <div className="min-w-0 flex-1">
-          <Field id={nameId} label="Name">
-            <input id={nameId} name="name" required pattern=".*\S.*" placeholder="My notes" defaultValue={defaultName} className={fieldClass} />
+          <Field id={nameId} label={t("common.name")}>
+            <input
+              id={nameId}
+              name="name"
+              required
+              pattern=".*\S.*"
+              placeholder={t("connections.form.namePlaceholder")}
+              defaultValue={defaultName}
+              className={fieldClass}
+            />
           </Field>
         </div>
       </div>
@@ -329,10 +341,11 @@ function IdentitySection({
 }
 
 function ScheduleSection({ id, defaultValue }: { id: string; defaultValue: string }) {
+  const t = useTranslations("connections.form");
   const [schedule, setSchedule] = useState(defaultValue);
   return (
-    <FormSection title="Schedule" description="When it syncs, as a cron expression in UTC.">
-      <Field id={id} label="Cron" help={withCode("Minute, hour, day of month, month and weekday: `0 * * * *` runs at the top of every hour.")}>
+    <FormSection title={t("schedule")} description={t("scheduleHint")}>
+      <Field id={id} label={t("cron")} help={withCode(t("cronHelp"))}>
         <input id={id} name="schedule" required value={schedule} onChange={(event) => setSchedule(event.target.value)} className={cn(fieldClass, "font-mono")} />
       </Field>
       <div className="flex flex-wrap gap-1.5">
@@ -344,7 +357,7 @@ function ScheduleSection({ id, defaultValue }: { id: string; defaultValue: strin
             onClick={() => setSchedule(preset.cron)}
             className="rounded-full border border-border px-2.5 py-0.5 text-xs hover:bg-accent aria-pressed:border-brand aria-pressed:bg-brand/10 aria-pressed:text-brand"
           >
-            {preset.label}
+            {t(`presets.${preset.label}`)}
           </button>
         ))}
       </div>
@@ -369,15 +382,17 @@ function ConfigSection({
   schemaError: string;
   stored?: Record<string, unknown>;
 }) {
+  const t = useTranslations("connections.form");
   const editsSecrets = stored !== undefined && fields.some((field) => field.secret);
   return (
     <FormSection
-      title="Configuration"
+      title={t("configuration")}
       description={
         <>
-          What the <span className="font-medium text-foreground">{plugin}</span> plugin needs to reach the origin.
-          {editsSecrets &&
-            " Changing it (not the schedule) needs every stored secret entered again, so an edit can't send them somewhere new."}
+          {t.rich("configurationHint", {
+            plugin: () => <span className="font-medium text-foreground">{plugin}</span>,
+          })}
+          {editsSecrets && ` ${t("secretsHint")}`}
         </>
       }
     >
@@ -386,10 +401,10 @@ function ConfigSection({
           {schemaError}
         </p>
       ) : fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground">This plugin needs no configuration.</p>
+        <p className="text-sm text-muted-foreground">{t("noConfiguration")}</p>
       ) : (
         <fieldset className="space-y-4">
-          <legend className="sr-only">Configuration</legend>
+          <legend className="sr-only">{t("configuration")}</legend>
           {fields.map((field) => (
             <ConfigInput
               key={field.name}
@@ -417,6 +432,7 @@ function ConfigInput({
   /** An empty secret field keeps the stored secret, so it's never required. */
   keepsStoredSecret: boolean;
 }) {
+  const t = useTranslations();
   const name = configInputName(field);
   const words = field.name.replaceAll("_", " ");
   const label = words[0].toUpperCase() + words.slice(1);
@@ -432,7 +448,7 @@ function ConfigInput({
     );
   }
   const placeholder = keepsStoredSecret
-    ? "Leave empty to keep the stored one, unless the configuration changes"
+    ? t("connections.form.keepSecret")
     : Array.isArray(field.default)
       ? field.default.join("\n")
       : typeof field.default === "string"
@@ -444,10 +460,10 @@ function ConfigInput({
       label={
         <>
           {label}
-          {!field.required && <span className="font-normal text-muted-foreground"> (optional)</span>}
+          {!field.required && <span className="font-normal text-muted-foreground"> {t("common.optional")}</span>}
         </>
       }
-      help={withCode(`${field.description}${field.kind === "lines" ? " One per line." : ""}`)}
+      help={withCode(`${field.description}${field.kind === "lines" ? ` ${t("connections.form.onePerLine")}` : ""}`)}
     >
       {field.kind === "lines" ? (
         <textarea
@@ -474,6 +490,10 @@ function ConfigInput({
       )}
     </Field>
   );
+}
+
+function code(chunks: ReactNode) {
+  return <code className="font-mono">{chunks}</code>;
 }
 
 /** Plugins write their descriptions with Markdown's `code` spans, for paths and examples. */

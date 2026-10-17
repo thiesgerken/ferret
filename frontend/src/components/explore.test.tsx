@@ -107,7 +107,7 @@ test("a facet narrows the table and starts over at the first page", async () => 
     button("Mail › zoho").click();
   });
   await act(async () => {
-    button("2026-01").click();
+    button("January 2026").click();
   });
 
   assert.deepEqual(changes, [

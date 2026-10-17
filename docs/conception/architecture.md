@@ -283,7 +283,8 @@ Everything except Search is reached through an app menu in the top right, like G
 in carapace). It follows the browser's languages until the user picks one in Settings. The choice is
 stored per browser, like the theme: the static export has no locale routes, and the sign-in page
 needs the language before there's an account to ask. Dates and numbers format with the active
-locale. Server error messages stay English and are shown verbatim.
+locale. Server error messages and the plugins' config descriptions (from their JSON Schemas) stay
+English and are shown verbatim.
 
 **The viewer** is shared by Search and Explore. It renders a document by content type (Markdown,
 plain text, email with headers), scrolled to the hit. Documents with a `thread` get previous and

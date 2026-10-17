@@ -113,7 +113,7 @@ test("shows users, the TEIs by model with the backlog, and the workers", async (
   const text = view.container.textContent ?? "";
 
   assert.match(text, /grace · Grace/);
-  assert.match(text, /bge-m3 · defaultBAAI\/bge-m3 · 1024 dimensions/);
+  assert.match(text, /bge-m3 · defaultBAAI\/bge-m3 · 1,024 dimensions/);
   assert.match(text, /http:\/\/tei-bge:80Online/);
   assert.match(text, /http:\/\/macbook:8080ExternalOnline/);
   assert.match(text, /TEI answered 503/);

@@ -7,16 +7,37 @@
     "icon": "Icon",
     "openInOrigin": "Open in origin",
     "allSources": "all sources",
-    "never": "never"
+    "never": "never",
+    "delete": "Delete",
+    "optional": "(optional)",
+    "default": "default",
+    "online": "online",
+    "offline": "offline"
   },
   "pages": {
     "nav": "Pages",
-    "search": { "title": "Search" },
-    "explore": { "title": "Explore" },
-    "activity": { "title": "Activity", "description": "What ferret ingested and embedded, live." },
-    "connections": { "title": "Connections", "description": "Plugins that keep a source in sync with an origin, on a schedule." },
-    "settings": { "title": "Settings", "description": "Your account, the keys your agents and scripts use, the model your searches use, and the language." },
-    "admin": { "title": "Admin", "description": "Users, the embedding pipeline and the plugin workers." }
+    "search": {
+      "title": "Search"
+    },
+    "explore": {
+      "title": "Explore"
+    },
+    "activity": {
+      "title": "Activity",
+      "description": "What ferret ingested and embedded, live."
+    },
+    "connections": {
+      "title": "Connections",
+      "description": "Plugins that keep a source in sync with an origin, on a schedule."
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "Your account, the keys your agents and scripts use, the model your searches use, and the language."
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Users, the embedding pipeline and the plugin workers."
+    }
   },
   "app": {
     "menu": "App menu",
@@ -167,5 +188,216 @@
       "en": "English",
       "de": "Deutsch"
     }
+  },
+  "runs": {
+    "status": {
+      "RUNNING": "Running",
+      "SUCCEEDED": "OK",
+      "FAILED": "Failed",
+      "LOST": "Lost",
+      "DISABLED": "Disabled",
+      "NEW": "New"
+    },
+    "last": "Last {count, plural, one {run} other {# runs}}",
+    "changes": {
+      "put": "put",
+      "unchanged": "unchanged",
+      "deleted": "deleted"
+    },
+    "took": "took {duration}",
+    "for": "for {duration}"
+  },
+  "connections": {
+    "new": "New connection",
+    "noWorker": "No plugin worker has registered yet, so there's nothing to connect.",
+    "count": "{count, plural, one {# connection} other {# connections}}",
+    "none": "No connections yet",
+    "noneHint": "A connection keeps a source in sync with where its documents live, like a git repository or Paperless.",
+    "runNow": "Run now",
+    "runNowLabel": "Run {source} now",
+    "editLabel": "Edit {source}",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enableLabel": "Enable {source}",
+    "disableLabel": "Disable {source}",
+    "deleteLabel": "Delete {source}",
+    "toActivity": "Runs and logs on Activity",
+    "lastRun": "Last run",
+    "never": "Never",
+    "changes": "Changes",
+    "nextRun": "Next run",
+    "disabled": "Disabled",
+    "history": "History",
+    "excluded": "Excluded from the index ({count})",
+    "excludedHint": "The connection drops these whenever it finds them. Removing one makes the next run start over from scratch and ingest it again.",
+    "thread": "Thread {thread}",
+    "inSource": "in {source}",
+    "includeAgain": "Include again",
+    "includeAgainLabel": "Include {what} again",
+    "form": {
+      "title": "New connection",
+      "description": "A plugin that keeps a source in ferret in sync with where its documents live.",
+      "pluginAndSource": "Plugin and source",
+      "pluginAndSourceHint": "What fetches the documents, and where in ferret they land.",
+      "plugin": "Plugin",
+      "source": "Source",
+      "sourceHelp": "Where this connection's documents live in ferret, like `notes` or `mail/work`. Searches narrow by it, and API keys can be limited to it. The plugin may add sources below it, like `carapace/facts`. Only this connection writes here, so when something disappears at the origin, ferret removes it without touching anything else.",
+      "create": "Create connection",
+      "deleteWarning": "This deletes the connection and every document below <code>{source}</code>. Documents the origin no longer has exist only in ferret and are gone for good.",
+      "confirm": "Type <code>{source}</code> to confirm",
+      "deleteAll": "Delete connection and documents",
+      "pluginGone": "No worker offers the plugin “{plugin}” anymore.",
+      "identity": "Name and icon",
+      "identityHint": "How the connection shows up in search filters and on Activity.",
+      "namePlaceholder": "My notes",
+      "schedule": "Schedule",
+      "scheduleHint": "When it syncs, as a cron expression in UTC.",
+      "cron": "Cron",
+      "cronHelp": "Minute, hour, day of month, month and weekday: `0 * * * *` runs at the top of every hour.",
+      "presets": {
+        "quarterHourly": "Every 15 minutes",
+        "hourly": "Hourly",
+        "nightly": "Nightly"
+      },
+      "configuration": "Configuration",
+      "configurationHint": "What the <plugin>{plugin}</plugin> plugin needs to reach the origin.",
+      "secretsHint": "Changing it (not the schedule) needs every stored secret entered again, so an edit can't send them somewhere new.",
+      "noConfiguration": "This plugin needs no configuration.",
+      "keepSecret": "Leave empty to keep the stored one, unless the configuration changes",
+      "onePerLine": "One per line."
+    }
+  },
+  "activity": {
+    "documents": "Documents",
+    "sources": "Sources",
+    "chunks": "Chunks",
+    "embedded": "Embedded",
+    "embedding": "Embedding",
+    "embeddingHint": "How far each model has embedded your chunks, and how fast it goes.",
+    "connections": "Connections",
+    "connectionsHint": "Each connection's last runs, newest on the right, and its next one.",
+    "ingests": "Ingests",
+    "oneWriter": "One writer",
+    "everyUser": "Every user",
+    "last": "last {time}",
+    "neverRan": "never ran",
+    "next": "next {time}",
+    "disabled": "disabled",
+    "nothingYet": "Nothing ingested yet.",
+    "showOlder": "Show older",
+    "unknownWriter": "Unknown writer",
+    "run": "Run",
+    "apiWrites": "API writes"
+  },
+  "embedders": {
+    "queries": "Queries",
+    "embedding": "Embedding",
+    "progressLabel": "{model} embedded",
+    "coverage": "{embedded, number} of {chunks, number} chunks embedded ({share, number, percent})",
+    "pending": "{pending, number} pending",
+    "pendingEta": "{pending, number} pending, done in about {duration}",
+    "allEmbedded": "Everything is embedded",
+    "rate": "Rate",
+    "perMinute": "{rate, number} / min",
+    "rateHint": "Across users: the pump is shared.",
+    "pendingLabel": "Pending",
+    "refused": "Refused",
+    "refusedHint": "Chunks TEI refused. The pump leaves them out.",
+    "allUsers": "All users: {embedded, number} of {chunks, number} chunks embedded",
+    "allUsersEta": "All users: {embedded, number} of {chunks, number} chunks embedded, done in about {duration}"
+  },
+  "tei": {
+    "state": {
+      "ONLINE": "Online",
+      "OFFLINE": "Offline",
+      "UNUSED": "Unused",
+      "UNSUITABLE": "Unsuitable"
+    },
+    "external": "External",
+    "switchedOff": "Switched off",
+    "unused": "Neither queries nor embedding",
+    "queries": "Queries",
+    "embedding": "Embedding",
+    "load": "Load",
+    "loadHint": "Share of the last minute TEI spent in inference, a stand-in for its CPU load. It can exceed 100% with batches in parallel. Real CPU usage is the cluster's to measure (metrics-server, Prometheus). Behind a Service with several pods, this is the whole Service.",
+    "loadInfo": "What load means",
+    "queue": "Queue",
+    "batch": "Batch",
+    "throughput": "Throughput",
+    "failures": "Failures",
+    "pumpBatch": "Pump batch",
+    "busy": "busy",
+    "backlogDoneIn": "Backlog done in",
+    "lastError": "Last error ({date, date, short} {date, time, medium}): {error}",
+    "lastErrorUndated": "Last error: {error}",
+    "pool": {
+      "unusedGroup": "Unused ({model})",
+      "offlineGroup": "Offline",
+      "noQueries": "No enabled TEI answers this model's queries: searches with it find keyword matches only.",
+      "noEmbedding": "No enabled TEI embeds this model's chunks: its backlog doesn't move.",
+      "dimensions": "{dimension, number} dimensions",
+      "noTei": "No TEI serves this model.",
+      "allEmbedded": "Everything is embedded.",
+      "source": "Source",
+      "pending": "Pending",
+      "refused": "Refused by TEI",
+      "on": "On"
+    }
+  },
+  "admin": {
+    "users": "Users",
+    "usersHint": "Who can sign in, and who administers ferret.",
+    "embedding": "Embedding",
+    "embeddingHint": "The TEIs by the model they serve, and what's still waiting to be embedded. Switches take effect within 10 seconds.",
+    "workers": "Plugin workers",
+    "workersHint": "The workers that ran plugins in the last day.",
+    "user": "User",
+    "lastSignIn": "Last sign-in",
+    "admin": "Admin",
+    "enabled": "Enabled",
+    "password": "Password",
+    "isAdmin": "{user} is an admin",
+    "canSignIn": "{user} can sign in",
+    "setPassword": "Set password",
+    "newPasswordFor": "New password for {user} (signs them out everywhere)",
+    "set": "Set",
+    "newUser": "New user",
+    "username": "Username",
+    "displayName": "Display name (optional)",
+    "newPassword": "Password (12+ characters)",
+    "createUser": "Create user",
+    "noWorkers": "No worker asked for a run in the last day.",
+    "worker": "Worker",
+    "plugins": "Plugins",
+    "status": "Status",
+    "lastSeen": "Last seen"
+  },
+  "explore": {
+    "contentType": {
+      "MARKDOWN": "Markdown",
+      "PLAIN": "Plain text",
+      "EMAIL": "Email"
+    },
+    "sources": "Sources",
+    "type": "Type",
+    "authors": "Authors",
+    "month": "Month",
+    "title": "Title",
+    "source": "Source",
+    "created": "Created",
+    "modified": "Modified",
+    "noMatches": "No documents match.",
+    "range": "{first, number}–{last, number} of {total, plural, one {# document} other {# documents}}",
+    "empty": "0 documents",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "icons": {
+    "label": "Icon",
+    "loading": "Loading icons…",
+    "search": "Search icons",
+    "searchPlaceholder": "Search all icons",
+    "list": "Icons",
+    "noMatch": "No icon matches."
   }
 }

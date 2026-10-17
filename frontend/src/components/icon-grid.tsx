@@ -1,6 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { ICON_NAMES } from "@/components/named-icon-loader";
 import { NamedIcon } from "@/components/named-icon";
@@ -38,6 +39,7 @@ export function searchIcons(query: string): string[] {
  * module, so the list of all icon names loads only when a picker opens.
  */
 export default function IconGrid({ value, onChoose }: { value: string; onChoose: (name: string) => void }) {
+  const t = useTranslations("icons");
   const [query, setQuery] = useState("");
   const icons = searchIcons(query);
   return (
@@ -46,8 +48,8 @@ export default function IconGrid({ value, onChoose }: { value: string; onChoose:
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <input
           type="search"
-          aria-label="Search icons"
-          placeholder="Search all icons"
+          aria-label={t("search")}
+          placeholder={t("searchPlaceholder")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           autoFocus
@@ -57,7 +59,7 @@ export default function IconGrid({ value, onChoose }: { value: string; onChoose:
       <p className="mt-2 mb-1.5 text-xs text-muted-foreground">
         {query.trim() ? `${icons.length === MAX_RESULTS ? `First ${MAX_RESULTS}` : icons.length} matches` : "Suggestions"}
       </p>
-      <div role="listbox" aria-label="Icons" className="grid max-h-64 grid-cols-8 gap-1 overflow-y-auto">
+      <div role="listbox" aria-label={t("list")} className="grid max-h-64 grid-cols-8 gap-1 overflow-y-auto">
         {icons.map((name) => (
           <button
             key={name}
@@ -75,7 +77,7 @@ export default function IconGrid({ value, onChoose }: { value: string; onChoose:
             <NamedIcon name={name} className="size-4.5" />
           </button>
         ))}
-        {icons.length === 0 && <p className="col-span-8 py-6 text-center text-sm text-muted-foreground">No icon matches.</p>}
+        {icons.length === 0 && <p className="col-span-8 py-6 text-center text-sm text-muted-foreground">{t("noMatch")}</p>}
       </div>
     </>
   );

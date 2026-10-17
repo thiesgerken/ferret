@@ -2,6 +2,7 @@
 
 import { Brain, Database, FileText, Layers, ListTree, Rows3 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "urql";
 import { Embedders } from "@/components/embedders";
@@ -98,6 +99,7 @@ export function ActivityRoute() {
  * optionally only one writer's.
  */
 export function Activity({ writer, onWriterChange }: { writer: string | null; onWriterChange: (writer: string | null) => void }) {
+  const t = useTranslations("activity");
   const [{ data, error }, refetch] = useQuery({ query: ActivityOverviewQueryDocument });
   const isAdmin = data?.me.isAdmin ?? false;
   const [{ data: embedders }, refetchEmbedders] = useQuery({ query: EmbedderStatusQueryDocument, pause: !isAdmin });
@@ -126,16 +128,16 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile icon={<FileText />} label="Documents" value={data.explore.total} />
-        <Tile icon={<Layers />} label="Sources" value={sources} />
-        <Tile icon={<Rows3 />} label="Chunks" value={defaultModel?.chunks ?? 0} />
-        <Tile icon={<Database />} label="Embedded" value={defaultModel ? `${Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100)}%` : "–"} />
+        <Tile icon={<FileText />} label={t("documents")} value={data.explore.total} />
+        <Tile icon={<Layers />} label={t("sources")} value={sources} />
+        <Tile icon={<Rows3 />} label={t("chunks")} value={defaultModel?.chunks ?? 0} />
+        <Tile icon={<Database />} label={t("embedded")} value={defaultModel ? Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100) / 100 : null} percent />
       </div>
-      <Section title="Embedding" icon={<Brain />} description="How far each model has embedded your chunks, and how fast it goes.">
+      <Section title={t("embedding")} icon={<Brain />} description={t("embeddingHint")}>
         <Embedders models={data.embeddingModels} global={embedders && { models: embedders.embeddingStatus, teis: embedders.teis }} />
       </Section>
       {data.connections.length > 0 && (
-        <Section title="Connections" icon={<ListTree />} description="Each connection's last runs, newest on the right, and its next one.">
+        <Section title={t("connections")} icon={<ListTree />} description={t("connectionsHint")}>
           <ul className="divide-y divide-border">
             {data.connections.map((connection) => (
               <ConnectionHistory
@@ -151,17 +153,17 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
       )}
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-medium">Ingests</h2>
+          <h2 className="text-base font-medium">{t("ingests")}</h2>
           <div className="flex items-center gap-2 text-sm">
             {writer && (
               <button type="button" onClick={() => onWriterChange(null)} className="rounded-full border border-border px-3 py-1 hover:bg-accent">
-                {data.connections.find((connection) => connection.id === writer)?.name ?? "One writer"} ✕
+                {data.connections.find((connection) => connection.id === writer)?.name ?? t("oneWriter")} ✕
               </button>
             )}
             {isAdmin && (
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={allUsers} onChange={(event) => setAllUsers(event.target.checked)} />
-                Every user
+                {t("everyUser")}
               </label>
             )}
           </div>
@@ -173,14 +175,16 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
   );
 }
 
-function Tile({ icon, label, value }: { icon: ReactNode; label: string; value: number | string }) {
+/** A figure of the index; `percent` shows a share, null while there's nothing to share. */
+function Tile({ icon, label, value, percent }: { icon: ReactNode; label: string; value: number | null; percent?: boolean }) {
+  const format = useFormatter();
   return (
     <div className="rounded-xl border border-border p-4">
       <p className="flex items-center gap-2 text-xs text-muted-foreground [&>svg]:size-3.5">
         {icon}
         {label}
       </p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{typeof value === "number" ? value.toLocaleString() : value}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value === null ? "–" : format.number(value, percent ? { style: "percent" } : undefined)}</p>
     </div>
   );
 }
@@ -198,6 +202,8 @@ function ConnectionHistory({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const t = useTranslations("activity");
+  const locale = useLocale();
   const last = connection.runs[0];
   return (
     <li>
@@ -211,9 +217,9 @@ function ConnectionHistory({
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{connection.name}</span>
           <span className="block text-xs text-muted-foreground">
-            {last ? `last ${timeAgo(last.startedAt, now)}` : "never ran"}
+            {last ? t("last", { time: timeAgo(last.startedAt, now, locale) }) : t("neverRan")}
             {" · "}
-            {connection.enabled ? `next ${timeAgo(connection.nextRunAt, now)}` : "disabled"}
+            {connection.enabled ? t("next", { time: timeAgo(connection.nextRunAt, now, locale) }) : t("disabled")}
           </span>
         </span>
         <RunDots runs={connection.runs} />

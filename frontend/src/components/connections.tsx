@@ -2,6 +2,7 @@
 
 import { ArrowRight, Cable, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, type CombinedError } from "urql";
 import {
@@ -14,11 +15,11 @@ import {
   UpdateConnectionMutation,
 } from "@/components/connection-forms";
 import { NamedIcon } from "@/components/named-icon";
-import { Count, Pill, RunDots, STATUS_STYLES, type PillStyle } from "@/components/run-status";
+import { Count, Pill, RunDots, RunDuration, type PillStatus } from "@/components/run-status";
 import { graphql } from "@/gql";
 import type { ConnectionsQuery as ConnectionsData } from "@/gql/graphql";
 import { activityHref } from "@/lib/activity-url";
-import { formatDuration, timeAgo } from "@/lib/format-time";
+import { timeAgo } from "@/lib/format-time";
 import { errorMessage } from "@/lib/graphql";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,7 @@ const POLL_MS = 2000;
 const CLOCK_MS = 30_000;
 
 export function Connections() {
+  const t = useTranslations("connections");
   const [{ data, error }, refetch] = useQuery({ query: ConnectionsQuery });
   const [creating, setCreating] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -117,7 +119,7 @@ export function Connections() {
   const newButton = (
     <button type="button" onClick={() => setCreating(true)} className={primaryButtonClass}>
       <Plus className="size-4" aria-hidden />
-      New connection
+      {t("new")}
     </button>
   );
 
@@ -125,13 +127,13 @@ export function Connections() {
     <div className="space-y-6">
       {data.pluginTypes.length === 0 && (
         <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
-          No plugin worker has registered yet, so there&apos;s nothing to connect.
+          {t("noWorker")}
         </p>
       )}
       {data.connections.length > 0 && (
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {data.connections.length} {data.connections.length === 1 ? "connection" : "connections"}
+            {t("count", { count: data.connections.length })}
           </p>
           {canCreate && newButton}
         </div>
@@ -152,9 +154,9 @@ export function Connections() {
               <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                 <Cable className="size-6" aria-hidden />
               </span>
-              <p className="font-medium">No connections yet</p>
+              <p className="font-medium">{t("none")}</p>
               <p className="max-w-sm text-sm text-muted-foreground">
-                A connection keeps a source in sync with where its documents live, like a git repository or Paperless.
+                {t("noneHint")}
               </p>
               {canCreate && newButton}
             </div>
@@ -187,6 +189,7 @@ function ConnectionCard({
   now: Date;
   onChanged: () => void;
 }) {
+  const t = useTranslations();
   const [, update] = useMutation(UpdateConnectionMutation);
   const [, runNow] = useMutation(RunConnectionNowMutation);
   const [, removeExclusion] = useMutation(RemoveExclusionMutation);
@@ -224,7 +227,7 @@ function ConnectionCard({
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate text-base font-semibold">{connection.name}</span>
-            <Pill {...connectionStatus(lastRun, connection.enabled)} />
+            <Pill status={connectionStatus(lastRun, connection.enabled)} />
           </p>
           <p className="text-sm text-muted-foreground">
             {connection.plugin} · <code className="font-mono text-xs">{connection.source}</code>
@@ -235,33 +238,33 @@ function ConnectionCard({
             type="button"
             disabled={!connection.enabled || lastRun?.status === "RUNNING"}
             onClick={() => mutate(() => runNow({ id: connection.id }))}
-            aria-label={`Run ${connection.source} now`}
+            aria-label={t("connections.runNowLabel", { source: connection.source })}
             className={cn(buttonClass, "border border-border")}
           >
             <Play aria-hidden />
-            Run now
+            {t("connections.runNow")}
           </button>
-          <button type="button" onClick={() => setEditing(!editing)} aria-label={`Edit ${connection.source}`} className={buttonClass}>
+          <button type="button" onClick={() => setEditing(!editing)} aria-label={t("connections.editLabel", { source: connection.source })} className={buttonClass}>
             <Pencil aria-hidden />
-            Edit
+            {t("common.edit")}
           </button>
           <button
             type="button"
             onClick={() => setEnabled(!connection.enabled)}
-            aria-label={`${connection.enabled ? "Disable" : "Enable"} ${connection.source}`}
+            aria-label={t(connection.enabled ? "connections.disableLabel" : "connections.enableLabel", { source: connection.source })}
             className={buttonClass}
           >
             {connection.enabled ? <Pause aria-hidden /> : <Play aria-hidden />}
-            {connection.enabled ? "Disable" : "Enable"}
+            {connection.enabled ? t("connections.disable") : t("connections.enable")}
           </button>
           <button
             type="button"
             onClick={() => setDeleting(true)}
-            aria-label={`Delete ${connection.source}`}
+            aria-label={t("connections.deleteLabel", { source: connection.source })}
             className={cn(buttonClass, "text-destructive hover:bg-destructive/10")}
           >
             <Trash2 aria-hidden />
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       </div>
@@ -297,7 +300,7 @@ function ConnectionCard({
           <span />
         )}
         <Link href={activityHref(connection.id)} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
-          Runs and logs on Activity
+          {t("connections.toActivity")}
           <ArrowRight className="size-3.5" aria-hidden />
         </Link>
       </div>
@@ -306,44 +309,48 @@ function ConnectionCard({
 }
 
 /** The connection's state at a glance: disabled, or how its last run went. */
-function connectionStatus(run: Run | undefined, enabled: boolean): PillStyle {
-  if (!enabled) return { label: "Disabled", className: "bg-muted text-muted-foreground" };
-  return run ? STATUS_STYLES[run.status] : { label: "New", className: "bg-muted text-muted-foreground" };
+function connectionStatus(run: Run | undefined, enabled: boolean): PillStatus {
+  if (!enabled) return "DISABLED";
+  return run?.status ?? "NEW";
 }
 
 /** The last run, what it changed, the next one and the recent history, with a failed run's error. */
 function RunFacts({ connection, now }: { connection: Connection; now: Date }) {
+  const t = useTranslations("connections");
+  const locale = useLocale();
   const lastRun = connection.runs[0];
   const failed = lastRun?.status === "FAILED" || lastRun?.status === "LOST";
   return (
     <div className="space-y-3 border-t border-border px-5 py-4">
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-4">
-        <Fact label="Last run">
+        <Fact label={t("lastRun")}>
           {lastRun ? (
             <>
-              {timeAgo(lastRun.startedAt, now)}
-              <span className="block text-xs font-normal text-muted-foreground">{runDuration(lastRun, now)}</span>
+              {timeAgo(lastRun.startedAt, now, locale)}
+              <span className="block text-xs font-normal text-muted-foreground">
+                <RunDuration startedAt={lastRun.startedAt} finishedAt={lastRun.finishedAt} now={now} />
+              </span>
             </>
           ) : (
-            "Never"
+            t("never")
           )}
         </Fact>
-        <Fact label="Changes">
+        <Fact label={t("changes")}>
           {lastRun?.stats ? (
             <span className="flex flex-col text-xs font-normal text-muted-foreground tabular-nums">
-              <Count label="put" value={lastRun.stats.put} />
-              <Count label="unchanged" value={lastRun.stats.unchanged} />
-              <Count label="deleted" value={lastRun.stats.deleted} />
+              <Count change="put" value={lastRun.stats.put} />
+              <Count change="unchanged" value={lastRun.stats.unchanged} />
+              <Count change="deleted" value={lastRun.stats.deleted} />
             </span>
           ) : (
             <span className="text-muted-foreground">–</span>
           )}
         </Fact>
-        <Fact label="Next run">
-          {connection.enabled ? timeAgo(connection.nextRunAt, now) : <span className="text-muted-foreground">Disabled</span>}
+        <Fact label={t("nextRun")}>
+          {connection.enabled ? timeAgo(connection.nextRunAt, now, locale) : <span className="text-muted-foreground">{t("disabled")}</span>}
           <code className="block font-mono text-xs font-normal text-muted-foreground">{connection.schedule}</code>
         </Fact>
-        <Fact label="History">
+        <Fact label={t("history")}>
           {connection.runs.length > 0 ? <RunDots runs={connection.runs} /> : <span className="text-muted-foreground">–</span>}
         </Fact>
       </dl>
@@ -352,12 +359,6 @@ function RunFacts({ connection, now }: { connection: Connection; now: Date }) {
       )}
     </div>
   );
-}
-
-function runDuration(run: Run, now: Date): string {
-  const end = run.finishedAt ? new Date(run.finishedAt) : now;
-  const seconds = (end.getTime() - new Date(run.startedAt).getTime()) / 1000;
-  return `${run.finishedAt ? "took" : "for"} ${formatDuration(seconds)}`;
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -370,30 +371,32 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Exclusions({ exclusions, onInclude }: { exclusions: Connection["exclusions"]; onInclude: (id: string) => void }) {
+  const t = useTranslations("connections");
   return (
     <details className="min-w-0 flex-1">
-      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Excluded from the index ({exclusions.length})</summary>
+      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t("excluded", { count: exclusions.length })}</summary>
       <p className="mt-2 text-xs text-muted-foreground">
-        The connection drops these whenever it finds them. Removing one makes the next run start over from scratch and
-        ingest it again.
+        {t("excludedHint")}
       </p>
       <ul className="mt-2 divide-y divide-border">
-        {exclusions.map((exclusion) => (
-          <li key={exclusion.id} className="flex items-center gap-2 py-1.5">
-            <span className="min-w-0 flex-1 truncate">
-              {exclusion.externalId ?? `Thread ${exclusion.thread}`}{" "}
-              <span className="text-xs text-muted-foreground">in {exclusion.source}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => onInclude(exclusion.id)}
-              aria-label={`Include ${exclusion.externalId ?? `thread ${exclusion.thread}`} again`}
-              className={buttonClass}
-            >
-              Include again
-            </button>
-          </li>
-        ))}
+        {exclusions.map((exclusion) => {
+          const what = exclusion.externalId ?? t("thread", { thread: exclusion.thread! });
+          return (
+            <li key={exclusion.id} className="flex items-center gap-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate">
+                {what} <span className="text-xs text-muted-foreground">{t("inSource", { source: exclusion.source })}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onInclude(exclusion.id)}
+                aria-label={t("includeAgainLabel", { what })}
+                className={buttonClass}
+              >
+                {t("includeAgain")}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </details>
   );
