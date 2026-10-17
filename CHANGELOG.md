@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.6.4 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #108 from thiesgerken/home-search-placeholder
+  ([`91f2ada`](https://github.com/thiesgerken/ferret/commit/91f2adafaa686b6e648b3b8c43f13d4bbfe11230))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): drop the example query from the home search box
+  ([`91f2ada`](https://github.com/thiesgerken/ferret/commit/91f2adafaa686b6e648b3b8c43f13d4bbfe11230))
+
+- 💄 style(frontend): drop the example query from the home search box
+  ([`a15ee91`](https://github.com/thiesgerken/ferret/commit/a15ee91cd2073bde2e455735f5b1ba35c09f4510))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.6.3 (2026-10-17)
 
 
