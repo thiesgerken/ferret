@@ -21,6 +21,13 @@ enum ContentType {
   EMAIL
 }
 
+"A ✓ on a hit, or taking it back."
+input JudgmentInput {
+  "The search the hit answered, as it was passed to `search`." search: SearchInput!
+  documentId: ID!
+  "Whether the document is the right hit for the search." judged: Boolean!
+}
+
 input NewApiKey {
   name: String!
   scopes: [ApiKeyScope!]!
@@ -104,6 +111,8 @@ type Hit {
   modifiedAt: DateTime!
   score: Float!
   chunk: HitChunk!
+  "Whether the signed-in user marked this document as the right hit for this very search."
+  judged: Boolean!
 }
 
 """
@@ -118,6 +127,11 @@ type HitChunk {
 }
 
 type Mutation {
+  """
+    Marks a document as the right hit for a search, or takes that back. Returns `judged`.
+    Model evaluation replays the judged searches.
+  """
+  setJudgment(input: JudgmentInput!): Boolean!
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!

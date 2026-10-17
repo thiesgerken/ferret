@@ -139,6 +139,13 @@ switching to it needs nothing but the Settings dropdown once its backfill is don
 
 A ✓ on a hit records an explicit judgment. It carries its own query, so there is no search log.
 
+- GraphQL only (`setJudgment(input: {search, documentId, judged})`, and `judged` on every hit of
+  `search`): agents don't judge. An explicit set rather than a toggle, so a double click can't
+  flip it twice.
+- `query` is the query as typed, trimmed. `filters` is the search's filters in canonical form:
+  sources, authors and content types sorted without duplicates, `from`/`to` as absolute times.
+  The same search in another chip order is the same judgment, `k` isn't part of it.
+
 ```sql
 create table relevance_judgments (
     id           uuid primary key,

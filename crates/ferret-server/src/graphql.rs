@@ -23,6 +23,7 @@ use crate::{
     auth, documents,
     embeddings::Embedding,
     error::ApiError,
+    judgments,
     search::{self, SearchError},
     users::User,
 };
@@ -68,22 +69,8 @@ impl Query {
     /// Searches the signed-in user's documents, one hit per document. The same search as
     /// `GET /api/search`.
     async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
-        let request = ferret_api::SearchQuery {
-            q: input.q,
-            sources: input.sources.unwrap_or_default(),
-            authors: input.authors.unwrap_or_default(),
-            content_types: input
-                .content_types
-                .unwrap_or_default()
-                .into_iter()
-                .map(ferret_api::ContentType::from)
-                .collect(),
-            from: input.from,
-            to: input.to,
-            // A negative k becomes 0, which the search rejects like any k out of range.
-            k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
-        };
-        match search::find(
+        let request = ferret_api::SearchQuery::from(input);
+        let response = match search::find(
             &context.pool,
             &context.embedding,
             context.user.id,
@@ -92,13 +79,24 @@ impl Query {
         )
         .await
         {
-            Ok(response) => Ok(SearchResult {
-                hits: response.hits.into_iter().map(Hit::from).collect(),
-                semantic_unavailable: response.semantic_unavailable,
-            }),
-            Err(SearchError::Invalid(message)) => Err(invalid_input(message)),
-            Err(SearchError::Database(error)) => Err(internal(error)),
-        }
+            Ok(response) => response,
+            Err(SearchError::Invalid(message)) => return Err(invalid_input(message)),
+            Err(SearchError::Database(error)) => return Err(internal(error)),
+        };
+        let judged = judgments::judged_documents(&context.pool, context.user.id, &request)
+            .await
+            .map_err(internal)?;
+        Ok(SearchResult {
+            hits: response
+                .hits
+                .into_iter()
+                .map(|hit| Hit {
+                    judged: judged.contains(&hit.document_id),
+                    ..Hit::from(hit)
+                })
+                .collect(),
+            semantic_unavailable: response.semantic_unavailable,
+        })
     }
 
     /// One of the signed-in user's documents, null when there is none with this id.
@@ -129,6 +127,26 @@ struct SearchInput {
     to: Option<DateTime<Utc>>,
     /// How many hits at most, 1 to 100. The server's default applies when left out.
     k: Option<i32>,
+}
+
+impl From<SearchInput> for ferret_api::SearchQuery {
+    fn from(input: SearchInput) -> Self {
+        Self {
+            q: input.q,
+            sources: input.sources.unwrap_or_default(),
+            authors: input.authors.unwrap_or_default(),
+            content_types: input
+                .content_types
+                .unwrap_or_default()
+                .into_iter()
+                .map(ferret_api::ContentType::from)
+                .collect(),
+            from: input.from,
+            to: input.to,
+            // A negative k becomes 0, which the search rejects like any k out of range.
+            k: input.k.map(|k| u32::try_from(k).unwrap_or(0)),
+        }
+    }
 }
 
 /// How the viewer renders a document.
@@ -184,6 +202,8 @@ struct Hit {
     modified_at: DateTime<Utc>,
     score: f64,
     chunk: HitChunk,
+    /// Whether the signed-in user marked this document as the right hit for this very search.
+    judged: bool,
 }
 
 /// The best-matching chunk of a hit. Offsets count characters (Unicode code points) into the
@@ -216,6 +236,7 @@ impl From<ferret_api::Hit> for Hit {
             created_at: hit.created_at,
             modified_at: hit.modified_at,
             score: hit.score.into(),
+            judged: false,
             chunk: HitChunk {
                 start_offset: graphql_int(hit.chunk.start_offset),
                 end_offset: graphql_int(hit.chunk.end_offset),
@@ -274,6 +295,16 @@ fn graphql_int(offset: u32) -> i32 {
 
 pub struct Mutation;
 
+/// A ✓ on a hit, or taking it back.
+#[derive(GraphQLInputObject)]
+struct JudgmentInput {
+    /// The search the hit answered, as it was passed to `search`.
+    search: SearchInput,
+    document_id: ID,
+    /// Whether the document is the right hit for the search.
+    judged: bool,
+}
+
 #[derive(GraphQLInputObject)]
 struct NewApiKey {
     name: String,
@@ -291,6 +322,29 @@ struct CreatedApiKey {
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    /// Marks a document as the right hit for a search, or takes that back. Returns `judged`.
+    /// Model evaluation replays the judged searches.
+    async fn set_judgment(context: &Context, input: JudgmentInput) -> FieldResult<bool> {
+        let document_id = input
+            .document_id
+            .parse::<Uuid>()
+            .map_err(|_| invalid_input("no such document".to_owned()))?;
+        let search = ferret_api::SearchQuery::from(input.search);
+        let owned = judgments::set(
+            &context.pool,
+            context.user.id,
+            &search,
+            document_id,
+            input.judged,
+        )
+        .await
+        .map_err(internal)?;
+        if !owned {
+            return Err(invalid_input("no such document".to_owned()));
+        }
+        Ok(input.judged)
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,

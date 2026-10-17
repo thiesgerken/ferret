@@ -1,12 +1,12 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
-import { useQuery } from "urql";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
-import type { SearchHitsQuery } from "@/gql/graphql";
+import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { rangeStart, TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { snippet } from "@/lib/snippet";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ const SearchHitsQueryDocument = graphql(`
         url
         authors
         createdAt
+        judged
         chunk {
           startOffset
           endOffset
@@ -33,6 +34,12 @@ const SearchHitsQueryDocument = graphql(`
       }
       semanticUnavailable
     }
+  }
+`);
+
+const SetJudgmentMutation = graphql(`
+  mutation SetJudgment($input: JudgmentInput!) {
+    setJudgment(input: $input)
   }
 `);
 
@@ -78,10 +85,11 @@ export function SearchResults({ state, onChange }: { state: SearchState; onChang
         ) : data && hits.length === 0 ? (
           <p className="text-sm text-muted-foreground">No documents match.</p>
         ) : (
-          <ol className={cn("space-y-6", fetching && "opacity-60")}>
+          // Keyed by the search, so a hit's ✓ state never carries over into another search.
+          <ol key={JSON.stringify(input)} className={cn("space-y-6", fetching && "opacity-60")}>
             {hits.map((hit) => (
               <li key={hit.documentId}>
-                <HitItem hit={hit} />
+                <HitItem hit={hit} search={input} />
               </li>
             ))}
           </ol>
@@ -148,7 +156,7 @@ function chipClass(active: boolean) {
   );
 }
 
-function HitItem({ hit }: { hit: Hit }) {
+function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
   const viewerHref = `/view?${new URLSearchParams({
     id: hit.documentId,
     start: String(hit.chunk.startOffset),
@@ -159,9 +167,12 @@ function HitItem({ hit }: { hit: Hit }) {
       <p className="truncate text-xs text-muted-foreground">
         {hit.source} · {hit.authors.join(", ")} · {new Date(hit.createdAt).toLocaleDateString()}
       </p>
-      <Link href={viewerHref} className="text-lg font-medium text-brand hover:underline">
-        {hit.title || hit.externalId}
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link href={viewerHref} className="text-lg font-medium text-brand hover:underline">
+          {hit.title || hit.externalId}
+        </Link>
+        <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
+      </div>
       <p className="text-sm leading-relaxed">
         {snippet(hit.chunk.parts).map((part, index) =>
           part.highlight ? (
@@ -180,6 +191,41 @@ function HitItem({ hit }: { hit: Hit }) {
         </a>
       )}
     </article>
+  );
+}
+
+/** ✓ marks the hit as the right one for this search, for evaluating embedding models. */
+function JudgeButton({ documentId, judged: initial, search }: { documentId: string; judged: boolean; search: SearchInput }) {
+  const [judged, setJudged] = useState(initial);
+  const [{ fetching, error }, setJudgment] = useMutation(SetJudgmentMutation);
+
+  async function toggle() {
+    const result = await setJudgment({ input: { search, documentId, judged: !judged } });
+    if (result.data) setJudged(result.data.setJudgment);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-pressed={judged}
+        aria-label="Right hit for this search"
+        title={judged ? "Marked as the right hit for this search" : "Mark as the right hit for this search"}
+        disabled={fetching}
+        onClick={toggle}
+        className={cn(
+          "rounded-full border p-0.5",
+          judged ? "border-brand bg-brand text-white" : "border-border text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Check className="size-3.5" aria-hidden />
+      </button>
+      {error && (
+        <span role="alert" className="text-xs text-destructive">
+          {error.graphQLErrors[0]?.message ?? error.message}
+        </span>
+      )}
+    </>
   );
 }
 
