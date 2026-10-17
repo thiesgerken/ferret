@@ -1,6 +1,99 @@
 # CHANGELOG
 
 
+## v0.12.5 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #127 from thiesgerken/readme
+  ([`aa4b653`](https://github.com/thiesgerken/ferret/commit/aa4b653845f75df3e05103e4c351fa392c7f57eb))
+
+  📝 docs: a README that says what ferret is for
+
+- 📝 docs: an agents-first README intro, with IMAP, AFFiNE and MCP
+  ([`3f28aae`](https://github.com/thiesgerken/ferret/commit/3f28aae6dc9cdbce987461be8fdd11519eac3044))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: ferret as the discovery layer in the README's intro
+  ([`d5aeaab`](https://github.com/thiesgerken/ferret/commit/d5aeaab80d2f2abcfd82b1778e95162a7d8a9495))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's build badge follows the release workflow on main
+  ([`03d42ba`](https://github.com/thiesgerken/ferret/commit/03d42ba9d4d88136fb3d19374a6bc4a63206af70))
+
+  ci.yml only runs on pull requests, so its badge showed whichever PR ran last.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's screenshots in dark mode too
+  ([`4a8a11a`](https://github.com/thiesgerken/ferret/commit/4a8a11a6b3c753247ec3ccb408dd4d359f3b8a76))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: ferret as the agent's discovery tool
+  ([`5c79f33`](https://github.com/thiesgerken/ferret/commit/5c79f330d084510bd1dc7d53976c242c598ca039))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: Thies' motivation, and the highlights tied to it
+  ([`ee512cb`](https://github.com/thiesgerken/ferret/commit/ee512cbdfd109095911b983f369e66837b4c7fac))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the README's logo without a heading rule
+  ([`da8c760`](https://github.com/thiesgerken/ferret/commit/da8c760eb78c55e59ecf6b69ab422a5c51755832))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: a README that says what ferret is for
+  ([`e020af1`](https://github.com/thiesgerken/ferret/commit/e020af1768be7e1994b1b50116154f35068f3dc9))
+
+  The lockup on top, highlights, motivation, screenshots, sources, getting started and a docs table, in carapace's shape. Development details move to docs/development.md.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🔧 Configuration
+
+
+- 🔧 chore(demo): the Harz chat is Thies and Anna only
+  ([`6216425`](https://github.com/thiesgerken/ferret/commit/62164255619cecb68f8d67dcd5263d4fc2282570))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 💄 UI/UX
+
+
+- 💄 style(brand): an outlined wordmark and mark-and-wordmark lockups
+  ([`283a984`](https://github.com/thiesgerken/ferret/commit/283a984ec96749453e2fe7c1bf8e1883c2cd052c))
+
+  GitHub can't load Alegreya, so the wordmark ships as outlines: wordmark.py shapes "ferret" in Alegreya SemiBold with HarfBuzz and writes it as SVG paths, alone and next to the mark in light and dark.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.12.4 (2026-10-17)
 
 
