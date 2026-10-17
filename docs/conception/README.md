@@ -103,8 +103,8 @@ Embeddings live in `chunk_embeddings`, one row per chunk and model, so several m
 at once. See [embeddings.md](embeddings.md).
 
 Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
-`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at)` for
-thread navigation.
+`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at, id)`
+(partial, where `thread` is set) for thread navigation.
 
 ## Sources
 
@@ -128,7 +128,7 @@ POST   /api/syncs/{id}/seen      {source, external_ids}
 POST   /api/syncs/{id}/commit                   sweep documents below the sync's source not seen in it
                                                 -> {deleted}, 409 if already committed
 GET    /api/documents/{id}                      full document, for context display
-GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at
+GET    /api/documents?source=&thread=            documents of a thread, ordered by created_at, then id
                                                 -> {documents}, full documents as above
 ```
 

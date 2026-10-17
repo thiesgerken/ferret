@@ -220,7 +220,7 @@ pub async fn find(
              select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
                     d.authors, d.created_at, d.modified_at,
                     b.score, b.text as chunk_text, b.start_offset, b.end_offset,
-                    row_number() over (thread_hits order by b.score desc) as thread_rank,
+                    row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
                     -- Unordered: with an order, count(*) would count only up to the current row.
                     count(*) over thread_hits - 1 as collapsed
              from best b join documents d on d.id = b.document_id
@@ -269,7 +269,7 @@ pub async fn find(
             modified_at: row.modified_at,
             score: row.score,
             collapsed: u32::try_from(row.collapsed)
-                .expect("at most CANDIDATE_CHUNKS hits collapse"),
+                .expect("at most KEYWORD_CANDIDATES + SEMANTIC_CANDIDATES hits collapse"),
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),

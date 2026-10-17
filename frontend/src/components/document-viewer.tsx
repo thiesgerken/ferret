@@ -10,6 +10,7 @@ import { graphql } from "@/gql";
 import type { ViewDocumentQuery } from "@/gql/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
+import { viewerHref } from "@/lib/viewer-url";
 
 const ViewDocumentQueryDocument = graphql(`
   query ViewDocument($id: ID!) {
@@ -175,8 +176,4 @@ function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: 
       )}
     </nav>
   );
-}
-
-function viewerHref(id: string): string {
-  return `/view?${new URLSearchParams({ id })}`;
 }
