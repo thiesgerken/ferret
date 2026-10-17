@@ -53,6 +53,11 @@ async function renderResults(
   const typed: SearchState[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body));
+    if (operation.operationName === "ConnectionSources") {
+      return Response.json({
+        data: { connections: [{ __typename: "Connection", id: "c1", source: "notes", plugin: "git" }] },
+      });
+    }
     if (operation.operationName === "EmbeddingModelNames") {
       return Response.json({
         data: { embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name })) },
@@ -73,7 +78,9 @@ async function renderResults(
           hits:
             operation.variables.input.q === "invoice"
               ? [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])]
-              : [hit("c", "notes", [])],
+              : operation.variables.input.q === "nothing"
+                ? []
+                : [hit("c", "notes", [])],
           semanticUnavailable,
           model: state.model ?? models[0],
           total: 37,
@@ -125,7 +132,7 @@ async function pauseTyping() {
 }
 
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
-const CHIPS = "main > div:first-child button[aria-pressed]";
+const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
 
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
 
@@ -138,8 +145,8 @@ test("shows one hit per document with its highlighted snippet and links", async 
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
   assert.equal(items[0].querySelector("a")?.getAttribute("href"), "/view?id=a&start=10&end=40");
   assert.equal(items[0].querySelector("a")?.textContent, "a.md", "the external id stands in for a missing title");
-  assert.match(items[0].textContent ?? "", /Open in origin/);
-  assert.doesNotMatch(items[1].textContent ?? "", /Open in origin/);
+  assert.ok(items[0].querySelector("a[aria-label='Open in origin']"));
+  assert.equal(items[1].querySelector("a[aria-label='Open in origin']"), null, "a scripting URL gets no link");
   assert.doesNotMatch(items[0].textContent ?? "", /in this thread/);
   assert.match(items[1].textContent ?? "", /2 more in this thread/);
   await view.unmount();
@@ -155,14 +162,26 @@ test("says how many documents matched out of how many, and how long it took", as
   await view.unmount();
 });
 
-test("each hit shows its similarity and whether its keywords matched", async () => {
+test("each hit shows its relevance as bars, the exact values on hover, and its plugin", async () => {
   const { view } = await renderResults(STATE);
   const [a, b] = view.container.querySelectorAll("article");
+  const bars = (item: Element) => item.querySelector("[aria-label][tabindex='0']")!;
+  const filled = (item: Element) => bars(item).querySelectorAll(".bg-current").length;
 
-  assert.match(a.textContent ?? "", /83% similar/);
-  assert.equal(a.querySelector("[title='BM25 7.25']")?.textContent, "keyword match");
-  assert.doesNotMatch(b.textContent ?? "", /similar/, "keyword matches only");
-  assert.match(b.textContent ?? "", /keyword match/);
+  assert.equal(bars(a).getAttribute("aria-label"), "83% similar · all words found (BM25 7.3)");
+  assert.equal(filled(a), 4);
+  assert.match(bars(a).className, /text-brand/, "every word matched");
+  assert.equal(bars(b).getAttribute("aria-label"), "all words found (BM25 3.5)");
+  assert.equal(filled(b), 2, "keyword-only: its BM25 against the best one shown");
+  assert.equal(a.querySelector("[title=git]")?.tagName, "SPAN", "notes belongs to the git connection");
+  assert.ok(b.querySelector("[title=API]"), "no connection owns mail/zoho");
+  await view.unmount();
+});
+
+test("the source line leaves out what a hit doesn't have", async () => {
+  const { view } = await renderResults({ ...STATE, q: "no authors" });
+  const line = view.container.querySelector("article p")!.textContent;
+  assert.equal(line, "notes · Jan 1, 2026");
   await view.unmount();
 });
 
@@ -323,5 +342,30 @@ test("a chip clicked while typing wins over the typed query", async () => {
 
   assert.deepEqual(changes, [{ ...STATE, sources: ["notes"] }]);
   assert.deepEqual(typed, [], "the typed query belonged to the search before the chip");
+  await view.unmount();
+});
+
+test("hit-shaped placeholders stand in until the first answer", async () => {
+  let answer!: () => void;
+  const { view } = await renderResults(STATE, { answered: new Promise((resolve) => (answer = resolve)) });
+
+  assert.ok(view.container.querySelector("ol[aria-busy=true]"));
+  answer();
+  await settle();
+  assert.equal(view.container.querySelector("ol[aria-busy=true]"), null);
+  assert.equal(view.container.querySelectorAll("article").length, 2);
+  await view.unmount();
+});
+
+test("no matches says so, and offers to clear the filters when there are any", async () => {
+  const plain = await renderResults({ ...STATE, q: "nothing" });
+  assert.match(plain.view.container.textContent ?? "", /No documents match “nothing”/);
+  assert.equal(plain.view.container.querySelector("main button"), null);
+  await plain.view.unmount();
+
+  const { view, changes } = await renderResults({ ...STATE, q: "nothing", sources: ["notes"], range: "week" });
+  const clear = [...view.container.querySelectorAll("main button")].find((b) => b.textContent === "Clear filters")!;
+  await act(async () => (clear as HTMLButtonElement).click());
+  assert.deepEqual(changes, [{ ...STATE, q: "nothing" }]);
   await view.unmount();
 });

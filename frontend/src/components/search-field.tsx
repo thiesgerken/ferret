@@ -13,11 +13,13 @@ export function SearchField({
   defaultValue = "",
   onSearch,
   onType,
+  placeholder,
   className,
 }: {
   defaultValue?: string;
   onSearch: (q: string) => void;
   onType?: (q: string) => void;
+  placeholder?: string;
   className?: string;
 }) {
   const [value, setValue] = useState(defaultValue);
@@ -56,6 +58,7 @@ export function SearchField({
           type="search"
           name="q"
           aria-label="Search"
+          placeholder={placeholder}
           value={value}
           onChange={(event) => handleChange(event.target.value)}
           autoFocus={!defaultValue}
