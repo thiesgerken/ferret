@@ -21,6 +21,6 @@ Send `Authorization: Bearer <key>` to `/api` and `Content-Type: application/json
 
 Most REST errors handled by the application are JSON `{"error":"message"}` with the relevant HTTP status; unknown routes/proxy errors may not be JSON. GraphQL can return an HTTP-success response containing `errors`, so check that array before reading `data`. Authentication transport errors can be non-200.
 
-Pagination is surface-specific, not a universal convention: REST search uses `k`/`offset`; thread GET and users GET are unpaginated. GraphQL search/explore use their schema inputs, Activity uses a `before` cursor, and connections/runs have limits where declared. Do not invent `page` parameters on every endpoint. Conditional MCP search returns a next cursor on the inspected branch.
+Pagination is surface-specific, not a universal convention: REST search uses `k`/`offset`; thread GET and users GET are unpaginated. GraphQL search/explore use their schema inputs, Activity uses a `before` cursor, and connections/runs have limits where declared. Do not invent `page` parameters on every endpoint. [MCP search](mcp.md) returns `next_cursor`; pass it as `cursor` with the same search arguments for the next page.
 
 There is no public REST endpoint to create keys, manage connections, list arbitrary documents or export the database. Use the authenticated UI/GraphQL for management. For a full archive backup, use a database backup procedure rather than scraping search results.
