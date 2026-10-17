@@ -312,6 +312,7 @@ replicas starting together are safe.
 | `FERRET_INTERNAL_URL` | yes | the server's internal API, e.g. `http://ferret-server:8081` |
 | `FERRET_SERVER_URL` | yes | the server's public API, where runs ingest, e.g. `http://ferret-server:8080` |
 | `FERRET_WORKER_SECRET` | yes | the same pre-shared key as the server's |
+| `FERRET_GIT_PROTOCOLS` | no | the transports git may use, colon-separated, default `https` ([git plugin](plugins.md#git)) |
 | `HOSTNAME` | no | the worker's name in the server's records, the pod name in Kubernetes |
 | `RUST_LOG` | no | as for the server |
 
