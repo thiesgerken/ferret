@@ -21,6 +21,13 @@ enum ContentType {
   EMAIL
 }
 
+enum DocumentOrder {
+  CREATED_AT
+  MODIFIED_AT
+  "The title, or the external id for documents without one." TITLE
+  SOURCE
+}
+
 enum RunStatus {
   RUNNING
   SUCCEEDED
@@ -40,6 +47,18 @@ input ConnectionUpdate {
   config: String!
   schedule: String!
   enabled: Boolean!
+}
+
+input ExploreInput {
+  "Only documents in these sources or below them. Leave out for all sources." sources: [String!]
+  "Only documents of these content types. Leave out for all." contentTypes: [ContentType!]
+  "Only documents with at least one of these authors. Leave out for any author." authors: [String!]
+  "Only documents created at or after this time." from: DateTime
+  "Only documents created before this time." to: DateTime
+  "`CREATED_AT` when left out." orderBy: DocumentOrder
+  "Yes when left out: newest first." descending: Boolean
+  "How many documents to skip, 0 when left out." offset: Int
+  "How many documents at most, 1 to 100, 50 when left out." limit: Int
 }
 
 "A ✓ on a hit, or taking it back."
@@ -140,6 +159,11 @@ type Connection {
   exclusions: [Exclusion!]!
 }
 
+type ContentTypeCount {
+  contentType: ContentType!
+  count: Int!
+}
+
 type CreatedApiKey {
   apiKey: ApiKey!
   "`fk_<prefix>.<secret>`, for `Authorization: Bearer`."
@@ -201,6 +225,44 @@ type Exclusion {
   "Set for an excluded thread, null for a document."
   thread: String
   createdAt: DateTime!
+}
+
+"A page of the user's documents with the counts to narrow them down."
+type Exploration {
+  "How many documents match, across all pages."
+  total: Int!
+  documents: [ExploredDocument!]!
+  facets: Facets!
+}
+
+"A document as the table lists it, without its text."
+type ExploredDocument {
+  id: ID!
+  source: String!
+  externalId: String!
+  contentType: ContentType!
+  title: String
+  authors: [String!]!
+  createdAt: DateTime!
+  modifiedAt: DateTime!
+}
+
+type FacetCount {
+  value: String!
+  count: Int!
+}
+
+"""
+  How many documents each facet value has. A facet's counts apply every filter except its own,
+  so they show what choosing another value of it would give.
+"""
+type Facets {
+  sources: [FacetCount!]!
+  contentTypes: [ContentTypeCount!]!
+  "The 20 most frequent authors."
+  authors: [FacetCount!]!
+  "`YYYY-MM` of `createdAt` in UTC, newest first."
+  months: [FacetCount!]!
 }
 
 "A document returned by a search, with its best-matching chunk."
@@ -328,6 +390,11 @@ type Query {
     `GET /api/search`.
   """
   search(input: SearchInput!): SearchResult!
+  """
+    The signed-in user's documents without a query: a page of them, how many there are, and
+    facet counts. The filters mean what search's mean.
+  """
+  explore(input: ExploreInput!): Exploration!
   """
     The configured embedding models, the configured default first, with how much of the
     signed-in user's data each covers.
