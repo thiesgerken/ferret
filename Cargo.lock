@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-api"
-version = "0.12.5"
+version = "0.13.0"
 dependencies = [
  "chrono",
  "reqwest",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-plugins"
-version = "0.12.5"
+version = "0.13.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-server"
-version = "0.12.5"
+version = "0.13.0"
 dependencies = [
  "argon2",
  "axum",
