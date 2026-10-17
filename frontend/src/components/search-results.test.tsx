@@ -125,6 +125,9 @@ async function renderResults(
             sources: [
               { __typename: "SourceCount", value: "notes", count: 12, writer: writerOf("notes") },
               { __typename: "SourceCount", value: "mail/zoho", count: 3, writer: writerOf("mail/zoho") },
+              ...(operation.variables.input.q === "grouped"
+                ? [{ __typename: "SourceCount", value: "notes/journal", count: 2, writer: writerOf("notes/journal") }]
+                : []),
             ],
             authors: [
               { __typename: "FacetCount", value: "thies", count: 9 },
@@ -428,5 +431,18 @@ test("the next page loads when the list's end scrolls into view, without repeati
   const searches = variables.filter((v) => (v as { input: { q?: string } }).input.q === "many");
   assert.equal((searches.at(-1) as { input: { offset: number } }).input.offset, 2);
   assert.match(view.container.textContent ?? "", /That's all/);
+  await view.unmount();
+});
+
+test("the column groups a writer's sources under its name, the chips keep full labels", async () => {
+  const { view } = await renderResults({ ...STATE, q: "grouped" });
+  const nav = view.container.querySelector("nav[aria-label=Filters]")!;
+  const heading = [...nav.querySelectorAll("p")].map((p) => p.textContent);
+  const buttons = [...nav.querySelectorAll("button[aria-pressed]")].slice(0, 3);
+  const [full, short] = [0, 1].map((i) => buttons.map((b) => b.querySelectorAll("[data-label] > span")[i]?.textContent ?? null));
+
+  assert.deepEqual(heading, ["Notes"], "only the writer with several sources gets a heading");
+  assert.deepEqual(full, ["Notes", "Notes › journal", "mail import › mail › zoho"]);
+  assert.deepEqual(short, ["All", "journal", null]);
   await view.unmount();
 });

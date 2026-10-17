@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, CircleDashed } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { SearchHitsQuery } from "@/gql/graphql";
 import { NamedIcon } from "@/components/named-icon";
 import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
@@ -29,17 +29,16 @@ export function SearchFilters({
   state: SearchState;
   /** Undefined until the first answer. */
   facets: Facets | undefined;
-  /** Connection ids to their source roots, for the sources' labels. */
-  roots: Map<string, string>;
+  /** Connection ids to their source roots, for the sources' labels. Undefined until loaded. */
+  roots: Map<string, string> | undefined;
   models: string[];
   ranModel: string | undefined;
   onChange: (state: SearchState) => void;
 }) {
   // Selected values stay even when nothing matches them anymore, so they can be unselected.
   const sourceFacets = facets?.sources ?? [];
-  const sources = withSelected(sourceFacets, state.sources);
-  const label = (source: string) =>
-    sourceLabel(source, sourceFacets.find((facet) => facet.value === source)?.writer, roots);
+  const writerOf = (source: string) => sourceFacets.find((facet) => facet.value === source)?.writer ?? null;
+  const groups = groupByWriter(withSelected(sourceFacets, state.sources), writerOf);
   const authors = withSelected(facets?.authors ?? [], state.authors).slice(0, Math.max(MAX_AUTHORS, state.authors.length));
   const counted = (count: number | null) => (count === null ? null : `${count}${facets?.areLowerBounds ? "+" : ""}`);
 
@@ -80,18 +79,37 @@ export function SearchFilters({
           </select>
         </FilterGroup>
       )}
-      {sources.length > 0 && (
+      {groups.length > 0 && (
         <FilterGroup title="Sources">
-          {sources.map(({ value, count }) => (
-            <FilterButton
-              key={value}
-              label={label(value)}
-              title={value}
-              count={counted(count)}
-              pressed={state.sources.includes(value)}
-              onClick={() => onChange({ ...state, sources: toggle(state.sources, value) })}
-            />
-          ))}
+          {groups.map(({ writer, sources }) => {
+            // A writer with several sources gets a heading in the column, and its sources read as
+            // the path below it. The chip row has no headings, so chips keep the full label.
+            const grouped = writer !== null && sources.length > 1;
+            return (
+              <Fragment key={writer?.id ?? ""}>
+                {grouped && (
+                  <p className="mt-1.5 hidden items-center gap-2 px-2 text-xs font-medium text-muted-foreground lg:flex">
+                    <NamedIcon name={writer.icon} className="size-3.5 shrink-0" />
+                    {writer.name}
+                  </p>
+                )}
+                {sources.map(({ value, count }) => {
+                  const label = sourceLabel(value, writer, roots);
+                  return (
+                    <FilterButton
+                      key={value}
+                      label={label}
+                      short={grouped ? label.text.slice(writer.name.length + " › ".length) || "All" : undefined}
+                      title={value}
+                      count={counted(count)}
+                      pressed={state.sources.includes(value)}
+                      onClick={() => onChange({ ...state, sources: toggle(state.sources, value) })}
+                    />
+                  );
+                })}
+              </Fragment>
+            );
+          })}
         </FilterGroup>
       )}
       {authors.length > 0 && (
@@ -125,6 +143,7 @@ function FilterGroup({ title, children }: { title: string; children: ReactNode }
 
 function FilterButton({
   label,
+  short,
   title,
   count,
   pressed,
@@ -132,6 +151,8 @@ function FilterButton({
 }: {
   /** A plain label, or a source's label with its writer's icon. */
   label: string | SourceLabel;
+  /** What the column shows under a writer's heading instead of the full label. */
+  short?: string;
   title?: string;
   /** Null for a selected value the facet doesn't list. */
   count: string | null;
@@ -152,13 +173,15 @@ function FilterButton({
           : "border-border bg-background hover:bg-accent lg:text-muted-foreground lg:hover:text-foreground",
       )}
     >
-      {typeof label !== "string" &&
-        (label.icon ? (
-          <NamedIcon name={label.icon} className="size-3.5 shrink-0" />
-        ) : (
-          <CircleDashed className="size-3.5 shrink-0" aria-hidden />
-        ))}
-      <span className="min-w-0 truncate">{typeof label === "string" ? label : label.text}</span>
+      {typeof label !== "string" && (
+        <span className={cn("shrink-0", short !== undefined && "lg:invisible")}>
+          {label.icon ? <NamedIcon name={label.icon} className="size-3.5" /> : <CircleDashed className="size-3.5" aria-hidden />}
+        </span>
+      )}
+      <span className="min-w-0 truncate" data-label>
+        <span className={cn(short !== undefined && "lg:hidden")}>{typeof label === "string" ? label : label.text}</span>
+        {short !== undefined && <span className="hidden lg:inline">{short}</span>}
+      </span>
       {count !== null && <span className="ml-auto text-xs tabular-nums opacity-60">{count}</span>}
       {pressed && <Check className={cn("hidden size-3.5 shrink-0 lg:block", count === null && "ml-auto")} aria-hidden />}
     </button>
@@ -170,6 +193,23 @@ function selectClass(active: boolean) {
     "shrink-0 rounded-full border px-3 py-1 text-sm transition-colors lg:w-full lg:rounded-md lg:px-2",
     active ? "border-foreground bg-foreground text-background lg:bg-accent lg:text-foreground" : "border-border bg-background hover:bg-accent",
   );
+}
+
+type SourceWriter = NonNullable<Facets["sources"][number]["writer"]>;
+
+/** Sources by writer, in the order each writer first appears; those without a writer last. */
+function groupByWriter<T extends { value: string }>(
+  sources: T[],
+  writerOf: (source: string) => SourceWriter | null,
+): { writer: SourceWriter | null; sources: T[] }[] {
+  const groups = new Map<string, { writer: SourceWriter | null; sources: T[] }>();
+  for (const source of sources) {
+    const writer = writerOf(source.value);
+    const key = writer?.id ?? "";
+    if (!groups.has(key)) groups.set(key, { writer, sources: [] });
+    groups.get(key)!.sources.push(source);
+  }
+  return [...groups.values()].sort((a, b) => Number(a.writer === null) - Number(b.writer === null));
 }
 
 function withSelected(counts: FacetCount[], selected: string[]): { value: string; count: number | null }[] {
