@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #104 from thiesgerken/ci-release-latest-main
+  ([`2d6eb23`](https://github.com/thiesgerken/ferret/commit/2d6eb23863bb483d5ad5cc99ada8eff562a4743b))
+
+### 👷 CI/Build
+
+
+- 👷 ci(release): version the tip of main, not the pushed commit
+  ([`2d6eb23`](https://github.com/thiesgerken/ferret/commit/2d6eb23863bb483d5ad5cc99ada8eff562a4743b))
+
+- 👷 ci(release): version the tip of main, not the pushed commit
+  ([`6e5c42c`](https://github.com/thiesgerken/ferret/commit/6e5c42cf07a9ffcbb36b327885d991709d71b161))
+
+  Back-to-back merges made the earlier Release run fail with "Upstream branch 'origin/main' has changed". Checking out main's tip lets that run release every merge and the later run find nothing to release.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.5.0 (2026-10-17)
 
 
