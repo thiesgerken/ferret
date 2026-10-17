@@ -124,7 +124,7 @@ user) owns a root and may write into any source below it ([plugins.md](plugins.m
   the key of its most recently modified document that has one, and none for a root over both a
   connection's documents and a key's. Connections and keys have a name and a lucide icon name,
   chosen by the user with a per-plugin default (git `git-branch`, carapace `brain`, Paperless
-  `file-text`, API keys `key-round`).
+  `file-text`, AFFiNE `notebook-pen`, API keys `key-round`).
 
 ## Ingest API
 
@@ -386,8 +386,8 @@ not stored in ferret.
 
 ## Plugins
 
-v1 ships **git**, **Paperless** and **carapace**. Email, chats, AFFiNE and saved articles are on
-the roadmap. Details in [plugins.md](plugins.md).
+v1 ships **git**, **Paperless** and **carapace**, and **AFFiNE** followed. Email, chats and saved
+articles are on the roadmap. Details in [plugins.md](plugins.md).
 
 ## Embedding model choice
 
