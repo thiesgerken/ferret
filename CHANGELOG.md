@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.12.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #125 from thiesgerken/explore-table
+  ([`1f17d0b`](https://github.com/thiesgerken/ferret/commit/1f17d0b3f145e4ad95caed1669579681c98c3fdc))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): Explore's table fits the page instead of scrolling sideways
+  ([`1f17d0b`](https://github.com/thiesgerken/ferret/commit/1f17d0b3f145e4ad95caed1669579681c98c3fdc))
+
+- 💄 style(frontend): Explore's table fits the page instead of scrolling sideways
+  ([`1ea2904`](https://github.com/thiesgerken/ferret/commit/1ea2904a33ad6c41e96378b78544573a1d594208))
+
+  A fixed table layout with truncated cells; narrower screens drop type, authors and the modified date. The page is a bit wider, like a table page can be.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.12.0 (2026-10-17)
 
 
