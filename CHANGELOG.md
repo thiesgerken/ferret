@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.8.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #114 from thiesgerken/source-help-text
+  ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): explain what a connection's source is for
+  ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
+
+- 💄 style(frontend): explain what a connection's source is for
+  ([`b1bd587`](https://github.com/thiesgerken/ferret/commit/b1bd58700b7dc059fdcee58b145e2bfa9ddfd747))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.8.0 (2026-10-17)
 
 
