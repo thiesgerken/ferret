@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.9.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #119 from thiesgerken/wordmark-alegreya
+  ([`f0b74d8`](https://github.com/thiesgerken/ferret/commit/f0b74d8cefdca1584e19793e02a4672f2f9e407c))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): set the wordmark in Alegreya SemiBold
+  ([`f0b74d8`](https://github.com/thiesgerken/ferret/commit/f0b74d8cefdca1584e19793e02a4672f2f9e407c))
+
+- 💄 style(frontend): set the wordmark in Alegreya SemiBold
+  ([`6d923a4`](https://github.com/thiesgerken/ferret/commit/6d923a4b1e331a447bc319bdb00562fafd636149))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UpMJXTPNdGsxLCBbn59gv9
+
+- 💄 style(frontend): set the wordmark in Alegreya Bold
+  ([`9cf4e83`](https://github.com/thiesgerken/ferret/commit/9cf4e831dcc3025310ce03ae2c48d5dc0f87ce39))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UpMJXTPNdGsxLCBbn59gv9
+
 ## v0.9.0 (2026-10-17)
 
 
