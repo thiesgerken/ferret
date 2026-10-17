@@ -1,30 +1,20 @@
 <p align="center">
   <a href="https://github.com/thiesgerken/ferret/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/thiesgerken/ferret/ci.yml"></a>
-  <a href="rust-toolchain.toml"><img alt="Rust 1.99" src="https://img.shields.io/badge/rust-1.99-B7410E?logo=rust&logoColor=white"></a>
+  <a href="rust-toolchain.toml"><img alt="Rust" src="https://img.shields.io/badge/rust-stable-B7410E?logo=rust&logoColor=white"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-885629"></a>
   <a href="charts/ferret/README.md"><img alt="Helm chart" src="https://img.shields.io/badge/helm-chart-885629?logo=helm&logoColor=white"></a>
 </p>
 
-<h3 align="center">
+<h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/mark-dark.svg">
-    <img src="docs/brand/mark-light.svg" alt="ferret logo" width="140" height="140">
+    <img src="docs/brand/mark-light.svg" alt="" width="140" height="140">
   </picture><br>
   ferret
-</h3>
+</h1>
 <p align="center"><strong>A personal search index over everything that describes me.</strong></p>
 
 <p align="center">Keyword and semantic search. Deep links to the origin. One API for me and my agents.</p>
-
-<p align="center">
-  <a href="docs/conception/README.md">💡 Conception</a>
-  ·
-  <a href="docs/glossary.md">📖 Glossary</a>
-  ·
-  <a href="docs/adr/">🧭 Decisions</a>
-  ·
-  <a href="charts/ferret/README.md">⚓ Helm Chart</a>
-</p>
 
 ferret makes everything that describes me instantly searchable: notes, documents (Paperless), email,
 chats, git repos, carapace memory and saved articles. The data already lives in those systems,
