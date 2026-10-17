@@ -21,6 +21,7 @@ const SearchHitsQueryDocument = graphql(`
       url
       authors
       createdAt
+      collapsed
       chunk {
         startOffset
         endOffset
@@ -164,6 +165,11 @@ function HitItem({ hit }: { hit: Hit }) {
           ),
         )}
       </p>
+      {hit.collapsed > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {hit.collapsed} more in this thread
+        </p>
+      )}
       {hit.url && (
         <a href={hit.url} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ExternalLink className="size-3" aria-hidden />

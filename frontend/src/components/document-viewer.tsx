@@ -22,6 +22,14 @@ const ViewDocumentQueryDocument = graphql(`
       authors
       createdAt
       modifiedAt
+      previousInThread {
+        id
+        title
+      }
+      nextInThread {
+        id
+        title
+      }
     }
   }
 `);
@@ -71,6 +79,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
         )}
       </header>
       <DocumentBody document={document} range={range} />
+      <ThreadNavigation previous={document.previousInThread} next={document.nextInThread} />
     </div>
   );
 }
@@ -139,4 +148,33 @@ function MarkdownBody({ text, range }: { text: string; range: HitRange | null })
       </ReactMarkdown>
     </div>
   );
+}
+
+type ThreadNeighbor = ViewedDocument["previousInThread"];
+
+/** Steps through the document's thread: a chat channel reads as a conversation, mails as a thread. */
+function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: ThreadNeighbor }) {
+  if (!previous && !next) {
+    return null;
+  }
+  return (
+    <nav aria-label="Thread" className="flex justify-between gap-4 border-t border-border pt-4 text-sm">
+      {previous ? (
+        <Link href={viewerHref(previous.id)} rel="prev" className="text-brand hover:underline">
+          ← {previous.title || "Previous in thread"}
+        </Link>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <Link href={viewerHref(next.id)} rel="next" className="text-right text-brand hover:underline">
+          {next.title || "Next in thread"} →
+        </Link>
+      )}
+    </nav>
+  );
+}
+
+function viewerHref(id: string): string {
+  return `/view?${new URLSearchParams({ id })}`;
 }

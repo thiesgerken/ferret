@@ -22,6 +22,8 @@ async function renderViewer(contentType: string, text: string, hit: { start: num
           authors: ["thies"],
           createdAt: "2026-01-01T12:00:00Z",
           modifiedAt: "2026-01-02T12:00:00Z",
+          previousInThread: null,
+          nextInThread: { __typename: "ThreadNeighbor", id: "e", title: null },
         },
       },
     }),
@@ -60,5 +62,16 @@ test("email shows its headers above the body", async () => {
 
   assert.match(view.container.querySelector("dl")?.textContent ?? "", /FromthiesSubjectA noteDate/);
   assert.equal(view.container.querySelector("#hit"), null);
+  await view.unmount();
+});
+
+test("offers the next document of the thread, and no previous one at its start", async () => {
+  const view = await renderViewer("PLAIN", "text", null);
+
+  const links = [...view.container.querySelectorAll("nav[aria-label=Thread] a")];
+  assert.deepEqual(
+    links.map((link) => [link.getAttribute("rel"), link.getAttribute("href"), link.textContent]),
+    [["next", "/view?id=e", "Next in thread →"]],
+  );
   await view.unmount();
 });
