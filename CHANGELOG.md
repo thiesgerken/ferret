@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.12.4 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #130 from thiesgerken/pump-wake-followup
+  ([`6075288`](https://github.com/thiesgerken/ferret/commit/6075288d7837ff1202597b807be9db16c8aaa3ec))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): the pump looks again after a lost notification and frees a returned claim at once
+  ([`6075288`](https://github.com/thiesgerken/ferret/commit/6075288d7837ff1202597b807be9db16c8aaa3ec))
+
+- 🐛 fix(server): the pump looks again after a lost notification and frees a returned claim at once
+  ([`77ee66e`](https://github.com/thiesgerken/ferret/commit/77ee66e6375e27ba9ec08c204078f9d216f221aa))
+
+  PgListener::recv reconnects by itself and drops the notifications sent in between without telling anyone: the pumps are now woken whenever the listener (re)connects. A claim returned because the TEI was switched off is rolled back before the other pumps are woken, instead of on drop, which only queued the rollback and could leave them finding the chunks locked.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.12.3 (2026-10-17)
 
 
