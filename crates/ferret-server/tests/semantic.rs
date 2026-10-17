@@ -5,7 +5,8 @@ use common::{
     fake_tei::{FakeTei, MAX_INPUT_LENGTH, UNEMBEDDABLE},
     model, start_semantic_server, start_server_with,
 };
-use ferret_api::{Client, Hit, SearchQuery};
+use ferret_api::{Client, Hit, SearchMode, SearchQuery};
+use reqwest::StatusCode;
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -270,6 +271,102 @@ async fn without_the_embedding_model_search_answers_by_keyword_and_says_so(pool:
         graphql["data"]["search"],
         serde_json::json!({"hits": [], "semanticUnavailable": "the embedding model fake is unavailable"})
     );
+}
+
+fn in_mode(q: &str, mode: SearchMode) -> SearchQuery {
+    SearchQuery { mode, ..query(q) }
+}
+
+#[sqlx::test(migrations = false)]
+async fn each_half_runs_alone_in_its_mode(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    api.put_document(&document("notes", "weather", "Lovely weather today."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(2).await;
+
+    let keyword = api
+        .search(&in_mode("car", SearchMode::Keyword))
+        .await
+        .unwrap();
+    let semantic = api
+        .search(&in_mode("car", SearchMode::Semantic))
+        .await
+        .unwrap();
+
+    assert_eq!(ids(&keyword.hits), ["car"]);
+    assert_eq!(keyword.total, 1);
+    assert!(keyword.hits.iter().all(|hit| hit.similarity.is_none()));
+    // The test model's `min_similarity` is 0, so every embedded document matches semantically.
+    assert_eq!(ids(&semantic.hits), ["car", "weather"]);
+    assert_eq!(semantic.total, 2);
+    assert!(!semantic.total_is_lower_bound);
+    assert!(semantic.hits.iter().all(|hit| hit.keyword_score.is_none()));
+    assert_eq!(
+        semantic
+            .facets
+            .sources
+            .iter()
+            .map(|count| count.count)
+            .sum::<u32>(),
+        2
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_keyword_search_does_not_embed_the_query(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+    let embedded_before = server.tei.embedded().len();
+
+    server.tei.break_down();
+    let response = api
+        .search(&in_mode("car", SearchMode::Keyword))
+        .await
+        .unwrap();
+
+    assert_eq!(ids(&response.hits), ["car"]);
+    assert_eq!(response.semantic_unavailable, None);
+    assert_eq!(server.tei.embedded().len(), embedded_before);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_semantic_search_without_the_embedding_model_fails(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+
+    server.tei.break_down();
+    let error = api
+        .search(&in_mode("car", SearchMode::Semantic))
+        .await
+        .unwrap_err();
+    let cookie = server.sign_in().await;
+    let graphql = server
+        .graphql(
+            &cookie,
+            "{ search(input: {q: \"car\", mode: SEMANTIC}) { total } }",
+            serde_json::json!({}),
+        )
+        .await;
+
+    assert_eq!(error.status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+    assert_eq!(
+        graphql["errors"][0]["message"],
+        "the embedding model fake is unavailable"
+    );
+    assert_eq!(graphql["errors"][0]["extensions"]["code"], "UNAVAILABLE");
 }
 
 #[sqlx::test(migrations = false)]

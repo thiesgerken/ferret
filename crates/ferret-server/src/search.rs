@@ -1,5 +1,5 @@
 //! Hybrid search: BM25 and vector neighbours over chunks, fused with reciprocal rank fusion, one
-//! hit per document.
+//! hit per document. Either half can also run alone.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -11,7 +11,7 @@ use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
 use ferret_api::{
-    FacetCount, Hit, HitChunk, SearchFacets, SearchQuery, SearchResponse, SourceCount,
+    FacetCount, Hit, HitChunk, SearchFacets, SearchMode, SearchQuery, SearchResponse, SourceCount,
 };
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -62,6 +62,8 @@ pub async fn handle(
 pub enum SearchError {
     /// The query can't be run as posed, the message says why.
     Invalid(String),
+    /// A semantic search without its embedding model.
+    Unavailable(String),
     Database(sqlx::Error),
 }
 
@@ -75,6 +77,7 @@ impl From<SearchError> for ApiError {
     fn from(error: SearchError) -> Self {
         match error {
             SearchError::Invalid(message) => ApiError::bad_request(&message),
+            SearchError::Unavailable(message) => ApiError::service_unavailable(&message),
             SearchError::Database(error) => error.into(),
         }
     }
@@ -189,23 +192,33 @@ pub async fn find(
         excluded: &query.excluded,
         phrases: &query.phrases,
     };
-    // The vector half gets the words without operators. Without it (TEI down or broken), the
-    // keyword half still answers, and the response says so.
-    let query_hash = match embedding
-        .cache_query(pool, model, &query.words.join(" "))
-        .await
-    {
-        Ok(query_hash) => Some(query_hash),
-        Err(EmbedError::Tei(error)) => {
-            tracing::warn!(model = %model.config.name, %error, "searching by keyword only, the query can't be embedded");
-            None
-        }
-        Err(EmbedError::Database(error)) => return Err(error.into()),
+    // The vector half gets the words without operators. Without it (TEI down or broken), a hybrid
+    // search still answers by keyword, and the response says so.
+    let unavailable = format!("the embedding model {} is unavailable", model.name());
+    let query_hash = match request.mode {
+        SearchMode::Keyword => None,
+        mode => match embedding
+            .cache_query(pool, model, &query.words.join(" "))
+            .await
+        {
+            Ok(query_hash) => Some(query_hash),
+            Err(EmbedError::Tei(error)) => {
+                tracing::warn!(model = %model.config.name, %error, "the query can't be embedded");
+                if mode == SearchMode::Semantic {
+                    return Err(SearchError::Unavailable(unavailable));
+                }
+                None
+            }
+            Err(EmbedError::Database(error)) => return Err(error.into()),
+        },
     };
+    let semantic_unavailable =
+        (request.mode == SearchMode::Hybrid && query_hash.is_none()).then_some(unavailable);
 
     let collapse = request.collapse.unwrap_or(true);
     let hybrid = Hybrid {
         model,
+        keyword: request.mode != SearchMode::Semantic,
         query_hash: query_hash.as_deref(),
         words: &query.words,
         collapse,
@@ -303,17 +316,18 @@ pub async fn find(
         documents_in_scope: u32::try_from(documents_in_scope).expect("a count is never negative"),
         facets,
         took_ms: millis_since(started),
-        semantic_unavailable: query_hash
-            .is_none()
-            .then(|| format!("the embedding model {} is unavailable", model.name())),
+        semantic_unavailable,
         model: model.name().to_owned(),
     })
 }
 
 /// The hybrid query up to its `hits`: the documents that match, best chunk first, with their
-/// thread rank. A search runs it once for its hits and again for each facet.
+/// thread rank. A search runs it once for its hits and again for each facet. A half that doesn't
+/// run contributes no chunks, so the fused ranking is the other half's.
 struct Hybrid<'a> {
     model: &'a Model,
+    /// Whether the keyword half runs.
+    keyword: bool,
     /// `None` without the semantic half.
     query_hash: Option<&'a [u8]>,
     words: &'a [String],
@@ -330,28 +344,17 @@ impl Hybrid<'_> {
     /// them, and the vector half needs the model's dimension and name as literals to use its
     /// partial index.
     fn push_hits(&self, sql: &mut QueryBuilder<Postgres>, filters: &Filters) {
-        // Ties rank by id, so every page of a search sees the same ranking.
-        sql.push(
-            "with keyword as (
-                 select id, row_number() over (order by score desc, id) as rank,
-                        score::real as keyword_score, null::real as similarity
-                 from (
-                     select c.id, pdb.score(c.id) as score
-                     from chunks c
-                     where ",
-        );
-        filters.push(sql, "c");
-        // Every word must match in at least one field, so a compound and an inflected word can
-        // match the same chunk in different fields.
-        for word in self.words {
-            sql.push(" and ");
-            push_word_match(sql, "c.", word);
+        sql.push("with keyword as (");
+        if self.keyword {
+            self.push_keyword(sql, filters);
+        } else {
+            sql.push(
+                "select null::uuid as id, null::bigint as rank, null::real as keyword_score,
+                        null::real as similarity
+                 where false",
+            );
         }
-        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
-        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
-        sql.push(" order by score desc, c.id limit ")
-            .push_bind(KEYWORD_CANDIDATES)
-            .push(") k), nearest as (");
+        sql.push("), nearest as (");
         match self.query_hash {
             Some(query_hash) => push_nearest(sql, self.model, query_hash, filters),
             None => {
@@ -410,11 +413,39 @@ impl Hybrid<'_> {
         );
     }
 
+    /// The keyword half's candidates, ranked.
+    fn push_keyword(&self, sql: &mut QueryBuilder<Postgres>, filters: &Filters) {
+        // Ties rank by id, so every page of a search sees the same ranking.
+        sql.push(
+            "select id, row_number() over (order by score desc, id) as rank,
+                    score::real as keyword_score, null::real as similarity
+             from (
+                 select c.id, pdb.score(c.id) as score
+                 from chunks c
+                 where ",
+        );
+        filters.push(sql, "c");
+        // Every word must match in at least one field, so a compound and an inflected word can
+        // match the same chunk in different fields.
+        for word in self.words {
+            sql.push(" and ");
+            push_word_match(sql, "c.", word);
+        }
+        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
+        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
+        sql.push(" order by score desc, c.id limit ")
+            .push_bind(KEYWORD_CANDIDATES)
+            .push(") k");
+    }
+
     /// Whether the hits may be short of all matches, as a boolean expression over the CTEs.
     fn push_lower_bound(&self, sql: &mut QueryBuilder<Postgres>, filters: &Filters) {
-        // The keyword half may have left out matches when it filled its candidates.
-        sql.push("((select count(*) from keyword) >= ")
-            .push_bind(KEYWORD_CANDIDATES);
+        sql.push("(false");
+        if self.keyword {
+            // The keyword half may have left out matches when it filled its candidates.
+            sql.push(" or (select count(*) from keyword) >= ")
+                .push_bind(KEYWORD_CANDIDATES);
+        }
         if self.query_hash.is_some() {
             // The vector half may have, when all its neighbours passed the cut-off and the scope
             // holds more. HNSW is approximate and may return fewer neighbours than asked for, so

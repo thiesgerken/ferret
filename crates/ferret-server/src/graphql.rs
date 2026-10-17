@@ -154,7 +154,7 @@ impl Query {
     /// `GET /api/search`.
     async fn search(context: &Context, input: SearchInput) -> FieldResult<SearchResult> {
         let (request, range) = input.resolve(Utc::now())?;
-        let response = match search::find(
+        let response = search::find(
             &context.pool,
             &context.embedding,
             context.user.id,
@@ -162,11 +162,7 @@ impl Query {
             &request,
         )
         .await
-        {
-            Ok(response) => response,
-            Err(SearchError::Invalid(message)) => return Err(invalid_input(message)),
-            Err(SearchError::Database(error)) => return Err(internal(error)),
-        };
+        .map_err(search_error)?;
         let judged = judgments::judged_documents(&context.pool, context.user.id, &request, range)
             .await
             .map_err(internal)?;
@@ -593,6 +589,8 @@ struct SearchInput {
     model: Option<String>,
     /// Whether hits of one thread fold into the best one. Yes when left out.
     collapse: Option<bool>,
+    /// Which halves run. `HYBRID` when left out. Judgments ignore it.
+    mode: Option<SearchMode>,
 }
 
 const DEFAULT_EXPLORE_LIMIT: i32 = 50;
@@ -832,8 +830,35 @@ impl SearchInput {
                 .map_err(|_| invalid_input("offset can't be negative".to_owned()))?,
             model: self.model,
             collapse: self.collapse,
+            mode: self
+                .mode
+                .map(ferret_api::SearchMode::from)
+                .unwrap_or_default(),
         };
         Ok((query, range))
+    }
+}
+
+/// Which halves of a search run.
+#[derive(GraphQLEnum)]
+enum SearchMode {
+    /// Both, fused. Without the embedding model, the keyword half alone, and
+    /// `semanticUnavailable` says so.
+    Hybrid,
+    /// BM25 alone. The query isn't embedded.
+    Keyword,
+    /// The vector half alone, above the model's similarity cut-off. Fails without the embedding
+    /// model.
+    Semantic,
+}
+
+impl From<SearchMode> for ferret_api::SearchMode {
+    fn from(mode: SearchMode) -> Self {
+        match mode {
+            SearchMode::Hybrid => Self::Hybrid,
+            SearchMode::Keyword => Self::Keyword,
+            SearchMode::Semantic => Self::Semantic,
+        }
     }
 }
 
@@ -883,8 +908,8 @@ struct SearchResult {
     facets: SearchFacets,
     /// The search's time on the server, in milliseconds.
     took_ms: i32,
-    /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
-    /// keyword matches only. Null when it ran.
+    /// Why the semantic half of a hybrid search didn't run (e.g. the embedding model is down), so
+    /// the hits are keyword matches only. Null when it ran, and in the other modes.
     semantic_unavailable: Option<String>,
     /// The embedding model the semantic half used, or would have.
     model: String,
@@ -1219,10 +1244,7 @@ impl Mutation {
             .map_err(|_| invalid_input("no such document".to_owned()))?;
         let (search, range) = input.search.resolve(Utc::now())?;
         // A search `search` rejects could never be replayed.
-        search::validate(&search).map_err(|error| match error {
-            SearchError::Invalid(message) => invalid_input(message),
-            SearchError::Database(error) => internal(error),
-        })?;
+        search::validate(&search).map_err(search_error)?;
         let owned = judgments::set(
             &context.pool,
             context.user.id,
@@ -1571,6 +1593,16 @@ fn count(n: i64) -> i32 {
 
 fn invalid_input(message: String) -> FieldError {
     FieldError::new(message, graphql_value!({ "code": "INVALID_INPUT" }))
+}
+
+fn search_error(error: SearchError) -> FieldError {
+    match error {
+        SearchError::Invalid(message) => invalid_input(message),
+        SearchError::Unavailable(message) => {
+            FieldError::new(message, graphql_value!({ "code": "UNAVAILABLE" }))
+        }
+        SearchError::Database(error) => internal(error),
+    }
 }
 
 /// Database failures are logged, the client only learns that something went wrong.

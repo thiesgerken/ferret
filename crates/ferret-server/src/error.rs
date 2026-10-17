@@ -43,6 +43,14 @@ impl ApiError {
         }
     }
 
+    /// A service the request depends on is down, e.g. the embedding model.
+    pub fn service_unavailable(message: &str) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: message.to_owned(),
+        }
+    }
+
     /// Authenticated, but not allowed to do this.
     pub fn forbidden(message: &str) -> Self {
         Self {
