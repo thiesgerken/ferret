@@ -1,10 +1,16 @@
+{{- $teiNames := dict }}
 {{- range .Values.embedding.models }}
-{{- $component := printf "tei-%s" (include "ferret.modelSlug" .name) }}
+{{- $name := include "ferret.teiName" (dict "root" $ "model" .) }}
+{{- if hasKey $teiNames $name }}
+{{- fail (printf "models %q and %q share the TEI name %q" (get $teiNames $name) .name $name) }}
+{{- end }}
+{{- $_ := set $teiNames $name .name }}
+{{- $component := trimPrefix (printf "%s-" $.Release.Name) $name }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $.Release.Name }}-{{ $component }}
+  name: {{ $name }}
   labels:
     {{- include "ferret.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component }}
@@ -22,15 +28,18 @@ spec:
       {{- with $.Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
+      # TEI publishes its CPU images for amd64 only.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       containers:
         - name: tei
           image: {{ include "ferret.image" (dict "root" $ "image" $.Values.tei.image) }}
           imagePullPolicy: {{ $.Values.tei.image.pullPolicy }}
           args:
             - --model-id
-            - {{ .modelId | quote }}
+            - {{ required "embedding.models[].modelId is required" .modelId | quote }}
             - --max-batch-tokens
-            - {{ .maxBatchTokens | quote }}
+            - {{ required "embedding.models[].maxBatchTokens is required" .maxBatchTokens | quote }}
           ports:
             - name: http
               containerPort: 80
@@ -56,12 +65,13 @@ spec:
       volumes:
         # ponytail: re-downloaded on every pod start. A PVC per model if restarts get slow.
         - name: models
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: {{ required "embedding.models[].cacheSize is required" .cacheSize }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $.Release.Name }}-{{ $component }}
+  name: {{ $name }}
   labels:
     {{- include "ferret.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component }}

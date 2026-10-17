@@ -1,12 +1,13 @@
 mod common;
 
 use common::{
-    DOCUMENT_PREFIX, MODEL, QUERY_PREFIX, document, embedding_config,
-    fake_tei::{FakeTei, MAX_INPUT_LENGTH, Similarity},
+    DOCUMENT_PREFIX, MODEL, QUERY_PREFIX, document, embedding_config, eventually,
+    fake_tei::{FakeTei, MAX_INPUT_LENGTH, UNEMBEDDABLE},
     model, start_semantic_server, start_server_with,
 };
 use ferret_api::{Client, Hit, SearchQuery};
 use sqlx::PgPool;
+use std::time::{Duration, Instant};
 
 async fn search(api: &Client, query: SearchQuery) -> Vec<Hit> {
     api.search(&query).await.unwrap().hits
@@ -41,7 +42,8 @@ async fn a_query_without_keyword_overlap_finds_a_semantic_match_once_embedded(po
     server.wait_for_embeddings(2).await;
     let hits = search(&api, query("vehicle")).await;
 
-    assert_eq!(ids(&hits), ["car"]);
+    // The vector half has no cut-off, so the unrelated document trails.
+    assert_eq!(ids(&hits), ["car", "weather"]);
     assert!(hits[0].chunk.parts.iter().all(|part| !part.highlight));
 }
 
@@ -62,7 +64,7 @@ async fn keyword_and_semantic_matches_are_fused(pool: PgPool) {
 
     let hits = search(&api, query("vehicle")).await;
 
-    assert_eq!(ids(&hits), ["both", "semantic"]);
+    assert_eq!(ids(&hits), ["both", "semantic", "unrelated"]);
     assert!(hits[0].score > hits[1].score);
 }
 
@@ -70,12 +72,14 @@ async fn keyword_and_semantic_matches_are_fused(pool: PgPool) {
 async fn the_model_and_its_prefixes_are_used_and_identical_texts_embedded_once(pool: PgPool) {
     let server = start_semantic_server(pool.clone()).await;
     let api = server.admin_api().await;
+    let same = |source| document(source, "same", "The same text twice.");
+    // Within one batch, then in a later one.
     for source in ["notes", "paperless"] {
-        api.put_document(&document(source, "same", "The same text twice."))
-            .await
-            .unwrap();
+        api.put_document(&same(source)).await.unwrap();
     }
     server.wait_for_embeddings(2).await;
+    api.put_document(&same("mail")).await.unwrap();
+    server.wait_for_embeddings(3).await;
     for _ in 0..2 {
         search(&api, query("text")).await;
     }
@@ -164,7 +168,7 @@ async fn filtered_semantic_searches_still_return_k_hits(pool: PgPool) {
 #[sqlx::test(migrations = false)]
 async fn a_model_shorter_than_the_longest_chunk_stops_the_server(pool: PgPool) {
     ferret_server::migrate(&pool).await.unwrap();
-    let tei = FakeTei::start(Similarity::None, 1999).await;
+    let tei = FakeTei::start(1999).await;
 
     let error = ferret_server::embeddings::prepare(&pool, embedding_config(model(MODEL, &tei)))
         .await
@@ -176,8 +180,8 @@ async fn a_model_shorter_than_the_longest_chunk_stops_the_server(pool: PgPool) {
 
 #[sqlx::test(migrations = false)]
 async fn with_a_bulk_url_the_pump_uses_only_that_and_queries_keep_using_url(pool: PgPool) {
-    let online = FakeTei::start(Similarity::Words, MAX_INPUT_LENGTH).await;
-    let bulk = FakeTei::start(Similarity::Words, MAX_INPUT_LENGTH).await;
+    let online = FakeTei::start(MAX_INPUT_LENGTH).await;
+    let bulk = FakeTei::start(MAX_INPUT_LENGTH).await;
     let mut config = model(MODEL, &online);
     config.bulk_url = Some(bulk.url.clone());
     let server = start_server_with(pool, online.clone(), embedding_config(config)).await;
@@ -202,7 +206,7 @@ async fn with_a_bulk_url_the_pump_uses_only_that_and_queries_keep_using_url(pool
 
 #[sqlx::test(migrations = false)]
 async fn an_unreachable_bulk_url_is_reported_and_keyword_search_keeps_working(pool: PgPool) {
-    let online = FakeTei::start(Similarity::Words, MAX_INPUT_LENGTH).await;
+    let online = FakeTei::start(MAX_INPUT_LENGTH).await;
     let mut config = model(MODEL, &online);
     // Nothing listens on port 1.
     config.bulk_url = Some("http://127.0.0.1:1".to_owned());
@@ -212,21 +216,16 @@ async fn an_unreachable_bulk_url_is_reported_and_keyword_search_keeps_working(po
     api.put_document(&document("notes", "car", "My car broke down."))
         .await
         .unwrap();
-    let mut error = None;
-    for _ in 0..100 {
-        error =
-            sqlx::query_scalar::<_, String>("select error from embedding_errors where model = $1")
-                .bind(MODEL)
-                .fetch_optional(&pool)
-                .await
-                .unwrap();
-        if error.is_some() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
+    let error: String = eventually("a recorded embedding error", async || {
+        sqlx::query_scalar("select error from embedding_errors where model = $1")
+            .bind(MODEL)
+            .fetch_optional(&pool)
+            .await
+            .unwrap()
+    })
+    .await;
 
-    assert!(error.unwrap().contains("127.0.0.1:1"));
+    assert!(error.contains("127.0.0.1:1"));
     let embedded: i64 = sqlx::query_scalar("select count(*) from chunk_embeddings")
         .fetch_one(&pool)
         .await
@@ -264,4 +263,52 @@ async fn without_the_embedding_model_search_answers_by_keyword_and_says_so(pool:
         graphql["data"]["search"],
         serde_json::json!({"hits": [], "semanticUnavailable": "the embedding model fake is unavailable"})
     );
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_chunk_the_model_rejects_is_recorded_and_the_pump_moves_on(pool: PgPool) {
+    let server = start_semantic_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    for (id, text) in [
+        ("rejected", format!("An {UNEMBEDDABLE} car.")),
+        ("car", "My car broke down.".to_owned()),
+    ] {
+        api.put_document(&document("notes", id, &text))
+            .await
+            .unwrap();
+    }
+    server.wait_for_embeddings(1).await;
+    api.put_document(&document("notes", "later", "A vehicle came later."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(2).await;
+
+    let failures: Vec<(String, String)> = sqlx::query_as(
+        "select d.external_id, f.error from embedding_failures f
+         join chunks c on c.id = f.chunk_id join documents d on d.id = c.document_id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].0, "rejected");
+    assert!(failures[0].1.contains("422"), "{}", failures[0].1);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_stuck_embedding_model_degrades_search_to_keywords_quickly(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+
+    server.tei.hang();
+    let started = Instant::now();
+    let response = api.search(&query("car")).await.unwrap();
+
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(ids(&response.hits), ["car"]);
+    assert!(response.semantic_unavailable.is_some());
 }

@@ -1,5 +1,7 @@
 //! A client for Hugging Face text-embeddings-inference (TEI).
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -15,10 +17,24 @@ struct EmbedRequest<'a> {
     truncate: bool,
 }
 
+/// A client for every TEI. Requests set their own total timeout: a TEI that accepts connections
+/// but stops answering must not hang a search or the pump.
+pub fn client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .expect("an HTTP client with a connect timeout builds")
+}
+
 /// The longest input in tokens the TEI at `url` accepts.
-pub async fn max_input_length(http: &reqwest::Client, url: &str) -> Result<usize, reqwest::Error> {
+pub async fn max_input_length(
+    http: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+) -> Result<usize, reqwest::Error> {
     let info: Info = http
         .get(format!("{url}/info"))
+        .timeout(timeout)
         .send()
         .await?
         .error_for_status()?
@@ -27,13 +43,16 @@ pub async fn max_input_length(http: &reqwest::Client, url: &str) -> Result<usize
     Ok(info.max_input_length)
 }
 
-/// Normalized embeddings of `texts`, in order. An over-long text fails the whole request.
+/// Normalized embeddings of `texts`, in order. An over-long text fails the whole request with a
+/// 4xx.
 pub async fn embed(
     http: &reqwest::Client,
     url: &str,
     texts: &[String],
+    timeout: Duration,
 ) -> Result<Vec<Vec<f32>>, reqwest::Error> {
     http.post(format!("{url}/embed"))
+        .timeout(timeout)
         .json(&EmbedRequest {
             inputs: texts,
             normalize: true,

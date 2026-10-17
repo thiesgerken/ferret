@@ -35,6 +35,9 @@ embedding:
       # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on
       # small CPU nodes. It also caps the input length, which must stay at 2000 or more.
       maxBatchTokens: 4096
+      # -- Room for the downloaded model. A full cache evicts only this pod.
+      cacheSize: 4Gi
+      # -- The request is the RSS measured after warmup (1.93 GiB).
       resources:
         requests:
           cpu: 500m

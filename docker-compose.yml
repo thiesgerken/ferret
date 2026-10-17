@@ -13,7 +13,7 @@ services:
       tei:
         condition: service_healthy
     environment:
-      FERRET_CONFIG: /etc/ferret/config.yaml
+      FERRET_CONFIG_FILE: /etc/ferret/config.yaml
       FERRET_DATABASE_URL: postgres://ferret:ferret@paradedb:5432/ferret
       # Development values. Sign in as `admin` with the bootstrap password.
       FERRET_SESSION_SECRET: development session secret, not for production

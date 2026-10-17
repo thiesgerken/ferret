@@ -33,7 +33,7 @@ async fn serve() -> Result<(), StartupError> {
 
     let database_url = required_env("FERRET_DATABASE_URL")?;
     let session_key = SessionKey::new(&required_env("FERRET_SESSION_SECRET")?)?;
-    let config = Config::load(Path::new(&required_env("FERRET_CONFIG")?))?;
+    let config = Config::load(Path::new(&required_env("FERRET_CONFIG_FILE")?))?;
     // Only needed while no enabled admin exists, so its absence is judged by the bootstrap.
     let bootstrap_password = env::var("FERRET_BOOTSTRAP_PASSWORD").ok();
 
