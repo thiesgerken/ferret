@@ -81,8 +81,11 @@ services:
     command: ["--model-id", "Qwen/Qwen3-Embedding-0.6B", "--max-batch-tokens", "4096"]
     volumes:
       - tei-models:/data
+    # /info, not /health: TEI answers /health on the same thread as the embedding batches, so it
+    # times out while a backfill keeps TEI busy. /info answers from memory, and TEI only starts
+    # listening once the model is loaded and warmed up.
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://localhost/health"]
+      test: ["CMD", "curl", "-fs", "http://localhost/info"]
       interval: 5s
       timeout: 3s
       # The first start downloads the model.
