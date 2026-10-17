@@ -1,6 +1,6 @@
 # Build an HTTP ingester
 
-Use HTTP ingestion for data without a built-in plugin. Your program reads an origin, turns each item into a document, and reconciles deletions. Ferret never writes back to the origin. The canonical request/response types are in [ferret-api](../crates/ferret-api/src/lib.rs); server routing is in [lib.rs](../crates/ferret-server/src/lib.rs).
+Use HTTP ingestion for data without a built-in plugin. Your program reads an origin, turns each item into a document, and reconciles deletions. Ferret never writes back to the origin. This page explains producer workflows; the [REST reference](api/rest.md) owns endpoint/field/auth/error contracts. Canonical wire types are in [ferret-api](../crates/ferret-api/src/lib.rs).
 
 ## Choose identity and ownership first
 
