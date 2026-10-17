@@ -83,3 +83,6 @@ _Avoid_: encoder, model (unqualified)
 **Default model**:
 The embedding model a user's searches use unless a search asks for another one.
 _Avoid_: active model, primary model
+
+**Configured default**:
+The model the config names as `embedding.default`, used by every user who chose no default model.

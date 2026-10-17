@@ -239,7 +239,7 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
   half always contributes its 100 nearest chunks, however distant (a calibrated per-model cut-off
   is part of the model evaluation in #21), and uses the user's default model unless `model=` says
-  otherwise (v1 so far: the configured default). Filters, `-word` and `"phrases"` apply to both
+  otherwise. Filters, `-word` and `"phrases"` apply to both
   halves, the every-word rule only to BM25. A chunk without an embedding yet (backfill) is found by
   keyword only. If the query can't be embedded within 5 s (TEI down, stuck or broken), the search
   answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
@@ -278,7 +278,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
-  word, share its German or English stem, or contain it (compounds).
+  word, share its German or English stem, or contain it (compounds). Next to the hits, `model`
+  names the embedding model the semantic half used (or would have, when `semantic_unavailable`
+  says it couldn't run).
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
@@ -351,7 +353,7 @@ the roadmap. Details in [plugins.md](plugins.md).
   by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
   API.
 - **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
-  change, switching the default is a Settings dropdown.
+  change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).
 - **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
   counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account,

@@ -182,7 +182,7 @@ pub async fn signed_in_user(
     };
     sqlx::query_as!(
         users::User,
-        "select u.id, u.username, u.display_name, u.is_admin
+        "select u.id, u.username, u.display_name, u.is_admin, u.default_embedding_model
          from sessions s join users u on u.id = s.user_id
          where s.id = $1 and u.id = $2 and s.expires_at > now()
            and u.enabled and u.token_version = $3",
