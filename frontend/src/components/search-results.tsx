@@ -1,18 +1,15 @@
 "use client";
 
-import { Check, ExternalLink } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "urql";
+import { useEffect, useMemo, useRef } from "react";
+import { useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
-import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
-import { linkableUrl } from "@/lib/safe-url";
+import type { SearchHitsQuery } from "@/gql/graphql";
 import { TIME_RANGES, searchHref, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
-import { plainMarkdown, snippet } from "@/lib/snippet";
-import { viewerHref } from "@/lib/viewer-url";
+import { pluginOf } from "@/lib/source-plugin";
 import { cn } from "@/lib/utils";
 import { HomeLink } from "@/components/brand-mark";
+import { HitItem, type Hit } from "@/components/search-hit";
 
 const SearchHitsQueryDocument = graphql(`
   query SearchHits($input: SearchInput!) {
@@ -59,14 +56,22 @@ const EmbeddingModelNamesQuery = graphql(`
   }
 `);
 
-const SetJudgmentMutation = graphql(`
-  mutation SetJudgment($input: JudgmentInput!) {
-    setJudgment(input: $input)
+// The plugin icon in a hit's source line comes from the connection that owns its source.
+const ConnectionSourcesQuery = graphql(`
+  query ConnectionSources {
+    connections {
+      id
+      source
+      plugin
+    }
   }
 `);
 
 type Result = SearchHitsQuery["search"];
-type Hit = Result["hits"][number];
+
+// ponytail: docker/ferret.yaml's cut-off, until EmbeddingModel.minSimilarity
+// is in the API.
+const MIN_SIMILARITY = 0.42;
 
 /** How many authors get a chip, most frequent among the hits first. */
 const MAX_AUTHOR_CHIPS = 8;
@@ -99,7 +104,12 @@ export function SearchResults({
     requestPolicy: "cache-and-network",
   });
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
+  const [{ data: connections }] = useQuery({ query: ConnectionSourcesQuery });
   const hits = data?.search.hits ?? [];
+  const relevance = {
+    minSimilarity: MIN_SIMILARITY,
+    bestKeywordScore: Math.max(0, ...hits.map((hit) => hit.keywordScore ?? 0)),
+  };
 
   // A query typed before a chip click or Back must not land on top of it: it was typed into a
   // search that's gone.
@@ -148,7 +158,12 @@ export function SearchResults({
           <ol key={JSON.stringify(input)} className={cn("space-y-6", fetching && "opacity-60")}>
             {hits.map((hit) => (
               <li key={hit.documentId}>
-                <HitItem hit={hit} search={input} />
+                <HitItem
+                  hit={hit}
+                  search={input}
+                  plugin={pluginOf(hit.source, connections?.connections ?? [])}
+                  relevance={relevance}
+                />
               </li>
             ))}
           </ol>
@@ -243,48 +258,6 @@ function chipClass(active: boolean) {
   );
 }
 
-function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
-  const originUrl = linkableUrl(hit.url);
-  return (
-    <article className="space-y-1">
-      <p className="truncate text-xs text-muted-foreground">
-        {hit.source} · {hit.authors.join(", ")} · {new Date(hit.createdAt).toLocaleDateString()}
-      </p>
-      <div className="flex items-center gap-2">
-        <Link
-          href={viewerHref(hit.documentId, { start: hit.chunk.startOffset, end: hit.chunk.endOffset })}
-          className="text-lg font-medium text-brand hover:underline">
-          {hit.title || hit.externalId}
-        </Link>
-        <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
-        <Scores hit={hit} />
-      </div>
-      <p className="text-sm leading-relaxed">
-        {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
-          part.highlight ? (
-            <mark key={index} className="rounded bg-brand/20 px-0.5 text-foreground">
-              {part.text}
-            </mark>
-          ) : (
-            <span key={index}>{part.text}</span>
-          ),
-        )}
-      </p>
-      {hit.collapsed > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {hit.collapsed} more in this thread
-        </p>
-      )}
-      {originUrl && (
-        <a href={originUrl} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
-          <ExternalLink className="size-3" aria-hidden />
-          Open in origin
-        </a>
-      )}
-    </article>
-  );
-}
-
 /** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. */
 function Stats({ result, sources, className }: { result: Result; sources: string[]; className?: string }) {
   const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${result.total === 1 ? "match" : "matches"}`;
@@ -294,55 +267,6 @@ function Stats({ result, sources, className }: { result: Result; sources: string
     <p className={cn("text-xs text-muted-foreground", className)}>
       {matches} · {documents} in {scope} · {result.tookMs} ms
     </p>
-  );
-}
-
-/** The document's best similarity and whether its keywords matched, not necessarily the snippet's. */
-function Scores({ hit }: { hit: Hit }) {
-  const similarity = hit.similarity ?? null;
-  const keywordScore = hit.keywordScore ?? null;
-  return (
-    <span className="shrink-0 space-x-2 text-xs text-muted-foreground tabular-nums">
-      {similarity !== null && (
-        <span title="Semantic similarity of the document's best chunk">{Math.round(similarity * 100)}% similar</span>
-      )}
-      {keywordScore !== null && <span title={`BM25 ${keywordScore.toFixed(2)}`}>keyword match</span>}
-    </span>
-  );
-}
-
-/** ✓ marks the hit as the right one for this search, for evaluating embedding models. */
-function JudgeButton({ documentId, judged: initial, search }: { documentId: string; judged: boolean; search: SearchInput }) {
-  const [judged, setJudged] = useState(initial);
-  const [{ fetching, error }, setJudgment] = useMutation(SetJudgmentMutation);
-
-  async function toggle() {
-    const result = await setJudgment({ input: { search, documentId, judged: !judged } });
-    if (result.data) setJudged(result.data.setJudgment);
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-pressed={judged}
-        aria-label="Right hit for this search"
-        title={judged ? "Marked as the right hit for this search" : "Mark as the right hit for this search"}
-        disabled={fetching}
-        onClick={toggle}
-        className={cn(
-          "rounded-full border p-0.5",
-          judged ? "border-brand bg-brand text-white" : "border-border text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <Check className="size-3.5" aria-hidden />
-      </button>
-      {error && (
-        <span role="alert" className="text-xs text-destructive">
-          {error.graphQLErrors[0]?.message ?? error.message}
-        </span>
-      )}
-    </>
   );
 }
 
