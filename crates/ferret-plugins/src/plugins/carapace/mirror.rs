@@ -35,7 +35,6 @@ pub struct Digest {
     pub period_key: String,
     pub created_at: DateTime<Utc>,
     pub provenance: Value,
-    pub coverage: Value,
     pub title: String,
     pub summary: String,
     pub on_my_mind: Vec<String>,
@@ -70,8 +69,6 @@ struct FrontMatter {
     period_key: Option<String>,
     created_at: DateTime<Utc>,
     provenance: Value,
-    #[serde(default)]
-    coverage: Value,
 }
 
 pub fn parse_session(markdown: &str) -> Result<Session, PluginError> {
@@ -114,7 +111,11 @@ pub fn parse_session(markdown: &str) -> Result<Session, PluginError> {
 pub fn parse_digest(markdown: &str) -> Result<Digest, PluginError> {
     let (front_matter, body) = front_matter(markdown)?;
     if front_matter.kind != "week" && front_matter.kind != "month" {
-        return Err(format!("expected a week or month digest, got {:?}", front_matter.kind).into());
+        return Err(format!(
+            "expected a week or month digest, got {:?}",
+            front_matter.kind
+        )
+        .into());
     }
     let body = Body::parse(body)?;
     let mut digest = Digest {
@@ -122,7 +123,6 @@ pub fn parse_digest(markdown: &str) -> Result<Digest, PluginError> {
         period_key: required(front_matter.period_key, "period_key")?,
         created_at: front_matter.created_at,
         provenance: front_matter.provenance,
-        coverage: front_matter.coverage,
         title: body.title,
         summary: body.prose,
         on_my_mind: Vec::new(),
@@ -171,7 +171,10 @@ struct Section {
 
 impl Body {
     fn parse(body: &str) -> Result<Self, PluginError> {
-        let mut lines = body.lines().enumerate().skip_while(|(_, line)| line.is_empty());
+        let mut lines = body
+            .lines()
+            .enumerate()
+            .skip_while(|(_, line)| line.is_empty());
         let title = lines
             .next()
             .and_then(|(_, line)| line.strip_prefix("# "))
@@ -228,9 +231,11 @@ impl Section {
                     _ => return Err(self.error(*number, line, "a known fact category")),
                 });
             } else {
-                let category = category.ok_or_else(|| self.error(*number, line, "a `### ` category"))?;
+                let category =
+                    category.ok_or_else(|| self.error(*number, line, "a `### ` category"))?;
                 facts.push(
-                    parse_fact(line, category).ok_or_else(|| self.error(*number, line, "a fact"))?,
+                    parse_fact(line, category)
+                        .ok_or_else(|| self.error(*number, line, "a fact"))?,
                 );
             }
         }
@@ -271,7 +276,9 @@ fn parse_fact(line: &str, category: &'static str) -> Option<Fact> {
     let item = line.strip_prefix("- ")?;
     let (text, meta) = item.rsplit_once(" _(")?;
     let mut meta = meta.strip_suffix(")_")?.split(" · ");
-    let source_kind = meta.next().filter(|kind| ["user_said", "observed"].contains(kind))?;
+    let source_kind = meta
+        .next()
+        .filter(|kind| ["user_said", "observed"].contains(kind))?;
     let confidence = meta
         .next()?
         .strip_suffix(" confidence")
@@ -281,7 +288,10 @@ fn parse_fact(line: &str, category: &'static str) -> Option<Fact> {
         "dated" => ("dated", None),
         dated => {
             let until = dated.strip_prefix("dated until ")?;
-            ("dated", Some(NaiveDate::parse_from_str(until, "%Y-%m-%d").ok()?))
+            (
+                "dated",
+                Some(NaiveDate::parse_from_str(until, "%Y-%m-%d").ok()?),
+            )
         }
     };
     // What's left are the refs (`#42` or links to sessions), which ferret doesn't keep.
@@ -323,7 +333,8 @@ fn unescape(line: &str) -> String {
 mod tests {
     use super::*;
 
-    const TALOS: &str = include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-talos.md");
+    const TALOS: &str =
+        include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-talos.md");
     const TRIP: &str = include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-trip.md");
     const WEEK: &str = include_str!("../../../fixtures/carapace/memory/weeks/2026-W36.md");
     const MONTH: &str = include_str!("../../../fixtures/carapace/memory/months/2026-09.md");
@@ -358,10 +369,16 @@ mod tests {
         );
         assert_eq!(
             session.outcomes,
-            ["Decided to upgrade the control plane first.", "Picked Saturday for it."]
+            [
+                "Decided to upgrade the control plane first.",
+                "Picked Saturday for it."
+            ]
         );
         assert_eq!(session.open_loops, ["Back up etcd before the upgrade."]);
-        assert_eq!(session.on_my_mind, ["upgrading the home cluster to Talos 1.11"]);
+        assert_eq!(
+            session.on_my_mind,
+            ["upgrading the home cluster to Talos 1.11"]
+        );
         assert_eq!(session.friction, ["The upgrade docs were hard to find."]);
         assert_eq!(session.tags, ["homelab", "talos"]);
         assert_eq!(
@@ -379,7 +396,11 @@ mod tests {
                         "The user writes notes like _(this · or that)_ inline."
                     )
                 },
-                fact("social", Some("Anna"), "Anna helps with the cluster now and then."),
+                fact(
+                    "social",
+                    Some("Anna"),
+                    "Anna helps with the cluster now and then."
+                ),
                 Fact {
                     source_kind: "observed".to_owned(),
                     durability: "dated".to_owned(),
@@ -398,7 +419,10 @@ mod tests {
     fn a_session_without_most_sections_parses_too() {
         let session = parse_session(TRIP).unwrap();
 
-        assert_eq!(session.abstract_text, "The user planned a weekend trip with Anna.");
+        assert_eq!(
+            session.abstract_text,
+            "The user planned a weekend trip with Anna."
+        );
         assert!(session.outcomes.is_empty() && session.tags.is_empty());
         assert_eq!(
             session.facts,
@@ -411,17 +435,22 @@ mod tests {
         let week = parse_digest(WEEK).unwrap();
         let month = parse_digest(MONTH).unwrap();
 
-        assert_eq!((week.level.as_str(), week.period_key.as_str()), ("week", "2026-W36"));
+        assert_eq!(
+            (week.level.as_str(), week.period_key.as_str()),
+            ("week", "2026-W36")
+        );
         assert_eq!(week.title, "Week 2026-W36 (2026-08-31 to 2026-09-06)");
         assert_eq!(week.summary, "Mostly homelab work, and a trip with Anna.");
         assert_eq!(week.highlights, ["Planned the Talos upgrade."]);
         assert_eq!(week.open_loops, ["Back up etcd."]);
-        assert_eq!(week.coverage[1]["source_id"], "s-trip");
         assert_eq!(
             week.learned,
             [fact("social", Some("Anna"), "Anna is the user's sister.")]
         );
-        assert_eq!((month.level.as_str(), month.period_key.as_str()), ("month", "2026-09"));
+        assert_eq!(
+            (month.level.as_str(), month.period_key.as_str()),
+            ("month", "2026-09")
+        );
         assert_eq!(month.highlights, ["Upgraded the cluster."]);
         assert!(month.learned.is_empty());
     }

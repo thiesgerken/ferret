@@ -1,8 +1,11 @@
 """Renders the carapace plugin's fixtures with carapace's own memory mirror renderer.
 
-Run from a carapace checkout, so the parser is tested against what carapace actually writes:
+Rendered by carapace itself, so the parser is tested against what carapace actually writes. Run
+it with carapace's locked dependencies, but in a throwaway environment, so carapace's own
+`.venv` stays as it is:
 
-    uv run --project <carapace> python render_fixtures.py <this directory>
+    UV_PROJECT_ENVIRONMENT=/tmp/carapace-fixtures-venv \
+        uv run --frozen --project <carapace checkout> python render_fixtures.py <this directory>
 
 The records cover what the parser has to handle: facts with and without a subject, dated facts,
 several source refs, a statement that contains the meta separators, prose with escaped block

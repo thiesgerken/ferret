@@ -3,12 +3,119 @@
 
 mod mirror;
 
-use ferret_api::{ContentType, DocumentPut};
+use ferret_api::{ContentType, DocumentPut, PutOutcome, internal::RunStats};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
 
+use super::{
+    Outcome, PluginError, Run,
+    git::{self, FileHistory, Git},
+};
 use mirror::{Digest, Fact, Session};
+
+pub const NAME: &str = "carapace";
+
+/// Indexes a carapace knowledge repository: its memory as sessions, facts and digests, and its
+/// other files.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(title = "carapace")]
+pub struct CarapaceConfig {
+    /// The knowledge repository's upstream remote, e.g.
+    /// `https://git.example.com/me/knowledge.git`.
+    remote: String,
+    /// The branch carapace pushes to. The repository's default branch when left out.
+    #[serde(default)]
+    branch: Option<String>,
+    /// A token that may read the repository, for a private one.
+    #[serde(default)]
+    #[schemars(extend("writeOnly" = true))]
+    token: Option<String>,
+    /// carapace's web UI, e.g. `https://carapace.example.com`, which documents link back to.
+    carapace_url: String,
+}
+
+// ponytail: a full sync every run, whose sweep also removes facts a changed session file
+// dropped. Diffing against the last commit comes with the shared repository module (#10).
+pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
+    let config: CarapaceConfig = serde_json::from_value(run.config.clone())?;
+    let git = Git {
+        protocols: &run.options.git_protocols,
+    };
+    let (checkout, commit) = git::clone(
+        &git,
+        &config.remote,
+        config.branch.as_deref(),
+        config.token.as_deref(),
+    )
+    .await?;
+    let dir = checkout.path();
+    run.log
+        .line(format!("cloned {} at {commit}", config.remote));
+    let listing = git.run(dir, &["ls-files", "--stage", "-z"]).await?;
+    let history = git::parse_history(
+        &git.run(
+            dir,
+            &["log", "-z", "--format=%x1e%an%x1f%aI", "--name-only"],
+        )
+        .await?,
+    )?;
+    let target = Target {
+        root: &run.source,
+        carapace_url: config.carapace_url.trim_end_matches('/'),
+    };
+
+    let sync = run.api.start_sync(&run.source).await?.sync_id;
+    let mut stats = RunStats::default();
+    for (mode, path) in git::tracked_files(&listing)? {
+        let kind = kind(path);
+        if kind == Kind::Ignored {
+            continue;
+        }
+        let text = match git::read_text(dir, mode, path).await? {
+            Ok(text) => text,
+            Err(skipped) => {
+                run.log.line(format!("skipped {path}: {skipped}"));
+                continue;
+            }
+        };
+        let in_file = |error: PluginError| format!("{path}: {error}");
+        let documents = match kind {
+            Kind::Session => {
+                session_documents(&mirror::parse_session(&text).map_err(in_file)?, &target)
+            }
+            Kind::Digest => vec![digest_document(
+                &mirror::parse_digest(&text).map_err(in_file)?,
+                &target,
+            )],
+            Kind::File => {
+                let history = history.get(path).ok_or_else(|| {
+                    format!("{path} is tracked but no commit in the log touched it")
+                })?;
+                vec![file_document(path, text, history, &target)]
+            }
+            Kind::Ignored => unreachable!("skipped above"),
+        };
+        for document in documents {
+            match run.api.put_document(&document).await?.outcome {
+                PutOutcome::Unchanged => stats.unchanged += 1,
+                PutOutcome::Created | PutOutcome::Updated => stats.put += 1,
+            }
+        }
+    }
+    stats.deleted = run.api.commit_sync(sync).await?.deleted;
+    run.log.line(format!(
+        "{} put, {} unchanged, {} deleted",
+        stats.put, stats.unchanged, stats.deleted
+    ));
+    Ok(Outcome {
+        state: json!({ "commit": commit }),
+        stats,
+    })
+}
 
 /// What a repository path holds.
 #[derive(Debug, PartialEq)]
@@ -24,7 +131,8 @@ fn kind(path: &str) -> Kind {
     let markdown = path.ends_with(".md");
     if markdown && path.starts_with("memory/sessions/") {
         Kind::Session
-    } else if markdown && (path.starts_with("memory/weeks/") || path.starts_with("memory/months/")) {
+    } else if markdown && (path.starts_with("memory/weeks/") || path.starts_with("memory/months/"))
+    {
         Kind::Digest
     } else if path.starts_with("memory/facts/") {
         Kind::Ignored
@@ -79,20 +187,48 @@ fn session_documents(session: &Session, target: &Target) -> Vec<DocumentPut> {
         modified_at: session.created_at,
         meta,
     }];
-    documents.extend(session.facts.iter().map(|fact| DocumentPut {
-        source: target.source("facts"),
-        external_id: format!("{}/{}", session.session_id, fact_id(fact)),
-        content_type: ContentType::Plain,
-        title: Some(fact.subject.clone().unwrap_or_else(|| fact.statement.clone())),
-        text: fact_text(fact),
-        url: Some(url.clone()),
-        thread: None,
-        authors: Vec::new(),
-        created_at: session.created_at,
-        modified_at: session.created_at,
-        meta: fact_meta(fact, &session.session_id),
+    documents.extend(session.facts.iter().map(|fact| {
+        DocumentPut {
+            source: target.source("facts"),
+            external_id: format!("{}/{}", session.session_id, fact_id(fact)),
+            content_type: ContentType::Plain,
+            title: Some(
+                fact.subject
+                    .clone()
+                    .unwrap_or_else(|| fact.statement.clone()),
+            ),
+            text: fact_text(fact),
+            url: Some(url.clone()),
+            thread: None,
+            authors: Vec::new(),
+            created_at: session.created_at,
+            modified_at: session.created_at,
+            meta: fact_meta(fact, &session.session_id),
+        }
     }));
     documents
+}
+
+/// Any other file of the repository, like the git plugin indexes it.
+fn file_document(path: &str, text: String, history: &FileHistory, target: &Target) -> DocumentPut {
+    let content_type = if path.ends_with(".md") {
+        ContentType::Markdown
+    } else {
+        ContentType::Plain
+    };
+    DocumentPut {
+        source: target.source("files"),
+        external_id: path.to_owned(),
+        content_type,
+        title: Some(git::title(path, &text, content_type)),
+        text,
+        url: Some(target.url("/knowledge", "path", path)),
+        thread: None,
+        authors: vec![history.author.clone()],
+        created_at: history.created_at,
+        modified_at: history.modified_at,
+        meta: Map::new(),
+    }
 }
 
 fn digest_document(digest: &Digest, target: &Target) -> DocumentPut {
@@ -171,7 +307,8 @@ fn push_section(text: &mut String, heading: &str, items: &[String]) {
 mod tests {
     use super::*;
 
-    const TALOS: &str = include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-talos.md");
+    const TALOS: &str =
+        include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-talos.md");
     const WEEK: &str = include_str!("../../../fixtures/carapace/memory/weeks/2026-W36.md");
 
     const TARGET: Target = Target {
@@ -202,9 +339,20 @@ mod tests {
             session.url.as_deref(),
             Some("https://carapace.example/memory/sessions?session=s%2Dtalos")
         );
-        assert!(session.text.starts_with("The user planned the Talos upgrade"));
-        assert!(session.text.contains("## Open loops\n\n- Back up etcd before the upgrade."));
-        assert!(!session.text.contains("Friction"), "friction stays in carapace");
+        assert!(
+            session
+                .text
+                .starts_with("The user planned the Talos upgrade")
+        );
+        assert!(
+            session
+                .text
+                .contains("## Open loops\n\n- Back up etcd before the upgrade.")
+        );
+        assert!(
+            !session.text.contains("Friction"),
+            "friction stays in carapace"
+        );
         assert_eq!(session.meta["week_key"], "2026-W36");
 
         let facts = &documents[1..];

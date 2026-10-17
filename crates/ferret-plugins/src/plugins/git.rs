@@ -10,6 +10,7 @@ use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
+use tempfile::TempDir;
 use tokio::process::Command;
 
 use super::{Outcome, PluginError, Run};
@@ -73,10 +74,10 @@ fn markdown_by_default() -> Vec<String> {
 
 /// The latest and the first commit that touched a file.
 #[derive(Debug, PartialEq)]
-struct FileHistory {
-    author: String,
-    modified_at: DateTime<Utc>,
-    created_at: DateTime<Utc>,
+pub(super) struct FileHistory {
+    pub(super) author: String,
+    pub(super) modified_at: DateTime<Utc>,
+    pub(super) created_at: DateTime<Utc>,
 }
 
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
@@ -88,32 +89,14 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         protocols: &run.options.git_protocols,
     };
 
-    let checkout = tempfile::tempdir()?;
+    let (checkout, commit) = clone(
+        &git,
+        &config.remote,
+        config.branch.as_deref(),
+        config.token.as_deref(),
+    )
+    .await?;
     let dir = checkout.path();
-    let mut clone = git.command(Path::new("."));
-    clone.args(["clone", "--quiet", "--single-branch"]);
-    if let Some(branch) = &config.branch {
-        clone.args(["--branch", branch]);
-    }
-    clone.args(["--".as_ref(), config.remote.as_ref(), dir.as_os_str()]);
-    if let Some(token) = &config.token {
-        // Through the environment rather than `-c`, which would show the token in process
-        // listings. The clone itself doesn't keep it.
-        let credentials = STANDARD.encode(format!("x-access-token:{token}"));
-        clone
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
-            .env(
-                "GIT_CONFIG_VALUE_0",
-                format!("Authorization: Basic {credentials}"),
-            );
-    }
-    output(&mut clone, "git clone").await?;
-    let commit = git
-        .run(dir, &["rev-parse", "HEAD"])
-        .await?
-        .trim()
-        .to_owned();
     run.log
         .line(format!("cloned {} at {commit}", config.remote));
 
@@ -134,34 +117,16 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         if (!config.include.is_empty() && !include.is_match(path)) || exclude.is_match(path) {
             continue;
         }
-        // Symlinks (120000) would let a repository read the worker's own files, submodules
-        // (160000) have no content here. git never checks a regular file out below a symlink,
-        // so a regular file's path stays inside the checkout.
-        if mode != "100644" && mode != "100755" {
-            run.log.line(format!("skipped {path}: not a regular file"));
-            continue;
-        }
-        let metadata = tokio::fs::symlink_metadata(dir.join(path)).await?;
-        if !metadata.is_file() {
-            return Err(format!("{path} is a regular file in git but not in the checkout").into());
-        }
-        if metadata.len() > MAX_FILE_BYTES {
-            run.log.line(format!(
-                "skipped {path}: larger than {MAX_FILE_BYTES} bytes"
-            ));
-            continue;
-        }
+        let text = match read_text(dir, mode, path).await? {
+            Ok(text) => text,
+            Err(skipped) => {
+                run.log.line(format!("skipped {path}: {skipped}"));
+                continue;
+            }
+        };
         let file_history = history
             .get(path)
             .ok_or_else(|| format!("{path} is tracked but no commit in the log touched it"))?;
-        let bytes = tokio::fs::read(dir.join(path)).await?;
-        let Some(text) = String::from_utf8(bytes)
-            .ok()
-            .filter(|text| !text.contains('\0'))
-        else {
-            run.log.line(format!("skipped {path}: not text"));
-            continue;
-        };
         let content_type = if markdown.is_match(path) {
             ContentType::Markdown
         } else {
@@ -200,8 +165,69 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     })
 }
 
+/// Clones `remote` into a new temporary directory and returns it with the commit it's at.
+pub(super) async fn clone(
+    git: &Git<'_>,
+    remote: &str,
+    branch: Option<&str>,
+    token: Option<&str>,
+) -> Result<(TempDir, String), PluginError> {
+    let checkout = tempfile::tempdir()?;
+    let mut clone = git.command(Path::new("."));
+    clone.args(["clone", "--quiet", "--single-branch"]);
+    if let Some(branch) = branch {
+        clone.args(["--branch", branch]);
+    }
+    clone.args(["--".as_ref(), remote.as_ref(), checkout.path().as_os_str()]);
+    if let Some(token) = token {
+        // Through the environment rather than `-c`, which would show the token in process
+        // listings. The clone itself doesn't keep it.
+        let credentials = STANDARD.encode(format!("x-access-token:{token}"));
+        clone
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+            .env(
+                "GIT_CONFIG_VALUE_0",
+                format!("Authorization: Basic {credentials}"),
+            );
+    }
+    output(&mut clone, "git clone").await?;
+    let commit = git
+        .run(checkout.path(), &["rev-parse", "HEAD"])
+        .await?
+        .trim()
+        .to_owned();
+    Ok((checkout, commit))
+}
+
+/// A tracked file's text, or why it's skipped: not a regular file, too large, or not text.
+pub(super) async fn read_text(
+    dir: &Path,
+    mode: &str,
+    path: &str,
+) -> Result<Result<String, String>, PluginError> {
+    // Symlinks (120000) would let a repository read the worker's own files, submodules (160000)
+    // have no content here. git never checks a regular file out below a symlink, so a regular
+    // file's path stays inside the checkout.
+    if mode != "100644" && mode != "100755" {
+        return Ok(Err("not a regular file".to_owned()));
+    }
+    let metadata = tokio::fs::symlink_metadata(dir.join(path)).await?;
+    if !metadata.is_file() {
+        return Err(format!("{path} is a regular file in git but not in the checkout").into());
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return Ok(Err(format!("larger than {MAX_FILE_BYTES} bytes")));
+    }
+    let bytes = tokio::fs::read(dir.join(path)).await?;
+    Ok(String::from_utf8(bytes)
+        .ok()
+        .filter(|text| !text.contains('\0'))
+        .ok_or_else(|| "not text".to_owned()))
+}
+
 /// Mode and path of every file in `git ls-files --stage -z`.
-fn tracked_files(listing: &str) -> Result<Vec<(&str, &str)>, PluginError> {
+pub(super) fn tracked_files(listing: &str) -> Result<Vec<(&str, &str)>, PluginError> {
     listing
         .split('\0')
         .filter(|entry| !entry.is_empty())
@@ -218,7 +244,7 @@ fn tracked_files(listing: &str) -> Result<Vec<(&str, &str)>, PluginError> {
 /// Author and dates of every file, from `git log -z --format=%x1e%an%x1f%aI --name-only`: per
 /// commit a header, NUL, a line break, then the paths, each ending in NUL. Newest commits come
 /// first, so a file's first appearance is its latest commit and its last appearance its first.
-fn parse_history(log: &str) -> Result<HashMap<String, FileHistory>, PluginError> {
+pub(super) fn parse_history(log: &str) -> Result<HashMap<String, FileHistory>, PluginError> {
     let mut files: HashMap<String, FileHistory> = HashMap::new();
     for commit in log.split('\x1e').filter(|commit| !commit.is_empty()) {
         let mut fields = commit.split('\0');
@@ -250,7 +276,7 @@ fn parse_history(log: &str) -> Result<HashMap<String, FileHistory>, PluginError>
 }
 
 /// The first Markdown heading, or the file name.
-fn title(path: &str, text: &str, content_type: ContentType) -> String {
+pub(super) fn title(path: &str, text: &str, content_type: ContentType) -> String {
     let heading = (content_type == ContentType::Markdown)
         .then(|| text.lines().find_map(|line| line.strip_prefix("# ")))
         .flatten()
@@ -280,9 +306,9 @@ fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
     Ok(set.build()?)
 }
 
-struct Git<'a> {
+pub(super) struct Git<'a> {
     /// What `GIT_ALLOW_PROTOCOL` gets.
-    protocols: &'a str,
+    pub(super) protocols: &'a str,
 }
 
 impl Git<'_> {
@@ -301,7 +327,7 @@ impl Git<'_> {
     }
 
     /// Runs git in `dir` and returns its stdout.
-    async fn run(&self, dir: &Path, args: &[&str]) -> Result<String, PluginError> {
+    pub(super) async fn run(&self, dir: &Path, args: &[&str]) -> Result<String, PluginError> {
         output(
             self.command(dir).args(args),
             &format!("git {}", args.join(" ")),

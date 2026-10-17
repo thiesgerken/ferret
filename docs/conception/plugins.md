@@ -97,9 +97,14 @@ change its rendering freely.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
-- Incremental like the git plugin. A changed session file can lose facts: the plugin compares the
-  fact ids of the old version (`git show <cursor>:<path>`) with the new one and deletes the missing
-  ones.
+- v1 does a full sync per run: one sync over the root, every document put again (the server skips
+  unchanged ones), commit. The sweep removes facts a changed session file dropped, and anything
+  else that's gone.
+- Later, incremental like the git plugin: a changed session file can lose facts, so the plugin
+  compares the fact ids of the old version (`git show <cursor>:<path>`) with the new one and
+  deletes the missing ones.
+- Config: `remote`, `branch`, `token` (write-only) like the git plugin, and `carapace_url`, the web
+  UI that documents link to.
 - `url` (relative to the configured carapace base URL): sessions
   `/memory/sessions?session={session_id}`, facts link to their session, digests
   `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.
