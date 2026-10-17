@@ -4,7 +4,7 @@ import { Check, CircleDashed } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { SearchHitsQuery } from "@/gql/graphql";
 import { NamedIcon } from "@/components/named-icon";
-import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import { TIME_RANGES, matchingOn, toggle, toggleMatching, type SearchState, type TimeRange } from "@/lib/search-url";
 import { sourceLabel, type SourceLabel } from "@/lib/source-label";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +47,24 @@ export function SearchFilters({
       aria-label="Filters"
       className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] lg:mx-0 lg:flex-col lg:items-stretch lg:gap-7 lg:overflow-visible lg:px-0"
     >
+      <FilterGroup title="Matching">
+        {(["keyword", "semantic"] as const).map((matching) => {
+          const on = matchingOn(state.mode, matching);
+          // The only one left can't go off: a search with neither would match nothing.
+          const last = on && state.mode !== "hybrid";
+          return (
+            <FilterButton
+              key={matching}
+              label={matching === "keyword" ? "Keyword" : "Semantic"}
+              title={last ? "At least one kind of matching stays on" : MATCHING_HINTS[matching]}
+              count={null}
+              pressed={on}
+              disabled={last}
+              onClick={() => onChange({ ...state, mode: toggleMatching(state.mode, matching) })}
+            />
+          );
+        })}
+      </FilterGroup>
       <FilterGroup title="Time">
         <select
           aria-label="Time range"
@@ -61,8 +79,9 @@ export function SearchFilters({
           ))}
         </select>
       </FilterGroup>
-      {/* With one model there's nothing to choose. The default option names the model that ran. */}
-      {models.length > 1 && (
+      {/* With one model there's nothing to choose, and keyword matching uses none. The default
+          option names the model that ran. */}
+      {models.length > 1 && state.mode !== "keyword" && (
         <FilterGroup title="Model">
           <select
             aria-label="Embedding model"
@@ -129,6 +148,11 @@ export function SearchFilters({
   );
 }
 
+const MATCHING_HINTS = {
+  keyword: "Every word found in the document, ranked by BM25",
+  semantic: "The meaning close to the query, by embedding similarity",
+};
+
 /** On narrow screens the group dissolves into the chip row, so only wide screens see its title. */
 function FilterGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -147,6 +171,7 @@ function FilterButton({
   title,
   count,
   pressed,
+  disabled,
   onClick,
 }: {
   /** A plain label, or a source's label with its writer's icon. */
@@ -157,17 +182,19 @@ function FilterButton({
   /** Null for a selected value the facet doesn't list. */
   count: string | null;
   pressed: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       aria-pressed={pressed}
+      disabled={disabled}
       onClick={onClick}
       title={title}
       className={cn(
         "flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-sm whitespace-nowrap transition-colors",
-        "lg:rounded-md lg:border-transparent lg:px-2 lg:text-left",
+        "lg:rounded-md lg:border-transparent lg:px-2 lg:text-left disabled:cursor-not-allowed",
         pressed
           ? "border-foreground bg-foreground text-background lg:border-transparent lg:bg-accent lg:font-medium lg:text-foreground"
           : "border-border bg-background hover:bg-accent lg:text-muted-foreground lg:hover:text-foreground",

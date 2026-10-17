@@ -182,13 +182,16 @@ async function pauseTyping() {
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
 const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
 const label = (button: Element) => button.querySelector("span.truncate")?.textContent;
+/** The source and author chips, without the matching toggles ahead of them. */
+const facetChips = (root: Element, selector = CHIPS) =>
+  [...root.querySelectorAll<HTMLButtonElement>(selector)].filter((b) => !["Keyword", "Semantic"].includes(label(b) ?? ""));
 
-const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null };
+const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null, mode: "hybrid" };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
   const { view, variables } = await renderResults(STATE);
 
-  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, range: null, model: null } });
+  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, range: null, model: null, mode: null } });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
@@ -240,7 +243,7 @@ test("offers the matches' sources and authors with their counts as filters", asy
     [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => label(b) === name)!;
 
   assert.deepEqual(
-    [...view.container.querySelectorAll(CHIPS)].map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
+    facetChips(view.container).map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
     ["Notes 12", "mail import › mail › zoho 3", "thies 9", "Allianz 2"],
     "sources, then authors, as the facets order them",
   );
@@ -261,7 +264,7 @@ test("selected filters go into the query and stay as pressed chips", async () =>
   assert.deepEqual(input.sources, ["paperless"]);
   assert.deepEqual(input.authors, ["Allianz"]);
   assert.equal(input.range, "WEEK");
-  const pressed = [...view.container.querySelectorAll("button[aria-pressed=true]")].map(label);
+  const pressed = facetChips(view.container, "button[aria-pressed=true]").map(label);
   assert.deepEqual(pressed, ["paperless", "Allianz"]);
   await view.unmount();
 });
@@ -331,7 +334,7 @@ test("a ✓ judges the hit for this search, a second click takes it back", async
   await settle();
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
-  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null };
+  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null, mode: null };
   assert.deepEqual(variables.slice(1), [
     { input: { search, documentId: "a", judged: true } },
     { input: { search, documentId: "a", judged: false } },
@@ -438,11 +441,35 @@ test("the column groups a writer's sources under its name, the chips keep full l
   const { view } = await renderResults({ ...STATE, q: "grouped" });
   const nav = view.container.querySelector("nav[aria-label=Filters]")!;
   const heading = [...nav.querySelectorAll("p")].map((p) => p.textContent);
-  const buttons = [...nav.querySelectorAll("button[aria-pressed]")].slice(0, 3);
+  const buttons = facetChips(nav).slice(0, 3);
   const [full, short] = [0, 1].map((i) => buttons.map((b) => b.querySelectorAll("[data-label] > span")[i]?.textContent ?? null));
 
   assert.deepEqual(heading, ["Notes"], "only the writer with several sources gets a heading");
   assert.deepEqual(full, ["Notes", "Notes › journal", "mail import › mail › zoho"]);
   assert.deepEqual(short, ["All", "journal", null]);
+  await view.unmount();
+});
+
+test("keyword and semantic matching switch off one at a time, never both", async () => {
+  const { view, variables, changes } = await renderResults(STATE, { models: ["alpha", "beta"] });
+  const matching = (name: string) =>
+    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => label(button) === name)!;
+  const text = () => view.container.textContent ?? "";
+  assert.equal(matching("Keyword").getAttribute("aria-pressed"), "true");
+  assert.equal(matching("Semantic").getAttribute("aria-pressed"), "true");
+
+  await act(async () => matching("Semantic").click());
+  await settle();
+  assert.deepEqual(changes.at(-1), { ...STATE, mode: "keyword" });
+  assert.equal((variables.at(-1) as { input: { mode: string } }).input.mode, "KEYWORD");
+  assert.match(text(), /37 keyword matches/);
+  assert.equal(matching("Keyword").disabled, true, "the only one left stays on");
+  assert.equal(view.container.querySelector('select[aria-label="Embedding model"]'), null, "keyword matching uses no model");
+
+  await act(async () => matching("Semantic").click());
+  await act(async () => matching("Keyword").click());
+  await settle();
+  assert.deepEqual(changes.at(-1), { ...STATE, mode: "semantic" });
+  assert.match(text(), /37 semantic matches/);
   await view.unmount();
 });
