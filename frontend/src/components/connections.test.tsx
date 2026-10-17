@@ -86,7 +86,7 @@ test("shows each connection with its last run and links to its runs on Activity"
   assert.match(text, /Last run.* ago.*took 5 s/);
   assert.match(text, /Next run.*0 \* \* \* \*/);
   assert.match(text, /git clone failed: repository not found/);
-  assert.equal(view.container.querySelectorAll("[aria-label='Last 1 runs'] [title]").length, 1);
+  assert.equal(view.container.querySelectorAll("[aria-label='Last run'] [title]").length, 1);
   const activity = [...view.container.querySelectorAll("a")].find((link) => link.textContent?.includes("Activity"));
   assert.equal(activity?.getAttribute("href"), "/activity?writer=connection-1");
   await view.unmount();

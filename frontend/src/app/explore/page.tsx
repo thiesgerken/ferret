@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Suspense } from "react";
 import { Explore } from "@/components/explore";
 import { exploreHref, parseExplore, type ExploreState } from "@/lib/explore-url";
@@ -17,10 +18,11 @@ function ExploreRoute() {
 }
 
 export default function ExplorePage() {
+  const t = useTranslations("pages");
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
       <HomeLink />
-      <h1 className="text-xl font-semibold">Explore</h1>
+      <h1 className="text-xl font-semibold">{t("explore.title")}</h1>
       {/* useSearchParams needs a Suspense boundary in a static export. */}
       <Suspense>
         <ExploreRoute />

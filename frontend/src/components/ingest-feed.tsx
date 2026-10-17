@@ -1,13 +1,14 @@
 "use client";
 
 import { ChevronRight, CircleDashed, KeyRound, Play } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { useQuery } from "urql";
 import { NamedIcon } from "@/components/named-icon";
-import { Count, Pill, STATUS_STYLES } from "@/components/run-status";
+import { Count, Pill, RunDuration } from "@/components/run-status";
 import { graphql } from "@/gql";
 import type { ActivityFeedQuery } from "@/gql/graphql";
-import { formatDuration, timeAgo } from "@/lib/format-time";
+import { timeAgo } from "@/lib/format-time";
 import { errorMessage } from "@/lib/graphql";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +99,7 @@ function FeedPage({
   /** Only the last page offers the next one. */
   last: boolean;
 }) {
+  const t = useTranslations("activity");
   const [{ data, error }, refetch] = useQuery({
     query: ActivityFeedQueryDocument,
     variables: { writer, before, allUsers: allUsers || null },
@@ -114,7 +116,7 @@ function FeedPage({
   }
   if (!data) return null;
   if (data.activity.length === 0 && before === null) {
-    return <li className="p-6 text-center text-sm text-muted-foreground">Nothing ingested yet.</li>;
+    return <li className="p-6 text-center text-sm text-muted-foreground">{t("nothingYet")}</li>;
   }
   const end = data.activity.at(-1);
   return (
@@ -125,7 +127,7 @@ function FeedPage({
       {last && end && data.activity.length === PAGE_SIZE && (
         <li className="p-2 text-center">
           <button type="button" onClick={() => onMore(end.cursor)} className="rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
-            Show older
+            {t("showOlder")}
           </button>
         </li>
       )}
@@ -134,9 +136,9 @@ function FeedPage({
 }
 
 function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; showOwner: boolean }) {
+  const t = useTranslations();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
-  const end = ingest.finishedAt ? new Date(ingest.finishedAt) : now;
-  const seconds = (end.getTime() - new Date(ingest.startedAt).getTime()) / 1000;
   const expandable = Boolean(ingest.log || ingest.error);
 
   return (
@@ -154,29 +156,29 @@ function IngestRow({ ingest, now, showOwner }: { ingest: Ingest; now: Date; show
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2">
-            <span className="truncate font-medium">{ingest.writer?.name ?? "Unknown writer"}</span>
-            <Pill {...STATUS_STYLES[ingest.status]} />
+            <span className="truncate font-medium">{ingest.writer?.name ?? t("activity.unknownWriter")}</span>
+            <Pill status={ingest.status} />
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               {ingest.kind === "RUN" ? <Play className="size-3" aria-hidden /> : <KeyRound className="size-3" aria-hidden />}
-              {ingest.kind === "RUN" ? "Run" : "API writes"}
+              {ingest.kind === "RUN" ? t("activity.run") : t("activity.apiWrites")}
             </span>
             {showOwner && ingest.owner && <span className="text-xs text-muted-foreground">· {ingest.owner}</span>}
           </span>
           <span className="block text-xs text-muted-foreground tabular-nums">
-            {timeAgo(ingest.startedAt, now)} · {ingest.status === "RUNNING" ? "for " : "took "}
-            {formatDuration(seconds)}
+            {timeAgo(ingest.startedAt, now, locale)} · <RunDuration startedAt={ingest.startedAt} finishedAt={ingest.finishedAt} now={now} />
           </span>
         </span>
         <span className="hidden shrink-0 gap-3 text-xs text-muted-foreground tabular-nums sm:flex">
-          <Count label="put" value={ingest.put} />
-          <Count label="unchanged" value={ingest.unchanged} />
-          <Count label="deleted" value={ingest.deleted} />
+          <Count change="put" value={ingest.put} />
+          <Count change="unchanged" value={ingest.unchanged} />
+          <Count change="deleted" value={ingest.deleted} />
         </span>
       </button>
       {open && (
         <div className="space-y-2 px-4 pb-4 pl-[4.25rem]">
           <p className="text-xs text-muted-foreground tabular-nums sm:hidden">
-            {ingest.put} put · {ingest.unchanged} unchanged · {ingest.deleted} deleted
+            <Count change="put" value={ingest.put} /> · <Count change="unchanged" value={ingest.unchanged} /> ·{" "}
+            <Count change="deleted" value={ingest.deleted} />
           </p>
           {ingest.error && <p className="text-destructive">{ingest.error}</p>}
           {ingest.log && (

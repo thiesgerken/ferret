@@ -1,6 +1,7 @@
 "use client";
 
 import { TriangleAlert } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useMutation } from "urql";
 import { TeiCard } from "@/components/tei-card";
@@ -31,11 +32,12 @@ const headClass = "border-b border-border text-xs text-muted-foreground";
  * TEIs no configured model uses. Switches take effect within 10 seconds on every server.
  */
 export function TeiPool({ models, teis, onChanged }: { models: Model[]; teis: Tei[]; onChanged: () => void }) {
+  const t = useTranslations("tei.pool");
   const others = teis.filter((tei) => !models.some((model) => model.name === tei.model));
   // Unused ones by the model they serve, then those that don't answer.
   const groups = new Map<string, Tei[]>();
   for (const tei of others) {
-    const title = tei.servedModel ? `Unused (${tei.servedModel})` : "Offline";
+    const title = tei.servedModel ? t("unusedGroup", { model: tei.servedModel }) : t("offlineGroup");
     groups.set(title, [...(groups.get(title) ?? []), tei]);
   }
   return (
@@ -54,23 +56,23 @@ export function TeiPool({ models, teis, onChanged }: { models: Model[]; teis: Te
 }
 
 function ModelPool({ model, teis, onChanged }: { model: Model; teis: Tei[]; onChanged: () => void }) {
+  const t = useTranslations();
   const serving = teis.filter((tei) => tei.enabled && tei.state === "ONLINE");
   const warnings = [
-    !serving.some((tei) => tei.queries) &&
-      "No enabled TEI answers this model's queries: searches with it find keyword matches only.",
-    !serving.some((tei) => tei.embedding) && "No enabled TEI embeds this model's chunks: its backlog doesn't move.",
+    !serving.some((tei) => tei.queries) && t("tei.pool.noQueries"),
+    !serving.some((tei) => tei.embedding) && t("tei.pool.noEmbedding"),
   ].filter((warning): warning is string => Boolean(warning));
   return (
     <div className="space-y-3 rounded-xl border border-border p-4 text-sm">
       <div>
         <p className="font-medium">
           {model.name}
-          {model.isDefault && <span className="text-xs font-normal text-muted-foreground"> · default</span>}
+          {model.isDefault && <span className="text-xs font-normal text-muted-foreground"> · {t("common.default")}</span>}
         </p>
         <p className="text-xs text-muted-foreground">
           <span className="font-mono">{model.modelId}</span>
           {" · "}
-          {model.dimension} dimensions
+          {t("tei.pool.dimensions", { dimension: model.dimension })}
         </p>
       </div>
       {warnings.map((warning) => (
@@ -80,19 +82,19 @@ function ModelPool({ model, teis, onChanged }: { model: Model; teis: Tei[]; onCh
         </p>
       ))}
       {teis.length === 0 ? (
-        <p className="text-muted-foreground">No TEI serves this model.</p>
+        <p className="text-muted-foreground">{t("tei.pool.noTei")}</p>
       ) : (
         <TeiGrid teis={teis} onChanged={onChanged} />
       )}
       {model.backlog.length === 0 ? (
-        <p className="text-muted-foreground">Everything is embedded.</p>
+        <p className="text-muted-foreground">{t("tei.pool.allEmbedded")}</p>
       ) : (
         <table className={tableClass}>
           <thead className={headClass}>
             <tr>
-              <th className="py-1.5 pr-3 font-medium">Source</th>
-              <th className="py-1.5 pr-3 text-right font-medium">Pending</th>
-              <th className="py-1.5 text-right font-medium">Refused by TEI</th>
+              <th className="py-1.5 pr-3 font-medium">{t("tei.pool.source")}</th>
+              <th className="py-1.5 pr-3 text-right font-medium">{t("tei.pool.pending")}</th>
+              <th className="py-1.5 text-right font-medium">{t("tei.pool.refused")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -121,6 +123,7 @@ function TeiGrid({ teis, onChanged }: { teis: Tei[]; onChanged: () => void }) {
 }
 
 function TeiSwitches({ tei, onChanged }: { tei: Tei; onChanged: () => void }) {
+  const t = useTranslations("tei");
   const [{ fetching }, update] = useMutation(UpdateTeiMutation);
   const [error, setError] = useState("");
 
@@ -133,16 +136,16 @@ function TeiSwitches({ tei, onChanged }: { tei: Tei; onChanged: () => void }) {
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-        <Switch label="On" description={tei.url} checked={tei.enabled} disabled={fetching} onChange={(enabled) => change({ enabled })} />
+        <Switch label={t("pool.on")} description={tei.url} checked={tei.enabled} disabled={fetching} onChange={(enabled) => change({ enabled })} />
         <Switch
-          label="Queries"
+          label={t("queries")}
           description={tei.url}
           checked={tei.queries}
           disabled={fetching || !tei.enabled}
           onChange={(queries) => change({ queries })}
         />
         <Switch
-          label="Embedding"
+          label={t("embedding")}
           description={tei.url}
           checked={tei.embedding}
           disabled={fetching || !tei.enabled}

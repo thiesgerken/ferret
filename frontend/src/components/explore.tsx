@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useFormatter, useTranslations } from "next-intl";
 import { useMemo, type ReactNode } from "react";
 import { useQuery } from "urql";
 import { graphql } from "@/gql";
@@ -65,22 +66,21 @@ const ExploreDocumentsQueryDocument = graphql(`
 
 type Exploration = ExploreDocumentsQuery["explore"];
 
-const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
-  MARKDOWN: "Markdown",
-  PLAIN: "Plain text",
-  EMAIL: "Email",
-};
-
-const COLUMNS: { label: string; order: DocumentOrder | null }[] = [
-  { label: "Title", order: "TITLE" },
-  { label: "Source", order: "SOURCE" },
-  { label: "Type", order: null },
-  { label: "Authors", order: null },
-  { label: "Created", order: "CREATED_AT" },
-  { label: "Modified", order: "MODIFIED_AT" },
+const COLUMNS: { label: "title" | "source" | "type" | "authors" | "created" | "modified"; order: DocumentOrder | null }[] = [
+  { label: "title", order: "TITLE" },
+  { label: "source", order: "SOURCE" },
+  { label: "type", order: null },
+  { label: "authors", order: null },
+  { label: "created", order: "CREATED_AT" },
+  { label: "modified", order: "MODIFIED_AT" },
 ];
 
+/** In UTC, like the month facet, so a document shows the date of the month it's counted in. */
+const UTC_DATE = { dateStyle: "medium", timeZone: "UTC" } as const;
+
 export function Explore({ state, onChange }: { state: ExploreState; onChange: (state: ExploreState) => void }) {
+  const t = useTranslations("explore");
+  const format = useFormatter();
   const input = useMemo(
     () => ({
       sources: state.sources.length > 0 ? state.sources : null,
@@ -116,7 +116,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
     <div className="grid gap-8 md:grid-cols-[14rem_1fr]">
       <aside className="space-y-6">
         <FacetList
-          title="Sources"
+          title={t("sources")}
           values={withSelected(facets.sources, state.sources)}
           selected={state.sources}
           label={(source) => sourceLabel(source, writerOf(source), roots).text}
@@ -124,23 +124,24 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
           onToggle={(source) => narrow({ sources: toggle(state.sources, source) })}
         />
         <FacetList
-          title="Type"
+          title={t("type")}
           values={withSelected(
             facets.contentTypes.map(({ contentType, count }) => ({ value: contentType, count })),
             state.contentTypes,
           )}
           selected={state.contentTypes}
-          label={(value) => CONTENT_TYPE_LABELS[value as ContentType]}
+          label={(value) => t(`contentType.${value as ContentType}`)}
           onToggle={(type) => narrow({ contentTypes: toggle(state.contentTypes, type) as ContentType[] })}
         />
         <FacetList
-          title="Authors"
+          title={t("authors")}
           values={withSelected(facets.authors, state.authors)}
           selected={state.authors}
           onToggle={(author) => narrow({ authors: toggle(state.authors, author) })}
         />
         <FacetList
-          title="Month"
+          title={t("month")}
+          label={(month) => format.dateTime(new Date(`${month}-01T00:00:00Z`), { month: "long", year: "numeric", timeZone: "UTC" })}
           values={withSelected(facets.months, state.month ? [state.month] : [])}
           selected={state.month ? [state.month] : []}
           onToggle={(month) => narrow({ month: month === state.month ? null : month })}
@@ -148,7 +149,7 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
       </aside>
       <section className={cn("min-w-0 space-y-4", fetching && "opacity-60")}>
         {documents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No documents match.</p>
+          <p className="text-sm text-muted-foreground">{t("noMatches")}</p>
         ) : (
           <div className="overflow-x-auto">
             <DocumentTable documents={documents} roots={roots} state={state} onSort={narrow} />
@@ -226,6 +227,8 @@ function DocumentTable({
   state: ExploreState;
   onSort: (change: Partial<ExploreState>) => void;
 }) {
+  const t = useTranslations("explore");
+  const format = useFormatter();
   return (
     <table className="w-full text-left text-sm">
       <thead className="border-b border-border text-xs text-muted-foreground">
@@ -251,10 +254,10 @@ function DocumentTable({
                     }
                     className={cn("hover:text-foreground", sorted && "text-foreground")}
                   >
-                    {label} {sorted && (state.descending ? "↓" : "↑")}
+                    {t(label)} {sorted && (state.descending ? "↓" : "↑")}
                   </button>
                 ) : (
-                  label
+                  t(label)
                 )}
               </th>
             );
@@ -275,10 +278,10 @@ function DocumentTable({
             <td className="max-w-56 px-2 py-2 whitespace-nowrap">
               <SourceName source={document.source} writer={document.writer} roots={roots} />
             </td>
-            <td className="px-2 py-2 whitespace-nowrap">{CONTENT_TYPE_LABELS[document.contentType]}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{t(`contentType.${document.contentType}`)}</td>
             <td className="max-w-48 truncate px-2 py-2">{document.authors.join(", ")}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{formatDate(document.createdAt)}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{formatDate(document.modifiedAt)}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{format.dateTime(new Date(document.createdAt), UTC_DATE)}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{format.dateTime(new Date(document.modifiedAt), UTC_DATE)}</td>
           </tr>
         ))}
       </tbody>
@@ -295,12 +298,13 @@ function Pager({
   state: ExploreState;
   onChange: (state: ExploreState) => void;
 }) {
+  const t = useTranslations();
   const first = state.page * PAGE_SIZE;
   const last = Math.min(first + PAGE_SIZE, total);
   const buttonClass = "rounded-md px-2 py-1 hover:bg-accent disabled:opacity-50 disabled:hover:bg-transparent";
   return (
-    <nav aria-label="Pages" className="flex items-center justify-between text-sm text-muted-foreground">
-      <span>{total === 0 ? "0 documents" : `${first + 1}–${last} of ${total} documents`}</span>
+    <nav aria-label={t("pages.nav")} className="flex items-center justify-between text-sm text-muted-foreground">
+      <span>{total === 0 ? t("explore.empty") : t("explore.range", { first: first + 1, last, total })}</span>
       <span className="flex gap-1">
         <button
           type="button"
@@ -308,7 +312,7 @@ function Pager({
           onClick={() => onChange({ ...state, page: state.page - 1 })}
           className={buttonClass}
         >
-          Previous
+          {t("explore.previous")}
         </button>
         <button
           type="button"
@@ -316,14 +320,9 @@ function Pager({
           onClick={() => onChange({ ...state, page: state.page + 1 })}
           className={buttonClass}
         >
-          Next
+          {t("explore.next")}
         </button>
       </span>
     </nav>
   );
-}
-
-/** In UTC, like the month facet, so a document shows the date of the month it's counted in. */
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium", timeZone: "UTC" });
 }

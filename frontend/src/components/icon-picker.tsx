@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { lazy, Suspense, useId, useState, type KeyboardEvent } from "react";
 import { NamedIcon } from "@/components/named-icon";
 
@@ -8,15 +9,8 @@ import { NamedIcon } from "@/components/named-icon";
 const IconGrid = lazy(() => import("./icon-grid"));
 
 /** A button showing the chosen icon that opens a searchable grid of lucide icons. */
-export function IconPicker({
-  value,
-  onChange,
-  label = "Icon",
-}: {
-  value: string;
-  onChange: (name: string) => void;
-  label?: string;
-}) {
+export function IconPicker({ value, onChange }: { value: string; onChange: (name: string) => void }) {
+  const t = useTranslations("icons");
   const [open, setOpen] = useState(false);
   const panel = useId();
 
@@ -42,7 +36,7 @@ export function IconPicker({
     >
       <button
         type="button"
-        aria-label={`${label}: ${value}`}
+        aria-label={`${t("label")}: ${value}`}
         aria-expanded={open}
         aria-controls={panel}
         onClick={() => setOpen(!open)}
@@ -56,7 +50,7 @@ export function IconPicker({
           id={panel}
           className="absolute top-full left-0 z-20 mt-2 w-80 rounded-xl border border-border bg-background p-3 shadow-lg"
         >
-          <Suspense fallback={<p className="py-10 text-center text-sm text-muted-foreground">Loading icons…</p>}>
+          <Suspense fallback={<p className="py-10 text-center text-sm text-muted-foreground">{t("loading")}</p>}>
             <IconGrid value={value} onChoose={choose} />
           </Suspense>
         </div>

@@ -7,16 +7,37 @@
     "icon": "Symbol",
     "openInOrigin": "Im Original öffnen",
     "allSources": "allen Quellen",
-    "never": "nie"
+    "never": "nie",
+    "delete": "Löschen",
+    "optional": "(optional)",
+    "default": "Standard",
+    "online": "online",
+    "offline": "offline"
   },
   "pages": {
     "nav": "Seiten",
-    "search": { "title": "Suche" },
-    "explore": { "title": "Stöbern" },
-    "activity": { "title": "Aktivität", "description": "Was ferret gerade einliest und einbettet, live." },
-    "connections": { "title": "Verbindungen", "description": "Plugins, die eine Quelle nach Zeitplan mit ihrem Ursprung abgleichen." },
-    "settings": { "title": "Einstellungen", "description": "Dein Konto, die Schlüssel für deine Agenten und Skripte, das Modell für deine Suchen und die Sprache." },
-    "admin": { "title": "Admin", "description": "Benutzer, die Embedding-Pipeline und die Plugin-Worker." }
+    "search": {
+      "title": "Suche"
+    },
+    "explore": {
+      "title": "Stöbern"
+    },
+    "activity": {
+      "title": "Aktivität",
+      "description": "Was ferret gerade einliest und einbettet, live."
+    },
+    "connections": {
+      "title": "Verbindungen",
+      "description": "Plugins, die eine Quelle nach Zeitplan mit ihrem Ursprung abgleichen."
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "description": "Dein Konto, die Schlüssel für deine Agenten und Skripte, das Modell für deine Suchen und die Sprache."
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Benutzer, die Embedding-Pipeline und die Plugin-Worker."
+    }
   },
   "app": {
     "menu": "App-Menü",
@@ -167,5 +188,216 @@
       "en": "English",
       "de": "Deutsch"
     }
+  },
+  "runs": {
+    "status": {
+      "RUNNING": "Läuft",
+      "SUCCEEDED": "OK",
+      "FAILED": "Fehlgeschlagen",
+      "LOST": "Verloren",
+      "DISABLED": "Deaktiviert",
+      "NEW": "Neu"
+    },
+    "last": "{count, plural, one {Letzter Lauf} other {Letzte # Läufe}}",
+    "changes": {
+      "put": "geschrieben",
+      "unchanged": "unverändert",
+      "deleted": "gelöscht"
+    },
+    "took": "dauerte {duration}",
+    "for": "läuft seit {duration}"
+  },
+  "connections": {
+    "new": "Neue Verbindung",
+    "noWorker": "Noch hat sich kein Plugin-Worker gemeldet, also gibt es nichts zu verbinden.",
+    "count": "{count, plural, one {# Verbindung} other {# Verbindungen}}",
+    "none": "Noch keine Verbindungen",
+    "noneHint": "Eine Verbindung hält eine Quelle mit dem Ort ihrer Dokumente abgeglichen, etwa einem Git-Repository oder Paperless.",
+    "runNow": "Jetzt ausführen",
+    "runNowLabel": "{source} jetzt ausführen",
+    "editLabel": "{source} bearbeiten",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "enableLabel": "{source} aktivieren",
+    "disableLabel": "{source} deaktivieren",
+    "deleteLabel": "{source} löschen",
+    "toActivity": "Läufe und Logs unter Aktivität",
+    "lastRun": "Letzter Lauf",
+    "never": "Nie",
+    "changes": "Änderungen",
+    "nextRun": "Nächster Lauf",
+    "disabled": "Deaktiviert",
+    "history": "Verlauf",
+    "excluded": "Aus dem Index ausgeschlossen ({count})",
+    "excludedHint": "Die Verbindung verwirft diese, wann immer sie sie findet. Entfernst du eine, fängt der nächste Lauf von vorn an und liest sie wieder ein.",
+    "thread": "Thread {thread}",
+    "inSource": "in {source}",
+    "includeAgain": "Wieder aufnehmen",
+    "includeAgainLabel": "{what} wieder aufnehmen",
+    "form": {
+      "title": "Neue Verbindung",
+      "description": "Ein Plugin, das eine Quelle in ferret mit dem Ort ihrer Dokumente abgleicht.",
+      "pluginAndSource": "Plugin und Quelle",
+      "pluginAndSourceHint": "Was die Dokumente holt und wo sie in ferret landen.",
+      "plugin": "Plugin",
+      "source": "Quelle",
+      "sourceHelp": "Wo die Dokumente dieser Verbindung in ferret liegen, etwa `notes` oder `mail/work`. Suchen lassen sich darauf eingrenzen, API-Schlüssel darauf beschränken. Das Plugin kann Quellen darunter anlegen, etwa `carapace/facts`. Nur diese Verbindung schreibt hierhin: Verschwindet etwas am Ursprung, entfernt ferret es, ohne irgendetwas anderes anzufassen.",
+      "create": "Verbindung erstellen",
+      "deleteWarning": "Das löscht die Verbindung und jedes Dokument unter <code>{source}</code>. Dokumente, die der Ursprung nicht mehr hat, gibt es nur noch in ferret, und sie sind endgültig weg.",
+      "confirm": "Gib <code>{source}</code> ein, um zu bestätigen",
+      "deleteAll": "Verbindung und Dokumente löschen",
+      "pluginGone": "Kein Worker bietet das Plugin „{plugin}“ mehr an.",
+      "identity": "Name und Symbol",
+      "identityHint": "Wie die Verbindung in den Suchfiltern und unter Aktivität erscheint.",
+      "namePlaceholder": "Meine Notizen",
+      "schedule": "Zeitplan",
+      "scheduleHint": "Wann sie abgleicht, als Cron-Ausdruck in UTC.",
+      "cron": "Cron",
+      "cronHelp": "Minute, Stunde, Tag im Monat, Monat und Wochentag: `0 * * * *` läuft zu jeder vollen Stunde.",
+      "presets": {
+        "quarterHourly": "Alle 15 Minuten",
+        "hourly": "Stündlich",
+        "nightly": "Nachts"
+      },
+      "configuration": "Konfiguration",
+      "configurationHint": "Was das Plugin <plugin>{plugin}</plugin> braucht, um den Ursprung zu erreichen.",
+      "secretsHint": "Änderst du sie (nicht den Zeitplan), musst du jedes gespeicherte Geheimnis neu eingeben, damit eine Änderung sie nicht woandershin schicken kann.",
+      "noConfiguration": "Dieses Plugin braucht keine Konfiguration.",
+      "keepSecret": "Leer lassen, um das gespeicherte zu behalten, außer die Konfiguration ändert sich",
+      "onePerLine": "Eins pro Zeile."
+    }
+  },
+  "activity": {
+    "documents": "Dokumente",
+    "sources": "Quellen",
+    "chunks": "Chunks",
+    "embedded": "Eingebettet",
+    "embedding": "Einbettung",
+    "embeddingHint": "Wie weit jedes Modell deine Chunks eingebettet hat und wie schnell es vorangeht.",
+    "connections": "Verbindungen",
+    "connectionsHint": "Die letzten Läufe jeder Verbindung, die neuesten rechts, und ihr nächster.",
+    "ingests": "Einlesevorgänge",
+    "oneWriter": "Ein Schreiber",
+    "everyUser": "Alle Benutzer",
+    "last": "zuletzt {time}",
+    "neverRan": "nie gelaufen",
+    "next": "nächster {time}",
+    "disabled": "deaktiviert",
+    "nothingYet": "Noch nichts eingelesen.",
+    "showOlder": "Ältere zeigen",
+    "unknownWriter": "Unbekannter Schreiber",
+    "run": "Lauf",
+    "apiWrites": "API-Schreibvorgänge"
+  },
+  "embedders": {
+    "queries": "Anfragen",
+    "embedding": "Einbettung",
+    "progressLabel": "{model} eingebettet",
+    "coverage": "{embedded, number} von {chunks, number} Chunks eingebettet ({share, number, percent})",
+    "pending": "{pending, number} ausstehend",
+    "pendingEta": "{pending, number} ausstehend, fertig in etwa {duration}",
+    "allEmbedded": "Alles ist eingebettet",
+    "rate": "Tempo",
+    "perMinute": "{rate, number} / min",
+    "rateHint": "Über alle Benutzer: Die Pumpe ist geteilt.",
+    "pendingLabel": "Ausstehend",
+    "refused": "Abgelehnt",
+    "refusedHint": "Chunks, die TEI abgelehnt hat. Die Pumpe lässt sie aus.",
+    "allUsers": "Alle Benutzer: {embedded, number} von {chunks, number} Chunks eingebettet",
+    "allUsersEta": "Alle Benutzer: {embedded, number} von {chunks, number} Chunks eingebettet, fertig in etwa {duration}"
+  },
+  "tei": {
+    "state": {
+      "ONLINE": "Online",
+      "OFFLINE": "Offline",
+      "UNUSED": "Ungenutzt",
+      "UNSUITABLE": "Ungeeignet"
+    },
+    "external": "Extern",
+    "switchedOff": "Ausgeschaltet",
+    "unused": "Weder Anfragen noch Einbettung",
+    "queries": "Anfragen",
+    "embedding": "Einbettung",
+    "load": "Last",
+    "loadHint": "Anteil der letzten Minute, den TEI mit Inferenz verbracht hat, als Ersatz für seine CPU-Last. Mit parallelen Batches kann er über 100 % liegen. Die echte CPU-Nutzung misst der Cluster (metrics-server, Prometheus). Hinter einem Service mit mehreren Pods ist das der ganze Service.",
+    "loadInfo": "Was Last bedeutet",
+    "queue": "Warteschlange",
+    "batch": "Batch",
+    "throughput": "Durchsatz",
+    "failures": "Fehler",
+    "pumpBatch": "Pumpen-Batch",
+    "busy": "beschäftigt",
+    "backlogDoneIn": "Rückstand fertig in",
+    "lastError": "Letzter Fehler ({date, date, short} {date, time, medium}): {error}",
+    "lastErrorUndated": "Letzter Fehler: {error}",
+    "pool": {
+      "unusedGroup": "Ungenutzt ({model})",
+      "offlineGroup": "Offline",
+      "noQueries": "Kein aktiver TEI beantwortet die Anfragen dieses Modells: Suchen damit finden nur Stichworttreffer.",
+      "noEmbedding": "Kein aktiver TEI bettet die Chunks dieses Modells ein: Sein Rückstand bewegt sich nicht.",
+      "dimensions": "{dimension, number} Dimensionen",
+      "noTei": "Kein TEI bedient dieses Modell.",
+      "allEmbedded": "Alles ist eingebettet.",
+      "source": "Quelle",
+      "pending": "Ausstehend",
+      "refused": "Von TEI abgelehnt",
+      "on": "An"
+    }
+  },
+  "admin": {
+    "users": "Benutzer",
+    "usersHint": "Wer sich anmelden kann und wer ferret verwaltet.",
+    "embedding": "Einbettung",
+    "embeddingHint": "Die TEIs nach dem Modell, das sie bedienen, und was noch auf Einbettung wartet. Schalter greifen innerhalb von 10 Sekunden.",
+    "workers": "Plugin-Worker",
+    "workersHint": "Die Worker, die am letzten Tag Plugins ausgeführt haben.",
+    "user": "Benutzer",
+    "lastSignIn": "Letzte Anmeldung",
+    "admin": "Admin",
+    "enabled": "Aktiv",
+    "password": "Passwort",
+    "isAdmin": "{user} ist Admin",
+    "canSignIn": "{user} kann sich anmelden",
+    "setPassword": "Passwort setzen",
+    "newPasswordFor": "Neues Passwort für {user} (meldet überall ab)",
+    "set": "Setzen",
+    "newUser": "Neuer Benutzer",
+    "username": "Benutzername",
+    "displayName": "Anzeigename (optional)",
+    "newPassword": "Passwort (mindestens 12 Zeichen)",
+    "createUser": "Benutzer anlegen",
+    "noWorkers": "Am letzten Tag hat kein Worker nach einem Lauf gefragt.",
+    "worker": "Worker",
+    "plugins": "Plugins",
+    "status": "Status",
+    "lastSeen": "Zuletzt gesehen"
+  },
+  "explore": {
+    "contentType": {
+      "MARKDOWN": "Markdown",
+      "PLAIN": "Text",
+      "EMAIL": "E-Mail"
+    },
+    "sources": "Quellen",
+    "type": "Typ",
+    "authors": "Autoren",
+    "month": "Monat",
+    "title": "Titel",
+    "source": "Quelle",
+    "created": "Erstellt",
+    "modified": "Geändert",
+    "noMatches": "Keine passenden Dokumente.",
+    "range": "{first, number}–{last, number} von {total, plural, one {# Dokument} other {# Dokumenten}}",
+    "empty": "0 Dokumente",
+    "previous": "Zurück",
+    "next": "Weiter"
+  },
+  "icons": {
+    "label": "Symbol",
+    "loading": "Symbole laden…",
+    "search": "Symbole suchen",
+    "searchPlaceholder": "Alle Symbole durchsuchen",
+    "list": "Symbole",
+    "noMatch": "Kein passendes Symbol."
   }
 }
