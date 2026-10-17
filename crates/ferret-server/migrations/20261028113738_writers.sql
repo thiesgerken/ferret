@@ -17,7 +17,7 @@ alter table connections
 alter table api_keys
     add column icon text not null default 'key-round'
         check (icon ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(icon) <= 64),
-    -- A revoked key stays as the origin of the documents it put.
+    -- A revoked key stays the writer of the documents it put.
     add column revoked_at timestamptz;
 alter table api_keys alter column icon drop default;
 

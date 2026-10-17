@@ -39,13 +39,13 @@ pub struct NewApiKey {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-pub enum CreateError {
+pub enum KeyError {
     /// Rejected input, worded for the user.
     Invalid(String),
     Database(sqlx::Error),
 }
 
-impl From<sqlx::Error> for CreateError {
+impl From<sqlx::Error> for KeyError {
     fn from(error: sqlx::Error) -> Self {
         Self::Database(error)
     }
@@ -80,7 +80,7 @@ pub async fn create(
     pool: &PgPool,
     owner: &User,
     new: NewApiKey,
-) -> Result<(ApiKey, String), CreateError> {
+) -> Result<(ApiKey, String), KeyError> {
     validate(owner, &new)?;
     let prefix = hex(&random_bytes::<PREFIX_BYTES>());
     let secret = BASE64_URL_SAFE_NO_PAD.encode(random_bytes::<SECRET_BYTES>());
@@ -119,8 +119,8 @@ pub async fn create(
     Ok((api_key, key))
 }
 
-fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
-    let invalid = |message: &str| Err(CreateError::Invalid(message.to_owned()));
+fn validate(owner: &User, new: &NewApiKey) -> Result<(), KeyError> {
+    let invalid = |message: &str| Err(KeyError::Invalid(message.to_owned()));
     validate_label(&new.name, &new.icon)?;
     if new.scopes.is_empty() {
         return invalid("a key needs at least one scope");
@@ -137,7 +137,7 @@ fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
             return invalid("leave sources out for all sources, or name at least one");
         }
         if let Some(source) = sources.iter().find(|source| !sources::is_valid(source)) {
-            return Err(CreateError::Invalid(format!(
+            return Err(KeyError::Invalid(format!(
                 "{source:?} is not a source path"
             )));
         }
@@ -151,12 +151,12 @@ fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
     Ok(())
 }
 
-fn validate_label(name: &str, icon: &str) -> Result<(), CreateError> {
+fn validate_label(name: &str, icon: &str) -> Result<(), KeyError> {
     if name.trim().is_empty() {
-        return Err(CreateError::Invalid("a key needs a name".to_owned()));
+        return Err(KeyError::Invalid("a key needs a name".to_owned()));
     }
     if !icons::is_valid(icon) {
-        return Err(CreateError::Invalid(format!(
+        return Err(KeyError::Invalid(format!(
             "{icon:?} is not an icon name like `key-round`"
         )));
     }
@@ -170,28 +170,33 @@ pub async fn update(
     id: Uuid,
     name: &str,
     icon: &str,
-) -> Result<Option<ApiKey>, CreateError> {
+) -> Result<Option<ApiKey>, KeyError> {
     validate_label(name, icon)?;
-    let updated = sqlx::query!(
+    let row = sqlx::query!(
         "update api_keys set name = $3, icon = $4
-         where id = $1 and user_id = $2 and revoked_at is null",
+         where id = $1 and user_id = $2 and revoked_at is null
+         returning id, name, icon, prefix, scopes, sources, created_at, last_used_at, expires_at",
         id,
         user_id,
         name.trim(),
         icon,
     )
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
-    if updated.rows_affected() == 0 {
-        return Ok(None);
-    }
-    Ok(list(pool, user_id)
-        .await?
-        .into_iter()
-        .find(|key| key.id == id))
+    Ok(row.map(|row| ApiKey {
+        id: row.id,
+        name: row.name,
+        icon: row.icon,
+        prefix: row.prefix,
+        scopes: row.scopes.iter().map(|scope| Scope::parse(scope)).collect(),
+        sources: row.sources,
+        created_at: row.created_at,
+        last_used_at: row.last_used_at,
+        expires_at: row.expires_at,
+    }))
 }
 
-/// Revokes one of `user_id`'s keys: it stops working with its next request, and stays the origin
+/// Revokes one of `user_id`'s keys: it stops working with its next request, and stays the writer
 /// of the documents it put.
 pub async fn revoke(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
     let revoked = sqlx::query!(
