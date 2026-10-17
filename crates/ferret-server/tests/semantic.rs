@@ -103,8 +103,16 @@ async fn the_model_and_its_prefixes_are_used_and_identical_texts_embedded_once(p
 }
 
 #[sqlx::test(migrations = false)]
-async fn each_model_gets_a_partial_hnsw_index(pool: PgPool) {
-    let _server = start_semantic_server(pool.clone()).await;
+async fn each_model_gets_a_partial_hnsw_index_with_its_first_embedding(pool: PgPool) {
+    let server = start_semantic_server(pool.clone()).await;
+    // The dimension, which the index needs, is known once something is embedded.
+    server
+        .admin_api()
+        .await
+        .put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
 
     let definition: String = sqlx::query_scalar(
         "select indexdef from pg_indexes where indexname = 'chunk_embeddings_hnsw_fake'",
@@ -170,76 +178,6 @@ async fn filtered_semantic_searches_still_return_k_hits(pool: PgPool) {
 
     assert_eq!(hits.len(), 5);
     assert!(hits.iter().all(|hit| hit.source == "target"));
-}
-
-#[sqlx::test(migrations = false)]
-async fn a_model_shorter_than_the_longest_chunk_stops_the_server(pool: PgPool) {
-    ferret_server::migrate(&pool).await.unwrap();
-    // Takes every chunk, but not with a title in front.
-    let tei = FakeTei::start(2201).await;
-
-    let error = ferret_server::embeddings::prepare(&pool, embedding_config(model(MODEL, &tei)))
-        .await
-        .err()
-        .unwrap();
-
-    assert!(error.to_string().contains("2201 tokens"), "{error}");
-}
-
-#[sqlx::test(migrations = false)]
-async fn with_a_bulk_url_the_pump_uses_only_that_and_queries_keep_using_url(pool: PgPool) {
-    let online = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let bulk = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let mut config = model(MODEL, &online);
-    config.bulk_url = Some(bulk.url.clone());
-    let server = start_server_with(pool, online.clone(), embedding_config(config)).await;
-    let api = server.admin_api().await;
-
-    api.put_document(&document("notes", "car", "My car broke down."))
-        .await
-        .unwrap();
-    server.wait_for_embeddings(1).await;
-    let hits = search(&api, query("vehicle")).await;
-
-    let document_text = format!("{DOCUMENT_PREFIX}car\n\nMy car broke down.");
-    assert_eq!(ids(&hits), ["car"]);
-    assert!(bulk.embedded().contains(&document_text));
-    assert!(!online.embedded().contains(&document_text));
-    assert!(
-        online
-            .embedded()
-            .contains(&format!("{QUERY_PREFIX}vehicle"))
-    );
-}
-
-#[sqlx::test(migrations = false)]
-async fn an_unreachable_bulk_url_is_reported_and_keyword_search_keeps_working(pool: PgPool) {
-    let online = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let mut config = model(MODEL, &online);
-    // Nothing listens on port 1.
-    config.bulk_url = Some("http://127.0.0.1:1".to_owned());
-    let server = start_server_with(pool.clone(), online, embedding_config(config)).await;
-    let api = server.admin_api().await;
-
-    api.put_document(&document("notes", "car", "My car broke down."))
-        .await
-        .unwrap();
-    let error: String = eventually("a recorded embedding error", async || {
-        sqlx::query_scalar("select error from embedding_errors where model = $1")
-            .bind(MODEL)
-            .fetch_optional(&pool)
-            .await
-            .unwrap()
-    })
-    .await;
-
-    assert!(error.contains("127.0.0.1:1"));
-    let embedded: i64 = sqlx::query_scalar("select count(*) from chunk_embeddings")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(embedded, 0);
-    assert_eq!(ids(&search(&api, query("car")).await), ["car"]);
 }
 
 #[sqlx::test(migrations = false)]
@@ -493,7 +431,8 @@ async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: P
     let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
     let mut strict = model(MODEL, &tei);
     strict.min_similarity = 0.3;
-    let server = start_server_with(pool, tei, embedding_config(strict)).await;
+    let config = embedding_config(strict, &[&tei]);
+    let server = start_server_with(pool, tei, config).await;
     let api = server.admin_api().await;
     api.put_document(&document("notes", "car", "My car broke down."))
         .await

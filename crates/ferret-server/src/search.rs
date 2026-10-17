@@ -202,14 +202,14 @@ pub async fn find(
             .await
         {
             Ok(query_hash) => Some(query_hash),
-            Err(EmbedError::Tei(error)) => {
+            Err(EmbedError::Database(error)) => return Err(error.into()),
+            Err(error) => {
                 tracing::warn!(model = %model.config.name, %error, "the query can't be embedded");
                 if mode == SearchMode::Semantic {
                     return Err(SearchError::Unavailable(unavailable));
                 }
                 None
             }
-            Err(EmbedError::Database(error)) => return Err(error.into()),
         },
     };
     let semantic_unavailable =
@@ -657,16 +657,17 @@ fn push_nearest(
 ) {
     // Validated model names need no quoting (config.rs). The dimension and name are literals so
     // the planner can use the model's partial index.
+    let dimension = model
+        .dimension()
+        .expect("an embedded query gave the model its dimension");
     sql.push(format!(
         "select e.chunk_id as id, e.embedding::halfvec({dimension})
                     <=> (select embedding from embedding_cache where text_hash = ",
-        dimension = model.dimension,
     ))
     .push_bind(query_hash.to_vec())
     .push(format!(
         " and model = '{name}')::halfvec({dimension}) as distance ",
         name = model.config.name,
-        dimension = model.dimension,
     ));
     push_embeddings_in_scope(sql, model, filters);
     sql.push(" order by distance limit ")

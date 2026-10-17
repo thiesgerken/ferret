@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(*) as \"count!\" from chunks c\n                       where not exists (select 1 from chunk_embeddings e\n                                         where e.chunk_id = c.id and e.model = $1)\n                         and not exists (select 1 from embedding_failures f\n                                         where f.chunk_id = c.id and f.model = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7553946da479265e448c1a51a71c63e53d8e29cdd1b2a9cfc11ff18a98ed4c4f"
+}

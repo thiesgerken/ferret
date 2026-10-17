@@ -3,7 +3,7 @@ mod common;
 use common::{
     TestServer, document,
     fake_tei::{FakeTei, MAX_INPUT_LENGTH},
-    model, start_server_with,
+    model, start_server_with, tei_config,
 };
 use ferret_api::SearchQuery;
 use ferret_server::config::EmbeddingConfig;
@@ -13,11 +13,12 @@ use sqlx::PgPool;
 
 /// Two models on their own fake TEIs, `alpha` the configured default.
 async fn two_models(pool: PgPool) -> (TestServer, FakeTei) {
-    let alpha = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let beta = FakeTei::start(MAX_INPUT_LENGTH).await;
+    let alpha = FakeTei::serving("org/alpha", MAX_INPUT_LENGTH).await;
+    let beta = FakeTei::serving("org/beta", MAX_INPUT_LENGTH).await;
     let config = EmbeddingConfig {
         default: "alpha".to_owned(),
         models: vec![model("beta", &beta), model("alpha", &alpha)],
+        teis: vec![tei_config(&alpha), tei_config(&beta)],
     };
     (start_server_with(pool, alpha, config).await, beta)
 }
@@ -152,6 +153,7 @@ async fn a_default_model_removed_from_the_config_is_reset_at_startup(pool: PgPoo
     let config = EmbeddingConfig {
         default: "alpha".to_owned(),
         models: vec![model("alpha", &alpha)],
+        teis: vec![tei_config(&alpha)],
     };
     ferret_server::embeddings::prepare(&pool, config)
         .await

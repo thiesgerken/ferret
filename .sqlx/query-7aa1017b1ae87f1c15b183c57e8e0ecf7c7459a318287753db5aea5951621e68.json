@@ -1,27 +1,27 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select error, at from embedding_errors where model = $1",
+  "query": "select last_error, last_error_at from teis where url = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "error",
+        "name": "last_error",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "embedding_errors",
-            "name": "error"
+            "table": "teis",
+            "name": "last_error"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "at",
+        "name": "last_error_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "embedding_errors",
-            "name": "at"
+            "table": "teis",
+            "name": "last_error_at"
           }
         }
       }
@@ -32,9 +32,9 @@
       ]
     },
     "nullable": [
-      false,
-      false
+      true,
+      true
     ]
   },
-  "hash": "a25681f837d29862bc34843f7d6b28226f9152904f618dbe8158306cb3f5757a"
+  "hash": "7aa1017b1ae87f1c15b183c57e8e0ecf7c7459a318287753db5aea5951621e68"
 }

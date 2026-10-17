@@ -1,18 +1,16 @@
-//! Embedding models: their setup at startup, query embeddings, and the embed pump that fills
-//! `chunk_embeddings` in the background, so ingest never waits for a model.
+//! Embedding models and the TEI pool: which TEI serves which model, query embeddings, and the
+//! embed pump that fills `chunk_embeddings` in the background, so ingest never waits for a model.
 
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, postgres::PgListener};
+use tokio::{sync::watch, task::JoinSet};
 use uuid::Uuid;
 
 use crate::{
@@ -21,87 +19,73 @@ use crate::{
     config::{EmbeddingConfig, ModelConfig},
     tei,
     tei_load::{Load, TeiLoad},
+    tei_pool::{self, BATCH_TIMEOUT, Discovery, Switches, Tei, TeiState, Use},
 };
 
-/// Chunks per pump transaction at most, TEI's default client batch size.
-const MAX_BATCH_SIZE: usize = 32;
 const MAX_EMBEDDED_TITLE_CHARS: usize = 200;
 const TITLE_SEPARATOR: &str = "\n\n";
-/// The longest embedded input, without the model's document prefix. Every model must take it.
+/// The longest embedded input, without the model's document prefix. Every TEI must take it.
 const MAX_EMBEDDED_CHARS: usize =
     MAX_EMBEDDED_TITLE_CHARS + TITLE_SEPARATOR.len() + MAX_CHUNK_CHARS;
-/// A search waits this long for its query embedding, then answers by keyword only. A CPU TEI
-/// that's busy with pump batches answers slower than an idle one.
+/// A search waits this long for its query embedding, then answers by keyword only. A TEI busy
+/// with pump batches answers slower than an idle one.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
-/// A pump batch may take this long, see `BatchSize` for a TEI that is slower.
-const BATCH_TIMEOUT: Duration = Duration::from_secs(60);
-/// `/info` and the probe embedding at startup.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 /// How the claim query looks ahead for chunks no other pump has locked.
 const CLAIM_CANDIDATES: i64 = 256;
-/// A health check that takes longer counts as down: the Admin page waits for all of them.
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
-/// How long the startup waits for a TEI that doesn't accept connections yet.
-const TEI_STARTUP_WAIT: Duration = Duration::from_secs(600);
 /// The pump also looks for work this often without a notification, e.g. after an outage.
 const IDLE_POLL: Duration = Duration::from_secs(30);
+/// How often every TEI is asked which model it serves, and the switches are read again.
+const DISCOVERY_POLL: Duration = Duration::from_secs(10);
 
 pub struct Model {
     pub config: ModelConfig,
-    /// Probed at startup: TEI's `/info` doesn't report it.
-    pub dimension: usize,
-    batch_size: BatchSize,
-}
-
-/// How many chunks the pump claims per batch. TEI doesn't cancel a request the pump gave up on,
-/// so on a CPU that needs longer than `BATCH_TIMEOUT` for a full batch, retrying the same size
-/// queues behind the abandoned one and times out again, forever. Halving on a timeout lets the
-/// abandoned work drain. Growing only after a batch that took less than half the timeout keeps
-/// the size below the next timeout, and a GPU TEI at the maximum.
-struct BatchSize(AtomicUsize);
-
-impl BatchSize {
-    fn new() -> Self {
-        Self(AtomicUsize::new(MAX_BATCH_SIZE))
-    }
-
-    fn get(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
-    }
-
-    fn timed_out(&self) {
-        self.0.update(Ordering::Relaxed, Ordering::Relaxed, |size| {
-            (size / 2).max(1)
-        });
-    }
-
-    fn succeeded(&self, took: Duration) {
-        if took < BATCH_TIMEOUT / 2 {
-            self.0.update(Ordering::Relaxed, Ordering::Relaxed, |size| {
-                (size + 1).min(MAX_BATCH_SIZE)
-            });
-        }
-    }
+    /// Known from the first embedding: TEI's `/info` doesn't report it.
+    dimension: OnceLock<usize>,
+    /// Creating the index for a new dimension, once.
+    index: tokio::sync::Mutex<()>,
 }
 
 impl Model {
-    /// The pump's endpoint: `bulk_url` if set, never falling back to `url`, which would turn a
-    /// GPU backfill into a CPU one without anyone noticing.
-    fn pump_url(&self) -> &str {
-        self.config.bulk_url.as_deref().unwrap_or(&self.config.url)
+    fn new(config: ModelConfig) -> Self {
+        Self {
+            config,
+            dimension: OnceLock::new(),
+            index: tokio::sync::Mutex::new(()),
+        }
     }
 
     pub fn name(&self) -> &str {
         &self.config.name
     }
 
-    /// Chunks per pump batch in this server process, see `BatchSize`.
-    pub fn batch_size(&self) -> usize {
-        self.batch_size.get()
+    /// `None` until something was embedded with the model.
+    pub fn dimension(&self) -> Option<usize> {
+        self.dimension.get().copied()
     }
 
     fn index_name(&self) -> String {
         format!("chunk_embeddings_hnsw_{}", self.config.slug())
+    }
+
+    /// Checks a vector's dimension against the model's. The first one sets it and creates the
+    /// model's partial HNSW index, which needs it.
+    async fn accept_dimension(&self, pool: &PgPool, dimension: usize) -> Result<(), EmbedError> {
+        if self.dimension().is_none() {
+            let _creating = self.index.lock().await;
+            if self.dimension().is_none() {
+                create_index(pool, self, dimension).await?;
+                self.dimension
+                    .set(dimension)
+                    .expect("only set while locked");
+            }
+        }
+        match self.dimension() {
+            Some(known) if known != dimension => Err(EmbedError::Mismatch(format!(
+                "a vector of {dimension} dimensions, the model {} has {known}",
+                self.name()
+            ))),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -109,12 +93,20 @@ pub struct Embedding {
     http: reqwest::Client,
     /// The default model first.
     models: Vec<Model>,
+    /// In config order.
+    teis: Vec<Arc<Tei>>,
     tei_load: TeiLoad,
+    /// Wakes the pump loops: new chunks, or a TEI that changed.
+    wake: watch::Sender<()>,
 }
 
 #[derive(Debug)]
 pub enum EmbedError {
     Tei(reqwest::Error),
+    /// A TEI answered with another model or dimension than it should have: nothing is written.
+    Mismatch(String),
+    /// No TEI serves the model for this.
+    Unavailable(String),
     Database(sqlx::Error),
 }
 
@@ -122,6 +114,7 @@ impl fmt::Display for EmbedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Tei(error) => write!(f, "TEI: {error}"),
+            Self::Mismatch(message) | Self::Unavailable(message) => f.write_str(message),
             Self::Database(error) => write!(f, "database: {error}"),
         }
     }
@@ -141,50 +134,46 @@ impl From<sqlx::Error> for EmbedError {
     }
 }
 
-/// Reads every configured model's limits from its TEI and creates its partial HNSW index. Fails
-/// when a TEI is unreachable or a model can't take the chunker's longest chunk.
+/// Sets up the configured models and TEIs and asks every TEI once which model it serves. TEIs
+/// that are down don't keep the server from starting: searches then answer by keyword.
 pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding, StartupError> {
     config.validate()?;
-    let http = tei::client();
     let mut configs = config.models;
     configs.sort_by_key(|model| model.name != config.default);
-
     let mut models = Vec::new();
     for config in configs {
-        let name = &config.name;
-        let max_input_length = wait_for_tei(&http, &config).await?;
-        // Tokens against characters, one to one: Latin text practically never takes more than
-        // one token per character.
-        if max_input_length < MAX_EMBEDDED_CHARS {
-            return Err(format!(
-                "embedding model {name} takes at most {max_input_length} tokens, embedded inputs \
-                 (title and chunk) have up to {MAX_EMBEDDED_CHARS} characters"
-            )
-            .into());
-        }
-        let probe = tei::embed(
-            &http,
-            &config.url,
-            &[format!("{}probe", config.document_prefix)],
-            STARTUP_TIMEOUT,
+        let model = Model::new(config);
+        let known = sqlx::query_scalar!(
+            r#"select vector_dims(embedding) as "dimension!" from embedding_cache
+               where model = $1 limit 1"#,
+            model.config.name,
         )
-        .await
-        .map_err(|error| format!("embedding model {name}: {error}"))?;
-        let model = Model {
-            dimension: probe[0].len(),
-            config,
-            batch_size: BatchSize::new(),
-        };
-        create_index(pool, &model).await?;
-        tracing::info!(model = %model.config.name, dimension = model.dimension, max_input_length, "embedding model ready");
+        .fetch_optional(pool)
+        .await?;
+        if let Some(dimension) = known {
+            let dimension = usize::try_from(dimension).expect("dimensions are positive");
+            model
+                .accept_dimension(pool, dimension)
+                .await
+                .map_err(|error| format!("embedding model {}: {error}", model.config.name))?;
+        }
         models.push(model);
     }
     reset_removed_defaults(pool, &models).await?;
-    Ok(Embedding {
-        http,
+    tei_pool::sync_config(pool, &config.teis).await?;
+    let embedding = Embedding {
+        http: tei::client(),
         models,
+        teis: config
+            .teis
+            .iter()
+            .map(|tei| Arc::new(Tei::new(tei)))
+            .collect(),
         tei_load: TeiLoad::default(),
-    })
+        wake: watch::Sender::new(()),
+    };
+    embedding.refresh(pool).await?;
+    Ok(embedding)
 }
 
 // ponytail: exact counts, and neither table has an index on user_id, so both scan the whole
@@ -281,23 +270,7 @@ async fn reset_removed_defaults(pool: &PgPool, models: &[Model]) -> Result<(), s
     Ok(())
 }
 
-/// TEI's `max_input_length`, waiting while it isn't up yet: on a fresh deployment it may still
-/// be downloading its model. Any other failure stops the startup.
-async fn wait_for_tei(http: &reqwest::Client, config: &ModelConfig) -> Result<usize, StartupError> {
-    let deadline = tokio::time::Instant::now() + TEI_STARTUP_WAIT;
-    loop {
-        match tei::max_input_length(http, &config.url, STARTUP_TIMEOUT).await {
-            Ok(length) => return Ok(length),
-            Err(error) if error.is_connect() && tokio::time::Instant::now() < deadline => {
-                tracing::warn!(model = %config.name, url = %config.url, "waiting for TEI");
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
-            Err(error) => return Err(format!("embedding model {}: {error}", config.name).into()),
-        }
-    }
-}
-
-async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
+async fn create_index(pool: &PgPool, model: &Model, dimension: usize) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
     // Replicas starting together would race on the index name.
     sqlx::query!("select pg_advisory_xact_lock(hashtext('chunk_embeddings_hnsw'))")
@@ -306,10 +279,9 @@ async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
     // Validated names (config.rs) need no quoting, and DDL takes no bind parameters.
     sqlx::query(AssertSqlSafe(format!(
         "create index if not exists {} on chunk_embeddings
-             using hnsw ((embedding::halfvec({})) halfvec_cosine_ops)
+             using hnsw ((embedding::halfvec({dimension})) halfvec_cosine_ops)
              where model = '{}'",
         model.index_name(),
-        model.dimension,
         model.config.name,
     )))
     .execute(&mut *tx)
@@ -317,16 +289,31 @@ async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
     tx.commit().await
 }
 
+/// Every TEI's state for Admin.
+pub struct TeiStatus {
+    pub url: String,
+    pub external: bool,
+    pub state: TeiState,
+    /// The configured model it serves.
+    pub model: Option<String>,
+    /// Why it's of no use, for TEIs not serving.
+    pub problem: Option<String>,
+    pub last_error: Option<(String, chrono::DateTime<chrono::Utc>)>,
+    pub busy: bool,
+    /// While it may embed: chunks per pump batch in this process.
+    pub pump_batch_size: Option<usize>,
+    /// `None` while its metrics don't answer.
+    pub load: Option<Load>,
+    /// While it may embed: until its model's backlog is embedded at its throughput.
+    pub eta_seconds: Option<i64>,
+}
+
 /// How one configured model is doing.
 pub struct ModelStatus {
     pub name: String,
+    pub model_id: String,
     pub is_default: bool,
-    /// Whether the TEI for searches answers.
-    pub online: bool,
-    /// Whether the pump's TEI answers, `None` when the pump uses the same one.
-    pub bulk_online: Option<bool>,
-    /// The pump's last failure, until its next success.
-    pub last_error: Option<(String, chrono::DateTime<chrono::Utc>)>,
+    pub dimension: Option<usize>,
     /// Chunks still to embed per source, across users. Sources without any are left out.
     pub backlog: Vec<SourceBacklog>,
     /// Chunks with an embedding for this model, across users.
@@ -336,28 +323,6 @@ pub struct ModelStatus {
     pub rate_per_minute: f64,
     /// Until the whole backlog is embedded.
     pub eta_seconds: Option<i64>,
-    /// In this server process.
-    pub batch_size: usize,
-    /// The TEI for queries, and the pump's if that's another one.
-    pub teis: Vec<TeiStatus>,
-}
-
-pub struct TeiStatus {
-    pub role: TeiRole,
-    pub url: String,
-    pub online: bool,
-    /// `None` while its metrics don't answer.
-    pub load: Option<Load>,
-    /// The pump's TEI only: until `pending` chunks are embedded at its throughput.
-    pub eta_seconds: Option<i64>,
-}
-
-#[derive(Clone, Copy)]
-pub enum TeiRole {
-    Queries,
-    Pump,
-    /// Queries and the pump, without a `bulk_url`.
-    Both,
 }
 
 pub struct SourceBacklog {
@@ -373,70 +338,210 @@ impl Embedding {
         &self.models[0]
     }
 
-    async fn tei_status(&self, url: &str, role: TeiRole, online: bool, pending: i64) -> TeiStatus {
-        let load = self.tei_load.read(&self.http, url).await;
-        let eta_seconds = match role {
-            TeiRole::Queries => None,
-            TeiRole::Pump | TeiRole::Both => load
-                .as_ref()
-                .and_then(|load| load.throughput_per_minute)
-                .and_then(|throughput| eta_seconds(pending, throughput)),
-        };
-        TeiStatus {
-            role,
-            url: url.to_owned(),
-            online,
-            load,
-            eta_seconds,
+    /// Every configured model, the default first.
+    pub fn models(&self) -> &[Model] {
+        &self.models
+    }
+
+    pub fn model(&self, name: &str) -> Option<&Model> {
+        self.models.iter().find(|model| model.name() == name)
+    }
+
+    fn index_of(&self, model: &Model) -> usize {
+        self.models
+            .iter()
+            .position(|configured| configured.name() == model.name())
+            .expect("models come from this list")
+    }
+
+    /// Whether an enabled TEI serves `model` for `use_for`, as of the last discovery.
+    pub fn is_served(&self, model: &Model, use_for: Use) -> bool {
+        let index = self.index_of(model);
+        self.teis.iter().any(|tei| {
+            tei.serving(use_for)
+                .is_some_and(|(model, _)| model == index)
+        })
+    }
+
+    /// Reads the switches and asks every TEI which model it serves. Wakes the pump when anything
+    /// changed.
+    async fn refresh(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        let switches: HashMap<String, Switches> =
+            tei_pool::switches(pool).await?.into_iter().collect();
+        let configs: Arc<Vec<ModelConfig>> = Arc::new(
+            self.models
+                .iter()
+                .map(|model| model.config.clone())
+                .collect(),
+        );
+        let mut discoveries = JoinSet::new();
+        for (index, tei) in self.teis.iter().enumerate() {
+            let (http, url, configs) = (self.http.clone(), tei.url.clone(), configs.clone());
+            discoveries.spawn(async move {
+                let discovery = tei_pool::discover(&http, &url, &configs, MAX_EMBEDDED_CHARS).await;
+                (index, discovery)
+            });
+        }
+        let mut changed = false;
+        while let Some(joined) = discoveries.join_next().await {
+            let (index, discovery) = joined.expect("discovery doesn't panic");
+            let tei = &self.teis[index];
+            let before = tei.state();
+            let state = TeiState {
+                // A TEI another replica's config removed keeps what it had.
+                switches: switches.get(&tei.url).copied().unwrap_or(before.switches),
+                discovery,
+            };
+            if before.discovery != state.discovery {
+                self.log_discovery(tei, &state.discovery);
+            }
+            changed |= tei.set_state(state);
+        }
+        if changed {
+            self.wake.send_replace(());
+        }
+        Ok(())
+    }
+
+    /// Asks one TEI again, after it answered with something unexpected.
+    async fn rediscover(&self, tei: &Tei) {
+        let configs: Vec<ModelConfig> = self
+            .models
+            .iter()
+            .map(|model| model.config.clone())
+            .collect();
+        let discovery =
+            tei_pool::discover(&self.http, &tei.url, &configs, MAX_EMBEDDED_CHARS).await;
+        self.log_discovery(tei, &discovery);
+        if tei.set_discovery(discovery) {
+            self.wake.send_replace(());
         }
     }
 
-    /// Whether `model`'s TEI for searches answers, and its pump's TEI if that's another one.
-    pub async fn health(&self, model: &Model) -> (bool, Option<bool>) {
-        let online = tei::healthy(&self.http, &model.config.url, HEALTH_TIMEOUT);
-        let bulk_online = async {
-            match model.config.bulk_url.as_deref() {
-                Some(url) => Some(tei::healthy(&self.http, url, HEALTH_TIMEOUT).await),
-                None => None,
+    fn log_discovery(&self, tei: &Tei, discovery: &Discovery) {
+        match discovery {
+            Discovery::Serving { model, .. } => {
+                tracing::info!(url = %tei.url, model = %self.models[*model].name(), "TEI serves a model")
             }
-        };
-        tokio::join!(online, bulk_online)
+            other => {
+                let problem = self.problem(other).unwrap_or_default();
+                tracing::warn!(url = %tei.url, %problem, "TEI is of no use")
+            }
+        }
     }
 
-    /// Every configured model's health and backlog, the default first.
+    /// Why a TEI is of no use, `None` while it serves.
+    fn problem(&self, discovery: &Discovery) -> Option<String> {
+        match discovery {
+            Discovery::Serving { .. } => None,
+            Discovery::Pending => Some("not asked yet".to_owned()),
+            Discovery::Offline(error) => Some(error.clone()),
+            Discovery::Unused(info) => Some(format!(
+                "serves {}, which no configured model uses",
+                info.model_id
+            )),
+            Discovery::Unsuitable { problem, .. } => Some(problem.clone()),
+        }
+    }
+
+    /// Changes a TEI's switches (those given), on every replica within `DISCOVERY_POLL`, here at
+    /// once. `None` for a TEI that isn't configured.
+    pub async fn update_tei(
+        &self,
+        pool: &PgPool,
+        url: &str,
+        enabled: Option<bool>,
+        queries: Option<bool>,
+        embedding: Option<bool>,
+    ) -> Result<Option<TeiStatus>, sqlx::Error> {
+        let Some(tei) = self.teis.iter().find(|tei| tei.url == url) else {
+            return Ok(None);
+        };
+        let Some(switches) =
+            tei_pool::update_switches(pool, url, enabled, queries, embedding).await?
+        else {
+            return Ok(None);
+        };
+        let state = tei.state();
+        if tei.set_state(TeiState { switches, ..state }) {
+            self.wake.send_replace(());
+        }
+        let pending = self.pending_by_model(pool).await?;
+        Ok(Some(self.tei_status(pool, tei, &pending).await?))
+    }
+
+    /// Every TEI, in config order.
+    pub async fn tei_statuses(&self, pool: &PgPool) -> Result<Vec<TeiStatus>, sqlx::Error> {
+        let pending = self.pending_by_model(pool).await?;
+        let mut statuses = Vec::new();
+        for tei in &self.teis {
+            statuses.push(self.tei_status(pool, tei, &pending).await?);
+        }
+        Ok(statuses)
+    }
+
+    async fn tei_status(
+        &self,
+        pool: &PgPool,
+        tei: &Tei,
+        pending: &[i64],
+    ) -> Result<TeiStatus, sqlx::Error> {
+        let state = tei.state();
+        let model = match &state.discovery {
+            Discovery::Serving { model, .. } | Discovery::Unsuitable { model, .. } => Some(*model),
+            _ => None,
+        };
+        let embedding = tei.serving(Use::Embedding).is_some();
+        // A TEI that doesn't answer `/info` won't answer `/metrics` either.
+        let load = match state.discovery {
+            Discovery::Offline(_) | Discovery::Pending => None,
+            _ => self.tei_load.read(&self.http, &tei.url).await,
+        };
+        let eta_seconds = model
+            .filter(|_| embedding)
+            .zip(load.as_ref().and_then(|load| load.throughput_per_minute))
+            .and_then(|(model, throughput)| eta_seconds(pending[model], throughput));
+        Ok(TeiStatus {
+            url: tei.url.clone(),
+            external: tei.external,
+            model: model.map(|model| self.models[model].name().to_owned()),
+            problem: self.problem(&state.discovery),
+            last_error: tei_pool::last_error(pool, &tei.url).await?,
+            busy: tei.is_busy(),
+            pump_batch_size: embedding.then(|| tei.batch_size()),
+            load,
+            eta_seconds,
+            state,
+        })
+    }
+
+    /// Chunks waiting for each model, in model order.
+    async fn pending_by_model(&self, pool: &PgPool) -> Result<Vec<i64>, sqlx::Error> {
+        let mut pending = Vec::new();
+        for model in &self.models {
+            pending.push(
+                sqlx::query_scalar!(
+                    r#"select count(*) as "count!" from chunks c
+                       where not exists (select 1 from chunk_embeddings e
+                                         where e.chunk_id = c.id and e.model = $1)
+                         and not exists (select 1 from embedding_failures f
+                                         where f.chunk_id = c.id and f.model = $1)"#,
+                    model.name(),
+                )
+                .fetch_one(pool)
+                .await?,
+            );
+        }
+        Ok(pending)
+    }
+
+    /// Every configured model's backlog, the default first.
     // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
     // running counts if the Admin page gets slow.
     pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
-        // Every health check at once, so TEIs that are down cost one timeout, not one each.
-        let check = |url: &str| {
-            let (http, url) = (self.http.clone(), url.to_owned());
-            tokio::spawn(async move { tei::healthy(&http, &url, HEALTH_TIMEOUT).await })
-        };
-        let checks: Vec<_> = self
-            .models
-            .iter()
-            .map(|model| {
-                (
-                    check(&model.config.url),
-                    model.config.bulk_url.as_deref().map(check),
-                )
-            })
-            .collect();
         let mut statuses = Vec::new();
-        for ((index, model), (online, bulk_online)) in self.models.iter().enumerate().zip(checks) {
+        for (index, model) in self.models.iter().enumerate() {
             let name = model.name();
-            let online = online.await.expect("a health check doesn't panic");
-            let bulk_online = match bulk_online {
-                Some(check) => Some(check.await.expect("a health check doesn't panic")),
-                None => None,
-            };
-            let last_error = sqlx::query!(
-                "select error, at from embedding_errors where model = $1",
-                name
-            )
-            .fetch_optional(pool)
-            .await?
-            .map(|row| (row.error, row.at));
             // Pending as the pump sees it: no embedding and no recorded failure.
             let backlog = sqlx::query_as!(
                 SourceBacklog,
@@ -464,53 +569,55 @@ impl Embedding {
             let chunks = sqlx::query_scalar!(r#"select count(*) as "count!" from chunks"#)
                 .fetch_one(pool)
                 .await?;
-            let mut teis = vec![
-                self.tei_status(
-                    &model.config.url,
-                    if bulk_online.is_some() {
-                        TeiRole::Queries
-                    } else {
-                        TeiRole::Both
-                    },
-                    online,
-                    pending,
-                )
-                .await,
-            ];
-            if let (Some(url), Some(bulk_online)) = (&model.config.bulk_url, bulk_online) {
-                teis.push(
-                    self.tei_status(url, TeiRole::Pump, bulk_online, pending)
-                        .await,
-                );
-            }
             statuses.push(ModelStatus {
                 name: name.to_owned(),
+                model_id: model.config.model_id.clone(),
                 is_default: index == 0,
-                online,
-                bulk_online,
-                last_error,
+                dimension: model.dimension(),
                 backlog,
                 embedded,
                 chunks,
                 rate_per_minute,
                 eta_seconds: eta_seconds(pending, rate_per_minute),
-                batch_size: model.batch_size(),
-                teis,
             });
         }
         Ok(statuses)
     }
 
-    /// Every configured model, the default first.
-    pub fn models(&self) -> &[Model] {
-        &self.models
-    }
-
-    pub fn model(&self, name: &str) -> Option<&Model> {
-        self.models.iter().find(|model| model.name() == name)
+    /// Embeds `texts` on `tei` for `model`, which it serves as `served`. Discards the answer
+    /// unless it comes from that model with the model's dimension: a TEI may switch models at any
+    /// time, and its vectors must never mix with another model's.
+    async fn embed_on(
+        &self,
+        pool: &PgPool,
+        tei: &Tei,
+        model: &Model,
+        served: &str,
+        texts: &[String],
+        timeout: Duration,
+    ) -> Result<Vec<Vec<f32>>, EmbedError> {
+        let embedded = tei::embed(&self.http, &tei.url, texts, timeout).await?;
+        if embedded.model != served {
+            return Err(EmbedError::Mismatch(format!(
+                "answered with the model {:?} instead of {served:?}",
+                embedded.model
+            )));
+        }
+        if embedded.vectors.len() != texts.len() {
+            return Err(EmbedError::Mismatch(format!(
+                "answered {} texts with {} vectors",
+                texts.len(),
+                embedded.vectors.len()
+            )));
+        }
+        for vector in &embedded.vectors {
+            model.accept_dimension(pool, vector.len()).await?;
+        }
+        Ok(embedded.vectors)
     }
 
     /// Embeds `query` with `model`'s query prefix unless it's cached, and returns its cache key.
+    /// Tries the TEIs that serve the model for queries, idle ones first, until one answers.
     pub async fn cache_query(
         &self,
         pool: &PgPool,
@@ -528,58 +635,145 @@ impl Embedding {
         )
         .fetch_one(pool)
         .await?;
-        if !cached {
-            let vectors = tei::embed(&self.http, &model.config.url, &[text], QUERY_TIMEOUT).await?;
-            sqlx::query!(
-                "insert into embedding_cache (text_hash, model, embedding)
-                 values ($1, $2, $3::text::halfvec)
-                 on conflict do nothing",
-                hash,
-                model.config.name,
-                vector_literal(&vectors[0]),
-            )
-            .execute(pool)
-            .await?;
+        if cached {
+            return Ok(hash);
         }
-        Ok(hash)
+        let index = self.index_of(model);
+        let mut candidates: Vec<(&Tei, String)> = self
+            .teis
+            .iter()
+            .filter_map(|tei| match tei.serving(Use::Queries) {
+                Some((served_model, served)) if served_model == index => Some((&**tei, served)),
+                _ => None,
+            })
+            .collect();
+        // Stable: config order among equally busy ones.
+        candidates.sort_by_key(|(tei, _)| tei.is_busy());
+        let deadline = Instant::now() + QUERY_TIMEOUT;
+        let mut failure = EmbedError::Unavailable(format!(
+            "no TEI serves the embedding model {} for queries",
+            model.name()
+        ));
+        for (tei, served) in candidates {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let texts = [text.clone()];
+            match self
+                .embed_on(pool, tei, model, &served, &texts, remaining)
+                .await
+            {
+                Ok(vectors) => {
+                    tei_pool::clear_error(pool, &tei.url).await;
+                    sqlx::query!(
+                        "insert into embedding_cache (text_hash, model, embedding)
+                         values ($1, $2, $3::text::halfvec)
+                         on conflict do nothing",
+                        hash,
+                        model.config.name,
+                        vector_literal(&vectors[0]),
+                    )
+                    .execute(pool)
+                    .await?;
+                    return Ok(hash);
+                }
+                Err(EmbedError::Database(error)) => return Err(error.into()),
+                Err(error) => {
+                    self.failed(pool, tei, &error).await;
+                    failure = error;
+                }
+            }
+        }
+        Err(failure)
+    }
+
+    /// Records a TEI's failure, and asks it again which model it serves after an unexpected
+    /// answer.
+    async fn failed(&self, pool: &PgPool, tei: &Tei, error: &EmbedError) {
+        tracing::error!(url = %tei.url, %error, "TEI failed");
+        tei_pool::record_error(pool, &tei.url, &error.to_string()).await;
+        if matches!(error, EmbedError::Mismatch(_)) {
+            self.rediscover(tei).await;
+        }
     }
 }
 
-/// Embeds chunks in the background until the process ends: the default model first, newest
-/// chunks first. Woken by `chunks_pending` after ingests. Several pumps (server replicas) share
-/// the queue through the claim's advisory locks.
+/// Embeds chunks in the background until the process ends, one loop per TEI: a faster TEI simply
+/// claims more batches. Woken by `chunks_pending` after ingests and by TEIs that changed. Every
+/// `DISCOVERY_POLL`, the TEIs are asked which model they serve. Several replicas share the queue
+/// through the claim's advisory locks. Dropping the future stops every loop.
 pub async fn run_pump(pool: PgPool, embedding: Arc<Embedding>) {
-    let mut listener = loop {
-        match listen(&pool).await {
-            Ok(listener) => break listener,
+    let mut tasks = JoinSet::new();
+    tasks.spawn(wake_on_chunks(pool.clone(), embedding.clone()));
+    tasks.spawn(poll_teis(pool.clone(), embedding.clone()));
+    for tei in &embedding.teis {
+        tasks.spawn(pump(pool.clone(), embedding.clone(), tei.clone()));
+    }
+    while let Some(ended) = tasks.join_next().await {
+        if let Err(error) = ended {
+            tracing::error!(%error, "an embed pump task ended");
+        }
+    }
+}
+
+async fn wake_on_chunks(pool: PgPool, embedding: Arc<Embedding>) {
+    loop {
+        let mut listener = match listen(&pool).await {
+            Ok(listener) => listener,
             Err(error) => {
                 tracing::error!(%error, "embed pump can't listen for chunks_pending");
                 tokio::time::sleep(IDLE_POLL).await;
+                continue;
             }
+        };
+        while listener.recv().await.is_ok() {
+            embedding.wake.send_replace(());
         }
-    };
+        tracing::warn!("embed pump lost its notification connection");
+    }
+}
+
+async fn poll_teis(pool: PgPool, embedding: Arc<Embedding>) {
     loop {
-        let mut embedded = false;
-        for model in &embedding.models {
-            match embed_batch(&pool, &embedding.http, model).await {
-                Ok(0) => {}
-                Ok(count) => {
-                    tracing::debug!(model = %model.config.name, count, "embedded chunks");
-                    clear_error(&pool, model).await;
-                    // Back to the default model.
-                    embedded = true;
-                    break;
-                }
-                Err(error) => record_error(&pool, model, &error).await,
+        tokio::time::sleep(DISCOVERY_POLL).await;
+        if let Err(error) = embedding.refresh(&pool).await {
+            tracing::error!(%error, "can't read the TEIs' switches");
+        }
+    }
+}
+
+/// One TEI's share of the pump.
+async fn pump(pool: PgPool, embedding: Arc<Embedding>, tei: Arc<Tei>) {
+    let mut wake = embedding.wake.subscribe();
+    loop {
+        wake.borrow_and_update();
+        if !embedding.pump_once(&pool, &tei).await {
+            tokio::select! {
+                _ = wake.changed() => {}
+                () = tokio::time::sleep(IDLE_POLL) => {}
             }
         }
-        if !embedded {
-            tokio::select! {
-                notification = listener.recv() => if let Err(error) = notification {
-                    tracing::warn!(%error, "embed pump lost its notification connection");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                },
-                () = tokio::time::sleep(IDLE_POLL) => {}
+    }
+}
+
+impl Embedding {
+    /// Embeds one batch on `tei` if it may embed, and returns whether it embedded something.
+    async fn pump_once(&self, pool: &PgPool, tei: &Tei) -> bool {
+        let Some((model, served)) = tei.serving(Use::Embedding) else {
+            return false;
+        };
+        let model = &self.models[model];
+        match embed_batch(pool, self, tei, model, &served).await {
+            Ok(0) => false,
+            Ok(count) => {
+                tracing::debug!(url = %tei.url, model = %model.name(), count, "embedded chunks");
+                tei_pool::clear_error(pool, &tei.url).await;
+                true
+            }
+            Err(error) => {
+                self.failed(pool, tei, &error).await;
+                false
             }
         }
     }
@@ -591,11 +785,14 @@ async fn listen(pool: &PgPool) -> Result<PgListener, sqlx::Error> {
     Ok(listener)
 }
 
-/// Embeds the newest chunks `model` has no embedding for yet. Returns how many it claimed.
+/// Embeds on `tei` the newest chunks `model` has no embedding for yet. Returns how many it
+/// claimed.
 async fn embed_batch(
     pool: &PgPool,
-    http: &reqwest::Client,
+    embedding: &Embedding,
+    tei: &Tei,
     model: &Model,
+    served: &str,
 ) -> Result<usize, EmbedError> {
     let mut tx = pool.begin().await?;
     // Advisory locks rather than row locks: other pumps skip what this one works on, but an
@@ -619,7 +816,7 @@ async fn embed_batch(
          limit $3",
         model.config.name,
         CLAIM_CANDIDATES,
-        model.batch_size.get() as i64,
+        tei.batch_size() as i64,
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -653,7 +850,7 @@ async fn embed_batch(
             missing.push((hash.clone(), text.clone()));
         }
     }
-    let rejected = cache_embeddings(&mut tx, http, model, missing).await?;
+    let rejected = cache_embeddings(&mut tx, pool, embedding, tei, model, served, missing).await?;
     if !rejected.is_empty() {
         let rejected_chunks: Vec<_> = chunks
             .iter()
@@ -696,13 +893,17 @@ async fn embed_batch(
     Ok(chunks.len())
 }
 
-/// Embeds `missing` texts and caches their vectors. Returns the texts TEI rejected (a 4xx, e.g.
-/// too long for the model) with TEI's answer: one bad text must not keep the others, and every
-/// newer chunk, from ever being embedded. Adapts the model's batch size to how long TEI took.
+/// Embeds `missing` texts on `tei` and caches their vectors. Returns the texts TEI rejected (too
+/// long for the model, untokenizable) with TEI's answer: one bad text must not keep the others,
+/// and every newer chunk, from ever being embedded. Adapts the TEI's batch size to how long it
+/// took.
 async fn cache_embeddings(
     tx: &mut PgConnection,
-    http: &reqwest::Client,
+    pool: &PgPool,
+    embedding: &Embedding,
+    tei: &Tei,
     model: &Model,
+    served: &str,
     missing: Vec<(Vec<u8>, String)>,
 ) -> Result<HashMap<Vec<u8>, String>, EmbedError> {
     let mut rejected = HashMap::new();
@@ -710,35 +911,44 @@ async fn cache_embeddings(
         return Ok(rejected);
     }
     let (hashes, texts): (Vec<_>, Vec<_>) = missing.into_iter().unzip();
+    let _busy = tei.busy();
+    let embed = |texts: &[String]| {
+        let texts = texts.to_vec();
+        async move {
+            embedding
+                .embed_on(pool, tei, model, served, &texts, BATCH_TIMEOUT)
+                .await
+        }
+    };
     let started = Instant::now();
-    let (hashes, vectors) = match tei::embed(http, model.pump_url(), &texts, BATCH_TIMEOUT).await {
+    let (hashes, vectors) = match embed(&texts).await {
         Ok(vectors) => {
-            model.batch_size.succeeded(started.elapsed());
+            tei.batch_succeeded(started.elapsed());
             (hashes, vectors)
         }
-        Err(error) if error.is_timeout() => {
-            model.batch_size.timed_out();
+        Err(EmbedError::Tei(error)) if error.is_timeout() => {
+            tei.batch_timed_out();
             return Err(error.into());
         }
-        Err(error) if is_rejection(&error) => {
+        Err(EmbedError::Tei(error)) if tei::is_rejection(&error) => {
             // Find the culprits one by one.
             let mut embedded_hashes = Vec::new();
             let mut vectors = Vec::new();
             for (hash, text) in hashes.into_iter().zip(texts) {
-                match tei::embed(http, model.pump_url(), &[text], BATCH_TIMEOUT).await {
+                match embed(&[text]).await {
                     Ok(mut vector) => {
                         embedded_hashes.push(hash);
                         vectors.push(vector.remove(0));
                     }
-                    Err(error) if is_rejection(&error) => {
+                    Err(EmbedError::Tei(error)) if tei::is_rejection(&error) => {
                         rejected.insert(hash, error.to_string());
                     }
-                    Err(error) => return Err(error.into()),
+                    Err(error) => return Err(error),
                 }
             }
             (embedded_hashes, vectors)
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error),
     };
     let literals: Vec<String> = vectors
         .iter()
@@ -756,41 +966,6 @@ async fn cache_embeddings(
     .execute(&mut *tx)
     .await?;
     Ok(rejected)
-}
-
-/// TEI refused the input itself, as opposed to failing or being unreachable.
-fn is_rejection(error: &reqwest::Error) -> bool {
-    error
-        .status()
-        .is_some_and(|status| status.is_client_error())
-}
-
-/// Shown in Admin until the model's next successful batch. The pump keeps retrying.
-async fn record_error(pool: &PgPool, model: &Model, error: &EmbedError) {
-    tracing::error!(model = %model.config.name, url = model.pump_url(), %error, "embed pump failed");
-    let recorded = sqlx::query!(
-        "insert into embedding_errors (model, error, at) values ($1, $2, now())
-         on conflict (model) do update set error = excluded.error, at = excluded.at",
-        model.config.name,
-        error.to_string(),
-    )
-    .execute(pool)
-    .await;
-    if let Err(error) = recorded {
-        tracing::error!(%error, "embed pump can't record its error");
-    }
-}
-
-async fn clear_error(pool: &PgPool, model: &Model) {
-    let cleared = sqlx::query!(
-        "delete from embedding_errors where model = $1",
-        model.config.name
-    )
-    .execute(pool)
-    .await;
-    if let Err(error) = cleared {
-        tracing::error!(%error, "embed pump can't clear its error");
-    }
 }
 
 /// What the model embeds for a chunk: the title gives every chunk of a document its context,
@@ -815,46 +990,4 @@ fn text_hash(prefixed: &str) -> Vec<u8> {
 fn vector_literal(vector: &[f32]) -> String {
     let values: Vec<String> = vector.iter().map(f32::to_string).collect();
     format!("[{}]", values.join(","))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A TEI that computes every request to the end, one after another, even the ones the pump
-    /// gave up on. Returns how many chunks the pump embedded within `within`.
-    fn pump_against(size: &BatchSize, per_chunk: Duration, within: Duration) -> usize {
-        let (mut now, mut tei_busy_until, mut embedded) = (Duration::ZERO, Duration::ZERO, 0);
-        while now < within {
-            let batch = size.get();
-            tei_busy_until = now.max(tei_busy_until) + per_chunk * batch as u32;
-            let took = tei_busy_until - now;
-            if took > BATCH_TIMEOUT {
-                size.timed_out();
-                now += BATCH_TIMEOUT;
-            } else {
-                size.succeeded(took);
-                embedded += batch;
-                now = tei_busy_until;
-            }
-        }
-        embedded
-    }
-
-    #[test]
-    fn a_tei_too_slow_for_a_full_batch_still_makes_progress_and_a_fast_one_gets_full_batches() {
-        let size = BatchSize::new();
-        // A CPU that needs 70 s for 32 long chunks. A fixed batch of 32 embeds nothing.
-        let slow = Duration::from_secs(70) / 32;
-        let ten_minutes = Duration::from_secs(600);
-        let embedded = pump_against(&size, slow, ten_minutes);
-        // At least three quarters of what the TEI could compute in that time.
-        assert!(
-            embedded * 4 >= (ten_minutes.as_secs_f64() / slow.as_secs_f64()) as usize * 3,
-            "{embedded}"
-        );
-
-        pump_against(&size, Duration::from_millis(10), Duration::from_secs(60));
-        assert_eq!(size.get(), MAX_BATCH_SIZE);
-    }
 }

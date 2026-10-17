@@ -20,7 +20,7 @@ use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
 use ferret_server::{
     AppState, ConfigKey, SessionKey, WorkerSecret,
-    config::{EmbeddingConfig, ModelConfig},
+    config::{EmbeddingConfig, ModelConfig, TeiConfig},
     embeddings,
 };
 use reqwest::{Response, header};
@@ -65,19 +65,15 @@ impl Drop for TestServer {
 /// pump. Nothing gets embedded, so searches behave like keyword searches.
 pub async fn start_server(pool: PgPool) -> TestServer {
     let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
-    start(
-        pool,
-        tei.clone(),
-        embedding_config(model(MODEL, &tei)),
-        false,
-    )
-    .await
+    let config = embedding_config(model(MODEL, &tei), &[&tei]);
+    start(pool, tei, config, false).await
 }
 
 /// Like [`start_server`], with the pump.
 pub async fn start_semantic_server(pool: PgPool) -> TestServer {
     let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
-    start_server_with(pool, tei.clone(), embedding_config(model(MODEL, &tei))).await
+    let config = embedding_config(model(MODEL, &tei), &[&tei]);
+    start_server_with(pool, tei, config).await
 }
 
 /// Like [`start_semantic_server`], with the given models.
@@ -157,12 +153,11 @@ pub async fn eventually<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>
     }
 }
 
-/// A model on `tei` with the test prefixes.
+/// A model of what `tei` serves, with the test prefixes.
 pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
     ModelConfig {
         name: name.to_owned(),
-        url: tei.url.clone(),
-        bulk_url: None,
+        model_id: tei.model_id(),
         query_prefix: QUERY_PREFIX.to_owned(),
         document_prefix: DOCUMENT_PREFIX.to_owned(),
         // The fake's vectors are never negative, so no candidate is dropped.
@@ -170,11 +165,20 @@ pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
     }
 }
 
-/// `model` as the only and default model.
-pub fn embedding_config(model: ModelConfig) -> EmbeddingConfig {
+/// `model` as the only and default model, with `teis` as the pool.
+pub fn embedding_config(model: ModelConfig, teis: &[&FakeTei]) -> EmbeddingConfig {
     EmbeddingConfig {
         default: model.name.clone(),
         models: vec![model],
+        teis: teis.iter().map(|tei| tei_config(tei)).collect(),
+    }
+}
+
+/// `tei` as a TEI of the deployment.
+pub fn tei_config(tei: &FakeTei) -> TeiConfig {
+    TeiConfig {
+        url: tei.url.clone(),
+        external: false,
     }
 }
 

@@ -53,10 +53,11 @@ enum SearchMode {
   """ SEMANTIC
 }
 
-enum TeiRole {
-  QUERIES
-  PUMP
-  "Queries and the pump: no separate TEI for the pump is configured." BOTH
+enum TeiState {
+  "Serves a configured model." ONLINE
+  "Its `/info` doesn't answer." OFFLINE
+  "Serves a model no configured one uses." UNUSED
+  "Serves a configured model, but can't be used for it (see `problem`)." UNSUITABLE
 }
 
 "A time range up to now."
@@ -139,6 +140,13 @@ input SearchInput {
   "The embedding model of the semantic half. The user's default model when left out." model: String
   "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
   "Which halves run. `HYBRID` when left out. Judgments ignore it." mode: SearchMode
+}
+
+"Switches to change, the others stay."
+input TeiUpdate {
+  enabled: Boolean
+  queries: Boolean
+  embedding: Boolean
 }
 
 input UserUpdate {
@@ -264,14 +272,12 @@ type EmbeddingModel {
   """
   etaSeconds: Int
   """
-    Chunks per pump batch in the answering server process, 1 to 32: it shrinks on a TEI that
-    is too slow for full batches.
+    Whether an enabled TEI serves the model for search queries, as of the server's last look
+    (every 10 seconds).
   """
-  batchSize: Int!
-  "Whether the TEI for search queries answers."
   online: Boolean!
-  "Whether the pump's TEI answers, null when it's the same as for queries."
-  bulkOnline: Boolean
+  "Whether an enabled TEI embeds the model's chunks. Without one, `pending` stays."
+  embedding: Boolean!
 }
 
 type ExcludedDocuments {
@@ -410,14 +416,11 @@ type Ingest {
 
 type ModelStatus {
   name: String!
+  "The Hugging Face model a TEI must serve to work for it."
+  modelId: String!
   isDefault: Boolean!
-  "Whether the TEI that embeds search queries answers."
-  online: Boolean!
-  "Whether the TEI the embed pump uses answers. Null when it's the same as for queries."
-  bulkOnline: Boolean
-  "The embed pump's last failure, until its next success."
-  lastError: String
-  lastErrorAt: DateTime
+  "Null until something was embedded with it."
+  dimension: Int
   "Chunks still to embed, per source and across users. Empty when everything is embedded."
   backlog: [SourceBacklog!]!
   "Chunks with an embedding for this model, across users."
@@ -431,10 +434,6 @@ type ModelStatus {
     rate is 0.
   """
   etaSeconds: Int
-  "Chunks per pump batch in the answering server process."
-  batchSize: Int!
-  "The TEI for queries, and the pump's if that's another one, from their `/metrics`."
-  teis: [TeiStatus!]!
 }
 
 type Mutation {
@@ -478,6 +477,11 @@ type Mutation {
   """
   setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
+  """
+    Switches a TEI of the pool on or off, for queries or the embed pump. Takes effect at once
+    on the answering server process, within 10 seconds on the others. Admins only.
+  """
+  updateTei(url: String!, input: TeiUpdate!): Tei!
   "Renames one of the signed-in user's keys or changes its icon."
   updateApiKey(id: ID!, name: String!, icon: String!): ApiKey!
   """
@@ -519,7 +523,9 @@ type Query {
     200, 50 when left out.
   """
   activity(writer: ID, before: String, limit: Int, allUsers: Boolean): [Ingest!]!
-  "Each embedding model's TEI health and backlog, the default first. Admins only."
+  "Every TEI of the pool, in config order. Admins only."
+  teis: [Tei!]!
+  "Each embedding model's backlog, the default first. Admins only."
   embeddingStatus: [ModelStatus!]!
   "The signed-in user's API keys, newest first."
   apiKeys: [ApiKey!]!
@@ -621,13 +627,37 @@ type SourceCount {
 }
 
 """
-  A TEI's figures, read from its `/metrics`. Null while they don't answer. The rates average the
-  last minute and are null until two readings a few seconds apart exist.
+  A TEI of the pool. Which model it serves is asked every 10 seconds. The figures from its
+  `/metrics` are null while they don't answer, the rates average the last minute and are null
+  until two readings a few seconds apart exist.
 """
-type TeiStatus {
-  role: TeiRole!
+type Tei {
   url: String!
-  online: Boolean!
+  "Not part of the deployment (config): starts with queries off."
+  external: Boolean!
+  enabled: Boolean!
+  "Whether it may embed search queries."
+  queries: Boolean!
+  "Whether the embed pump may use it."
+  embedding: Boolean!
+  state: TeiState!
+  "Why it's offline, unused or unsuitable."
+  problem: String
+  "The model id from its `/info`, null while it doesn't answer."
+  servedModel: String
+  "The configured model it serves."
+  model: String
+  "Its last failure (pump batch or query), until its next success."
+  lastError: String
+  lastErrorAt: DateTime
+  "A pump batch of the answering server process is in flight."
+  busy: Boolean!
+  """
+    Chunks per pump batch in the answering server process, null while it may not embed. It
+    shrinks on a TEI too slow for full batches, and stays short on one that also answers
+    queries.
+  """
+  pumpBatchSize: Int
   "Inputs waiting in TEI's queue."
   queueSize: Int
   "Average inputs per inference batch."
@@ -641,7 +671,7 @@ type TeiStatus {
     in parallel.
   """
   load: Float
-  "Pump TEIs only: seconds until the backlog is embedded at this throughput."
+  "While it may embed: seconds until its model's backlog is embedded at its throughput."
   etaSeconds: Int
 }
 

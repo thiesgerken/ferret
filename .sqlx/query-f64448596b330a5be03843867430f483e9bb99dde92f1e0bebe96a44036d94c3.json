@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select url, enabled, queries, embedding from teis",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "queries",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "queries"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "embedding",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "teis",
+            "name": "embedding"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f64448596b330a5be03843867430f483e9bb99dde92f1e0bebe96a44036d94c3"
+}
