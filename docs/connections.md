@@ -44,7 +44,7 @@ The plugin and source root are not editable. To change ownership, create a diffe
 
 ## Exclude, disable, delete
 
-Excluding a document or thread removes its indexed documents and prevents subsequent ingestion from restoring them. Remove the exclusion to permit future writes again; that action does not itself fetch the origin. A plugin that only fetches changed items may need a relevant origin change/full sync before a previously excluded document reappears.
+Excluding a connection-owned document or thread removes its indexed documents and remembers the exclusion on the connection, so later puts cannot restore them. Removing that exclusion resets the connection's cursor: its next run starts from scratch and can restore unchanged origin documents too. Wait for a running connection to finish before removing an exclusion. Documents written by API keys have no owning connection: the UI removes them but cannot remember an exclusion, so the ingester may write them again.
 
 **Disable** prevents future claims but retains the connection, documents and history. It is not an immediate cancellation of a worker already processing a run. **Delete** requires typing the source root and deletes every indexed document below it, the connection and its runs. Deleting the connection ends its live token. Neither action changes the origin.
 
