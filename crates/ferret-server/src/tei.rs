@@ -64,3 +64,12 @@ pub async fn embed(
         .json()
         .await
 }
+
+/// Whether the TEI at `url` answers its health check within `timeout`.
+pub async fn healthy(http: &reqwest::Client, url: &str, timeout: Duration) -> bool {
+    http.get(format!("{url}/health"))
+        .timeout(timeout)
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}

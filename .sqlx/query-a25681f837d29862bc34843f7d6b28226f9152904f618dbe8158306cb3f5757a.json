@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select error, at from embedding_errors where model = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "embedding_errors",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "embedding_errors",
+            "name": "at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a25681f837d29862bc34843f7d6b28226f9152904f618dbe8158306cb3f5757a"
+}

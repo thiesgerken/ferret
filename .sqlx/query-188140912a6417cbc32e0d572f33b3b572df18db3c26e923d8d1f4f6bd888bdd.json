@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select c.source,\n                          count(*) filter (where f.chunk_id is null) as \"pending!\",\n                          count(f.chunk_id) as \"failed!\"\n                   from chunks c\n                   left join embedding_failures f on f.chunk_id = c.id and f.model = $1\n                   where not exists (select 1 from chunk_embeddings e\n                                     where e.chunk_id = c.id and e.model = $1)\n                   group by c.source\n                   order by c.source",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chunks",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "188140912a6417cbc32e0d572f33b3b572df18db3c26e923d8d1f4f6bd888bdd"
+}
