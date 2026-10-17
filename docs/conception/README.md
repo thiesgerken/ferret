@@ -241,8 +241,8 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   rank fusion (k = 60: a chunk scores 1 / (60 + rank) in each half) in one SQL query. The vector
   half takes the 100 nearest chunks and drops those less similar to the query than the model's
   `min_similarity` ([embeddings.md](embeddings.md#similarity-cut-off)), so an unrelated document
-  doesn't "match a little". It uses the user's default model unless `model=` says otherwise. Filters, `-word` and `"phrases"` apply to both
-  halves, the every-word rule only to BM25. A chunk without an embedding yet (backfill) is found by
+  doesn't "match a little". It uses the user's default model unless `model=` says otherwise.
+  Filters, `-word` and `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk without an embedding yet (backfill) is found by
   keyword only. If the query can't be embedded within 5 s (TEI down, stuck or broken), the search
   answers with the keyword half alone and says so: `semantic_unavailable` (REST) and
   `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
@@ -282,16 +282,18 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
   word, share its German or English stem, or contain it (compounds, for query words of three or
-  more characters). Each hit carries the document's best BM25 score (`keyword_score`, null when the
-  keywords didn't match) and its best cosine similarity to the query (`similarity`, null below the
-  cut-off or without the semantic half), the fused score stays internal. Next to the hits, `model`
+  more characters). Each hit carries the best BM25 score among the document's chunks in the keyword
+  candidates (`keyword_score`) and the best cosine similarity to the query among its chunks in the
+  vector candidates above the cut-off (`similarity`), each null when none of its chunks is (or
+  without the semantic half). The fused score stays internal. Next to the hits, `model`
   names the embedding model the semantic half used (or would have, when `semantic_unavailable`
   says it couldn't run).
 - **Counts and timing**: `total` counts the matching documents after the cut-off, exclusions and
   collapsing, not only the `k` returned. `total_is_lower_bound` says it may be short: the keyword
   half filled its 1000 candidates, or all of the 100 nearest chunks passed the cut-off while the
   scope holds more embedded chunks than came back (HNSW is approximate and may return fewer
-  neighbours, so their number alone doesn't tell).
+  neighbours, so their number alone doesn't tell). False means no sign of more, not a guarantee:
+  the approximate, `relaxed_order` vector search may miss a chunk above the cut-off.
   `documents_in_scope` counts the caller's documents in the selected sources (all when none are
   selected), regardless of the other filters. `took_ms` is the search's time on the server.
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
@@ -375,9 +377,8 @@ the roadmap. Details in [plugins.md](plugins.md).
   `ferret`, `ferret-plugins`, `ferret-frontend`, chart as OCI on ghcr). Structured JSON logs, no
   `/metrics` endpoint.
 - **Follow-up issues (#21)**: model evaluation (recall@10 and MRR per model from the judgments in
-  Settings), UI i18n (German and English), model
-  removal (dropping a removed model's index and embeddings), a host allowlist for plugin targets,
-  and typo tolerance in keyword search.
+  Settings), UI i18n (German and English), model removal (dropping a removed model's index and
+  embeddings), a host allowlist for plugin targets, and typo tolerance in keyword search.
 
 ## Sizing
 

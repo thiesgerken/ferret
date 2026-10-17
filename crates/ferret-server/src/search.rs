@@ -1,10 +1,10 @@
 //! Hybrid search: BM25 and vector neighbours over chunks, fused with reciprocal rank fusion, one
 //! hit per document.
 
-use axum::{Json, extract::State};
-use axum_extra::extract::{Query, QueryRejection};
 use std::time::Instant;
 
+use axum::{Json, extract::State};
+use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
 use ferret_api::{Hit, HitChunk, SearchQuery, SearchResponse};
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -276,7 +276,8 @@ pub async fn find(
     if query_hash.is_some() {
         // The vector half may have, when all its neighbours passed the cut-off and the scope
         // holds more. HNSW is approximate and may return fewer neighbours than asked for, so
-        // their count alone doesn't tell.
+        // their count alone doesn't tell. For the same reason, and because `relaxed_order` may
+        // return them slightly out of order, `false` means no sign of more, not a guarantee.
         sql.push(" or (not exists (select 1 from nearest where distance > ")
             .push_bind(max_distance)
             .push(") and (select count(*) from nearest) < (select count(*) ");

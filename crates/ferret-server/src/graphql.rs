@@ -723,10 +723,12 @@ struct Hit {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
-    /// The best BM25 score among the document's chunks, null when the keywords didn't match.
+    /// The best BM25 score among the document's chunks in the keyword half's candidates, null
+    /// when none of them is.
     keyword_score: Option<f64>,
-    /// The best cosine similarity to the query among the document's chunks (0 to 1), null when
-    /// no chunk passed the model's cut-off or the semantic half didn't run.
+    /// The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
+    /// half's candidates above the model's cut-off, null when none of them is or the semantic
+    /// half didn't run.
     similarity: Option<f64>,
     /// How many more documents of the same thread matched and were folded into this hit.
     collapsed: i32,

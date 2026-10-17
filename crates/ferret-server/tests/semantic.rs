@@ -415,6 +415,10 @@ async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: P
             .is_some_and(|similarity| similarity >= 0.3)
     );
     assert_eq!(response.total, 1);
+    assert!(
+        !response.total_is_lower_bound,
+        "a neighbour fell below the cut-off"
+    );
 }
 
 #[sqlx::test(migrations = false)]
@@ -446,25 +450,4 @@ async fn the_total_is_a_lower_bound_only_while_more_chunks_could_pass_the_cut_of
 
     let response = api.search(&query("vehicle")).await.unwrap();
     assert!(response.total_is_lower_bound, "{}", response.total);
-}
-
-#[sqlx::test(migrations = false)]
-async fn a_neighbour_below_the_cut_off_makes_the_total_exact(pool: PgPool) {
-    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let mut strict = model(MODEL, &tei);
-    strict.min_similarity = 0.3;
-    let server = start_server_with(pool, tei, embedding_config(strict)).await;
-    let api = server.admin_api().await;
-    api.put_document(&document("notes", "car", "My car broke down."))
-        .await
-        .unwrap();
-    api.put_document(&document("notes", "weather", "Lovely weather today."))
-        .await
-        .unwrap();
-    server.wait_for_embeddings(2).await;
-
-    let response = api.search(&query("vehicle")).await.unwrap();
-
-    assert_eq!(response.total, 1);
-    assert!(!response.total_is_lower_bound);
 }

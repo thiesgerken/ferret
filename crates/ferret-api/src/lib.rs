@@ -173,10 +173,12 @@ pub struct Hit {
     pub authors: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
-    /// The best BM25 score among the document's chunks, `None` when the keywords didn't match.
+    /// The best BM25 score among the document's chunks in the keyword half's candidates, `None`
+    /// when none of them is.
     pub keyword_score: Option<f32>,
-    /// The best cosine similarity to the query among the document's chunks, `None` when no chunk
-    /// passed the model's `min_similarity` or the semantic half didn't run.
+    /// The best cosine similarity to the query among the document's chunks in the vector half's
+    /// candidates above the model's `min_similarity`, `None` when none of them is or the semantic
+    /// half didn't run.
     pub similarity: Option<f32>,
     /// How many more documents of the same thread matched and were folded into this hit.
     pub collapsed: u32,

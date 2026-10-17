@@ -25,6 +25,7 @@ embedding:
       bulk_url: http://ferret-tei-qwen3-embedding-0-6b-gpu:80 # optional: the pump only
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
+      min_similarity: 0.4                                    # see Similarity cut-off
 ```
 
 The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap). At
@@ -164,6 +165,28 @@ limit $2;  -- the model's batch size, at most 32 (TEI's max_client_batch_size)
 v1 configures a single model, but adding one is a config change plus a TEI Deployment, and
 switching to it needs nothing but a choice in Settings once its backfill is done.
 
+## Similarity cut-off
+
+Every chunk has some similarity to every query, so without a floor the vector half would make each
+search "match" its 100 nearest chunks, however unrelated. Each model has a `min_similarity`
+(cosine, required): nearest chunks below it are dropped before the fusion. It is applied to the
+100 nearest rather than inside the HNSW scan, which would otherwise keep scanning for rows that
+pass, through the whole index when few do.
+
+Where noise ends depends on the model (and its prefixes), so the value is calibrated per model:
+
+1. Queries of two kinds, in German and English: on-topic ones whose relevant documents are known
+   (the demo documents of `scripts/demo-seed.sh`, ferret's docs), and off-topic ones the corpus has
+   no answer to.
+2. Each query runs once through the search, which caches its embedding. SQL then computes every
+   embedded chunk's similarity to it, exactly rather than through HNSW.
+3. The off-topic queries' best similarities show where noise ends, the relevant documents' best
+   chunks where matches begin. The cut-off goes between them, nearer the noise: a weak match lost
+   costs more than one extra hit, and exact terms still match by keyword.
+
+The 0.4 for Qwen3-Embedding-0.6B in the chart and the compose config is a first guess, not
+calibrated yet.
+
 ## Evaluation
 
 ### Collecting judgments
@@ -203,8 +226,7 @@ Settings → Models, per configured model:
 - **recall@10** and **MRR** (post-v1, #21) over the user's judgments, each for vector-only and for
   hybrid search. The server replays every judged query against the model and checks where the
   judged document lands. Runs on demand, results are kept until the next run.
-- **Similarity cut-off** (post-v1, #21): calibrated per model from the same replays. v1 has none:
-  the vector half always contributes its 100 nearest chunks.
+- **Similarity cut-off**: see below. Once judgments exist, the same replays can check it.
 
 Plus the model switch in the search UI, to compare result lists of two models by eye.
 
