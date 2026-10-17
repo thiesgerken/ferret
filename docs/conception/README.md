@@ -234,7 +234,7 @@ don't change.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=
 ```
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
@@ -296,7 +296,14 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   the approximate, `relaxed_order` vector search may miss a chunk above the cut-off.
   `documents_in_scope` counts the caller's documents in the selected sources (all when none are
   selected), regardless of the other filters. `took_ms` is the search's time on the server.
-- **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
+- **Facets**: `facets` counts the matches per source and for the 20 most frequent (and the selected)
+  authors, like `total`. Each facet applies every filter except its own, so the other sources stay
+  visible while one is selected. That takes the hybrid query once more per facet whose filter is
+  set. `are_lower_bounds` means what `total_is_lower_bound` means.
+- **Size and paging**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate
+  chunks. `offset` skips that many hits of the ranking for the next page, and `has_more` says
+  whether another page exists, up to the candidate limits. Ties rank by id, so pages neither
+  overlap nor skip. `total` and the facets come from all matches, the same on every page.
 - **Collapsing per thread**: hits from the same `thread` collapse into the best one plus "n more in
   this thread", like a web search collapses hits per domain. It catches quoted text that survived
   email stripping and consecutive chat segments. A thread is a `(source, thread)` pair. Collapsing

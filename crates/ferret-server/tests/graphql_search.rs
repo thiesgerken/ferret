@@ -235,3 +235,123 @@ async fn graphql_returns_a_whole_document_or_null(pool: PgPool) {
     );
     assert_eq!(missing["data"]["document"], Value::Null);
 }
+
+fn counts(facets: &[ferret_api::FacetCount]) -> Vec<(&str, u32)> {
+    facets
+        .iter()
+        .map(|facet| (facet.value.as_str(), facet.count))
+        .collect()
+}
+
+#[sqlx::test(migrations = false)]
+async fn each_facet_counts_the_matches_under_every_filter_but_its_own(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            sources: vec!["notes".to_owned()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(response.total, 1);
+    assert_eq!(
+        counts(&response.facets.sources),
+        [("mail/zoho", 1), ("notes", 1), ("paperless/2026", 1)]
+    );
+    assert_eq!(counts(&response.facets.authors), [("someone", 1)]);
+    assert!(!response.facets.are_lower_bounds);
+
+    let response = api
+        .search(&SearchQuery {
+            q: "invoice".to_owned(),
+            authors: vec!["Allianz".to_owned()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(counts(&response.facets.sources), [("paperless/2026", 1)]);
+    assert_eq!(
+        counts(&response.facets.authors),
+        [
+            ("Allianz", 1),
+            ("Stadtwerke", 1),
+            ("billing", 1),
+            ("someone", 1)
+        ]
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn pages_go_through_the_ranking_once_with_the_same_total(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+
+    let mut seen = Vec::new();
+    for offset in 0..4 {
+        let response = api
+            .search(&SearchQuery {
+                q: "invoice".to_owned(),
+                k: Some(1),
+                offset: Some(offset),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.total, 3, "page {offset}");
+        assert_eq!(response.facets.sources.len(), 3, "page {offset}");
+        assert_eq!(response.has_more, offset < 2, "page {offset}");
+        seen.extend(response.hits.into_iter().map(|hit| hit.external_id));
+    }
+    seen.sort();
+    assert_eq!(seen, ["invoice-a", "invoice-b", "invoice-c"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn graphql_has_paging_facets_and_the_models_cut_off(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    ingest(&api).await;
+    let cookie = server.sign_in().await;
+
+    let response = server
+        .graphql(
+            &cookie,
+            "query ($input: SearchInput!) {
+                search(input: $input) {
+                    hits { externalId }
+                    hasMore
+                    facets { sources { value count } authors { value count } areLowerBounds }
+                }
+                embeddingModels { minSimilarity }
+            }",
+            json!({"input": {"q": "invoice", "k": 2, "offset": 1}}),
+        )
+        .await;
+
+    assert_eq!(response["errors"], Value::Null, "{response}");
+    let search = &response["data"]["search"];
+    assert_eq!(search["hits"].as_array().unwrap().len(), 2);
+    assert_eq!(search["hasMore"], false);
+    assert_eq!(search["facets"]["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(search["facets"]["areLowerBounds"], false);
+    assert_eq!(response["data"]["embeddingModels"][0]["minSimilarity"], 0.0);
+
+    let negative = server
+        .graphql(
+            &cookie,
+            "query ($input: SearchInput!) { search(input: $input) { hasMore } }",
+            json!({"input": {"q": "invoice", "offset": -1}}),
+        )
+        .await;
+    assert!(
+        negative["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("offset")
+    );
+}
