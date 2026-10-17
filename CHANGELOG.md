@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #101 from thiesgerken/87-settings-shell
+  ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
+
+- Merge remote-tracking branch 'origin/main' into 87-settings-shell
+  ([`c4688cf`](https://github.com/thiesgerken/ferret/commit/c4688cfafd0f3e05713ced52a71c7a7b051a0d40))
+
+- Merge pull request #100 from thiesgerken/85-followups
+  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+
+### 💄 UI/UX
+
+
+- 💄 style(ui): one layout for Connections, Settings and Admin
+  ([`0e3a63e`](https://github.com/thiesgerken/ferret/commit/0e3a63ea7d093e8490081dfa0f7fb8417464b1fe))
+
+- 💄 style(ui): one layout for Connections, Settings and Admin
+  ([`4708f38`](https://github.com/thiesgerken/ferret/commit/4708f388dbe62a4b0eed564765cb5673c800598f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 💄 style(ui): group sources by writer, and load icons only where they show
+  ([`56470eb`](https://github.com/thiesgerken/ferret/commit/56470eb0c618b8f05ee68f8dba1cba1d5306686b))
+
+- 💄 style(ui): group sources by writer, and load icons only where they show
+  ([`2578cd4`](https://github.com/thiesgerken/ferret/commit/2578cd402091a0b3f10bc942aa5e67fa377394d2))
+
+  The filter column groups a writer's sources under its icon and name. Explore's source facet reads as writers too. Lucide's map of every icon's import and the list of all icon names load lazily, the first when an icon renders and the second when a picker opens, which takes 59 KB gzip off the first load of the search, Connections and Settings pages. A selected parent above a connection's root reads as that connection, and sources no longer flash the full path before the connection roots arrive.
+
+  Part of #85
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.4.0 (2026-10-17)
 
 
