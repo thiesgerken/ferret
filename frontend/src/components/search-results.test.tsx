@@ -14,7 +14,7 @@ const hit = (id: string, source: string, authors: string[]) => ({
   source,
   externalId: `${id}.md`,
   title: null,
-  url: id === "a" ? "obsidian://open?file=a.md" : null,
+  url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
   authors,
   createdAt: "2026-01-01T12:00:00Z",
   judged: false,
