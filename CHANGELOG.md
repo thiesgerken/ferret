@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.12.3 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #129 from thiesgerken/fix-flaky-tests
+  ([`8af33eb`](https://github.com/thiesgerken/ferret/commit/8af33eb4058544e53a855a783274600985a01da7))
+
+- ✅ test(server): order the racing tests by observed state, not by sleeps
+  ([`7cdef94`](https://github.com/thiesgerken/ferret/commit/7cdef944f19977894745b4a33f9235c93ea81179))
+
+  The exclusion race test waits for the lock waits in pg_stat_activity instead of sleeping. The model-switch test's fake TEI switches models with the embedding request, so periodic discovery can't see the new model first, and the test waits for the recorded error too.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): the pump hears every new chunk and honours a TEI switched off mid-claim
+  ([`8af33eb`](https://github.com/thiesgerken/ferret/commit/8af33eb4058544e53a855a783274600985a01da7))
+
+- 🐛 fix(server): the pump hears every new chunk and honours a TEI switched off mid-claim
+  ([`b748361`](https://github.com/thiesgerken/ferret/commit/b748361b1eaa599ba42f55d548c58aa7a1d9e270))
+
+  The pump started claiming before it listened for chunks_pending, so a chunk ingested in between waited for the idle poll. A pump that checked its TEI's switch before an admin turned embedding off could still claim chunks ingested after that; it now checks again after the claim and hands them to the other TEIs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.12.2 (2026-10-17)
 
 
