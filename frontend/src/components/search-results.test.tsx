@@ -17,6 +17,7 @@ const hit = (id: string, source: string, authors: string[]) => ({
   url: id === "a" ? "obsidian://open?file=a.md" : " JavaScript:alert(1)",
   authors,
   createdAt: "2026-01-01T12:00:00Z",
+  collapsed: id === "b" ? 2 : 0,
   judged: false,
   chunk: {
     __typename: "HitChunk",
@@ -89,6 +90,8 @@ test("shows one hit per document with its highlighted snippet and links", async 
   assert.equal(items[0].querySelector("a")?.textContent, "a.md", "the external id stands in for a missing title");
   assert.match(items[0].textContent ?? "", /Open in origin/);
   assert.doesNotMatch(items[1].textContent ?? "", /Open in origin/);
+  assert.doesNotMatch(items[0].textContent ?? "", /in this thread/);
+  assert.match(items[1].textContent ?? "", /2 more in this thread/);
   await view.unmount();
 });
 

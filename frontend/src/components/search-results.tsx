@@ -10,6 +10,7 @@ import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { snippet } from "@/lib/snippet";
+import { viewerHref } from "@/lib/viewer-url";
 import { cn } from "@/lib/utils";
 
 const SearchHitsQueryDocument = graphql(`
@@ -23,6 +24,7 @@ const SearchHitsQueryDocument = graphql(`
         url
         authors
         createdAt
+        collapsed
         judged
         chunk {
           startOffset
@@ -204,11 +206,6 @@ function chipClass(active: boolean) {
 }
 
 function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
-  const viewerHref = `/view?${new URLSearchParams({
-    id: hit.documentId,
-    start: String(hit.chunk.startOffset),
-    end: String(hit.chunk.endOffset),
-  })}`;
   const originUrl = linkableUrl(hit.url);
   return (
     <article className="space-y-1">
@@ -216,7 +213,9 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
         {hit.source} · {hit.authors.join(", ")} · {new Date(hit.createdAt).toLocaleDateString()}
       </p>
       <div className="flex items-center gap-2">
-        <Link href={viewerHref} className="text-lg font-medium text-brand hover:underline">
+        <Link
+          href={viewerHref(hit.documentId, { start: hit.chunk.startOffset, end: hit.chunk.endOffset })}
+          className="text-lg font-medium text-brand hover:underline">
           {hit.title || hit.externalId}
         </Link>
         <JudgeButton documentId={hit.documentId} judged={hit.judged} search={search} />
@@ -232,6 +231,11 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
           ),
         )}
       </p>
+      {hit.collapsed > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {hit.collapsed} more in this thread
+        </p>
+      )}
       {originUrl && (
         <a href={originUrl} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ExternalLink className="size-3" aria-hidden />

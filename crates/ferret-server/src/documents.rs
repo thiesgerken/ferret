@@ -11,7 +11,8 @@ use axum::{
     },
     http::StatusCode,
 };
-use ferret_api::{Document, DocumentPut, PutOutcome, PutResponse};
+use chrono::{DateTime, Utc};
+use ferret_api::{Document, DocumentPut, PutOutcome, PutResponse, ThreadQuery, ThreadResponse};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, types::Json as Jsonb};
@@ -111,7 +112,8 @@ pub async fn find(
     allowed: Option<&[String]>,
     id: Uuid,
 ) -> Result<Option<Document>, sqlx::Error> {
-    let document = sqlx::query!(
+    let document = sqlx::query_as!(
+        DocumentRow,
         r#"select id, source, external_id, content_type, title, text, url, thread, authors,
                   created_at, modified_at, meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
            from documents
@@ -124,20 +126,126 @@ pub async fn find(
     )
     .fetch_optional(pool)
     .await?;
-    Ok(document.map(|document| Document {
-        id: document.id,
-        source: document.source,
-        external_id: document.external_id,
-        content_type: content_type::parse(&document.content_type),
-        title: document.title,
-        text: document.text,
-        url: document.url,
-        thread: document.thread,
-        authors: document.authors,
-        created_at: document.created_at,
-        modified_at: document.modified_at,
-        meta: document.meta.0,
+    Ok(document.map(Document::from))
+}
+
+/// `GET /api/documents?source=&thread=`: a thread's documents, oldest first.
+pub async fn thread(
+    State(state): State<AppState>,
+    caller: ApiCaller,
+    query: Result<Query<ThreadQuery>, QueryRejection>,
+) -> Result<Json<ThreadResponse>, ApiError> {
+    caller
+        .require(Scope::SearchRead)
+        .or_else(|_| caller.require(Scope::IngestRead))?;
+    let Query(query) = query?;
+    // ponytail: the whole thread in one response. A chat channel that grows for years would
+    // want paging by `created_at`.
+    let documents = sqlx::query_as!(
+        DocumentRow,
+        r#"select id, source, external_id, content_type, title, text, url, thread, authors,
+                  created_at, modified_at, meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
+           from documents
+           where user_id = $1 and source = $2 and thread = $3
+             and ($4::text[] is null or exists (
+                  select 1 from unnest($4::text[]) root where source_covers(root, source)))
+           order by created_at, id"#,
+        caller.user_id,
+        query.source,
+        query.thread,
+        caller.sources(),
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(ThreadResponse {
+        documents: documents.into_iter().map(Document::from).collect(),
     }))
+}
+
+/// The documents before and after one in its thread.
+pub struct ThreadNeighbors {
+    pub previous: Option<ThreadNeighbor>,
+    pub next: Option<ThreadNeighbor>,
+}
+
+pub struct ThreadNeighbor {
+    pub id: Uuid,
+    pub title: Option<String>,
+}
+
+/// `document`'s neighbors in its thread, ordered like the thread listing.
+pub async fn thread_neighbors(
+    pool: &PgPool,
+    user_id: Uuid,
+    document: &Document,
+) -> Result<ThreadNeighbors, sqlx::Error> {
+    let Some(thread) = &document.thread else {
+        return Ok(ThreadNeighbors {
+            previous: None,
+            next: None,
+        });
+    };
+    let previous = sqlx::query_as!(
+        ThreadNeighbor,
+        "select id, title from documents
+         where user_id = $1 and source = $2 and thread = $3 and (created_at, id) < ($4, $5)
+         order by created_at desc, id desc limit 1",
+        user_id,
+        document.source,
+        thread,
+        document.created_at,
+        document.id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let next = sqlx::query_as!(
+        ThreadNeighbor,
+        "select id, title from documents
+         where user_id = $1 and source = $2 and thread = $3 and (created_at, id) > ($4, $5)
+         order by created_at, id limit 1",
+        user_id,
+        document.source,
+        thread,
+        document.created_at,
+        document.id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(ThreadNeighbors { previous, next })
+}
+
+struct DocumentRow {
+    id: Uuid,
+    source: String,
+    external_id: String,
+    content_type: String,
+    title: Option<String>,
+    text: String,
+    url: Option<String>,
+    thread: Option<String>,
+    authors: Vec<String>,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    meta: Jsonb<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl From<DocumentRow> for Document {
+    fn from(row: DocumentRow) -> Self {
+        Self {
+            id: row.id,
+            source: row.source,
+            external_id: row.external_id,
+            content_type: content_type::parse(&row.content_type),
+            title: row.title,
+            text: row.text,
+            url: row.url,
+            thread: row.thread,
+            authors: row.authors,
+            created_at: row.created_at,
+            modified_at: row.modified_at,
+            meta: row.meta.0,
+        }
+    }
 }
 
 /// Stores `document` unless it's unchanged, and re-chunks a changed one. Chunks whose text
@@ -270,10 +378,28 @@ async fn sync_chunks(
     sqlx::query!("delete from chunks where id = any($1)", &stale)
         .execute(&mut *tx)
         .await?;
+    // The title is part of the embedded input: a new title is a new input, embedded or rejected
+    // afresh.
+    sqlx::query!(
+        "delete from chunk_embeddings e using chunks c
+         where c.id = e.chunk_id and c.id = any($1) and c.title is distinct from $2",
+        &kept_ids,
+        document.title,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "delete from embedding_failures f using chunks c
+         where c.id = f.chunk_id and c.id = any($1) and c.title is distinct from $2",
+        &kept_ids,
+        document.title,
+    )
+    .execute(&mut *tx)
+    .await?;
     sqlx::query!(
         "update chunks c set
              ordinal = k.ordinal, start_offset = k.start_offset, end_offset = k.end_offset,
-             content_type = $5, ts = $6
+             content_type = $5, ts = $6, title = $7
          from unnest($1::uuid[], $2::int[], $3::int[], $4::int[])
              as k(id, ordinal, start_offset, end_offset)
          where c.id = k.id",
@@ -283,6 +409,7 @@ async fn sync_chunks(
         &kept.end_offsets,
         content_type::as_str(document.content_type),
         document.created_at,
+        document.title,
     )
     .execute(&mut *tx)
     .await?;
@@ -296,17 +423,18 @@ async fn sync_chunks(
     .await?;
     sqlx::query!(
         "insert into chunks
-             (id, document_id, user_id, source, content_type, ts,
+             (id, document_id, user_id, source, content_type, ts, title,
               ordinal, start_offset, end_offset, text, text_hash)
-         select uuidv7(), $1, $2, $3, $4, $5,
+         select uuidv7(), $1, $2, $3, $4, $5, $6,
                 n.ordinal, n.start_offset, n.end_offset, n.text, n.text_hash
-         from unnest($6::int[], $7::int[], $8::int[], $9::text[], $10::bytea[])
+         from unnest($7::int[], $8::int[], $9::int[], $10::text[], $11::bytea[])
              as n(ordinal, start_offset, end_offset, text, text_hash)",
         document_id,
         user_id,
         document.source,
         content_type::as_str(document.content_type),
         document.created_at,
+        document.title,
         &new.ordinals,
         &new.start_offsets,
         &new.end_offsets,

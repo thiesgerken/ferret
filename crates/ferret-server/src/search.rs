@@ -23,7 +23,10 @@ const DEFAULT_K: u32 = 10;
 const MAX_K: u32 = 100;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
 // ranks below these limits in both halves can't be a hit, which matters only when k approaches
-// them. The vector half is smaller, HNSW gets slower with every extra neighbour.
+// them. The vector half is smaller, HNSW gets slower with every extra neighbour. Titles are on
+// every chunk, so a common title word matches all chunks of long documents and can fill the
+// keyword candidates (BM25's document frequency counts those chunks, too). #21's evaluation
+// shows whether that bites.
 const KEYWORD_CANDIDATES: i64 = 1000;
 const SEMANTIC_CANDIDATES: i64 = 100;
 
@@ -186,13 +189,8 @@ pub async fn find(
     // Every word must match in at least one field, so a compound and an inflected word can
     // match the same chunk in different fields.
     for word in &query.words {
-        sql.push(" and (c.text &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_en') &&& ")
-            .push_bind(word)
-            .push(" or c.text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word)
-            .push(")");
+        sql.push(" and ");
+        push_word_match(&mut sql, "c.", word);
     }
     sql.push(" order by score desc limit ")
         .push_bind(KEYWORD_CANDIDATES)
@@ -216,12 +214,28 @@ pub async fn find(
                     c.document_id, c.text, c.start_offset, c.end_offset, f.score
              from fused f join chunks c on c.id = f.id
              order by c.document_id, f.score desc
+         ),
+         hits as (
+             select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
+                    d.authors, d.created_at, d.modified_at,
+                    b.score, b.text as chunk_text, b.start_offset, b.end_offset,
+                    row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
+                    -- Unordered: with an order, count(*) would count only up to the current row.
+                    count(*) over thread_hits - 1 as collapsed
+             from best b join documents d on d.id = b.document_id
+             window thread_hits as (partition by ",
+    )
+    // A document without a thread is a group of its own.
+    .push(if request.collapse.unwrap_or(true) {
+        "d.source, d.thread, case when d.thread is null then d.id end"
+    } else {
+        "d.id"
+    })
+    .push(
+        ")
          )
-         select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                d.authors, d.created_at, d.modified_at,
-                b.score, b.text as chunk_text, b.start_offset, b.end_offset
-         from best b join documents d on d.id = b.document_id
-         order by b.score desc
+         select * from hits where thread_rank = 1
+         order by score desc
          limit ",
     )
     .push_bind(i64::from(k));
@@ -253,6 +267,8 @@ pub async fn find(
             created_at: row.created_at,
             modified_at: row.modified_at,
             score: row.score,
+            collapsed: u32::try_from(row.collapsed)
+                .expect("at most KEYWORD_CANDIDATES + SEMANTIC_CANDIDATES hits collapse"),
             chunk: HitChunk {
                 start_offset: offset(row.start_offset),
                 end_offset: offset(row.end_offset),
@@ -357,13 +373,9 @@ impl Filters<'_> {
                 " and {table}.document_id not in (select document_id from chunks where user_id = "
             ))
             .push_bind(self.user_id)
-            .push(" and (text &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_en') &&& ")
-            .push_bind(word.clone())
-            .push(" or text::pdb.alias('text_ngram') &&& ")
-            .push_bind(word.clone())
-            .push("))");
+            .push(" and ");
+            push_word_match(sql, "", word);
+            sql.push(")");
         }
         if let Some(roots) = &self.roots {
             sql.push(" and exists (select 1 from unnest(")
@@ -400,6 +412,30 @@ impl Filters<'_> {
     }
 }
 
+/// `word` matches a chunk's text or its document's title in any of the BM25 index's fields.
+/// `table` qualifies the columns, e.g. `c.`.
+fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
+    sql.push("(");
+    for (index, field) in [
+        "text",
+        "text::pdb.alias('text_en')",
+        "text::pdb.alias('text_ngram')",
+        "title",
+        "title::pdb.alias('title_en')",
+        "title::pdb.alias('title_ngram')",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index > 0 {
+            sql.push(" or ");
+        }
+        sql.push(format!("{table}{field} &&& "))
+            .push_bind(word.to_owned());
+    }
+    sql.push(")");
+}
+
 #[derive(sqlx::FromRow)]
 struct HitRow {
     id: Uuid,
@@ -413,6 +449,7 @@ struct HitRow {
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     score: f32,
+    collapsed: i64,
     chunk_text: String,
     start_offset: i32,
     end_offset: i32,
