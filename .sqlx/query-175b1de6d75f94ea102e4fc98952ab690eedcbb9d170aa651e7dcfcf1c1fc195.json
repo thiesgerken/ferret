@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "with removed as (\n               select id, default_embedding_model from users\n               where default_embedding_model <> all($1)\n               for update\n           )\n           update users u set default_embedding_model = null\n           from removed where u.id = removed.id\n           returning u.username, removed.default_embedding_model as \"model!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "model!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "default_embedding_model"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "175b1de6d75f94ea102e4fc98952ab690eedcbb9d170aa651e7dcfcf1c1fc195"
+}

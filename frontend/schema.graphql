@@ -75,6 +75,7 @@ input SearchInput {
   "Only documents created before this time." to: DateTime
   "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
+  "The embedding model of the semantic half. The user's default model when left out." model: String
   "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
 }
 
@@ -122,8 +123,6 @@ type Connection {
   createdAt: DateTime!
   "The latest runs, newest first."
   runs(limit: Int! = 20): [PluginRun!]!
-  "What the user excluded from this connection's source, newest first."
-  exclusions: [Exclusion!]!
 }
 
 type CreatedApiKey {
@@ -151,25 +150,21 @@ type Document {
   nextInThread: ThreadNeighbor
 }
 
-type ExcludedDocuments {
-  "One, or the documents of the whole thread."
-  deleted: Int!
+"""
+  A configured embedding model and how much of the signed-in user's data it covers. A model
+  can be chosen before it covers everything, its semantic half is partial until then.
+"""
+type EmbeddingModel {
+  name: String!
+  "Whether searches use it when the user chose no default."
+  configuredDefault: Boolean!
   """
-    False when no connection owns the source (an API key wrote it): the documents are
-    deleted, but nothing stops whatever wrote them from writing them again.
+    How many of the user's chunks the model has embedded. Counted only when asked for, the
+    search page lists the models without it.
   """
-  remembered: Boolean!
-}
-
-"A document, or a whole thread, that the connection never ingests again."
-type Exclusion {
-  id: ID!
-  source: String!
-  "Set for an excluded document, null for a thread."
-  externalId: String
-  "Set for an excluded thread, null for a document."
-  thread: String
-  createdAt: DateTime!
+  embedded: Int!
+  "How many chunks the user has."
+  chunks: Int!
 }
 
 "A document returned by a search, with its best-matching chunk."
@@ -221,15 +216,10 @@ type Mutation {
   """
   deleteConnection(id: ID!, confirmSource: String!): Int!
   """
-    Removes a document, or with `wholeThread` its whole thread, from the index for good: it's
-    deleted, and its connection drops it from now on.
+    Sets the embedding model the signed-in user's searches use (UI and API keys), null for the
+    configured default. Returns it.
   """
-  excludeDocument(id: ID!, wholeThread: Boolean! = false): ExcludedDocuments!
-  """
-    Lets the connection ingest an excluded document or thread again. Its next run starts over
-    from scratch, so even a plugin that only fetches changes puts it again.
-  """
-  removeExclusion(id: ID!): ID!
+  setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!
@@ -263,6 +253,11 @@ type Query {
     `GET /api/search`.
   """
   search(input: SearchInput!): SearchResult!
+  """
+    The configured embedding models, the configured default first, with how much of the
+    signed-in user's data each covers.
+  """
+  embeddingModels: [EmbeddingModel!]!
   "One of the signed-in user's documents, null when there is none with this id."
   document(id: ID!): Document
   "The plugins that registered workers offer, with their config schemas."
@@ -287,6 +282,8 @@ type SearchResult {
     keyword matches only. Null when it ran.
   """
   semanticUnavailable: String
+  "The embedding model the semantic half used, or would have."
+  model: String!
 }
 
 type TextPart {
@@ -305,4 +302,6 @@ type User {
   username: String!
   displayName: String
   isAdmin: Boolean!
+  "The embedding model the user's searches use, null for the configured default."
+  defaultEmbeddingModel: String
 }

@@ -140,13 +140,18 @@ limit 32;  -- TEI's max_client_batch_size
 
 - `users.default_embedding_model` (null = the configured default) decides which model the user's
   searches use, in the UI and through API keys.
-- `model=` on the search API and a model switch in the search UI override it per query.
-- A model can be chosen before its backfill is complete. Settings shows the coverage, so the user
-  knows the semantic half is partial.
-- The model switch in the search UI only appears once more than one model is configured.
+- `model=` on the search API (`model` in GraphQL's `SearchInput`) and a model switch in the search
+  UI override it per query. An unknown model is an error, never a silent fallback. The response
+  says which model ran (`model`).
+- A model can be chosen before its backfill is complete. Settings → Models shows each model's
+  coverage of the user's chunks, so the user knows the semantic half is partial.
+- The model switch in the search UI only appears once more than one model is configured. Its
+  default option names the model that ran.
+- At startup, users whose default model is no longer configured are reset to the configured
+  default, each with a logged warning.
 
 v1 configures a single model, but adding one is a config change plus a TEI Deployment, and
-switching to it needs nothing but the Settings dropdown once its backfill is done.
+switching to it needs nothing but a choice in Settings once its backfill is done.
 
 ## Evaluation
 
@@ -161,7 +166,7 @@ A search may have several right hits, each its own judgment: recall@10 and MRR h
 - `query` is the query as typed, with whitespace collapsed. `filters` is the search's filters in
   canonical form: sources, authors and content types sorted without duplicates, `from`/`to` as
   absolute times. The same search in another chip order is the same judgment, `k` isn't part of
-  it. A search `search` would reject can't be judged.
+  it, and neither is `model`: evaluation replays a judged search with every model. A search `search` would reject can't be judged.
 - A relative time range ("Past week", `range` in GraphQL's `SearchInput`) is stored as its preset
   instead of the `from` it resolved to, so the same search tomorrow still shows its ✓ and a
   second ✓ doesn't add a row. Replay anchors the preset at the judgment's `created_at`.

@@ -10,6 +10,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, postgres::PgListener};
+use uuid::Uuid;
 
 use crate::{
     StartupError,
@@ -50,6 +51,10 @@ impl Model {
     /// GPU backfill into a CPU one without anyone noticing.
     fn pump_url(&self) -> &str {
         self.config.bulk_url.as_deref().unwrap_or(&self.config.url)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.config.name
     }
 
     fn index_name(&self) -> String {
@@ -129,7 +134,57 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
         tracing::info!(model = %model.config.name, dimension = model.dimension, max_input_length, "embedding model ready");
         models.push(model);
     }
+    reset_removed_defaults(pool, &models).await?;
     Ok(Embedding { http, models })
+}
+
+// ponytail: exact counts, and neither table has an index on user_id, so both scan the whole
+// table. Fine for a household's data. An index on (user_id, model) or cached counts if Settings
+// gets slow.
+/// How many of `user_id`'s chunks `model` has embedded.
+pub async fn embedded_chunks(
+    pool: &PgPool,
+    user_id: Uuid,
+    model: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"select count(*) as "count!" from chunk_embeddings where user_id = $1 and model = $2"#,
+        user_id,
+        model,
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn chunks(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"select count(*) as "count!" from chunks where user_id = $1"#,
+        user_id
+    )
+    .fetch_one(pool)
+    .await
+}
+
+/// Users whose default model is no longer configured fall back to the configured default.
+async fn reset_removed_defaults(pool: &PgPool, models: &[Model]) -> Result<(), sqlx::Error> {
+    let names: Vec<String> = models.iter().map(|model| model.name().to_owned()).collect();
+    let reset = sqlx::query!(
+        r#"with removed as (
+               select id, default_embedding_model from users
+               where default_embedding_model <> all($1)
+               for update
+           )
+           update users u set default_embedding_model = null
+           from removed where u.id = removed.id
+           returning u.username, removed.default_embedding_model as "model!""#,
+        &names,
+    )
+    .fetch_all(pool)
+    .await?;
+    for user in reset {
+        tracing::warn!(user = %user.username, model = %user.model, "the user's default embedding model is no longer configured, reset to the configured default");
+    }
+    Ok(())
 }
 
 /// TEI's `max_input_length`, waiting while it isn't up yet: on a fresh deployment it may still
@@ -171,6 +226,15 @@ async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
 impl Embedding {
     pub fn default_model(&self) -> &Model {
         &self.models[0]
+    }
+
+    /// Every configured model, the default first.
+    pub fn models(&self) -> &[Model] {
+        &self.models
+    }
+
+    pub fn model(&self, name: &str) -> Option<&Model> {
+        self.models.iter().find(|model| model.name() == name)
     }
 
     /// Embeds `query` with `model`'s query prefix unless it's cached, and returns its cache key.
