@@ -8,12 +8,13 @@ mod quotes;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use chrono::{DateTime, Utc};
 use ferret_api::{DocumentPut, PutResponse, ThreadQuery, internal::RunStats};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use self::mailbox::{Listed, Listing, Mailbox};
+use self::mailbox::{Listed, Listing, Mailbox, folder_name};
 use super::{Outcome, PluginError, Run};
 
 pub const NAME: &str = "imap";
@@ -116,7 +117,8 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             .is_some_and(|cursor| cursor.uid_validity != listing.uid_validity)
         {
             run.log.line(format!(
-                "{folder} has a new UIDVALIDITY: fetching its mails again"
+                "{} has a new UIDVALIDITY: fetching its mails again",
+                folder_name(&folder)
             ));
         }
         listings.insert(folder, listing);
@@ -131,7 +133,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         "{} mails in {} folders ({}), {} new",
         ids.len(),
         listings.len(),
-        listings.keys().cloned().collect::<Vec<_>>().join(", "),
+        listings
+            .keys()
+            .map(|folder| folder_name(folder))
+            .collect::<Vec<_>>()
+            .join(", "),
         new.len()
     ));
 
@@ -141,6 +147,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         run.api.sync_seen(sync, &run.source, batch).await?;
     }
     let mut stats = RunStats::default();
+    let mut threads = Threads::default();
     for batch in new.chunks(FETCH_BATCH) {
         let mut mails = fetch(&mut mailbox, batch).await?;
         for new in batch {
@@ -155,7 +162,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             let Some(mut document) = mail::document(
                 &raw,
                 &listed.id,
-                listed.received,
+                listed.written,
                 &run.source,
                 config.url_template.as_deref(),
             ) else {
@@ -165,7 +172,8 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
                 ));
                 continue;
             };
-            document.text = without_earlier_in_thread(run, &document).await?;
+            document.text = threads.without_earlier(run, &document).await?;
+            threads.remember(&document);
             match run.api.put_document(&document).await? {
                 PutResponse::Unchanged { .. } => stats.unchanged += 1,
                 PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
@@ -267,7 +275,7 @@ fn new_mails<'a>(
             !indexed.contains(new.listed.id.as_str()) && taken.insert(new.listed.id.as_str())
         })
         .collect();
-    new.sort_by(|a, b| (a.listed.received, &a.listed.id).cmp(&(b.listed.received, &b.listed.id)));
+    new.sort_by(|a, b| (a.listed.written, &a.listed.id).cmp(&(b.listed.written, &b.listed.id)));
     new
 }
 
@@ -291,31 +299,77 @@ async fn fetch<'a>(
     Ok(mails)
 }
 
-/// The mail's text without the runs of lines that earlier mails of its thread already have, as
-/// ferret holds them: their own text, already without what they quoted.
-async fn without_earlier_in_thread(
-    run: &Run,
-    document: &DocumentPut,
-) -> Result<String, PluginError> {
-    let thread = document.thread.as_deref().expect("every mail has a thread");
-    // The thread's first mail has nothing before it.
-    if thread == document.external_id {
-        return Ok(document.text.clone());
+/// The mails of the threads this run touched, for the thread diff: each thread is asked from
+/// ferret once, and the mails this run puts are added as they go.
+#[derive(Default)]
+struct Threads(HashMap<String, Thread>);
+
+#[derive(Default)]
+struct Thread {
+    /// Whether the mails ferret held before are in `mails`.
+    asked: bool,
+    mails: Vec<ThreadMail>,
+}
+
+struct ThreadMail {
+    id: String,
+    written: DateTime<Utc>,
+    text: String,
+}
+
+impl Threads {
+    /// The mail's text without the runs of lines that earlier mails of its thread already have,
+    /// as ferret holds them: their own text, already without what they quoted.
+    async fn without_earlier(
+        &mut self,
+        run: &Run,
+        document: &DocumentPut,
+    ) -> Result<String, PluginError> {
+        let thread_id = document.thread.as_deref().expect("every mail has a thread");
+        // The thread's first mail has nothing before it.
+        if thread_id == document.external_id {
+            return Ok(document.text.clone());
+        }
+        let thread = self.0.entry(thread_id.to_owned()).or_default();
+        if !thread.asked {
+            // Ferret holds this run's mails of the thread too.
+            let held = run
+                .api
+                .thread(&ThreadQuery {
+                    source: run.source.clone(),
+                    thread: thread_id.to_owned(),
+                })
+                .await?;
+            thread.mails = held
+                .documents
+                .into_iter()
+                .map(|document| ThreadMail {
+                    id: document.external_id,
+                    written: document.created_at,
+                    text: document.text,
+                })
+                .collect();
+            thread.asked = true;
+        }
+        let earlier: Vec<&str> = thread
+            .mails
+            .iter()
+            .filter(|earlier| {
+                earlier.id != document.external_id && earlier.written < document.created_at
+            })
+            .map(|earlier| earlier.text.as_str())
+            .collect();
+        Ok(quotes::without_repeated_runs(&document.text, &earlier))
     }
-    let thread = run
-        .api
-        .thread(&ThreadQuery {
-            source: run.source.clone(),
-            thread: thread.to_owned(),
-        })
-        .await?;
-    let earlier: Vec<&str> = thread
-        .documents
-        .iter()
-        .filter(|earlier| {
-            earlier.external_id != document.external_id && earlier.created_at < document.created_at
-        })
-        .map(|earlier| earlier.text.as_str())
-        .collect();
-    Ok(quotes::without_repeated_runs(&document.text, &earlier))
+
+    fn remember(&mut self, document: &DocumentPut) {
+        let thread = document.thread.clone().expect("every mail has a thread");
+        let mails = &mut self.0.entry(thread).or_default().mails;
+        mails.retain(|mail| mail.id != document.external_id);
+        mails.push(ThreadMail {
+            id: document.external_id.clone(),
+            written: document.created_at,
+            text: document.text.clone(),
+        });
+    }
 }

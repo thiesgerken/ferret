@@ -10,7 +10,7 @@ use std::{
 use async_imap::{
     Client, Session,
     imap_proto::{Address, NameAttribute},
-    types::Fetch,
+    types::{Fetch, Name},
 };
 use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
@@ -26,7 +26,10 @@ use tokio_rustls::{
     rustls::{ClientConfig, pki_types::ServerName},
 };
 
-use super::{ImapConfig, mail::message_id};
+use super::{
+    ImapConfig,
+    mail::{message_id, written},
+};
 use crate::plugins::PluginError;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -50,8 +53,9 @@ pub struct Listed {
     pub uid: u32,
     /// The Message-ID, or for a mail without one, a stand-in made of its date, sender and subject.
     pub id: String,
-    /// When the mail arrived in the mailbox (IMAP's `INTERNALDATE`).
-    pub received: DateTime<Utc>,
+    /// When the mail was written: its `Date`, else when it arrived (IMAP's `INTERNALDATE`).
+    /// The thread diff takes a thread's mails in this order.
+    pub written: DateTime<Utc>,
 }
 
 impl Mailbox {
@@ -92,6 +96,14 @@ impl Mailbox {
         })
         .await??;
         let excluded: HashSet<String> = excluded.iter().map(|name| name.to_lowercase()).collect();
+        // By the last segment: servers with a namespace prefix list `INBOX.Trash`.
+        let is_excluded = |name: &Name| {
+            let leaf = match name.delimiter() {
+                Some(delimiter) => name.name().rsplit(delimiter).next().unwrap_or_default(),
+                None => name.name(),
+            };
+            excluded.contains(&folder_name(leaf).to_lowercase())
+        };
         let mut folders: Vec<String> = names
             .iter()
             .filter(|name| {
@@ -105,8 +117,8 @@ impl Mailbox {
                     )
                 })
             })
+            .filter(|name| !is_excluded(name))
             .map(|name| name.name().to_owned())
-            .filter(|name| !excluded.contains(&name.to_lowercase()))
             .collect();
         folders.sort();
         Ok(folders)
@@ -139,10 +151,12 @@ impl Mailbox {
                     uid,
                     id: listed_id(fetch)
                         .ok_or_else(|| format!("{folder}: mail {uid} has no envelope"))?,
-                    received: fetch
-                        .internal_date()
-                        .ok_or_else(|| format!("{folder}: mail {uid} has no arrival date"))?
-                        .to_utc(),
+                    written: fetch
+                        .envelope()
+                        .and_then(|envelope| envelope.date.as_deref())
+                        .and_then(|date| written(&String::from_utf8_lossy(date)))
+                        .or_else(|| fetch.internal_date().map(|date| date.to_utc()))
+                        .ok_or_else(|| format!("{folder}: mail {uid} has no date"))?,
                 })
             })
             .collect::<Result<_, PluginError>>()?;
@@ -235,8 +249,60 @@ fn address_bytes(address: &Address) -> Vec<u8> {
         .collect()
 }
 
+/// A folder name as people write it: IMAP lists names in modified UTF-7 (RFC 3501), e.g.
+/// `Entw&APw-rfe` for "Entwürfe". A name that isn't valid modified UTF-7 stays as it is.
+pub fn folder_name(listed: &str) -> String {
+    let mut name = String::new();
+    let mut rest = listed;
+    while let Some(start) = rest.find('&') {
+        name.push_str(&rest[..start]);
+        let Some(end) = rest[start..].find('-').map(|end| start + end) else {
+            return listed.to_owned();
+        };
+        let encoded = &rest[start + 1..end];
+        if encoded.is_empty() {
+            name.push('&');
+        } else {
+            let Some(decoded) = decode_utf16_base64(encoded) else {
+                return listed.to_owned();
+            };
+            name.push_str(&decoded);
+        }
+        rest = &rest[end + 1..];
+    }
+    name.push_str(rest);
+    name
+}
+
+/// Modified base64 (`,` for `/`, no padding) of UTF-16BE.
+fn decode_utf16_base64(encoded: &str) -> Option<String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(encoded.replace(',', "/"))
+        .ok()?;
+    let (pairs, []) = bytes.as_chunks::<2>() else {
+        return None;
+    };
+    let units: Vec<u16> = pairs.iter().map(|pair| u16::from_be_bytes(*pair)).collect();
+    String::from_utf16(&units).ok()
+}
+
 async fn within<T>(what: &str, future: impl Future<Output = T>) -> Result<T, PluginError> {
     timeout(COMMAND_TIMEOUT, future)
         .await
         .map_err(|_| format!("{what} timed out").into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folder_names_are_decoded_from_modified_utf7() {
+        assert_eq!(folder_name("Entw&APw-rfe"), "Entwürfe");
+        assert_eq!(folder_name("Sent"), "Sent");
+        assert_eq!(folder_name("Tom &- Jerry"), "Tom & Jerry");
+        assert_eq!(folder_name("&ZeVnLIqe-"), "日本語");
+        assert_eq!(folder_name("broken &abc"), "broken &abc");
+    }
 }

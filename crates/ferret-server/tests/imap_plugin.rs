@@ -99,6 +99,7 @@ impl TestMailbox {
             "tls": false,
             "username": self.username,
             "password": password,
+            "exclude_folders": ["Trash", "Spam", "Junk", "Drafts", "Entwürfe"],
             "url_template": "mid:{message_id}",
         })
     }
@@ -217,6 +218,10 @@ async fn mails_sync_incrementally_with_threads_moves_and_deletions(pool: PgPool)
     let mut mailbox = TestMailbox::new().await;
     mailbox.session.create("Archiv").await.unwrap();
     mailbox.session.create("Leer").await.unwrap();
+    // Excluded by its special use, by the last segment of its name, and by its decoded name.
+    for folder in ["Papierkorb", "Archiv/Spam", "Entw&APw-rfe"] {
+        mailbox.session.create(folder).await.unwrap();
+    }
     for (folder, fixture, arrived) in [
         ("Sent", "01-original", "13-Jan-2025 09:12:00 +0100"),
         ("INBOX", "02-gmail-reply", "13-Jan-2025 10:30:00 +0100"),
@@ -227,7 +232,8 @@ async fn mails_sync_incrementally_with_threads_moves_and_deletions(pool: PgPool)
             "05-thunderbird-reply",
             "13-Jan-2025 13:05:00 +0100",
         ),
-        ("INBOX", "06-unmarked-quote", "14-Jan-2025 08:15:00 +0100"),
+        // Arrived before the mail it quotes (an import), but written after it.
+        ("INBOX", "06-unmarked-quote", "12-Jan-2025 08:15:00 +0100"),
         ("INBOX", "07-html-only", "15-Jan-2025 06:00:00 +0100"),
         ("Sent", "08-forward", "15-Jan-2025 18:20:00 +0100"),
         ("INBOX", "09-no-message-id", "16-Jan-2025 07:45:00 +0100"),
@@ -244,9 +250,11 @@ async fn mails_sync_incrementally_with_threads_moves_and_deletions(pool: PgPool)
     mailbox
         .append_raw("Junk", SPAM, "16-Jan-2025 03:00:00 +0100")
         .await;
-    mailbox
-        .append_raw("Drafts", DRAFT, "16-Jan-2025 04:00:00 +0100")
-        .await;
+    for folder in ["Drafts", "Papierkorb", "Archiv/Spam", "Entw&APw-rfe"] {
+        mailbox
+            .append_raw(folder, DRAFT, "16-Jan-2025 04:00:00 +0100")
+            .await;
+    }
     let connection = Connection::create(pool, mailbox.config(PASSWORD)).await;
 
     let first = connection.run().await;

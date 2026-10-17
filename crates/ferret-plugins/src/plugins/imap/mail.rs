@@ -24,13 +24,19 @@ pub fn message_id(raw: &str) -> String {
         .to_owned()
 }
 
-/// The document of a mail, `id` being its Message-ID (or what stands in for it) and `received`
-/// when it arrived, for mails without a `Date`. The text is stripped of quote containers and
+/// When a mail was written according to its `Date` header, as mail-parser reads it.
+pub fn written(date: &str) -> Option<DateTime<Utc>> {
+    let date = mail_parser::DateTime::parse_rfc822(date)?;
+    DateTime::from_timestamp(date.to_timestamp(), 0)
+}
+
+/// The document of a mail, `id` being its Message-ID (or what stands in for it) and `written`
+/// its date as the listing saw it, for mails without a readable `Date`. The text is stripped of quote containers and
 /// markers, the thread diff is up to the caller. `None` when `raw` isn't a mail.
 pub fn document(
     raw: &[u8],
     id: &str,
-    received: DateTime<Utc>,
+    written: DateTime<Utc>,
     source: &str,
     url_template: Option<&str>,
 ) -> Option<DocumentPut> {
@@ -38,7 +44,7 @@ pub fn document(
     let created_at = message
         .date()
         .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0))
-        .unwrap_or(received);
+        .unwrap_or(written);
     let mut meta = Map::new();
     for (key, addresses) in [("to", message.to()), ("cc", message.cc())] {
         let addresses: Vec<String> = addresses.into_iter().flat_map(with_addresses).collect();
