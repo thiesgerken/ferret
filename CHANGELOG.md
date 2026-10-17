@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #96 from thiesgerken/ci-helm-pr-version
+  ([`1959f8d`](https://github.com/thiesgerken/ferret/commit/1959f8df284db1a13461556deb4d97eea91dc3ef))
+
+### 👷 CI/Build
+
+
+- 👷 ci: prefix the SHA in the pinned PR chart version
+  ([`1959f8d`](https://github.com/thiesgerken/ferret/commit/1959f8df284db1a13461556deb4d97eea91dc3ef))
+
+- 👷 ci: prefix the SHA in the pinned PR chart version
+  ([`bf06adc`](https://github.com/thiesgerken/ferret/commit/bf06adcfb402a0038c03667395a6ef23b9e3c631))
+
+  helm refused `0.0.0-pr.88.0751212`: SemVer rejects an all-digit pre-release segment with a leading zero, which hit one PR commit in 16.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.3.0 (2026-10-17)
 
 
