@@ -9,7 +9,7 @@ use sqlx::PgPool;
 const SEARCH: &str = "query ($input: SearchInput!) {
     search(input: $input) {
         hits {
-            documentId externalId source contentType title url thread authors createdAt modifiedAt
+            documentId externalId source contentType title url thread authors createdAt modifiedAt collapsed
             chunk { startOffset endOffset parts { text highlight } }
         }
         semanticUnavailable
@@ -63,6 +63,7 @@ async fn graphql_hits(server: &TestServer, cookie: &str, input: Value) -> Vec<Va
                 "authors": hit["authors"],
                 "created_at": timestamp(&hit["createdAt"]),
                 "modified_at": timestamp(&hit["modifiedAt"]),
+                "collapsed": hit["collapsed"],
                 "chunk": {
                     "start_offset": chunk["startOffset"],
                     "end_offset": chunk["endOffset"],
@@ -98,6 +99,7 @@ async fn rest_hits(api: &Client, query: SearchQuery) -> Vec<Value> {
                 "authors": hit.authors,
                 "created_at": hit.created_at,
                 "modified_at": hit.modified_at,
+                "collapsed": hit.collapsed,
                 "chunk": {
                     "start_offset": hit.chunk.start_offset,
                     "end_offset": hit.chunk.end_offset,

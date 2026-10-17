@@ -94,6 +94,7 @@ input SearchInput {
   "Only documents created before this time." to: DateTime
   "Only documents created within this range up to now. Instead of `from`." range: TimeRange
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
+  "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
 }
 
 """
@@ -166,6 +167,10 @@ type Document {
   authors: [String!]!
   createdAt: DateTime!
   modifiedAt: DateTime!
+  "The document before this one in its thread, null at its start or without a thread."
+  previousInThread: ThreadNeighbor
+  "The document after this one in its thread, null at its end or without a thread."
+  nextInThread: ThreadNeighbor
 }
 
 "A page of the user's documents with the counts to narrow them down."
@@ -220,6 +225,8 @@ type Hit {
   createdAt: DateTime!
   modifiedAt: DateTime!
   score: Float!
+  "How many more documents of the same thread matched and were folded into this hit."
+  collapsed: Int!
   chunk: HitChunk!
   "Whether the signed-in user marked this document as the right hit for this very search."
   judged: Boolean!
@@ -319,6 +326,12 @@ type SearchResult {
 type TextPart {
   text: String!
   highlight: Boolean!
+}
+
+"Enough of a thread's neighboring document to link to it."
+type ThreadNeighbor {
+  id: ID!
+  title: String
 }
 
 type User {
