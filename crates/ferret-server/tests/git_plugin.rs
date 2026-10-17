@@ -1,7 +1,17 @@
 mod common;
 
-use std::{path::Path, process::Command, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 
+use axum::{
+    Router,
+    http::{HeaderMap, StatusCode, Uri, header},
+    response::IntoResponse,
+};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use common::{TestServer, start_server};
 use ferret_api::SearchQuery;
 use ferret_plugins::{plugins::PluginOptions, worker::Worker};
@@ -363,4 +373,164 @@ async fn later_runs_index_the_diff_unless_history_or_config_changed(pool: PgPool
         "{runs:?}"
     );
     assert_eq!(external_ids(&pool).await, ["a.md"]);
+}
+
+/// Serves `repo` over git's dumb HTTP protocol, only to requests with the token, the way GitHub
+/// takes one: basic auth with any user name.
+async fn serve_private(repo: PathBuf, token: &str) -> String {
+    let expected = format!(
+        "Basic {}",
+        STANDARD.encode(format!("x-access-token:{token}"))
+    );
+    let app = Router::new().fallback(move |headers: HeaderMap, uri: Uri| {
+        let authorized = headers
+            .get(header::AUTHORIZATION)
+            .is_some_and(|value| value == expected.as_str());
+        let path = repo.join(uri.path().trim_start_matches('/'));
+        async move {
+            if !authorized {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    [(header::WWW_AUTHENTICATE, "Basic realm=\"git\"")],
+                )
+                    .into_response();
+            }
+            match std::fs::read(path) {
+                Ok(bytes) => bytes.into_response(),
+                Err(_) => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/repo.git", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: PgPool) {
+    let worker_files = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    repository(repo.path(), &worker_files.path().join("missing"));
+    let served = tempfile::tempdir().unwrap();
+    let bare = served.path().join("repo.git");
+    git(
+        repo.path(),
+        &["clone", "-q", "--bare", ".", bare.to_str().unwrap()],
+    );
+    git(&bare, &["update-server-info"]);
+    let remote = serve_private(served.path().to_owned(), "s3cret-token").await;
+    let anonymous = reqwest::get(format!("{remote}/info/refs")).await.unwrap();
+    assert_eq!(anonymous.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let server = start_server(pool.clone()).await;
+    let worker = Worker {
+        internal: server.internal(),
+        public_url: server.public_url(),
+        name: "test-worker".to_owned(),
+        options: PluginOptions {
+            git_protocols: "http".to_owned(),
+        },
+    };
+    let worker_id = worker.register().await;
+    let cookie = server.sign_in().await;
+    let created = server
+        .graphql(
+            &cookie,
+            "mutation ($input: NewConnection!) { createConnection(input: $input) { id config } }",
+            json!({"input": {
+                "plugin": "git",
+                "source": "private",
+                "config": json!({"remote": remote, "token": "s3cret-token"}).to_string(),
+                "schedule": "0 * * * *",
+            }}),
+        )
+        .await;
+    assert_eq!(created["errors"], Value::Null, "{created}");
+    let id = created["data"]["createConnection"]["id"].clone();
+    assert_eq!(
+        created["data"]["createConnection"]["config"],
+        json!({"remote": remote}).to_string()
+    );
+
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+    // Nothing excluded: the note, the todo and the settings file.
+    assert_eq!(invoice_hits(&server).await.len(), 3);
+
+    let update = |config: Value| {
+        let server = &server;
+        let cookie = &cookie;
+        let id = id.clone();
+        async move {
+            server
+                .graphql(
+                    cookie,
+                    "mutation ($id: ID!, $input: ConnectionUpdate!) {
+                        updateConnection(id: $id, input: $input) { config }
+                    }",
+                    json!({"id": id, "input": {
+                        "config": config.to_string(),
+                        "schedule": "30 * * * *",
+                        "enabled": true,
+                    }}),
+                )
+                .await
+        }
+    };
+    let run_again = || async {
+        server
+            .graphql(
+                &cookie,
+                "mutation ($id: ID!) { runConnectionNow(id: $id) }",
+                json!({"id": id}),
+            )
+            .await;
+        assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+    };
+
+    // A new schedule with the same config keeps the token.
+    let rescheduled = update(json!({"remote": remote})).await;
+    assert_eq!(rescheduled["errors"], Value::Null, "{rescheduled}");
+    run_again().await;
+    assert_eq!(invoice_hits(&server).await.len(), 3);
+
+    // A changed config needs the token again: else a session could send it to another remote.
+    let elsewhere = update(json!({"remote": "https://attacker.example/x.git"})).await;
+    assert_eq!(
+        elsewhere["errors"][0]["message"],
+        "a changed configuration needs its credentials again: enter token"
+    );
+    let narrowed =
+        update(json!({"remote": remote, "include": ["notes/**"], "token": "s3cret-token"})).await;
+    assert_eq!(narrowed["errors"], Value::Null, "{narrowed}");
+    run_again().await;
+    assert_eq!(invoice_hits(&server).await.len(), 1);
+
+    let runs = server
+        .graphql(
+            &cookie,
+            "{ connections { config runs { status error } } }",
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        runs["data"]["connections"][0]["runs"],
+        json!([
+            {"status": "SUCCEEDED", "error": null},
+            {"status": "SUCCEEDED", "error": null},
+            {"status": "SUCCEEDED", "error": null},
+        ])
+    );
+    assert!(!runs.to_string().contains("s3cret-token"));
+    let (config, credentials): (String, Vec<u8>) =
+        sqlx::query_as("select config::text, credentials from connections")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!config.contains("s3cret-token"));
+    assert!(
+        !credentials
+            .windows(12)
+            .any(|window| window == b"s3cret-token")
+    );
 }

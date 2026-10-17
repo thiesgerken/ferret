@@ -28,8 +28,7 @@ kubectl get secret -n ferret ferret-secrets -o jsonpath='{.data.bootstrap-passwo
 
 ## Secrets
 
-The chart generates the Postgres password, the bootstrap password and the session secret once and
-keeps them across upgrades (`lookup`). Tools that render with `helm template` (Argo CD, Flux) can't
+The chart generates every secret below once and keeps them across upgrades (`lookup`). Tools that render with `helm template` (Argo CD, Flux) can't
 look anything up and would generate new values on every sync. There, create a Secret yourself and
 set `secrets.existingSecret`:
 
@@ -39,6 +38,7 @@ set `secrets.existingSecret`:
 | `bootstrap-password` | the first `admin`, at least 16 characters |
 | `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
 | `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
+| `config-key` | encrypts plugin credentials, 32 bytes in base64 (`openssl rand -base64 32`); back it up apart from the database |
 
 ## Uninstall
 

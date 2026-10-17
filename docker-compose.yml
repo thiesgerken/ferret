@@ -19,6 +19,8 @@ services:
       FERRET_SESSION_SECRET: development session secret, not for production
       FERRET_BOOTSTRAP_PASSWORD: ferret-development
       FERRET_WORKER_SECRET: &worker-secret development worker secret, not for production
+      # base64 of "development config key, not prod"
+      FERRET_CONFIG_KEY: ZGV2ZWxvcG1lbnQgY29uZmlnIGtleSwgbm90IHByb2Q=
     volumes:
       - ./docker/ferret.yaml:/etc/ferret/config.yaml:ro
 
