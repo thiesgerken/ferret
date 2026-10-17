@@ -45,7 +45,7 @@ export function SearchField({
     event.preventDefault();
     clearTimeout(typing.current);
     const q = value.trim();
-    if (q && q !== defaultValue) onSearch(q);
+    if (q) onSearch(q);
   }
 
   return (

@@ -84,13 +84,15 @@ async function renderResults(
       },
     });
   });
-  // Typing replaces the state like the page does, filters only record what they'd change.
   function Page() {
     const [current, setCurrent] = useState(state);
     return (
       <SearchResults
         state={current}
-        onChange={(next) => changes.push(next)}
+        onChange={(next) => {
+          changes.push(next);
+          setCurrent(next);
+        }}
         onType={(next) => {
           typed.push(next);
           setCurrent(next);
@@ -121,8 +123,6 @@ async function pauseTyping() {
   });
   await settle();
 }
-
-
 
 /** The filter chips, not the hits' ✓ buttons, which are toggles as well. */
 const CHIPS = "main > div:first-child button[aria-pressed]";
@@ -181,7 +181,7 @@ test("offers the hits' sources and authors as chips that filter", async () => {
 
   assert.deepEqual(changes, [
     { ...STATE, sources: ["mail/zoho"] },
-    { ...STATE, authors: ["thies"] },
+    { ...STATE, sources: ["mail/zoho"], authors: ["thies"] },
   ]);
   await view.unmount();
 });
@@ -310,5 +310,18 @@ test("a late answer to an earlier query doesn't replace the newer one's hits", a
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 1);
   assert.equal(items[0].querySelector("a")?.textContent, "c.md");
+  await view.unmount();
+});
+
+test("a chip clicked while typing wins over the typed query", async () => {
+  const { view, typed, changes } = await renderResults(STATE);
+  const chip = [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((b) => b.textContent === "notes")!;
+
+  await type(view, "invoices");
+  await act(async () => chip.click());
+  await pauseTyping();
+
+  assert.deepEqual(changes, [{ ...STATE, sources: ["notes"] }]);
+  assert.deepEqual(typed, [], "the typed query belonged to the search before the chip");
   await view.unmount();
 });

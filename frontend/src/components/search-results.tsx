@@ -2,13 +2,13 @@
 
 import { Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "urql";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 import type { SearchHitsQuery, SearchInput } from "@/gql/graphql";
 import { linkableUrl } from "@/lib/safe-url";
-import { TIME_RANGES, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
+import { TIME_RANGES, searchHref, toggle, type SearchState, type TimeRange } from "@/lib/search-url";
 import { plainMarkdown, snippet } from "@/lib/snippet";
 import { viewerHref } from "@/lib/viewer-url";
 import { cn } from "@/lib/utils";
@@ -91,9 +91,26 @@ export function SearchResults({
     }),
     [state.q, state.sources, state.authors, state.range, state.model],
   );
-  const [{ data, error, fetching }] = useQuery({ query: SearchHitsQueryDocument, variables: { input } });
+  // Typing revisits queries all the time, and a cached answer would pass off an old `tookMs` and
+  // `semanticUnavailable` as current.
+  const [{ data, error, fetching }] = useQuery({
+    query: SearchHitsQueryDocument,
+    variables: { input },
+    requestPolicy: "cache-and-network",
+  });
   const [{ data: models }] = useQuery({ query: EmbeddingModelNamesQuery });
   const hits = data?.search.hits ?? [];
+
+  // A query typed before a chip click or Back must not land on top of it: it was typed into a
+  // search that's gone.
+  const href = searchHref(state);
+  const shownHref = useRef(href);
+  useEffect(() => {
+    shownHref.current = href;
+  });
+  function handleType(q: string) {
+    if (shownHref.current === href) onType({ ...state, q });
+  }
   const semanticUnavailable = data?.search.semanticUnavailable;
 
   return (
@@ -103,7 +120,7 @@ export function SearchResults({
         <SearchField
           defaultValue={state.q}
           onSearch={(q) => onChange({ ...state, q })}
-          onType={(q) => onType({ ...state, q })}
+          onType={handleType}
         />
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-4">
@@ -114,7 +131,7 @@ export function SearchResults({
           ranModel={data?.search.model}
           onChange={onChange}
         />
-        {data && <Stats result={data.search} sources={state.sources} />}
+        {data && <Stats result={data.search} sources={state.sources} className={cn(fetching && "opacity-60")} />}
         {semanticUnavailable && (
           <p role="status" className="text-sm text-muted-foreground">
             Keyword matches only: {semanticUnavailable}.
@@ -269,12 +286,12 @@ function HitItem({ hit, search }: { hit: Hit; search: SearchInput }) {
 }
 
 /** "37 matches · 526 documents in carapace, demo · 84 ms", to judge the results at a glance. */
-function Stats({ result, sources }: { result: Result; sources: string[] }) {
+function Stats({ result, sources, className }: { result: Result; sources: string[]; className?: string }) {
   const matches = `${result.total}${result.totalIsLowerBound ? "+" : ""} ${result.total === 1 ? "match" : "matches"}`;
   const documents = `${result.documentsInScope} ${result.documentsInScope === 1 ? "document" : "documents"}`;
   const scope = sources.length > 0 ? sources.join(", ") : "all sources";
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className={cn("text-xs text-muted-foreground", className)}>
       {matches} · {documents} in {scope} · {result.tookMs} ms
     </p>
   );
