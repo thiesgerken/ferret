@@ -130,10 +130,13 @@ async fn a_document_outside_the_keys_sources_and_a_bad_query_are_tool_errors(poo
 
     let outside = call(&client, "get_document", json!({"id": mail})).await;
     let excluded_only = call(&client, "search", json!({"query": "-car"})).await;
+    let too_many = call(&client, "search", json!({"query": "car", "limit": 101})).await;
 
     assert_eq!(outside.is_error, Some(true));
     assert_eq!(excluded_only.is_error, Some(true));
     assert!(format!("{excluded_only:?}").contains("at least one word"));
+    assert_eq!(too_many.is_error, Some(true));
+    assert!(format!("{too_many:?}").contains("limit must be between 1 and 100"));
 }
 
 #[sqlx::test(migrations = false)]

@@ -406,8 +406,8 @@ the roadmap. Details in [plugins.md](plugins.md).
 
 - **Server**: ingest API (documents, syncs, `seen`, exclusions), search (hybrid, one hit per
   document, collapsed per thread), GraphQL for the UI, auth (users, sessions, API keys restricted
-  by source, run tokens, worker PSK), embed pump, connections with scheduling over the internal
-  API.
+  by source, run tokens, worker PSK), the MCP server for agents, embed pump, connections with
+  scheduling over the internal API.
 - **Embeddings**: one configured model (Qwen3-Embedding-0.6B). Adding a second one is a config
   change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).

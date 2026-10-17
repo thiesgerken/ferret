@@ -29,7 +29,7 @@ use crate::{
 };
 
 const DEFAULT_K: u32 = 10;
-const MAX_K: u32 = 100;
+pub const MAX_K: u32 = 100;
 /// The most frequent authors in a search's facets, besides the selected ones.
 const MAX_AUTHOR_FACETS: usize = 20;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
@@ -140,7 +140,7 @@ pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
 }
 
 /// Searches `user_id`'s documents, within the `allowed` source roots (`None`: all sources).
-/// Both APIs answer searches with this.
+/// Every API answers searches with this.
 pub async fn find(
     pool: &PgPool,
     embedding: &Embedding,

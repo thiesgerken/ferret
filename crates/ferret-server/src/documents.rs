@@ -134,7 +134,7 @@ pub async fn get(
 }
 
 /// `user_id`'s document `id`, if it lies within the `allowed` source roots (`None`: all
-/// sources). A document outside them doesn't exist for the caller. Both APIs read documents with
+/// sources). A document outside them doesn't exist for the caller. Every API reads documents with
 /// this.
 pub async fn find(
     pool: &PgPool,

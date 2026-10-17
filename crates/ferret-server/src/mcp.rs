@@ -89,7 +89,8 @@ pub struct SearchArgs {
     mode: Option<SearchMode>,
     /// The embedding model for matching by meaning. The user's default model when left out.
     model: Option<String>,
-    /// How many hits at most, 1 to 100. 10 when left out.
+    /// How many hits at most. 10 when left out.
+    #[schemars(range(min = 1, max = search::MAX_K))]
     limit: Option<u32>,
     /// `next_cursor` of the previous page, for the hits after it.
     cursor: Option<String>,
@@ -191,6 +192,12 @@ impl Ferret {
         Parameters(args): Parameters<SearchArgs>,
     ) -> Result<Json<SearchHits>, String> {
         let caller = caller(&parts);
+        // `find` would name it `k`, the REST parameter.
+        if let Some(limit) = args.limit
+            && !(1..=search::MAX_K).contains(&limit)
+        {
+            return Err(format!("limit must be between 1 and {}", search::MAX_K));
+        }
         let offset = args
             .cursor
             .map(|cursor| {

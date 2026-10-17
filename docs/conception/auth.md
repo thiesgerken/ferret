@@ -184,8 +184,9 @@ chats, and an agent's key only finds what it was given. API keys can't write bel
 Typical keys:
 
 - **An external ingester** (a script outside ferret): `ingest:write`, `sources = {articles}`.
-- **carapace's search skill**: `search:read`, `sources = {carapace, notes, paperless}`. Mail and chats
-  stay invisible to it, and so never reach its LLM provider.
+- **carapace, through the MCP server or its search skill**: `search:read`,
+  `sources = {carapace, notes, paperless}`. Mail and chats stay invisible to it, and so never reach
+  its LLM provider.
 
 A key acts as its owner: it only ever sees and writes that user's documents.
 
