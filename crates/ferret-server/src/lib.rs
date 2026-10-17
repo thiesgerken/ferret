@@ -14,9 +14,11 @@ mod api_auth;
 mod api_keys;
 mod auth;
 mod chunking;
+pub mod config;
 mod connections;
 mod content_type;
 mod documents;
+pub mod embeddings;
 mod error;
 mod exclusions;
 pub mod graphql;
@@ -26,9 +28,11 @@ mod search;
 mod search_query;
 mod sources;
 mod syncs;
+mod tei;
 mod users;
 
 pub use auth::SessionKey;
+use embeddings::Embedding;
 pub use runs::WorkerSecret;
 pub use users::bootstrap_admin;
 
@@ -51,16 +55,23 @@ pub struct AppState {
     /// Wakes waiting claims, fed by [`listen_for_due_runs`].
     run_wakeup: Arc<Notify>,
     schema: Arc<graphql::Schema>,
+    embedding: Arc<Embedding>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, session_key: SessionKey, worker_secret: WorkerSecret) -> Self {
+    pub fn new(
+        pool: PgPool,
+        session_key: SessionKey,
+        worker_secret: WorkerSecret,
+        embedding: Arc<Embedding>,
+    ) -> Self {
         Self {
             pool,
             session_key: Arc::new(session_key),
             worker_secret: Arc::new(worker_secret),
             run_wakeup: Arc::new(Notify::new()),
             schema: Arc::new(graphql::schema()),
+            embedding,
         }
     }
 }

@@ -395,6 +395,14 @@ async fn sync_chunks(
     .execute(&mut *tx)
     .await?;
     sqlx::query!(
+        "update chunk_embeddings set content_type = $2, ts = $3 where chunk_id = any($1)",
+        &kept_ids,
+        content_type::as_str(document.content_type),
+        document.created_at,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
         "insert into chunks
              (id, document_id, user_id, source, content_type, ts,
               ordinal, start_offset, end_offset, text, text_hash)

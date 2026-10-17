@@ -140,6 +140,9 @@ pub struct SearchQuery {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub hits: Vec<Hit>,
+    /// Why the semantic half didn't run (e.g. TEI is down), so the hits are keyword matches
+    /// only. `None` when it ran.
+    pub semantic_unavailable: Option<String>,
 }
 
 /// A document returned by a search, with its best-matching chunk.

@@ -280,6 +280,7 @@ replicas starting together are safe.
 
 | Variable | Required | Meaning |
 |---|---|---|
+| `FERRET_CONFIG_FILE` | yes | path to the configuration file, so far the `embedding` section ([embeddings.md](embeddings.md#models)) |
 | `FERRET_DATABASE_URL` | yes | Postgres URL. Without a password in it, `PGPASSWORD` supplies one, so the password needs no URL-encoding |
 | `FERRET_SESSION_SECRET` | yes | signs session JWTs, at least 32 bytes. Rotating it signs everyone out |
 | `FERRET_BOOTSTRAP_PASSWORD` | while no enabled admin exists | password for the bootstrap `admin`, at least 16 characters ([auth.md](auth.md#bootstrap)) |
