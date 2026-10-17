@@ -12,7 +12,7 @@
   Explore, Connections, Settings and Admin.
 
 Every component is stateless except Postgres, so server and workers scale by replicas. All
-coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message broker.
+coordination goes through Postgres (`SKIP LOCKED` and advisory locks, `LISTEN/NOTIFY`). No message broker.
 
 ## Components
 
@@ -23,7 +23,7 @@ coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message 
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
  browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (carapace skill)
                     │ (Next.js)│      │  :8080 public        │
-                    └──────────┘      │    GraphQL (UI)      │ ──────► TEI (n replicas)
+                    └──────────┘      │    GraphQL (UI)      │ ──────► TEI (per model)
                                       │    REST (machines)   │          embeddings
                                       │  :8081 internal      │
                                       │    worker API        │ ──────► Postgres
@@ -33,8 +33,8 @@ coordination goes through Postgres (`SKIP LOCKED`, `LISTEN/NOTIFY`). No message 
                          long-poll claim, │            │ ingest (REST, run token)
                          heartbeat, finish│            │
                                       ┌──────────────────────┐
-                                      │ ferret-plugins       │ ──────► origins (IMAP, Paperless,
-                                      │  (n replicas)        │          git, files, ...)
+                                      │ ferret-plugins       │ ──────► origins (git, Paperless,
+                                      │  (n replicas)        │          carapace, ...)
                                       └──────────────────────┘
 ```
 
@@ -135,8 +135,8 @@ create table plugin_runs (
 
 - **Disable** stops runs and keeps the documents.
 - **Delete** removes the connection and every document below its source root, after the user types
-  the source root to confirm. For sources without an origin to re-fetch from (chat exports), the
-  confirmation says that ferret holds the only copy.
+  the source root to confirm. The confirmation warns that documents the origin no longer has (e.g.
+  chat exports) exist only in ferret.
 
 ### Exclusions
 
@@ -169,7 +169,8 @@ Every source below a connection's root belongs to that connection exclusively: A
 write there, and connection roots can't overlap. Otherwise a sync sweep would delete documents
 someone else wrote. API keys write only to sources outside every connection's root, and a sync of
 an API key can't contain a connection's root either. Reading and searching stay governed by the
-key's own sources.
+key's own sources. A new connection's root must not hold documents yet: its first sync would sweep
+what API keys wrote there.
 
 ### Run lifecycle
 
@@ -188,8 +189,9 @@ POST /internal/runs/{id}/finish    {result: succeeded, state, stats, log_lines}
    with `next_run_at <= now()` and no live run, using `FOR UPDATE SKIP LOCKED`. On a hit it inserts
    a `plugin_runs` row, advances `next_run_at` to the next cron slot, and returns the run: config
    with decrypted secrets, `state`, and a run token. Otherwise it holds the request until the
-   earliest `next_run_at` among the worker's plugins, a `NOTIFY` ("run now", config changed), or the
-   wait timeout.
+   earliest `next_run_at` among the worker's plugins, a running run's lease expiry, a `NOTIFY` on
+   `ferret_runs` (run now, a new or changed connection), or the wait timeout (at most 60 s).
+   Connections of disabled users are never claimed.
 3. **Ingest**: the worker runs the plugin, which calls the public REST API with the run token, like
    any external ingester. Full-state plugins wrap the run in a sync and commit at the end.
 4. **Heartbeat** every 30 s, carrying new log lines.
@@ -225,18 +227,22 @@ without it.
 
 ## Embedding orchestration
 
-- **TEI** runs as its own Deployment. Scaling the embedders means scaling TEI (replicas behind a
-  Service, GPU optional via `nodeSelector`).
-- **One TEI Deployment per configured model** ([embeddings.md](embeddings.md#models)).
+- **TEI** runs as its own Deployment per configured model, one CPU replica each
+  ([embeddings.md](embeddings.md#models)). Backfills speed up by pointing the model's `bulk_url` at
+  a GPU TEI (`tei.gpu.enabled` in the chart).
 - **The embed pump** is a tokio task in ferret-server. `LISTEN chunks_pending` wakes it (polling as
-  fallback). It claims a batch of chunks without an embedding for a model with `SKIP LOCKED`, sends
-  it to that model's TEI, and writes `chunk_embeddings` and `embedding_cache` in one transaction.
-  Default model first.
-- **Several pumps** (concurrency setting, server replicas) share the queue through `SKIP LOCKED`.
-  No worker protocol: routing texts through ferret-plugins would only add a hop.
+  fallback). It claims up to 32 chunks a model hasn't embedded yet, newest first, under
+  transaction-scoped advisory locks, sends them to that model's TEI (its `bulk_url` if set), and
+  writes `chunk_embeddings` and `embedding_cache` in one transaction. Default model first. Chunks
+  TEI rejects (a 4xx) go to `embedding_failures` and are skipped from then on, so one bad chunk
+  can't block the rest.
+- **Several pumps** (one per server replica) share the queue through those advisory locks: they
+  skip each other's chunks, and an ingest never waits for a pump's TEI call. No worker protocol:
+  routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
   semantically searchable first. Keyword search covers everything from the moment of ingest.
-- The backlog per source and model is visible in Connections, Settings and Admin.
+- Settings shows how much of the user's chunks each model has embedded. The backlog per source and
+  model shows in Admin.
 
 ## Frontend
 
@@ -248,8 +254,8 @@ the frontend. In development Next rewrites those paths to the local server, as i
 |---|---|
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
-| **Connections** (`/connections`) | One card per connection: status, last run, document count, embedding backlog. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete |
-| **Settings** (`/settings`) | Account, API keys, Models (coverage on my data and my default model in v1, recall@10 and MRR on my judgments in v2) |
+| **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete. Document count and embedding backlog per card come later |
+| **Settings** (`/settings`) | API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21) |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
@@ -267,8 +273,8 @@ survives a reload or a shared link.
 
 The Helm chart, modelled on carapace's:
 
-- `ferret-server` Deployment (replicas configurable), Services for the public and the internal
-  port.
+- `ferret-server` Deployment (replicas configurable) and one Service with the public (8080) and the
+  internal (8081) port.
 - `ferret-plugins` Deployment, without a service account token: runs read files from repositories
   they don't control.
 - `frontend` Deployment.

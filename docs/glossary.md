@@ -73,7 +73,8 @@ A user's statement that a document is a right hit for a search. A search may hav
 _Avoid_: label, rating, vote
 
 **Eval set**:
-All judgments of a user, used to measure how well an embedding model retrieves on their data.
+All judgments of a user, to measure how well an embedding model retrieves on their data (the
+evaluation follows after v1, #21).
 _Avoid_: test set, benchmark
 
 **Embedding model**:

@@ -145,8 +145,8 @@ create table api_keys (
 
 | scope | read | write |
 |---|---|---|
-| `search` | search, `GET /documents/{id}`, conversation views | |
-| `ingest` | read documents below its sources, list syncs | PUT and DELETE documents, start, `seen` and commit syncs |
+| `search` | `GET /api/search`, `GET /api/documents/{id}`, thread listing (`GET /api/documents?source=&thread=`) | |
+| `ingest` | `GET /api/documents/{id}` and thread listing, below its sources | `PUT` and `DELETE /api/documents`, start, `seen` and commit syncs |
 | `admin` | list users (`GET /api/users`) | manage users. Requires `is_admin` on the owner, and stops working as soon as the owner loses it |
 
 `sources` restricts a key to source paths and everything below them, for reading, searching and

@@ -33,14 +33,14 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule) needs it entered again |
+| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule and whether the connection is enabled) needs it entered again, and so does a database restored without its `FERRET_CONFIG_KEY` |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
 | `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
 
-- One document per file, `external_id = {path}`, `title` from the first `# ` heading (deeper ones
-  don't count) or the file name, `authors` from the last commit touching the file, `created_at`
-  from the first.
+- One document per file, `external_id = {path}`, `title` from the first `# ` heading of a
+  Markdown file (deeper ones don't count), else the file name, `authors` from the last commit
+  touching the file, `created_at` from the first.
 - Only regular files: symlinks and submodules are skipped (a symlink could point at the worker's
   own files), so are files above 1 MiB and files that aren't UTF-8 text. Each skip is a line in
   the run log.
@@ -87,7 +87,8 @@ are the files plugin's job ([Roadmap](#roadmap)).
   with a redirect (302), which fails the run with that hint instead of being followed.
 - Unlike git remotes, `url` may be any plain-HTTP address in the cluster, checked for neither
   scheme nor host. A user can point the worker at another in-cluster service, and the run log then
-  tells which statuses it answers (never its bodies). Accepted for a household in v1.
+  tells which statuses it answers (never its bodies). Accepted for a household in v1. An
+  admin-configured host allowlist for plugin targets is post-v1 (#21).
 
 ### carapace
 
@@ -119,7 +120,8 @@ change its rendering freely.
 | `carapace/files` | everything else in the repo (skills, workspace notes) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
-  `session_id`. Session and digest `meta`: week and month keys, provenance.
+  `session_id`. Session `meta`: `week_key`, `month_key`,
+  `provenance`. Digest `meta`: `level`, `period_key`, `provenance`.
 - `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
   record, the only timestamp the mirror has. A re-extraction moves it.
 - A fact that appears twice in one session (under two categories, say) is indexed once.
@@ -138,7 +140,9 @@ change its rendering freely.
 - `url` (relative to the configured carapace base URL): sessions
   `/memory/sessions?session={session_id}`, facts link to their session, digests
   `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.
-- The git and carapace plugins share the repository handling (clone, fetch, diff) in one module.
+- The git and carapace plugins share the repository handling in one module (`repo.rs`): a fresh
+  full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
+  a commit.
 
 ## Roadmap
 

@@ -68,7 +68,7 @@ create table documents (
     authors       text[] not null,
     created_at    timestamptz not null,
     modified_at   timestamptz not null,
-    meta          jsonb not null default '{}',
+    meta          jsonb not null,
     text          text not null,
     content_hash  bytea not null,
     seen_at       timestamptz not null,    -- bumped on every PUT, even a no-op (see sync sweep)
@@ -103,9 +103,9 @@ create table syncs (
 Embeddings live in `chunk_embeddings`, one row per chunk and model, so several models can be live
 at once. See [embeddings.md](embeddings.md).
 
-Indexes: BM25 (`pg_search`) on `chunks.text`, one partial HNSW index per model on
-`chunk_embeddings`, GIN on `documents.meta`, `documents (user_id, source, thread, created_at, id)`
-(partial, where `thread` is set) for thread navigation.
+Indexes: BM25 (`pg_search`) on `chunks.text` and `chunks.title`, one partial HNSW index per model
+on `chunk_embeddings`, `documents (user_id, source, thread, created_at, id)` (partial, where
+`thread` is set) for thread navigation.
 
 ## Sources
 
@@ -180,8 +180,8 @@ All in one transaction:
 1. Hash the document (text plus metadata).
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
 3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding
-   unless the title changed (it is part of the embedded input). New
-   chunks look up `embedding_cache` per configured model and are left to the embed pump on a miss.
+   unless the title changed (it is part of the embedded input). New chunks are left to the embed
+   pump, which takes cached embeddings from `embedding_cache` and sends only misses to TEI.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
 Plugins can therefore resend everything on every run without cost.
@@ -193,8 +193,9 @@ Chat plugins cut conversations into segments, each a regular `plain` document wi
 
 ## Embedding models
 
-Several models can be live at the same time, each backfilled by the embed pump. Every user
-evaluates them on their own data and picks their own default. See [embeddings.md](embeddings.md).
+Several models can be live at the same time, each backfilled by the embed pump. Every user picks
+their own default in Settings. Evaluating the models on one's own data follows after v1 (#21).
+See [embeddings.md](embeddings.md).
 
 ## Removing stale content
 
@@ -233,7 +234,7 @@ don't change.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&model=&k=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
 ```
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
@@ -247,12 +248,12 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
   a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
   a restarting TEI shouldn't make ferret useless.
-- **Filters**: core columns plus equality on `meta` keys, `source` by path prefix. No query
-  language.
+- **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No filters on
+  `meta`, no query language.
 - **Filtered vector search** needs pgvector's iterative index scans
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
-  Author and `meta` filters are rare and selective and stay a join.
+  The author filter is rare and selective and stays a join.
 - **Languages**: German and English, often mixed in one text. Chunk text and the document's title
   are each indexed three times in `pg_search`: German-stemmed, English-stemmed, and trigrams (for
   compounds: "Versicherung" must find "Kfz-Versicherungsbeitrag"). Every query word must match the
@@ -269,8 +270,8 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
   three go into the BM25 half, the vector half gets the words without operators. Filters are not
   part of the query text, the UI sets them as chips.
 - **Hits are documents.** Ranking happens on chunks (RRF over chunks), then aggregates per
-  document by its best chunk, which is shown as the highlighted snippet. recall@10 and MRR count at
-  the document level.
+  document by its best chunk, which is shown as the highlighted snippet. The model evaluation
+  after v1 (#21) counts recall@10 and MRR at the document level.
 - **Time filter**: `from`/`to` filter on `created_at`, `from` inclusive, `to` exclusive.
   `created_at` is shown in the hit, so the date matches what the filter works on. The UI's presets
   ("Past week") go to GraphQL as `range`, resolved against the server's clock.
@@ -279,7 +280,8 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&meta.<key>=<value>&mo
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
   authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
   or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
-  word, share its German or English stem, or contain it (compounds). Next to the hits, `model`
+  word, share its German or English stem, or contain it (compounds, for query words of three or
+  more characters). Next to the hits, `model`
   names the embedding model the semantic half used (or would have, when `semantic_unavailable`
   says it couldn't run).
 - **Size**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate chunks.
@@ -340,12 +342,12 @@ the roadmap. Details in [plugins.md](plugins.md).
 
 - **Default: Qwen3-Embedding-0.6B** (June 2025, Apache 2.0, 1024 dimensions, 32k context,
   multilingual, query instruction required).
-- **A second model from day one**, so the evaluation has something to compare against. Candidates
-  to check when the TEI deployment is set up (license, German quality, TEI support):
-  jina-embeddings-v5-text-small, Granite Embedding Multilingual R2, DenseOn (all 2026). bge-m3
-  (January 2024) is the fallback if none of them runs in TEI.
+- **A second model after v1**, for the model evaluation (#21) to compare against. Candidates to
+  check (license, German quality, TEI support): jina-embeddings-v5-text-small, Granite Embedding
+  Multilingual R2, DenseOn (all 2026). bge-m3 (January 2024) is the fallback if none of them runs
+  in TEI.
 - **Hardware**: CPU for queries and incremental ingest, a temporarily added GPU node (gaming PC)
-  for backfills ([embeddings.md](embeddings.md#models)).
+  for backfills, wired through the chart's `tei.gpu.enabled` ([embeddings.md](embeddings.md#models)).
 
 ## v1 scope
 
@@ -357,13 +359,15 @@ the roadmap. Details in [plugins.md](plugins.md).
   change, switching the default is a choice in Settings.
 - **Plugins**: git, Paperless, carapace (Markdown mirror).
 - **UI** (English only): login, search with viewer and ✓ judgments, Explore (table with facet
-  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (account,
-  API keys, default model with coverage), Admin (users, workers, backlog).
+  counts), Connections (config, schedule, runs, exclusions, disable, delete), Settings (API keys,
+  default model with coverage), Admin (users, workers, backlog).
 - **Ops**: Helm chart, docker-compose for development, CI and releases as in carapace (images
   `ferret`, `ferret-plugins`, `ferret-frontend`, chart as OCI on ghcr). Structured JSON logs, no
   `/metrics` endpoint.
-- **Follow-up issues, opened as part of v1**: model evaluation (recall@10 and MRR per model from
-  the judgments, in Settings), and UI i18n (German and English).
+- **Follow-up issues (#21)**: model evaluation (recall@10 and MRR per model from the judgments in
+  Settings, plus a calibrated per-model similarity cut-off), UI i18n (German and English), model
+  removal (dropping a removed model's index and embeddings), a host allowlist for plugin targets,
+  and typo tolerance in keyword search.
 
 ## Sizing
 

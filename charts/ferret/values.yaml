@@ -33,7 +33,8 @@ embedding:
       queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       documentPrefix: ""
       # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on
-      # small CPU nodes. It also caps the input length, which must stay at 2000 or more.
+      # small CPU nodes. It also caps the input length, which must stay at 2202 or more (title and
+      # chunk, see embeddings.md).
       maxBatchTokens: 4096
       # -- Room for the downloaded model. A full cache evicts only this pod.
       cacheSize: 4Gi
