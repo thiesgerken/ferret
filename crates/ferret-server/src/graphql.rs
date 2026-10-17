@@ -136,6 +136,10 @@ impl Query {
                     ..Hit::from(hit)
                 })
                 .collect(),
+            total: graphql_int(response.total),
+            total_is_lower_bound: response.total_is_lower_bound,
+            documents_in_scope: graphql_int(response.documents_in_scope),
+            took_ms: graphql_int(response.took_ms),
             semantic_unavailable: response.semantic_unavailable,
             model: response.model,
         })
@@ -651,6 +655,17 @@ impl From<ferret_api::ContentType> for ContentType {
 #[derive(GraphQLObject)]
 struct SearchResult {
     hits: Vec<Hit>,
+    /// Matching documents after the similarity cut-off, exclusions and collapsing, not only the
+    /// hits returned.
+    total: i32,
+    /// True when `total` is a minimum: the keyword half filled its candidates, or all of the vector
+    /// half's nearest chunks passed the model's similarity cut-off while the scope holds more.
+    total_is_lower_bound: bool,
+    /// Documents the user may read in the selected sources (all sources when none are selected).
+    /// The other filters don't narrow it.
+    documents_in_scope: i32,
+    /// The search's time on the server, in milliseconds.
+    took_ms: i32,
     /// Why the semantic half didn't run (e.g. the embedding model is down), so the hits are
     /// keyword matches only. Null when it ran.
     semantic_unavailable: Option<String>,
@@ -708,7 +723,13 @@ struct Hit {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
-    score: f64,
+    /// The best BM25 score among the document's chunks in the keyword half's candidates, null
+    /// when none of them is.
+    keyword_score: Option<f64>,
+    /// The best cosine similarity to the query (0 to 1) among the document's chunks in the vector
+    /// half's candidates above the model's cut-off, null when none of them is or the semantic
+    /// half didn't run.
+    similarity: Option<f64>,
     /// How many more documents of the same thread matched and were folded into this hit.
     collapsed: i32,
     chunk: HitChunk,
@@ -745,7 +766,8 @@ impl From<ferret_api::Hit> for Hit {
             authors: hit.authors,
             created_at: hit.created_at,
             modified_at: hit.modified_at,
-            score: hit.score.into(),
+            keyword_score: hit.keyword_score.map(f64::from),
+            similarity: hit.similarity.map(f64::from),
             collapsed: graphql_int(hit.collapsed),
             judged: false,
             chunk: HitChunk {

@@ -1,6 +1,8 @@
 //! Hybrid search: BM25 and vector neighbours over chunks, fused with reciprocal rank fusion, one
 //! hit per document.
 
+use std::time::Instant;
+
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
@@ -134,6 +136,7 @@ pub async fn find(
     allowed: Option<&[String]>,
     request: &SearchQuery,
 ) -> Result<SearchResponse, SearchError> {
+    let started = Instant::now();
     let query = validate(request)?;
     let k = request.k.unwrap_or(DEFAULT_K);
     let model = model(pool, embedding, user_id, request.model.as_deref()).await?;
@@ -141,10 +144,24 @@ pub async fn find(
     if roots.as_ref().is_some_and(Vec::is_empty) {
         return Ok(SearchResponse {
             hits: vec![],
+            total: 0,
+            total_is_lower_bound: false,
+            documents_in_scope: 0,
+            took_ms: millis_since(started),
             semantic_unavailable: None,
             model: model.name().to_owned(),
         });
     }
+    let documents_in_scope = sqlx::query_scalar!(
+        r#"select count(*) as "count!" from documents d
+           where d.user_id = $1
+           and ($2::text[] is null
+                or exists (select 1 from unnest($2::text[]) root where source_covers(root, d.source)))"#,
+        user_id,
+        roots.as_deref() as Option<&[String]>,
+    )
+    .fetch_one(pool)
+    .await?;
 
     let filters = Filters {
         user_id,
@@ -179,7 +196,8 @@ pub async fn find(
     // half needs the model's dimension and name as literals to use its partial index.
     let mut sql = QueryBuilder::<Postgres>::new(
         "with keyword as (
-             select id, row_number() over (order by score desc) as rank
+             select id, row_number() over (order by score desc) as rank,
+                    score::real as keyword_score, null::real as similarity
              from (
                  select c.id, pdb.score(c.id) as score
                  from chunks c
@@ -194,31 +212,47 @@ pub async fn find(
     }
     sql.push(" order by score desc limit ")
         .push_bind(KEYWORD_CANDIDATES)
-        .push(") k), semantic as (");
+        .push(") k), nearest as (");
     match &query_hash {
-        Some(query_hash) => push_semantic(&mut sql, model, query_hash, &filters),
+        Some(query_hash) => push_nearest(&mut sql, model, query_hash, &filters),
         None => {
-            sql.push("select null::uuid as id, null::bigint as rank where false");
+            sql.push("select null::uuid as id, null::float8 as distance where false");
         }
     }
+    // The cut-off applies to the nearest candidates rather than inside the scan: a filtered HNSW
+    // scan keeps searching for rows that pass, through the whole index when few do.
+    let max_distance = 1.0 - model.config.min_similarity;
     sql.push(
+        "), semantic as (
+             select id, row_number() over (order by distance) as rank,
+                    null::real as keyword_score, (1 - distance)::real as similarity
+             from nearest where distance <= ",
+    )
+    .push_bind(max_distance)
+    .push(
         "),
          -- Reciprocal rank fusion (k = 60): a chunk scores 1 / (60 + rank) in each half.
          fused as (
-             select id, sum(1.0 / (60 + rank))::real as score
+             select id, sum(1.0 / (60 + rank))::real as score,
+                    max(keyword_score) as keyword_score, max(similarity) as similarity
              from (select * from keyword union all select * from semantic) ranked
              group by id
          ),
+         -- The shown chunk is the best fused one, the scores are the document's best.
          best as (
              select distinct on (c.document_id)
-                    c.document_id, c.text, c.start_offset, c.end_offset, f.score
+                    c.document_id, c.text, c.start_offset, c.end_offset, f.score,
+                    max(f.keyword_score) over document as keyword_score,
+                    max(f.similarity) over document as similarity
              from fused f join chunks c on c.id = f.id
+             window document as (partition by c.document_id)
              order by c.document_id, f.score desc
          ),
          hits as (
              select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
                     d.authors, d.created_at, d.modified_at,
-                    b.score, b.text as chunk_text, b.start_offset, b.end_offset,
+                    b.score, b.keyword_score, b.similarity,
+                    b.text as chunk_text, b.start_offset, b.end_offset,
                     row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
                     -- Unordered: with an order, count(*) would count only up to the current row.
                     count(*) over thread_hits - 1 as collapsed
@@ -234,7 +268,25 @@ pub async fn find(
     .push(
         ")
          )
-         select * from hits where thread_rank = 1
+         select *, count(*) over () as total,
+                -- The keyword half may have left out matches when it filled its candidates.
+                (select count(*) from keyword) >= ",
+    )
+    .push_bind(KEYWORD_CANDIDATES);
+    if query_hash.is_some() {
+        // The vector half may have, when all its neighbours passed the cut-off and the scope
+        // holds more. HNSW is approximate and may return fewer neighbours than asked for, so
+        // their count alone doesn't tell. For the same reason, and because `relaxed_order` may
+        // return them slightly out of order, `false` means no sign of more, not a guarantee.
+        sql.push(" or (not exists (select 1 from nearest where distance > ")
+            .push_bind(max_distance)
+            .push(") and (select count(*) from nearest) < (select count(*) ");
+        push_embeddings_in_scope(&mut sql, model, &filters);
+        sql.push("))");
+    }
+    sql.push(
+        " as total_is_lower_bound
+         from hits where thread_rank = 1
          order by score desc
          limit ",
     )
@@ -253,6 +305,12 @@ pub async fn find(
     let rows: Vec<HitRow> = sql.build_query_as().fetch_all(&mut *tx).await?;
     tx.commit().await?;
 
+    let (total, total_is_lower_bound) = rows.first().map_or((0, false), |row| {
+        (
+            u32::try_from(row.total).expect("a count is never negative"),
+            row.total_is_lower_bound,
+        )
+    });
     let hits = rows
         .into_iter()
         .map(|row| Hit {
@@ -266,7 +324,8 @@ pub async fn find(
             authors: row.authors,
             created_at: row.created_at,
             modified_at: row.modified_at,
-            score: row.score,
+            keyword_score: row.keyword_score,
+            similarity: row.similarity,
             collapsed: u32::try_from(row.collapsed)
                 .expect("at most KEYWORD_CANDIDATES + SEMANTIC_CANDIDATES hits collapse"),
             chunk: HitChunk {
@@ -278,6 +337,10 @@ pub async fn find(
         .collect();
     Ok(SearchResponse {
         hits,
+        total,
+        total_is_lower_bound,
+        documents_in_scope: u32::try_from(documents_in_scope).expect("a count is never negative"),
+        took_ms: millis_since(started),
         semantic_unavailable: query_hash
             .is_none()
             .then(|| format!("the embedding model {} is unavailable", model.name())),
@@ -316,8 +379,8 @@ async fn model<'a>(
     }
 }
 
-/// The vector half: the nearest chunks to the cached query embedding, ranked.
-fn push_semantic(
+/// The vector half's candidates: the nearest chunks to the cached query embedding.
+fn push_nearest(
     sql: &mut QueryBuilder<Postgres>,
     model: &Model,
     query_hash: &[u8],
@@ -326,27 +389,30 @@ fn push_semantic(
     // Validated model names need no quoting (config.rs). The dimension and name are literals so
     // the planner can use the model's partial index.
     sql.push(format!(
-        "select id, row_number() over (order by distance) as rank
-         from (
-             select e.chunk_id as id, e.embedding::halfvec({dimension})
+        "select e.chunk_id as id, e.embedding::halfvec({dimension})
                     <=> (select embedding from embedding_cache where text_hash = ",
         dimension = model.dimension,
     ))
     .push_bind(query_hash.to_vec())
     .push(format!(
-        " and model = '{name}')::halfvec({dimension}) as distance
-             from chunk_embeddings e",
+        " and model = '{name}')::halfvec({dimension}) as distance ",
         name = model.config.name,
         dimension = model.dimension,
     ));
+    push_embeddings_in_scope(sql, model, filters);
+    sql.push(" order by distance limit ")
+        .push_bind(SEMANTIC_CANDIDATES);
+}
+
+/// `from` and `where` for the chunks the vector half searches.
+fn push_embeddings_in_scope(sql: &mut QueryBuilder<Postgres>, model: &Model, filters: &Filters) {
+    sql.push("from chunk_embeddings e");
     if !filters.phrases.is_empty() {
         sql.push(" join chunks c on c.id = e.chunk_id");
     }
+    // Validated model names need no quoting (config.rs).
     sql.push(format!(" where e.model = '{}' and ", model.config.name));
     filters.push(sql, "e");
-    sql.push(" order by distance limit ")
-        .push_bind(SEMANTIC_CANDIDATES)
-        .push(") s");
 }
 
 /// The filters both halves apply, on the denormalized chunk columns of `chunks` or
@@ -448,13 +514,20 @@ struct HitRow {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
-    score: f32,
+    keyword_score: Option<f32>,
+    similarity: Option<f32>,
     collapsed: i64,
     chunk_text: String,
     start_offset: i32,
     end_offset: i32,
+    total: i64,
+    total_is_lower_bound: bool,
 }
 
 fn offset(stored: i32) -> u32 {
     u32::try_from(stored).expect("chunk offsets are never negative")
+}
+
+fn millis_since(started: Instant) -> u32 {
+    u32::try_from(started.elapsed().as_millis()).expect("a search takes less than 49 days")
 }
