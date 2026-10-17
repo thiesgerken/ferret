@@ -69,7 +69,8 @@ function ModelPool({ model, teis, onChanged }: { model: Model; teis: Tei[]; onCh
         </p>
         <p className="text-xs text-muted-foreground">
           <span className="font-mono">{model.modelId}</span>
-          {model.dimension != null && ` · ${model.dimension} dimensions`}
+          {" · "}
+          {model.dimension} dimensions
         </p>
       </div>
       {warnings.map((warning) => (
