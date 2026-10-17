@@ -2,7 +2,8 @@
 
 Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend, ParadeDB
 and one CPU [TEI](https://github.com/huggingface/text-embeddings-inference) per embedding model
-(`embedding.models`), optionally a GPU TEI per model for backfills.
+(`embedding.models`). TEIs outside the chart, e.g. a laptop's GPU for a backfill, join through
+`externalTeis`.
 
 ## Prerequisites
 
@@ -40,40 +41,35 @@ set `secrets.existingSecret`:
 | `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 | `config-key` | encrypts plugin credentials, 32 bytes in base64 (`openssl rand -base64 32`); back it up apart from the database |
 
-## GPU backfills
+## TEIs
 
-A big backfill (the first import, a new model) is slow on the CPU TEI. With `tei.gpu.enabled`, each
-model gets a second TEI on a GPU node, and the embed pump uses only that one (the model's
-`bulk_url`). Queries stay on the CPU TEI.
+ferret embeds with a pool of TEIs. Each works for whichever configured model it serves: the server
+asks every TEI's `/info` for its model every 10 seconds and matches the model's `modelId`, and it
+checks every answer for the model and dimension, so a TEI may switch models at any time.
 
-```yaml
-tei:
-  gpu:
-    enabled: true
-    image:
-      tag: "89-1.9.4"  # required: the image for your GPU generation, see values.yaml
-    nodeSelector:
-      nvidia.com/gpu.present: "true"
-```
-
-The GPU TEI tolerates the usual `nvidia.com/gpu:NoSchedule` taint by default (`tei.gpu.tolerations`).
-
-The pump doesn't fall back to the CPU: while the GPU node is missing, the GPU TEI stays Pending,
-Admin shows the pump's error, and the backlog grows. Disable it again once the backfill is done.
-A Deployment that never becomes ready also makes `helm upgrade --wait` and GitOps health checks
-(Argo CD, Flux) time out, so enable it only together with the GPU node.
-
-A TEI outside the cluster can take the GPU TEI's place, e.g. on a laptop with a GPU in the same LAN:
-set the model's `bulkUrl` (not together with `tei.gpu.enabled`). It must serve the same model, and
-the pump uses only it, so remove it once the backfill is done.
+- `tei.internal.enabled` (default): one CPU TEI per model in the cluster. It answers queries and
+  embeds, in short batches so a query never waits long behind one.
+- `externalTeis`: URLs of TEIs outside the chart, e.g. a laptop with a GPU in the same LAN for a
+  big backfill (the first import, a new model), or a GPU TEI you deploy separately. They start
+  with queries off, so searches don't depend on a laptop that may go to sleep.
 
 ```yaml
-embedding:
-  models:
-    - name: qwen3-embedding-0.6b
-      # ...
-      bulkUrl: http://192.168.1.20:8080
+externalTeis:
+  - http://192.168.1.20:8080
 ```
+
+Admin switches each TEI on and off, for queries and for the embed pump, without a restart. Every
+TEI that may embed pumps on its own: a fast GPU simply takes more batches than the CPU TEI. A TEI
+that is down or serves a model no configured one uses shows as such in Admin and is skipped.
+Remove an external TEI from the list once it's gone for good.
+
+### ⚠️ From chart versions with `tei.gpu` or `bulkUrl`
+
+`tei.gpu.*` and the models' `bulkUrl` are gone, and the chart refuses to render while they're
+set. Deploy a GPU TEI yourself (TEI's image for your GPU generation, e.g. `89-1.9.4`, with the
+model's `--model-id`) and list its Service URL in `externalTeis`. A `bulkUrl` becomes an entry of
+`externalTeis` as it is. Unlike `bulk_url`, the CPU TEI keeps embedding next to it unless Admin
+switches its embedding off.
 
 ## Uninstall
 
