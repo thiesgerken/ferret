@@ -15,7 +15,7 @@ const GIT_SCHEMA = JSON.stringify({
   properties: {
     branch: { type: ["string", "null"], default: null, description: "The branch to index." },
     exclude: { type: "array", items: { type: "string" }, default: [], description: "Globs of files to skip." },
-    remote: { type: "string", description: "The repository to clone." },
+    remote: { type: "string", description: "The repository to clone, e.g. `https://example.test/notes.git`." },
     token: { type: ["string", "null"], writeOnly: true, description: "For a private repository." },
   },
 });
@@ -39,7 +39,6 @@ const CONNECTION = {
       startedAt: "2026-10-17T10:00:00Z",
       finishedAt: "2026-10-17T10:00:05Z",
       stats: null,
-      log: "cloning https://example.test/notes.git",
       error: "git clone failed: repository not found",
     },
   ],
@@ -79,14 +78,17 @@ async function renderConnections(
   return { view, operations, button };
 }
 
-test("shows each connection with its last run, run history and log", async () => {
+test("shows each connection with its last run and links to its runs on Activity", async () => {
   const { view } = await renderConnections();
   const text = view.container.textContent ?? "";
 
-  assert.match(text, /NotesFailedgit · notes · 0 \* \* \* \*/, "name, status at a glance, then plugin, source and schedule");
-  assert.match(text, /Failed .* · next run /);
+  assert.match(text, /NotesFailedgit · notes/, "name, status at a glance, then plugin and source");
+  assert.match(text, /Last run.* ago.*took 5 s/);
+  assert.match(text, /Next run.*0 \* \* \* \*/);
   assert.match(text, /git clone failed: repository not found/);
-  assert.match(text, /cloning https:\/\/example\.test\/notes\.git/);
+  assert.equal(view.container.querySelectorAll("[aria-label='Last 1 runs'] [title]").length, 1);
+  const activity = [...view.container.querySelectorAll("a")].find((link) => link.textContent?.includes("Activity"));
+  assert.equal(activity?.getAttribute("href"), "/activity?writer=connection-1");
   await view.unmount();
 });
 
@@ -100,6 +102,10 @@ test("creates a connection with the config from the plugin's schema", async () =
   assert.deepEqual(
     [...view.container.querySelectorAll("fieldset [name]")].map((element) => element.getAttribute("name")),
     ["config.remote", "config.branch", "config.exclude", "config.token"],
+  );
+  assert.ok(
+    [...view.container.querySelectorAll("code")].some((code) => code.textContent === "https://example.test/notes.git"),
+    "the plugin's code spans render as code",
   );
   field<HTMLInputElement>("#connection-name").value = "ferret's code";
   field<HTMLInputElement>("#connection-source").value = "code/ferret";

@@ -1,14 +1,17 @@
 "use client";
 
 import { Brain, Database, FileText, Layers, ListTree, Rows3 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "urql";
 import { Embedders } from "@/components/embedders";
-import { IngestFeed, STATUS_STYLES } from "@/components/ingest-feed";
+import { IngestFeed } from "@/components/ingest-feed";
 import { NamedIcon } from "@/components/named-icon";
 import { Section } from "@/components/page-shell";
+import { RunDots } from "@/components/run-status";
 import { graphql } from "@/gql";
 import type { ActivityOverviewQuery } from "@/gql/graphql";
+import { activityHref } from "@/lib/activity-url";
 import { timeAgo } from "@/lib/format-time";
 import { errorMessage } from "@/lib/graphql";
 import { cn } from "@/lib/utils";
@@ -86,14 +89,29 @@ const POLL_MS = 5000;
 
 type Connection = ActivityOverviewQuery["connections"][number];
 
-/** What ferret ingested and embedded, live: the index's size, the embedders, and every ingest. */
-export function Activity() {
+/** Activity with its writer filter in the URL, so a connection can link to its own feed. Needs a
+ * Suspense boundary in a static export, for `useSearchParams`. */
+export function ActivityRoute() {
+  const params = useSearchParams();
+  return (
+    <Activity
+      writer={params?.get("writer") ?? null}
+      // Next's router follows `pushState` and updates `useSearchParams`.
+      onWriterChange={(writer) => window.history.pushState(null, "", activityHref(writer))}
+    />
+  );
+}
+
+/**
+ * What ferret ingested and embedded, live: the index's size, the embedders, and every ingest,
+ * optionally only one writer's.
+ */
+export function Activity({ writer, onWriterChange }: { writer: string | null; onWriterChange: (writer: string | null) => void }) {
   const [{ data, error }, refetch] = useQuery({ query: ActivityOverviewQueryDocument });
   const isAdmin = data?.me.isAdmin ?? false;
   const [{ data: embedders }, refetchEmbedders] = useQuery({ query: EmbedderStatusQueryDocument, pause: !isAdmin });
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => new Date());
-  const [writer, setWriter] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState(false);
 
   useEffect(() => {
@@ -134,7 +152,7 @@ export function Activity() {
                 connection={connection}
                 now={now}
                 selected={writer === connection.id}
-                onSelect={() => setWriter(writer === connection.id ? null : connection.id)}
+                onSelect={() => onWriterChange(writer === connection.id ? null : connection.id)}
               />
             ))}
           </ul>
@@ -145,7 +163,7 @@ export function Activity() {
           <h2 className="text-base font-medium">Ingests</h2>
           <div className="flex items-center gap-2 text-sm">
             {writer && (
-              <button type="button" onClick={() => setWriter(null)} className="rounded-full border border-border px-3 py-1 hover:bg-accent">
+              <button type="button" onClick={() => onWriterChange(null)} className="rounded-full border border-border px-3 py-1 hover:bg-accent">
                 {data.connections.find((connection) => connection.id === writer)?.name ?? "One writer"} ✕
               </button>
             )}
@@ -189,7 +207,6 @@ function ConnectionHistory({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const runs = [...connection.runs].reverse();
   const last = connection.runs[0];
   return (
     <li>
@@ -208,21 +225,7 @@ function ConnectionHistory({
             {connection.enabled ? `next ${timeAgo(connection.nextRunAt, now)}` : "disabled"}
           </span>
         </span>
-        <span className="flex shrink-0 items-end gap-1" aria-label={`Last ${runs.length} runs`}>
-          {runs.map((run) => (
-            <span
-              key={run.id}
-              title={`${STATUS_STYLES[run.status].label} ${new Date(run.startedAt).toLocaleString()}`}
-              className={cn(
-                "size-2.5 rounded-full",
-                run.status === "SUCCEEDED" && "bg-emerald-500",
-                run.status === "FAILED" && "bg-destructive",
-                run.status === "LOST" && "bg-warning",
-                run.status === "RUNNING" && "animate-pulse bg-brand",
-              )}
-            />
-          ))}
-        </span>
+        <RunDots runs={connection.runs} />
       </button>
     </li>
   );
