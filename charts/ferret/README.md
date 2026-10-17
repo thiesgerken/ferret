@@ -63,6 +63,18 @@ Admin shows the pump's error, and the backlog grows. Disable it again once the b
 A Deployment that never becomes ready also makes `helm upgrade --wait` and GitOps health checks
 (Argo CD, Flux) time out, so enable it only together with the GPU node.
 
+A TEI outside the cluster can take the GPU TEI's place, e.g. on a laptop with a GPU in the same LAN:
+set the model's `bulkUrl` (not together with `tei.gpu.enabled`). It must serve the same model, and
+the pump uses only it, so remove it once the backfill is done.
+
+```yaml
+embedding:
+  models:
+    - name: qwen3-embedding-0.6b
+      # ...
+      bulkUrl: http://192.168.1.20:8080
+```
+
 ## Uninstall
 
 `helm uninstall` keeps the database PVC and the Secret, so a reinstall under the same release name
