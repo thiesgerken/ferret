@@ -13,7 +13,10 @@ async fn main() -> Result<(), StartupError> {
         .with_env_filter(
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
+                .from_env_lossy()
+                // async-imap traces every command it sends, the IMAP plugin's `LOGIN` with the
+                // password, whatever RUST_LOG asks for.
+                .add_directive("async_imap=off".parse()?),
         )
         .init();
 
