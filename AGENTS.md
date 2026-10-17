@@ -54,15 +54,16 @@ docker-compose.yml   development only, the deployment is the Helm chart
 - `#[sqlx::test(migrations = false)]` gives each test its own database, the server's startup
   migrates it. `DATABASE_URL` comes from `.cargo/config.toml` (the compose ParadeDB), an exported
   one takes precedence.
-- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005). Builds read their metadata
-  from `.sqlx/` (`SQLX_OFFLINE`), so only tests need a database.
+- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005), except search, which is
+  built with `QueryBuilder`. Builds read their metadata from `.sqlx/` (`SQLX_OFFLINE`), so only
+  tests need a database.
 - Plugin parsers are tested against fixtures, the frontend with `node --test`.
 
 ## CI
 
 GitHub Actions on every pull request: fmt and clippy, a check that `frontend/schema.graphql` and
 `.sqlx/` are current, tests against a ParadeDB service container, frontend lint and tests, helm
-lint, image and chart builds.
+lint, and PR images and chart published as `:pr<N>`.
 
 ## Conventions
 

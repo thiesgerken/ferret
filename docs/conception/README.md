@@ -248,8 +248,9 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&collapse=
   `semanticUnavailable` (GraphQL) carry the reason, `null` when the semantic half ran, the UI shows
   a notice above the hits, and the server logs a warning. Keyword search is complete on its own,
   a restarting TEI shouldn't make ferret useless.
-- **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No filters on
-  `meta`, no query language.
+- **Filters**: `source` by path prefix, `content_type`, `author`, `from`/`to`. No query language.
+  Equality filters on `meta` keys (`meta.<key>=<value>`, with a GIN index on `documents.meta`)
+  are post-v1 (#21).
 - **Filtered vector search** needs pgvector's iterative index scans
   (`hnsw.iterative_scan = relaxed_order`), otherwise filters silently cut recall below k. Iterative
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.

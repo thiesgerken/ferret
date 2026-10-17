@@ -254,7 +254,7 @@ the frontend. In development Next rewrites those paths to the local server, as i
 |---|---|
 | **Search** (`/`) | Login if signed out. Otherwise only a logo and a centered search field. Results: field moves to the top, filter chips (source, time range, author), model switch, snippets with highlighting, hits collapsed per thread, a hit opens the viewer at its position, a ✓ marks it as a right hit for the eval set (several per search) |
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, author, month), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
-| **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, disable, delete. Document count and embedding backlog per card come later |
+| **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, excluded documents and threads with "Include again", disable, delete. Document count and embedding backlog per card are post-v1 (#21) |
 | **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21) |
 | **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health) |
 
