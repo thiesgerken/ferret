@@ -7,6 +7,40 @@ import type { SearchState } from "./search-url";
 const search = (q: string): SearchState => ({ q, sources: [], authors: [], range: "any", model: null });
 const url = () => window.location.search;
 
+/** Next's patched history: it adds its `__NA` marker to every entry's data and takes a call whose
+ * data already carries one for its own, which it doesn't pass on to the router. */
+function nextRouter() {
+  const seen: string[] = [];
+  const { pushState, replaceState } = window.history;
+  const patch = (original: History["pushState"]) =>
+    function (data: Record<string, unknown> | null, unused: string, url?: string | URL | null) {
+      if (!data?.__NA) seen.push(String(url));
+      original.call(window.history, { ...data, __NA: true }, unused, url);
+    };
+  window.history.pushState = patch(pushState);
+  window.history.replaceState = patch(replaceState);
+  return {
+    seen,
+    restore() {
+      window.history.pushState = pushState;
+      window.history.replaceState = replaceState;
+    },
+  };
+}
+
+test("every pause in typing reaches Next's router", () => {
+  const router = nextRouter();
+  try {
+    submitSearch(search("start"));
+    typeSearch(search("ty"));
+    typeSearch(search("typed"));
+    submitSearch(search("typed"));
+  } finally {
+    router.restore();
+  }
+  assert.deepEqual(router.seen, ["/?q=start", "/?q=ty", "/?q=typed", "/?q=typed"]);
+});
+
 async function back() {
   const popped = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
   window.history.back();
