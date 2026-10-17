@@ -23,10 +23,11 @@ use crate::{
     auth,
     connections::{self, Connection, ConnectionError, PluginRun, PluginType},
     documents,
-    embeddings::Embedding,
+    embeddings::{self, Embedding},
     error::ApiError,
+    runs,
     search::{self, SearchError},
-    users::User,
+    users::{self, User, UserError},
 };
 
 pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
@@ -58,6 +59,39 @@ impl Query {
     /// The signed-in user.
     fn me(context: &Context) -> &User {
         &context.user
+    }
+
+    /// Every user. Admins only.
+    async fn users(context: &Context) -> FieldResult<Vec<UserAccount>> {
+        require_admin(context)?;
+        let accounts = users::accounts(&context.pool).await.map_err(internal)?;
+        Ok(accounts.into_iter().map(UserAccount::from).collect())
+    }
+
+    /// The plugin workers seen in the last day, the most recently seen first. Admins only.
+    async fn workers(context: &Context) -> FieldResult<Vec<Worker>> {
+        require_admin(context)?;
+        let workers = runs::workers(&context.pool).await.map_err(internal)?;
+        Ok(workers
+            .into_iter()
+            .map(|worker| Worker {
+                id: ID::new(worker.id.to_string()),
+                name: worker.name,
+                plugins: worker.plugins,
+                last_seen_at: worker.last_seen_at,
+            })
+            .collect())
+    }
+
+    /// Each embedding model's TEI health and backlog, the default first. Admins only.
+    async fn embedding_status(context: &Context) -> FieldResult<Vec<ModelStatus>> {
+        require_admin(context)?;
+        let statuses = context
+            .embedding
+            .status(&context.pool)
+            .await
+            .map_err(internal)?;
+        Ok(statuses.into_iter().map(ModelStatus::from).collect())
     }
 
     /// The signed-in user's API keys, newest first.
@@ -523,6 +557,51 @@ impl Mutation {
         Ok(i32::try_from(deleted).unwrap_or(i32::MAX))
     }
 
+    /// Admins only.
+    async fn create_user(context: &Context, input: NewUser) -> FieldResult<UserAccount> {
+        require_admin(context)?;
+        let new = users::NewUser {
+            username: input.username,
+            display_name: input.display_name,
+            password: input.password,
+            is_admin: input.is_admin,
+        };
+        users::create(&context.pool, new)
+            .await
+            .map(UserAccount::from)
+            .map_err(user_error)
+    }
+
+    /// Sets a user's password and signs them out everywhere. Admins only.
+    async fn set_user_password(context: &Context, id: ID, password: String) -> FieldResult<ID> {
+        require_admin(context)?;
+        let user_id = parse_user_id(&id)?;
+        if users::set_password(&context.pool, user_id, password)
+            .await
+            .map_err(user_error)?
+        {
+            Ok(id)
+        } else {
+            Err(no_such_user())
+        }
+    }
+
+    /// Changes a user's display name, admin role and whether they can sign in. The last enabled
+    /// admin can't be demoted or disabled. Admins only.
+    async fn update_user(context: &Context, id: ID, input: UserUpdate) -> FieldResult<UserAccount> {
+        require_admin(context)?;
+        let update = users::UserUpdate {
+            display_name: input.display_name,
+            is_admin: input.is_admin,
+            enabled: input.enabled,
+        };
+        users::update(&context.pool, parse_user_id(&id)?, update)
+            .await
+            .map_err(user_error)?
+            .map(UserAccount::from)
+            .ok_or_else(no_such_user)
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
@@ -622,6 +701,32 @@ fn connection_error(error: ConnectionError) -> FieldError {
     }
 }
 
+fn require_admin(context: &Context) -> FieldResult<()> {
+    if context.user.is_admin {
+        Ok(())
+    } else {
+        Err(FieldError::new(
+            "admins only",
+            graphql_value!({ "code": "FORBIDDEN" }),
+        ))
+    }
+}
+
+fn parse_user_id(id: &ID) -> FieldResult<Uuid> {
+    id.parse().map_err(|_| no_such_user())
+}
+
+fn no_such_user() -> FieldError {
+    FieldError::new("no such user", graphql_value!(null))
+}
+
+fn user_error(error: UserError) -> FieldError {
+    match error {
+        UserError::Invalid(message) => invalid_input(message),
+        UserError::Database(error) => internal(error),
+    }
+}
+
 fn invalid_input(message: String) -> FieldError {
     FieldError::new(message, graphql_value!({ "code": "INVALID_INPUT" }))
 }
@@ -674,4 +779,105 @@ pub async fn handle(
         StatusCode::BAD_REQUEST
     };
     Ok((status, Json(response)))
+}
+
+/// A user as admins see them.
+#[derive(GraphQLObject)]
+struct UserAccount {
+    id: ID,
+    username: String,
+    display_name: Option<String>,
+    is_admin: bool,
+    /// A disabled user can't sign in, and their sessions and API keys stop working.
+    enabled: bool,
+    created_at: DateTime<Utc>,
+    last_login_at: Option<DateTime<Utc>>,
+}
+
+impl From<users::Account> for UserAccount {
+    fn from(account: users::Account) -> Self {
+        Self {
+            id: ID::new(account.id.to_string()),
+            username: account.username,
+            display_name: account.display_name,
+            is_admin: account.is_admin,
+            enabled: account.enabled,
+            created_at: account.created_at,
+            last_login_at: account.last_login_at,
+        }
+    }
+}
+
+#[derive(GraphQLInputObject)]
+struct NewUser {
+    /// Lowercase letters, digits, `.`, `_` and `-`. What the user signs in with.
+    username: String,
+    display_name: Option<String>,
+    /// At least 12 characters.
+    password: String,
+    is_admin: bool,
+}
+
+#[derive(GraphQLInputObject)]
+struct UserUpdate {
+    display_name: Option<String>,
+    is_admin: bool,
+    enabled: bool,
+}
+
+#[derive(GraphQLObject)]
+struct Worker {
+    id: ID,
+    /// The pod name.
+    name: String,
+    plugins: Vec<String>,
+    /// When the worker last asked for a run.
+    last_seen_at: DateTime<Utc>,
+}
+
+#[derive(GraphQLObject)]
+struct ModelStatus {
+    name: String,
+    is_default: bool,
+    /// Whether the TEI that embeds search queries answers.
+    online: bool,
+    /// Whether the TEI the embed pump uses answers. Null when it's the same as for queries.
+    bulk_online: Option<bool>,
+    /// The embed pump's last failure, until its next success.
+    last_error: Option<String>,
+    last_error_at: Option<DateTime<Utc>>,
+    /// Chunks still to embed, per source and across users. Empty when everything is embedded.
+    backlog: Vec<SourceBacklog>,
+}
+
+#[derive(GraphQLObject)]
+struct SourceBacklog {
+    source: String,
+    /// Waiting for the embed pump.
+    pending: i32,
+    /// Refused by TEI, so the pump leaves them out.
+    failed: i32,
+}
+
+impl From<embeddings::ModelStatus> for ModelStatus {
+    fn from(status: embeddings::ModelStatus) -> Self {
+        let (last_error, last_error_at) = status.last_error.unzip();
+        Self {
+            name: status.name,
+            is_default: status.is_default,
+            online: status.online,
+            bulk_online: status.bulk_online,
+            last_error,
+            last_error_at,
+            backlog: status
+                .backlog
+                .into_iter()
+                .map(|backlog| SourceBacklog {
+                    source: backlog.source,
+                    pending: i32::try_from(backlog.pending).unwrap_or(i32::MAX),
+                    failed: i32::try_from(backlog.failed).unwrap_or(i32::MAX),
+                })
+                .collect(),
+        }
+    }
 }

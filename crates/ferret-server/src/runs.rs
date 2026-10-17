@@ -12,7 +12,7 @@ use axum::{
     http::{StatusCode, header::AUTHORIZATION, request::Parts},
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use ferret_api::internal::{
     ClaimRequest, ClaimedRun, Heartbeat, Registered, RunFinish, RunResult, WorkerRegistration,
 };
@@ -70,6 +70,26 @@ impl FromRequestParts<AppState> for Worker {
             Err(ApiError::unauthorized("missing or invalid worker secret"))
         }
     }
+}
+
+pub struct WorkerInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub plugins: Vec<String>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+/// The workers seen in the last day, the most recently seen first. A restarted worker registers
+/// anew, so older rows are mostly gone pods.
+pub async fn workers(pool: &PgPool) -> Result<Vec<WorkerInfo>, sqlx::Error> {
+    sqlx::query_as!(
+        WorkerInfo,
+        "select id, name, plugins, last_seen_at from workers
+         where last_seen_at > now() - interval '1 day'
+         order by last_seen_at desc"
+    )
+    .fetch_all(pool)
+    .await
 }
 
 /// Upserts the worker's plugin types and registers the worker with its capabilities.

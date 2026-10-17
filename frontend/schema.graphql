@@ -51,6 +51,13 @@ input NewConnection {
   "Cron expression, e.g. `0 * * * *` for hourly." schedule: String!
 }
 
+input NewUser {
+  "Lowercase letters, digits, `.`, `_` and `-`. What the user signs in with." username: String!
+  displayName: String
+  "At least 12 characters." password: String!
+  isAdmin: Boolean!
+}
+
 input SearchInput {
   "Words, `\"exact phrases\"` and `-excluded` words." q: String!
   "Only documents in these sources or below them. Leave out for all sources." sources: [String!]
@@ -59,6 +66,12 @@ input SearchInput {
   "Only documents created at or after this time." from: DateTime
   "Only documents created before this time." to: DateTime
   "How many hits at most, 1 to 100. The server's default applies when left out." k: Int
+}
+
+input UserUpdate {
+  displayName: String
+  isAdmin: Boolean!
+  enabled: Boolean!
 }
 
 """
@@ -156,6 +169,20 @@ type HitChunk {
   parts: [TextPart!]!
 }
 
+type ModelStatus {
+  name: String!
+  isDefault: Boolean!
+  "Whether the TEI that embeds search queries answers."
+  online: Boolean!
+  "Whether the TEI the embed pump uses answers. Null when it's the same as for queries."
+  bulkOnline: Boolean
+  "The embed pump's last failure, until its next success."
+  lastError: String
+  lastErrorAt: DateTime
+  "Chunks still to embed, per source and across users. Empty when everything is embedded."
+  backlog: [SourceBacklog!]!
+}
+
 type Mutation {
   "Creates a connection, which runs right away and then on its schedule."
   createConnection(input: NewConnection!): Connection!
@@ -167,6 +194,15 @@ type Mutation {
     repeats the root. Returns how many documents were deleted.
   """
   deleteConnection(id: ID!, confirmSource: String!): Int!
+  "Admins only."
+  createUser(input: NewUser!): UserAccount!
+  "Sets a user's password and signs them out everywhere. Admins only."
+  setUserPassword(id: ID!, password: String!): ID!
+  """
+    Changes a user's display name, admin role and whether they can sign in. The last enabled
+    admin can't be demoted or disabled. Admins only.
+  """
+  updateUser(id: ID!, input: UserUpdate!): UserAccount!
   createApiKey(input: NewApiKey!): CreatedApiKey!
   "Revokes one of the signed-in user's keys and returns its id."
   revokeApiKey(id: ID!): ID!
@@ -193,6 +229,12 @@ type PluginType {
 type Query {
   "The signed-in user."
   me: User!
+  "Every user. Admins only."
+  users: [UserAccount!]!
+  "The plugin workers seen in the last day, the most recently seen first. Admins only."
+  workers: [Worker!]!
+  "Each embedding model's TEI health and backlog, the default first. Admins only."
+  embeddingStatus: [ModelStatus!]!
   "The signed-in user's API keys, newest first."
   apiKeys: [ApiKey!]!
   """
@@ -226,6 +268,14 @@ type SearchResult {
   semanticUnavailable: String
 }
 
+type SourceBacklog {
+  source: String!
+  "Waiting for the embed pump."
+  pending: Int!
+  "Refused by TEI, so the pump leaves them out."
+  failed: Int!
+}
+
 type TextPart {
   text: String!
   highlight: Boolean!
@@ -236,4 +286,25 @@ type User {
   username: String!
   displayName: String
   isAdmin: Boolean!
+}
+
+"A user as admins see them."
+type UserAccount {
+  id: ID!
+  username: String!
+  displayName: String
+  isAdmin: Boolean!
+  "A disabled user can't sign in, and their sessions and API keys stop working."
+  enabled: Boolean!
+  createdAt: DateTime!
+  lastLoginAt: DateTime
+}
+
+type Worker {
+  id: ID!
+  "The pod name."
+  name: String!
+  plugins: [String!]!
+  "When the worker last asked for a run."
+  lastSeenAt: DateTime!
 }
