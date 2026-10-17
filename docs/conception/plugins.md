@@ -121,7 +121,7 @@ change its rendering freely.
 | `carapace/sessions` | one per session | `{session_id}` | abstract, outcomes, open loops, on my mind |
 | `carapace/facts` | one per fact | `{session_id}/{hash of subject and statement}` | the fact, plus subject and category |
 | `carapace/digests` | one per week and month | `{level}:{period_key}` | summary, highlights, open loops |
-| `carapace/files` | everything else in the repo (skills, workspace notes) | `{path}` | as in the git plugin |
+| `carapace/files` | the repo's other Markdown files (skills, workspace notes, research) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
   `session_id`. Session `meta`: `week_key`, `month_key`,
@@ -129,19 +129,23 @@ change its rendering freely.
 - `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
   record, the only timestamp the mirror has. A re-extraction moves it.
 - A fact that appears twice in one session (under two categories, say) is indexed once.
-- `memory/facts/*.md` is ignored: it repeats the facts of the session files.
+- `memory/facts/*.md` is ignored: it repeats the facts of the session files. So is every file
+  other than Markdown: skills' code, lockfiles and configuration, and carapace's raw session dumps
+  (`conversation.json`), which the sessions and facts distill.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
-- Incremental like the git plugin. The state stores the indexed commit and `carapace_url`. A run
-  diffs against that commit and puts the changed files' documents. A changed session file can lose
-  facts, so the plugin also reads every changed or deleted file's version at the cursor
-  (`git show <cursor>:<path>`) and deletes whatever that version held but the new one doesn't.
-  This assumes a document comes from one path only: a session copied to a second file whose old
-  copy is deleted in a later commit loses its documents until the next full sync.
-- Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the
-  first run, after a force push, when `carapace_url` changed (every link changes), and when an
-  old version doesn't parse (a render format this plugin no longer reads).
+- Incremental like the git plugin. The state stores the indexed commit and the indexing settings
+  (`carapace_url` and the rule for files). A run diffs against that commit and puts the changed
+  files' documents. A changed session file can lose facts, so the plugin also reads every changed or
+  deleted file's version at the cursor (`git show <cursor>:<path>`) and deletes whatever that
+  version held but the new one doesn't. This assumes a document comes from one path only: a session
+  copied to a second file whose old copy is deleted in a later commit loses its documents until the
+  next full sync.
+- Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the first
+  run, after a force push, when the indexing settings changed (a new `carapace_url` changes every
+  link, a new rule for files must sweep what the old one let in), and when an old version doesn't
+  parse (a render format this plugin no longer reads).
 - Config: `remote`, `branch`, `token` (write-only) like the git plugin, and `carapace_url`, the web
   UI that documents link to.
 - `url` (relative to the configured carapace base URL): sessions

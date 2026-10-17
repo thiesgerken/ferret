@@ -13,6 +13,7 @@ const FIXTURES: &str = concat!(
 );
 const TALOS: &str = "memory/sessions/2026/09/s-talos.md";
 const TRIP: &str = "memory/sessions/2026/09/s-trip.md";
+const DUMP: &str = "sessions/2026/09/s-trip/conversation.json";
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -48,7 +49,8 @@ fn commit(repo: &Path, message: &str) {
     );
 }
 
-/// A knowledge repository: carapace's rendered mirror plus a skill.
+/// A knowledge repository: carapace's rendered mirror, a skill with its lockfile, and a raw session
+/// dump.
 fn repository(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     for entry in walk(&Path::new(FIXTURES).join("memory")) {
@@ -58,6 +60,9 @@ fn repository(dir: &Path) {
     }
     std::fs::create_dir_all(dir.join("skills/brag")).unwrap();
     std::fs::write(dir.join("skills/brag/SKILL.md"), "# Brag\n\nCollects wins.").unwrap();
+    std::fs::write(dir.join("skills/brag/uv.lock"), "version = 1\n").unwrap();
+    std::fs::create_dir_all(dir.join("sessions/2026/09/s-trip")).unwrap();
+    std::fs::write(dir.join(DUMP), r#"[{"role": "user", "content": "trip"}]"#).unwrap();
     commit(dir, "mirror");
 }
 
@@ -142,7 +147,8 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
 
     assert_eq!(latest_run(&server, &cookie).await["status"], "SUCCEEDED");
     // Two sessions with 4 + 1 distinct facts, a week and a month, the mirror's README and the skill. The
-    // per-category facts files repeat the session facts and stay out.
+    // per-category facts files repeat the session facts and stay out, so do files other than
+    // Markdown.
     assert_eq!(
         documents_per_source(&pool).await,
         BTreeMap::from([
@@ -249,11 +255,27 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         (1, 3)
     );
 
-    // Another carapace URL changes every link, so the next run puts everything again.
-    sqlx::query("update connections set state = jsonb_set(state, '{indexing,carapace_url}', '\"https://old.example/\"')")
-        .execute(&pool)
-        .await
-        .unwrap();
+    // A run under other indexing settings, e.g. one that still indexed every file, makes the next
+    // run a full sync, which puts everything again and sweeps what the old settings let in.
+    // Inserted directly: a connection's source takes documents from its runs only.
+    sqlx::query(
+        "insert into documents
+             (id, user_id, source, external_id, content_type, authors, created_at, modified_at,
+              meta, text, content_hash, seen_at)
+         select gen_random_uuid(), user_id, 'carapace/files', $1, 'plain', '{}', now(), now(),
+                '{}', 'trip', '\\x00', now()
+         from connections",
+    )
+    .bind(DUMP)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "update connections set state = jsonb_set(state, '{indexing}', '{\"carapace_url\": \"https://carapace.example\"}')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
@@ -262,9 +284,15 @@ async fn a_knowledge_repository_lands_in_four_sources_and_follows_its_changes(po
         full["log"]
             .as_str()
             .unwrap()
-            .contains("full sync: the carapace URL changed"),
+            .contains("full sync: the indexing settings changed"),
         "{full}"
     );
+    let dumps: i64 = sqlx::query_scalar("select count(*) from documents where external_id = $1")
+        .bind(DUMP)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dumps, 0);
     assert_eq!(
         full["stats"]["unchanged"], 8,
         "1 session, 3 facts, 2 digests, 2 files"
