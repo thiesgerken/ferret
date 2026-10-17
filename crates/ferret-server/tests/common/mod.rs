@@ -227,7 +227,7 @@ impl TestServer {
             .graphql(
                 &cookie,
                 "mutation ($input: NewApiKey!) { createApiKey(input: $input) { key } }",
-                json!({"input": {"name": "test key", "scopes": scopes, "sources": sources}}),
+                json!({"input": {"name": "test key", "icon": "key-round", "scopes": scopes, "sources": sources}}),
             )
             .await;
         assert_eq!(body["errors"], Value::Null, "{body}");

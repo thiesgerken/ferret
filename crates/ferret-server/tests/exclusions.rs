@@ -37,7 +37,7 @@ async fn connection_run(server: &TestServer) -> LiveRun {
         .graphql(
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
-            json!({"input": {"plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
+            json!({"input": {"name": "test", "icon": "plug", "plugin": "fake", "source": "notes", "config": "{}", "schedule": "0 * * * *"}}),
         )
         .await;
     assert_eq!(created["errors"], Value::Null, "{created}");

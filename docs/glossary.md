@@ -44,6 +44,10 @@ _Avoid_: connector, integration, ingester (for built-in ones)
 A plugin configured by one user for one origin, with its schedule and the source root it owns.
 _Avoid_: plugin instance, integration, feed, source
 
+**Writer**:
+A connection or an API key: what puts documents into sources. Shown with its name and icon.
+_Avoid_: origin (the external system), ingester
+
 **Run**:
 One execution of a connection.
 _Avoid_: job, ingestion (for a single execution)

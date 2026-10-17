@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update documents set\n                     content_type = $2, title = $3, url = $4, thread = $5, authors = $6,\n                     created_at = $7, modified_at = $8, meta = $9, text = $10,\n                     content_hash = $11, seen_at = now(), api_key_id = $12\n                 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz",
+        "Jsonb",
+        "Text",
+        "Bytea",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9542e14fd18027a454e935b8d1faac477578c55d2883191713fff1b0ebd7d90c"
+}

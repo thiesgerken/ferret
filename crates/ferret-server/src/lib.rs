@@ -25,6 +25,7 @@ mod exclusions;
 mod explore;
 pub mod graphql;
 mod highlight;
+mod icons;
 mod judgments;
 mod runs;
 mod search;
@@ -33,6 +34,7 @@ mod sources;
 mod syncs;
 mod tei;
 mod users;
+mod writers;
 
 pub use auth::SessionKey;
 pub use credentials::ConfigKey;

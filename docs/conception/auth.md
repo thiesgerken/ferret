@@ -143,20 +143,25 @@ Same format and storage as carapace's `ck_` keys:
 - Shown once at creation. `last_used_at` is updated at most once a minute per key.
 - Sent as `Authorization: Bearer fk_...`. A missing, unknown, revoked or expired key, or one whose
   owner is disabled, gets `401`. A valid key without the needed scope gets `403`.
-- Revoking deletes the key. An expired key stays listed until its owner revokes it.
+- Revoking sets `revoked_at`: the key stops working and leaves Settings, but stays the writer of
+  the documents it put (see [Sources](README.md#sources)). An expired key stays listed until its
+  owner revokes it.
+- Each key has a name and an icon (a lucide name like `key-round`), both editable.
 
 ```sql
 create table api_keys (
     id            uuid primary key,
     user_id       uuid not null references users on delete cascade,
     name          text not null,               -- 'paperless plugin', 'carapace search skill'
+    icon          text not null,               -- lucide icon name, e.g. 'key-round'
     prefix        text not null unique,
     secret_hash   bytea not null,              -- sha256 of the part after the dot
     scopes        text[] not null,             -- e.g. {'search:read', 'ingest:write'}
     sources       text[],                      -- restricts every scope to these source paths and below, null = all
     created_at    timestamptz not null,
     last_used_at  timestamptz,
-    expires_at    timestamptz
+    expires_at    timestamptz,
+    revoked_at    timestamptz
 );
 ```
 

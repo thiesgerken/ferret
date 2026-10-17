@@ -14,9 +14,16 @@ const client = createGraphqlClient(async () =>
         total: 18945,
         facets: {
           __typename: "Facets",
-          sources: ["carapace/files", "carapace/facts", "demo/notes", "ferret"].map((value) => ({
-            __typename: "FacetCount",
+          // Two connections and documents without a known writer: three sources.
+          sources: [
+            ["carapace/files", "c1"],
+            ["carapace/facts", "c1"],
+            ["demo/notes", null],
+            ["ferret", "c2"],
+          ].map(([value, writer]) => ({
+            __typename: "SourceCount",
             value,
+            writer: writer && { __typename: "Writer", id: writer },
           })),
         },
       },

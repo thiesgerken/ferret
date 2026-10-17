@@ -63,7 +63,7 @@ pub async fn put(
     if exclusions::is_excluded(&mut *tx, caller.user_id, &document).await? {
         return Ok(Json(PutResponse::Excluded));
     }
-    let response = upsert(&mut tx, caller.user_id, &document).await?;
+    let response = upsert(&mut tx, caller.user_id, caller.api_key_id(), &document).await?;
     tx.commit().await?;
     Ok(Json(response))
 }
@@ -258,11 +258,13 @@ impl From<DocumentRow> for Document {
     }
 }
 
-/// Stores `document` unless it's unchanged, and re-chunks a changed one. Chunks whose text
-/// didn't change keep their identity (and later their embeddings).
+/// Stores `document` for `user_id` as put by `api_key_id` (`None`: a plugin run), unless it's
+/// unchanged, and re-chunks a changed one. Chunks whose text didn't change keep their identity
+/// (and later their embeddings).
 async fn upsert(
     tx: &mut PgConnection,
     user_id: Uuid,
+    api_key_id: Option<Uuid>,
     document: &DocumentPut,
 ) -> Result<PutResponse, sqlx::Error> {
     let content_hash =
@@ -281,8 +283,9 @@ async fn upsert(
     let (id, response) = match stored {
         Some(stored) if stored.content_hash == content_hash => {
             sqlx::query!(
-                "update documents set seen_at = now() where id = $1",
-                stored.id
+                "update documents set seen_at = now(), api_key_id = $2 where id = $1",
+                stored.id,
+                api_key_id,
             )
             .execute(&mut *tx)
             .await?;
@@ -293,7 +296,7 @@ async fn upsert(
                 "update documents set
                      content_type = $2, title = $3, url = $4, thread = $5, authors = $6,
                      created_at = $7, modified_at = $8, meta = $9, text = $10,
-                     content_hash = $11, seen_at = now()
+                     content_hash = $11, seen_at = now(), api_key_id = $12
                  where id = $1",
                 stored.id,
                 content_type::as_str(document.content_type),
@@ -306,6 +309,7 @@ async fn upsert(
                 Jsonb(&document.meta) as _,
                 document.text,
                 content_hash,
+                api_key_id,
             )
             .execute(&mut *tx)
             .await?;
@@ -317,8 +321,8 @@ async fn upsert(
             let id = sqlx::query_scalar!(
                 "insert into documents
                      (id, user_id, source, external_id, content_type, title, url, thread,
-                      authors, created_at, modified_at, meta, text, content_hash, seen_at)
-                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id)
+                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14)
                  returning id",
                 user_id,
                 document.source,
@@ -333,6 +337,7 @@ async fn upsert(
                 Jsonb(&document.meta) as _,
                 document.text,
                 content_hash,
+                api_key_id,
             )
             .fetch_one(&mut *tx)
             .await?;

@@ -173,7 +173,7 @@ async fn paperless_documents_sync_incrementally_and_deleted_ones_disappear(pool:
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id config } }",
             json!({"input": {
-                "plugin": "paperless",
+                "name": "test", "icon": "plug", "plugin": "paperless",
                 "source": "paperless",
                 "config": json!({
                     "url": format!("{paperless}/"),
@@ -301,7 +301,7 @@ async fn a_document_deleted_while_listing_fails_the_run_instead_of_sweeping_othe
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
             json!({"input": {
-                "plugin": "paperless",
+                "name": "test", "icon": "plug", "plugin": "paperless",
                 "source": "paperless",
                 "config": json!({"url": paperless, "token": TOKEN}).to_string(),
                 "schedule": "0 * * * *",
@@ -356,7 +356,7 @@ async fn a_login_proxy_in_front_of_paperless_fails_the_run_with_a_hint(pool: PgP
             &cookie,
             "mutation ($input: NewConnection!) { createConnection(input: $input) { id } }",
             json!({"input": {
-                "plugin": "paperless",
+                "name": "test", "icon": "plug", "plugin": "paperless",
                 "source": "paperless",
                 "config": json!({"url": proxy, "token": TOKEN}).to_string(),
                 "schedule": "0 * * * *",

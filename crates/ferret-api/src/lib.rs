@@ -170,7 +170,7 @@ pub struct SearchResponse {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SearchFacets {
     /// By source path, most matches first.
-    pub sources: Vec<FacetCount>,
+    pub sources: Vec<SourceCount>,
     /// The 20 most frequent authors and the selected ones.
     pub authors: Vec<FacetCount>,
     /// The counts may be short, as `total_is_lower_bound` says for `total`.
@@ -181,6 +181,35 @@ pub struct SearchFacets {
 pub struct FacetCount {
     pub value: String,
     pub count: u32,
+}
+
+/// A source path's count, with where its documents come from, for grouping.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SourceCount {
+    pub value: String,
+    pub count: u32,
+    /// Who put its documents, for grouping: the connection covering it, else the one connection
+    /// below it or the API key of its most recently modified document that has one. `None` when
+    /// no writer is known (documents from before writers were recorded) or there's more than one
+    /// kind (a root over a connection's documents and a key's).
+    pub writer: Option<Writer>,
+}
+
+/// A connection or an API key: what puts documents into sources.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Writer {
+    pub kind: WriterKind,
+    pub id: Uuid,
+    pub name: String,
+    /// A lucide icon name, e.g. `git-branch`.
+    pub icon: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WriterKind {
+    Connection,
+    ApiKey,
 }
 
 /// A document returned by a search, with its best-matching chunk.
@@ -203,6 +232,9 @@ pub struct Hit {
     /// candidates above the model's `min_similarity`, `None` when none of them is or the semantic
     /// half didn't run.
     pub similarity: Option<f32>,
+    /// The connection or API key that put the document, `None` for one from before writers were
+    /// recorded.
+    pub writer: Option<Writer>,
     /// How many more documents of the same thread matched and were folded into this hit.
     pub collapsed: u32,
     pub chunk: HitChunk,

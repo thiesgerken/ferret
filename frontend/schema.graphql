@@ -43,7 +43,14 @@ enum TimeRange {
   YEAR
 }
 
+enum WriterKind {
+  CONNECTION
+  API_KEY
+}
+
 input ConnectionUpdate {
+  name: String!
+  icon: String!
   config: String!
   schedule: String!
   enabled: Boolean!
@@ -70,12 +77,15 @@ input JudgmentInput {
 
 input NewApiKey {
   name: String!
+  "A lucide icon name in kebab-case, e.g. `key-round`." icon: String!
   scopes: [ApiKeyScope!]!
   "Restricts every scope to these source paths and below. Leave out for all sources." sources: [String!]
   expiresAt: DateTime
 }
 
 input NewConnection {
+  "What the UI shows instead of the source path, e.g. `Notes`." name: String!
+  "A lucide icon name in kebab-case, e.g. `git-branch`." icon: String!
   plugin: String!
   """
     The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
@@ -131,6 +141,8 @@ scalar DateTime
 type ApiKey {
   id: ID!
   name: String!
+  "A lucide icon name."
+  icon: String!
   "The non-secret part after `fk_`, to tell keys apart."
   prefix: String!
   scopes: [ApiKeyScope!]!
@@ -144,6 +156,9 @@ type ApiKey {
 
 type Connection {
   id: ID!
+  name: String!
+  "A lucide icon name."
+  icon: String!
   plugin: String!
   "The source root the connection owns: it writes to it and below it."
   source: String!
@@ -260,7 +275,7 @@ type FacetCount {
   so they show what choosing another value of it would give.
 """
 type Facets {
-  sources: [FacetCount!]!
+  sources: [SourceCount!]!
   contentTypes: [ContentTypeCount!]!
   "The 20 most frequent authors."
   authors: [FacetCount!]!
@@ -281,6 +296,11 @@ type Hit {
   authors: [String!]!
   createdAt: DateTime!
   modifiedAt: DateTime!
+  """
+    The connection or API key that put the document, null for one from before writers were
+    recorded.
+  """
+  writer: Writer
   """
     The best BM25 score among the document's chunks in the keyword half's candidates, null
     when none of them is.
@@ -365,7 +385,12 @@ type Mutation {
   """
   setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
-  "Revokes one of the signed-in user's keys and returns its id."
+  "Renames one of the signed-in user's keys or changes its icon."
+  updateApiKey(id: ID!, name: String!, icon: String!): ApiKey!
+  """
+    Revokes one of the signed-in user's keys and returns its id. It stays the writer of the
+    documents it put.
+  """
   revokeApiKey(id: ID!): ID!
 }
 
@@ -435,7 +460,7 @@ type RunStats {
 """
 type SearchFacets {
   "By source path, most matches first."
-  sources: [FacetCount!]!
+  sources: [SourceCount!]!
   "The 20 most frequent authors and the selected ones."
   authors: [FacetCount!]!
   "True when the counts may be short, as `totalIsLowerBound` says for `total`."
@@ -482,6 +507,19 @@ type SourceBacklog {
   failed: Int!
 }
 
+"A source path's count, with where its documents come from, for grouping."
+type SourceCount {
+  value: String!
+  count: Int!
+  """
+    Who put its documents, for grouping: the connection covering it, else the one connection
+    below it or the API key of its most recently modified document that has one. Null when no
+    writer is known (documents from before writers were recorded) or there's more than one kind
+    (a root over a connection's documents and a key's).
+  """
+  writer: Writer
+}
+
 type TextPart {
   text: String!
   highlight: Boolean!
@@ -526,4 +564,14 @@ type Worker {
     online again. A restarted worker registers anew and leaves its old row offline.
   """
   online: Boolean!
+}
+
+"A connection or an API key: what puts documents into sources."
+type Writer {
+  kind: WriterKind!
+  "The connection's or API key's id."
+  id: ID!
+  name: String!
+  "A lucide icon name."
+  icon: String!
 }

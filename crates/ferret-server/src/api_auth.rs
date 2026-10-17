@@ -69,7 +69,7 @@ pub struct ApiCaller {
 /// Which credential authenticated the caller.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CallerKind {
-    ApiKey,
+    ApiKey(Uuid),
     /// A plugin run's token: `ingest:write` below its connection's root.
     PluginRun,
 }
@@ -91,6 +91,14 @@ impl ApiCaller {
 
     pub fn is_plugin_run(&self) -> bool {
         self.kind == CallerKind::PluginRun
+    }
+
+    /// The key the caller authenticated with, `None` for a plugin run.
+    pub fn api_key_id(&self) -> Option<Uuid> {
+        match self.kind {
+            CallerKind::ApiKey(id) => Some(id),
+            CallerKind::PluginRun => None,
+        }
     }
 
     /// Fails with 403 unless one of the caller's scopes grants `needed`.

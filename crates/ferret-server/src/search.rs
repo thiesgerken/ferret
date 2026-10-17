@@ -2,7 +2,7 @@
 //! hit per document.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
     time::Instant,
 };
@@ -10,7 +10,9 @@ use std::{
 use axum::{Json, extract::State};
 use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
-use ferret_api::{FacetCount, Hit, HitChunk, SearchFacets, SearchQuery, SearchResponse};
+use ferret_api::{
+    FacetCount, Hit, HitChunk, SearchFacets, SearchQuery, SearchResponse, SourceCount,
+};
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -23,6 +25,7 @@ use crate::{
     highlight::highlight,
     search_query::{self, ParsedQuery},
     sources,
+    writers::Writers,
 };
 
 const DEFAULT_K: u32 = 10;
@@ -246,11 +249,12 @@ pub async fn find(
     } else {
         Some(hybrid.matches(&mut tx, &without_authors, 0..0).await?)
     };
+    let writers = Writers::load(&mut tx, user_id).await?;
     tx.commit().await?;
     let by_source = by_source.as_deref().unwrap_or(&matches);
     let by_author = by_author.as_deref().unwrap_or(&matches);
     let facets = SearchFacets {
-        sources: source_counts(by_source, &request.sources),
+        sources: source_counts(by_source, &request.sources, &writers),
         authors: author_counts(by_author, collapse, &request.authors),
         are_lower_bounds: is_lower_bound(by_source) || is_lower_bound(by_author),
     };
@@ -266,6 +270,7 @@ pub async fn find(
     let hits = page_rows
         .into_iter()
         .map(|row| Hit {
+            writer: writers.of(&row.source, row.api_key_id),
             document_id: row.id,
             source: row.source,
             external_id: row.external_id,
@@ -384,7 +389,7 @@ impl Hybrid<'_> {
              ),
              hits as (
                  select d.id, d.source, d.external_id, d.content_type, d.title, d.url, d.thread,
-                        d.authors, d.created_at, d.modified_at,
+                        d.authors, d.created_at, d.modified_at, d.api_key_id,
                         b.score, b.keyword_score, b.similarity,
                         b.text as chunk_text, b.start_offset, b.end_offset,
                         row_number() over (thread_hits order by b.score desc, d.created_at, d.id) as thread_rank,
@@ -445,7 +450,8 @@ impl Hybrid<'_> {
                  from hits
              )
              select id, source, external_id, content_type, title, url, thread, authors,
-                    created_at, modified_at, keyword_score, similarity, collapsed, page_rank,
+                    created_at, modified_at, api_key_id, keyword_score, similarity, collapsed,
+                    page_rank,
                     case when page_rank > ",
         )
         .push_bind(i64::from(page.start))
@@ -470,6 +476,7 @@ struct MatchRow {
     authors: Vec<String>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
+    api_key_id: Option<Uuid>,
     keyword_score: Option<f32>,
     similarity: Option<f32>,
     collapsed: i64,
@@ -494,22 +501,41 @@ fn is_lower_bound(rows: &[MatchRow]) -> bool {
     rows.first().is_some_and(|row| row.total_is_lower_bound)
 }
 
-/// Matches per source, and per selected root, which may be a parent of the stored sources.
-fn source_counts(rows: &[MatchRow], selected: &[String]) -> Vec<FacetCount> {
-    let tops = || rows.iter().filter(|row| row.is_top());
-    let mut counts = counts(tops().map(|row| &row.source), |_, _| true);
-    counts.retain(|count| !selected.contains(&count.value));
-    counts.extend(selected.iter().map(|root| {
-        FacetCount {
-            value: root.clone(),
-            count: u32::try_from(
-                tops()
-                    .filter(|row| sources::covers(root, &row.source))
-                    .count(),
-            )
-            .expect("at most the candidates match"),
-        }
-    }));
+/// Matches per source, and per selected root, which may be a parent of the stored sources. Each
+/// with its writer, see `Writers::of_source`.
+fn source_counts(rows: &[MatchRow], selected: &[String], writers: &Writers) -> Vec<SourceCount> {
+    let tops: Vec<&MatchRow> = rows.iter().filter(|row| row.is_top()).collect();
+    let mut by_source: BTreeMap<&str, Vec<&MatchRow>> = BTreeMap::new();
+    for row in &tops {
+        by_source.entry(&row.source).or_default().push(row);
+    }
+    let stored = by_source
+        .into_iter()
+        .filter(|(source, _)| !selected.iter().any(|root| root == source))
+        .map(|(source, rows)| (source.to_owned(), rows));
+    let selected = selected.iter().map(|root| {
+        let covered = tops
+            .iter()
+            .filter(|row| sources::covers(root, &row.source))
+            .copied()
+            .collect();
+        (root.clone(), covered)
+    });
+    let mut counts: Vec<SourceCount> = stored
+        .chain(selected)
+        .map(|(value, rows): (String, Vec<&MatchRow>)| {
+            let newest_key = rows
+                .iter()
+                .filter(|row| row.api_key_id.is_some())
+                .max_by_key(|row| row.modified_at)
+                .and_then(|row| row.api_key_id);
+            SourceCount {
+                writer: writers.of_source(&value, newest_key),
+                count: u32::try_from(rows.len()).expect("at most the candidates match"),
+                value,
+            }
+        })
+        .collect();
     counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
     counts
 }

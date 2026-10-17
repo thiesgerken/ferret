@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     api_auth::{ApiCaller, CallerKind, Scope},
-    sources,
+    icons, sources,
     users::User,
 };
 
@@ -21,6 +21,8 @@ const SECRET_BYTES: usize = 32;
 pub struct ApiKey {
     pub id: Uuid,
     pub name: String,
+    /// A lucide icon name, see `icons`.
+    pub icon: String,
     pub prefix: String,
     pub scopes: Vec<Scope>,
     pub sources: Option<Vec<String>>,
@@ -31,18 +33,19 @@ pub struct ApiKey {
 
 pub struct NewApiKey {
     pub name: String,
+    pub icon: String,
     pub scopes: Vec<Scope>,
     pub sources: Option<Vec<String>>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-pub enum CreateError {
+pub enum KeyError {
     /// Rejected input, worded for the user.
     Invalid(String),
     Database(sqlx::Error),
 }
 
-impl From<sqlx::Error> for CreateError {
+impl From<sqlx::Error> for KeyError {
     fn from(error: sqlx::Error) -> Self {
         Self::Database(error)
     }
@@ -50,8 +53,8 @@ impl From<sqlx::Error> for CreateError {
 
 pub async fn list(pool: &PgPool, user_id: Uuid) -> Result<Vec<ApiKey>, sqlx::Error> {
     let rows = sqlx::query!(
-        "select id, name, prefix, scopes, sources, created_at, last_used_at, expires_at
-         from api_keys where user_id = $1 order by created_at desc",
+        "select id, name, icon, prefix, scopes, sources, created_at, last_used_at, expires_at
+         from api_keys where user_id = $1 and revoked_at is null order by created_at desc",
         user_id,
     )
     .fetch_all(pool)
@@ -61,6 +64,7 @@ pub async fn list(pool: &PgPool, user_id: Uuid) -> Result<Vec<ApiKey>, sqlx::Err
         .map(|row| ApiKey {
             id: row.id,
             name: row.name,
+            icon: row.icon,
             prefix: row.prefix,
             scopes: row.scopes.iter().map(|scope| Scope::parse(scope)).collect(),
             sources: row.sources,
@@ -76,7 +80,7 @@ pub async fn create(
     pool: &PgPool,
     owner: &User,
     new: NewApiKey,
-) -> Result<(ApiKey, String), CreateError> {
+) -> Result<(ApiKey, String), KeyError> {
     validate(owner, &new)?;
     let prefix = hex(&random_bytes::<PREFIX_BYTES>());
     let secret = BASE64_URL_SAFE_NO_PAD.encode(random_bytes::<SECRET_BYTES>());
@@ -86,11 +90,12 @@ pub async fn create(
     // Retry on conflict if anyone ever holds tens of thousands of keys.
     let row = sqlx::query!(
         "insert into api_keys
-             (id, user_id, name, prefix, secret_hash, scopes, sources, created_at, expires_at)
-         values (uuidv7(), $1, $2, $3, $4, $5, $6, now(), $7)
+             (id, user_id, name, icon, prefix, secret_hash, scopes, sources, created_at, expires_at)
+         values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, now(), $8)
          returning id, created_at",
         owner.id,
         new.name.trim(),
+        new.icon,
         prefix,
         secret_hash.as_slice(),
         &scopes as &[&str],
@@ -103,6 +108,7 @@ pub async fn create(
     let api_key = ApiKey {
         id: row.id,
         name: new.name.trim().to_owned(),
+        icon: new.icon,
         prefix,
         scopes: new.scopes,
         sources: new.sources,
@@ -113,11 +119,9 @@ pub async fn create(
     Ok((api_key, key))
 }
 
-fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
-    let invalid = |message: &str| Err(CreateError::Invalid(message.to_owned()));
-    if new.name.trim().is_empty() {
-        return invalid("a key needs a name");
-    }
+fn validate(owner: &User, new: &NewApiKey) -> Result<(), KeyError> {
+    let invalid = |message: &str| Err(KeyError::Invalid(message.to_owned()));
+    validate_label(&new.name, &new.icon)?;
     if new.scopes.is_empty() {
         return invalid("a key needs at least one scope");
     }
@@ -133,7 +137,7 @@ fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
             return invalid("leave sources out for all sources, or name at least one");
         }
         if let Some(source) = sources.iter().find(|source| !sources::is_valid(source)) {
-            return Err(CreateError::Invalid(format!(
+            return Err(KeyError::Invalid(format!(
                 "{source:?} is not a source path"
             )));
         }
@@ -147,16 +151,63 @@ fn validate(owner: &User, new: &NewApiKey) -> Result<(), CreateError> {
     Ok(())
 }
 
-/// Deletes one of `user_id`'s keys. A revoked key stops working with its next request.
+fn validate_label(name: &str, icon: &str) -> Result<(), KeyError> {
+    if name.trim().is_empty() {
+        return Err(KeyError::Invalid("a key needs a name".to_owned()));
+    }
+    if !icons::is_valid(icon) {
+        return Err(KeyError::Invalid(format!(
+            "{icon:?} is not an icon name like `key-round`"
+        )));
+    }
+    Ok(())
+}
+
+/// Renames one of `user_id`'s active keys or changes its icon. `None` if there's no such key.
+pub async fn update(
+    pool: &PgPool,
+    user_id: Uuid,
+    id: Uuid,
+    name: &str,
+    icon: &str,
+) -> Result<Option<ApiKey>, KeyError> {
+    validate_label(name, icon)?;
+    let row = sqlx::query!(
+        "update api_keys set name = $3, icon = $4
+         where id = $1 and user_id = $2 and revoked_at is null
+         returning id, name, icon, prefix, scopes, sources, created_at, last_used_at, expires_at",
+        id,
+        user_id,
+        name.trim(),
+        icon,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|row| ApiKey {
+        id: row.id,
+        name: row.name,
+        icon: row.icon,
+        prefix: row.prefix,
+        scopes: row.scopes.iter().map(|scope| Scope::parse(scope)).collect(),
+        sources: row.sources,
+        created_at: row.created_at,
+        last_used_at: row.last_used_at,
+        expires_at: row.expires_at,
+    }))
+}
+
+/// Revokes one of `user_id`'s keys: it stops working with its next request, and stays the writer
+/// of the documents it put.
 pub async fn revoke(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
-    let deleted = sqlx::query!(
-        "delete from api_keys where id = $1 and user_id = $2",
+    let revoked = sqlx::query!(
+        "update api_keys set revoked_at = now()
+         where id = $1 and user_id = $2 and revoked_at is null",
         id,
         user_id
     )
     .execute(pool)
     .await?;
-    Ok(deleted.rows_affected() == 1)
+    Ok(revoked.rows_affected() == 1)
 }
 
 /// The caller behind an API key (`fk_<prefix>.<secret>`), `None` for a malformed, unknown, revoked
@@ -173,7 +224,8 @@ pub async fn authenticate(pool: &PgPool, key: &str) -> Result<Option<ApiCaller>,
 
     let key = sqlx::query!(
         r#"select k.id, k.secret_hash, k.scopes, k.sources, u.id as user_id, u.is_admin,
-               u.enabled and (k.expires_at is null or k.expires_at > now()) as "usable!"
+               u.enabled and k.revoked_at is null and (k.expires_at is null or k.expires_at > now())
+                   as "usable!"
            from api_keys k join users u on u.id = k.user_id
            where k.prefix = $1"#,
         prefix,
@@ -209,7 +261,7 @@ pub async fn authenticate(pool: &PgPool, key: &str) -> Result<Option<ApiCaller>,
         key.user_id,
         scopes,
         key.sources,
-        CallerKind::ApiKey,
+        CallerKind::ApiKey(key.id),
     )))
 }
 
