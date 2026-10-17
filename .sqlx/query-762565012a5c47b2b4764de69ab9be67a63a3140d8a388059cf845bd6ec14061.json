@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "delete from exclusions e using connections c\n         where e.id = $1 and c.id = e.connection_id and c.user_id = $2\n         returning c.id",
+  "query": "select c.id from exclusions e join connections c on c.id = e.connection_id\n         where e.id = $1 and c.user_id = $2\n         for update of c",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "93ed6dffcac39e6481301f3ec5dd30157fa5cf7386e90dc805a412e15721a142"
+  "hash": "762565012a5c47b2b4764de69ab9be67a63a3140d8a388059cf845bd6ec14061"
 }

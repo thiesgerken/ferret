@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select source from documents where id = $1 and user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "984efc1bf9401337b24b2bd436e5a9776b8da5a65e5a0dcbef7bc8021af73f2f"
+}

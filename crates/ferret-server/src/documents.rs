@@ -53,6 +53,13 @@ pub async fn put(
     connections::check_api_key_may_write(&state.pool, &caller, &document.source, false).await?;
 
     let mut tx = state.pool.begin().await?;
+    exclusions::lock_source(
+        &mut tx,
+        caller.user_id,
+        &document.source,
+        exclusions::SourceLock::Shared,
+    )
+    .await?;
     if exclusions::is_excluded(&mut *tx, caller.user_id, &document).await? {
         return Ok(Json(PutResponse::Excluded));
     }

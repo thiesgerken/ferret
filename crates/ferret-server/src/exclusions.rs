@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, Utc};
 use ferret_api::DocumentPut;
-use sqlx::{PgExecutor, PgPool};
+use sqlx::{PgConnection, PgExecutor, PgPool};
 use uuid::Uuid;
 
 pub struct Exclusion {
@@ -36,6 +36,42 @@ impl From<sqlx::Error> for ExclusionError {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum SourceLock {
+    /// For a PUT, from its exclusion check to its commit. PUTs don't wait for each other.
+    Shared,
+    /// For excluding, from before the delete to the commit.
+    Exclusive,
+}
+
+/// Locks `user_id`'s `source` until the transaction ends, so a PUT that found nothing excluded
+/// can't write after an exclusion in the same source commits. Row locks can't do this: a new
+/// member of an excluded thread has no row yet.
+pub async fn lock_source(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+    source: &str,
+    lock: SourceLock,
+) -> Result<(), sqlx::Error> {
+    let key = format!("{user_id}/{source}");
+    match lock {
+        SourceLock::Shared => {
+            sqlx::query!(
+                "select pg_advisory_xact_lock_shared(hashtextextended($1, 0))",
+                key
+            )
+            .fetch_one(connection)
+            .await?;
+        }
+        SourceLock::Exclusive => {
+            sqlx::query!("select pg_advisory_xact_lock(hashtextextended($1, 0))", key)
+                .fetch_one(connection)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 /// Excludes `user_id`'s document `document_id`, or with `whole_thread` every document of its
 /// thread. `None` if there's no such document.
 pub async fn exclude(
@@ -45,6 +81,19 @@ pub async fn exclude(
     whole_thread: bool,
 ) -> Result<Option<Excluded>, ExclusionError> {
     let mut tx = pool.begin().await?;
+    // The source lock comes before the row lock, in the order a PUT takes them, or the two
+    // deadlock. A document's source never changes, so reading it unlocked is safe.
+    let Some(source) = sqlx::query_scalar!(
+        "select source from documents where id = $1 and user_id = $2",
+        document_id,
+        user_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Ok(None);
+    };
+    lock_source(&mut tx, user_id, &source, SourceLock::Exclusive).await?;
     let Some(document) = sqlx::query!(
         "select source, external_id, thread from documents
          where id = $1 and user_id = $2
@@ -123,12 +172,13 @@ pub async fn list(pool: &PgPool, connection_id: Uuid) -> Result<Vec<Exclusion>, 
 /// Removes one of `user_id`'s exclusions. The connection's next run starts over from scratch
 /// (its state is reset), so a plugin that only fetches what changed puts the document again.
 /// False if there's no such exclusion.
-pub async fn remove(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn remove(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, ExclusionError> {
     let mut tx = pool.begin().await?;
+    // The connection's row lock keeps a run from being claimed meanwhile.
     let Some(connection) = sqlx::query_scalar!(
-        "delete from exclusions e using connections c
-         where e.id = $1 and c.id = e.connection_id and c.user_id = $2
-         returning c.id",
+        "select c.id from exclusions e join connections c on c.id = e.connection_id
+         where e.id = $1 and c.user_id = $2
+         for update of c",
         id,
         user_id,
     )
@@ -137,6 +187,23 @@ pub async fn remove(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<bool, sqlx
     else {
         return Ok(false);
     };
+    // A live run would write its own cursor into the state when it finishes, undoing the reset.
+    let running = sqlx::query_scalar!(
+        r#"select exists (
+               select 1 from plugin_runs where connection_id = $1 and status = 'running'
+           ) as "running!""#,
+        connection,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if running {
+        return Err(ExclusionError::Invalid(
+            "the connection is running: wait for the run to finish".to_owned(),
+        ));
+    }
+    sqlx::query!("delete from exclusions where id = $1", id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query!(
         "update connections set state = '{}' where id = $1",
         connection

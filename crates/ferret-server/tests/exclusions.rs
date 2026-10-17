@@ -5,14 +5,21 @@ use std::time::Duration;
 use common::{TestServer, document, start_server};
 use ferret_api::{
     Client, PutResponse,
-    internal::{PluginRegistration, WorkerRegistration},
+    internal::{PluginRegistration, RunFinish, RunResult, RunStats, WorkerRegistration},
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// A connection on `notes` and the API of its live run, which writes like its plugin would.
-async fn connection_run(server: &TestServer) -> Client {
+/// A connection on `notes` and its live run.
+struct LiveRun {
+    /// The run's API, which writes like its plugin would.
+    api: Client,
+    run_id: Uuid,
+    worker_id: Uuid,
+}
+
+async fn connection_run(server: &TestServer) -> LiveRun {
     let internal = server.internal();
     let worker = internal
         .register(&WorkerRegistration {
@@ -39,7 +46,22 @@ async fn connection_run(server: &TestServer) -> Client {
         .await
         .unwrap()
         .unwrap();
-    server.api_with_key(&run.token)
+    LiveRun {
+        api: server.api_with_key(&run.token),
+        run_id: run.run_id,
+        worker_id: worker,
+    }
+}
+
+async fn remove_exclusion(server: &TestServer, id: &Value) -> Value {
+    let cookie = server.sign_in().await;
+    server
+        .graphql(
+            &cookie,
+            "mutation ($id: ID!) { removeExclusion(id: $id) }",
+            json!({"id": id}),
+        )
+        .await
 }
 
 async fn put(api: &Client, external_id: &str, thread: Option<&str>) -> PutResponse {
@@ -78,7 +100,7 @@ async fn exclusions(server: &TestServer) -> Value {
 #[sqlx::test(migrations = false)]
 async fn an_excluded_document_or_thread_is_deleted_and_never_ingested_again(pool: PgPool) {
     let server = start_server(pool).await;
-    let run = connection_run(&server).await;
+    let run = connection_run(&server).await.api;
     let single = put(&run, "single", None).await.id().unwrap();
     let in_thread = put(&run, "monday", Some("lunch")).await.id().unwrap();
     put(&run, "tuesday", Some("lunch")).await;
@@ -121,22 +143,29 @@ async fn an_excluded_document_or_thread_is_deleted_and_never_ingested_again(pool
 async fn removing_an_exclusion_lets_the_next_run_start_over_and_ingest_it(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let run = connection_run(&server).await;
-    let single = put(&run, "single", None).await.id().unwrap();
-    sqlx::query("update connections set state = '{\"cursor\": 42}'")
-        .execute(&pool)
-        .await
-        .unwrap();
+    let single = put(&run.api, "single", None).await.id().unwrap();
     exclude(&server, single, false).await;
     let exclusion = exclusions(&server).await[0]["id"].clone();
 
-    let cookie = server.sign_in().await;
-    let removed = server
-        .graphql(
-            &cookie,
-            "mutation ($id: ID!) { removeExclusion(id: $id) }",
-            json!({"id": exclusion}),
-        )
-        .await;
+    // The live run would write its cursor over the reset when it finishes.
+    let refused = remove_exclusion(&server, &exclusion).await;
+    assert_eq!(
+        refused["errors"][0]["message"],
+        "the connection is running: wait for the run to finish"
+    );
+    let finished = RunFinish {
+        result: RunResult::Succeeded {
+            state: json!({"cursor": 42}),
+            stats: RunStats::default(),
+        },
+        log_lines: Vec::new(),
+    };
+    server
+        .internal()
+        .finish(run.run_id, &finished)
+        .await
+        .unwrap();
+    let removed = remove_exclusion(&server, &exclusion).await;
 
     assert_eq!(removed["errors"], Value::Null, "{removed}");
     assert_eq!(exclusions(&server).await, json!([]));
@@ -145,10 +174,49 @@ async fn removing_an_exclusion_lets_the_next_run_start_over_and_ingest_it(pool: 
         .await
         .unwrap();
     assert_eq!(state, json!({}), "the next run starts from scratch");
+    sqlx::query("update connections set next_run_at = now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let next = server
+        .internal()
+        .claim(run.worker_id, Duration::ZERO)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(matches!(
-        put(&run, "single", None).await,
+        put(&server.api_with_key(&next.token), "single", None).await,
         PutResponse::Created { .. }
     ));
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_put_racing_an_exclusion_of_its_document_stays_out(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let run = connection_run(&server).await;
+    let single = put(&run.api, "single", None).await.id().unwrap();
+    // Holds the document's row, so the exclusion and the PUT queue up behind it in that order.
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("select 1 from documents where id = $1 for update")
+        .bind(single)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+
+    let (excluded, raced, ()) = tokio::join!(
+        exclude(&server, single, false),
+        async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            put(&run.api, "single", None).await
+        },
+        async {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            holder.commit().await.unwrap();
+        },
+    );
+
+    assert_eq!(excluded, json!({"deleted": 1, "remembered": true}));
+    assert_eq!(raced, PutResponse::Excluded);
 }
 
 #[sqlx::test(migrations = false)]
