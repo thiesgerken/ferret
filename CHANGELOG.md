@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.6.2 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #106 from thiesgerken/connections-polish
+  ([`9c11692`](https://github.com/thiesgerken/ferret/commit/9c116926d82501c2e05f46d8d52b754a9659008a))
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): bring Connections up to the Activity page's level
+  ([`9c11692`](https://github.com/thiesgerken/ferret/commit/9c116926d82501c2e05f46d8d52b754a9659008a))
+
+- 💄 style(frontend): bring Connections up to the Activity page's level
+  ([`007a2e3`](https://github.com/thiesgerken/ferret/commit/007a2e318f9344579fdf5d0b076c2c6d5b1e16b3))
+
+  Connection cards lead with the writer's icon and name, show the last run, its changes, the next run and the run history with the same pieces as Activity (shared in run-status.tsx), and link to the connection's feed on Activity instead of repeating its logs. Activity's writer filter moves into the URL (?writer=<id>) for that link.
+
+  The create and edit forms are split into sections with help text, schedule presets, and the plugin's config fields with their descriptions' code spans.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.6.1 (2026-10-17)
 
 

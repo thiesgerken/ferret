@@ -972,7 +972,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferret-api"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "chrono",
  "reqwest",
@@ -983,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-plugins"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-server"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "argon2",
  "axum",
