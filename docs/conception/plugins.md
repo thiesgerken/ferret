@@ -233,7 +233,8 @@ refetch (a new `UIDVALIDITY`, new indexing settings) diffs a mail again against 
 is then, so a reply first indexed whole can come back stripped. Accepted, it's a heuristic. Leftover duplicates are caught at search time by collapsing hits
 per thread ([README](README.md#search)).
 
-Tests run against the Dovecot of `docker-compose.yml` (and CI) with the fixture mails in
+Tests run against the Dovecot of `docker-compose.yml` (scaled to 0 by default, started with
+`docker compose up -d --scale dovecot=1 dovecot`) and CI with the fixture mails in
 `crates/ferret-plugins/fixtures/imap`, never against a real mailbox.
 
 **Wishlist**: attachment text (PDFs, Office documents).

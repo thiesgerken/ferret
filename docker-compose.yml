@@ -70,11 +70,14 @@ services:
       timeout: 3s
       retries: 20
 
-  # A throwaway mailbox for the IMAP plugin's tests (see .cargo/config.toml), and for trying the
-  # plugin by hand: server `dovecot:31143` without TLS, any user name, password `pass`. Mails live
-  # only in the container.
+  # Only for testing the IMAP plugin: a throwaway mailbox for its tests (see .cargo/config.toml),
+  # and for trying the plugin by hand with server `dovecot:31143` without TLS, any user name,
+  # password `pass`. Mails live only in the container. Scaled to 0 so a plain `docker compose up`
+  # leaves it out, start it with `--scale dovecot=1`.
   dovecot:
     image: dovecot/dovecot:2.4.5@sha256:43c14def08a57f25107593cbcf64a0a6fbae84a7b9de7aa038513c9b21e91914
+    deploy:
+      replicas: 0
     environment:
       USER_PASSWORD: "{PLAIN}pass"
     ports:
