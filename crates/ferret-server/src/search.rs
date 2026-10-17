@@ -22,7 +22,10 @@ const DEFAULT_K: u32 = 10;
 const MAX_K: u32 = 100;
 // ponytail: hits are fused from the best chunks of each half only. A document whose best chunk
 // ranks below these limits in both halves can't be a hit, which matters only when k approaches
-// them. The vector half is smaller, HNSW gets slower with every extra neighbour.
+// them. The vector half is smaller, HNSW gets slower with every extra neighbour. Titles are on
+// every chunk, so a common title word matches all chunks of long documents and can fill the
+// keyword candidates (BM25's document frequency counts those chunks, too). #21's evaluation
+// shows whether that bites.
 const KEYWORD_CANDIDATES: i64 = 1000;
 const SEMANTIC_CANDIDATES: i64 = 100;
 

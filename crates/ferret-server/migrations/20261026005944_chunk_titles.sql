@@ -19,10 +19,13 @@ create index chunks_bm25 on chunks using paradedb (
     document_id
 );
 
--- A changed title re-embeds the document's chunks, so it wakes the pump like new chunks do.
+-- Title changes re-embed, so updates that set the title wake the pump too.
+-- The embedding cache's text_hash covers the whole embedded input from now on: prefix, title and
+-- text.
 drop trigger chunks_pending on chunks;
 create trigger chunks_pending after insert or update of title on chunks
     for each statement execute function notify_chunks_pending();
 
--- Embedded without their title.
+-- Embedded, or rejected, without their title.
 delete from chunk_embeddings e using chunks c where c.id = e.chunk_id and c.title is not null;
+delete from embedding_failures f using chunks c where c.id = f.chunk_id and c.title is not null;

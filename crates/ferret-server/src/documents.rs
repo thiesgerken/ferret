@@ -270,10 +270,19 @@ async fn sync_chunks(
     sqlx::query!("delete from chunks where id = any($1)", &stale)
         .execute(&mut *tx)
         .await?;
-    // The title is part of the embedded input.
+    // The title is part of the embedded input: a new title is a new input, embedded or rejected
+    // afresh.
     sqlx::query!(
         "delete from chunk_embeddings e using chunks c
          where c.id = e.chunk_id and c.id = any($1) and c.title is distinct from $2",
+        &kept_ids,
+        document.title,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        "delete from embedding_failures f using chunks c
+         where c.id = f.chunk_id and c.id = any($1) and c.title is distinct from $2",
         &kept_ids,
         document.title,
     )

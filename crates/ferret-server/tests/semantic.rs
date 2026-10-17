@@ -172,14 +172,15 @@ async fn filtered_semantic_searches_still_return_k_hits(pool: PgPool) {
 #[sqlx::test(migrations = false)]
 async fn a_model_shorter_than_the_longest_chunk_stops_the_server(pool: PgPool) {
     ferret_server::migrate(&pool).await.unwrap();
-    let tei = FakeTei::start(1999).await;
+    // Takes every chunk, but not with a title in front.
+    let tei = FakeTei::start(2201).await;
 
     let error = ferret_server::embeddings::prepare(&pool, embedding_config(model(MODEL, &tei)))
         .await
         .err()
         .unwrap();
 
-    assert!(error.to_string().contains("1999 tokens"), "{error}");
+    assert!(error.to_string().contains("2201 tokens"), "{error}");
 }
 
 #[sqlx::test(migrations = false)]
@@ -344,4 +345,46 @@ async fn the_title_is_embedded_with_every_chunk_and_a_new_title_re_embeds(pool: 
         .await
         .unwrap();
     assert_eq!(rechunked, chunk, "a new title keeps the chunk");
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_chunk_rejected_for_its_title_gets_another_chance_with_a_new_one(pool: PgPool) {
+    let server = start_semantic_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let mut note = document("notes", "note", "Broke down on the highway.");
+    note.title = Some(format!("An {UNEMBEDDABLE} title"));
+    api.put_document(&note).await.unwrap();
+    let failures = async || -> i64 {
+        sqlx::query_scalar("select count(*) from embedding_failures")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    eventually("a recorded failure", async || {
+        (failures().await == 1).then_some(())
+    })
+    .await;
+
+    note.title = Some("My car".to_owned());
+    api.put_document(&note).await.unwrap();
+    server.wait_for_embeddings(1).await;
+
+    assert_eq!(failures().await, 0);
+}
+
+#[sqlx::test(migrations = false)]
+async fn long_titles_are_capped_in_the_embedded_input(pool: PgPool) {
+    let server = start_semantic_server(pool).await;
+    let api = server.admin_api().await;
+    let mut note = document("notes", "note", "Broke down on the highway.");
+    let title = "abcd ".repeat(100);
+    note.title = Some(title.clone());
+    api.put_document(&note).await.unwrap();
+    server.wait_for_embeddings(1).await;
+
+    let capped = format!(
+        "{DOCUMENT_PREFIX}{}\n\nBroke down on the highway.",
+        &title[..200]
+    );
+    assert!(server.tei.embedded().contains(&capped));
 }

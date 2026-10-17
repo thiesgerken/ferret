@@ -225,7 +225,7 @@ context.
 The document's title belongs to every chunk: Paperless titles, mail subjects and note headings
 often carry the most specific words, which the chunk's text may lack. A query word may match the
 title instead of the text (see Search), and the embedding model gets `{title}\n\n{text}` (after the
-model's prefix) as input. The stored chunk text stays the text alone, so offsets and snippets
+model's prefix, the title capped at 200 characters) as input. The stored chunk text stays the text alone, so offsets and snippets
 don't change.
 
 ## Search

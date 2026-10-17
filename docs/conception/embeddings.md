@@ -46,11 +46,12 @@ at most 40 characters, and no two names may differ only in `.`, `_` and `-`.
   Queries are unaffected either way. One Service over CPU and GPU pods doesn't work: HTTP keep-alive
   pins connections to pods, so the split would be random.
 
-- **A model whose `max_input_length` is below the chunker's cap is rejected** and the server
-  refuses to start. TEI would otherwise truncate chunks silently. The cap counts characters (2000)
-  and `max_input_length` tokens. The check compares them one to one: Latin text never takes more
-  than one token per character, so a model that accepts 2000 tokens takes every chunk. The title
-  comes on top: a chunk whose title pushes it over the limit lands in `embedding_failures`.
+- **A model whose `max_input_length` is below the longest embedded input is rejected** and the
+  server refuses to start. TEI would otherwise truncate chunks silently. The embedded input is the
+  title, capped at 200 characters, a blank line and the chunk (at most 2000 characters), so 2202
+  characters at most. The check compares them one to one with `max_input_length` tokens: Latin
+  text never takes more than one token per character, so a model that accepts 2202 tokens takes
+  every input.
 - **Adding a model**: the server creates its partial HNSW index and the pump starts backfilling it.
 - **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
@@ -79,7 +80,8 @@ create index chunk_embeddings_hnsw_qwen3_embedding_0_6b on chunk_embeddings
 
 `embedding_cache (text_hash, model)` stays: it saves compute when the same text appears in another
 chunk, another document or another user's data, and when chunks are re-created after re-chunking.
-Query embeddings go through the same cache.
+`text_hash` is the SHA-256 of the whole embedded input: prefix, capped title and chunk text (for
+queries: prefix and query). Query embeddings go through the same cache.
 
 Search embeds the query with the requested model and searches only that model's index, so vectors
 of different models are never compared.
@@ -101,8 +103,8 @@ storage simple. The consequences:
 The queue is "chunks without an embedding for model X":
 
 ```sql
-select id, text from (
-    select c.id, c.text from chunks c
+select id, text, title from (
+    select c.id, c.text, c.title from chunks c
     where not exists (
         select 1 from chunk_embeddings e where e.chunk_id = c.id and e.model = $1
     )
@@ -128,7 +130,8 @@ limit 32;  -- TEI's max_client_batch_size
   shows as an error and a growing backlog.
 - TEI rejecting a batch (4xx) makes the pump retry its texts one by one. Texts TEI rejects alone
   (more tokens than characters, e.g. emoji or CJK) land in `embedding_failures` (chunk, model,
-  error) and leave the queue. A changed text is a new chunk, so it gets another chance.
+  error) and leave the queue. A changed text is a new chunk and a changed title deletes the
+  failure, so either gets another chance.
 - Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
   The final insert locks the chunks `for share` and skips those deleted meanwhile.
 - Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
