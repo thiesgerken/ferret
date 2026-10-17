@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.6.3 (2026-10-17)
+
+
+### Other
+
+
+- Merge pull request #107 from thiesgerken/fix/httproute-defaults
+  ([`cdd213e`](https://github.com/thiesgerken/ferret/commit/cdd213e959076d6950a5ea1888f66efc05875931))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(chart): spell out HTTPRoute backendRef defaults so GitOps stays in sync
+  ([`cdd213e`](https://github.com/thiesgerken/ferret/commit/cdd213e959076d6950a5ea1888f66efc05875931))
+
+- 🐛 fix(chart): spell out HTTPRoute backendRef defaults so GitOps stays in sync
+  ([`cc21370`](https://github.com/thiesgerken/ferret/commit/cc213701873e2cebfd889fa042b806d867c46321))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Rb9qF1yxAv3fNUpxRXCieL
+
 ## v0.6.2 (2026-10-17)
 
 
