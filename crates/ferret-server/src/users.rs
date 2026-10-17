@@ -139,36 +139,63 @@ pub async fn set_password(
     id: Uuid,
     password: String,
 ) -> Result<Option<i32>, UserError> {
+    store_password(pool, id, password, None).await
+}
+
+pub enum OwnPasswordChange {
+    Changed {
+        token_version: i32,
+    },
+    WrongPassword,
+    /// Another password change (or an admin's) ended the session while this one hashed.
+    SessionEnded,
+}
+
+/// Changes `id`'s own password once `current` matches, as long as the user's token version is
+/// still `session_version`. The check costs a hash either way, like a login.
+pub async fn change_own_password(
+    pool: &PgPool,
+    id: Uuid,
+    session_version: i32,
+    current: String,
+    new: String,
+) -> Result<OwnPasswordChange, UserError> {
+    let stored_hash = sqlx::query_scalar!("select password_hash from users where id = $1", id)
+        .fetch_one(pool)
+        .await?;
+    if !password_matches(current, Some(stored_hash)).await {
+        return Ok(OwnPasswordChange::WrongPassword);
+    }
+    Ok(
+        match store_password(pool, id, new, Some(session_version)).await? {
+            Some(token_version) => OwnPasswordChange::Changed { token_version },
+            None => OwnPasswordChange::SessionEnded,
+        },
+    )
+}
+
+/// Stores a new password and bumps the token version, only from `expected_version` if given, so
+/// two changes can't silently overwrite each other. The new version, `None` if nothing changed.
+async fn store_password(
+    pool: &PgPool,
+    id: Uuid,
+    password: String,
+    expected_version: Option<i32>,
+) -> Result<Option<i32>, UserError> {
     check_password(&password)?;
     let password_hash = hash_password(password).await;
     let version = sqlx::query_scalar!(
         "update users
          set password_hash = $2, token_version = token_version + 1, password_changed_at = now()
-         where id = $1
+         where id = $1 and ($3::int is null or token_version = $3)
          returning token_version",
         id,
         password_hash,
+        expected_version,
     )
     .fetch_optional(pool)
     .await?;
     Ok(version)
-}
-
-/// Changes `id`'s own password once `current` matches. Returns the new token version, `None` if
-/// `current` is wrong. The check costs a hash either way, like a login.
-pub async fn change_own_password(
-    pool: &PgPool,
-    id: Uuid,
-    current: String,
-    new: String,
-) -> Result<Option<i32>, UserError> {
-    let stored_hash = sqlx::query_scalar!("select password_hash from users where id = $1", id)
-        .fetch_one(pool)
-        .await?;
-    if !password_matches(current, Some(stored_hash)).await {
-        return Ok(None);
-    }
-    set_password(pool, id, new).await
 }
 
 /// Changes a user's name, admin role and whether they can sign in. Refuses to leave no enabled

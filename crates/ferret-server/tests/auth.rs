@@ -258,3 +258,34 @@ async fn changing_a_password_needs_a_session(pool: PgPool) {
 
     assert_eq!(response.status(), 401);
 }
+
+/// Both pass the session and password checks, but only one may store its password: the other's
+/// session ended with the first change.
+#[sqlx::test(migrations = false)]
+async fn concurrent_password_changes_dont_overwrite_each_other(pool: PgPool) {
+    let server = start_server(pool).await;
+    let cookie = server.sign_in().await;
+    let change = |new: &'static str| {
+        server
+            .request(Method::POST, "/auth/password")
+            .header(header::COOKIE, &cookie)
+            .json(&json!({"current_password": ADMIN_PASSWORD, "new_password": new}))
+            .send()
+    };
+
+    let (first, second) = tokio::join!(
+        change("the first new password"),
+        change("the second new password")
+    );
+    let (first, second) = (first.unwrap(), second.unwrap());
+
+    let mut statuses = [first.status().as_u16(), second.status().as_u16()];
+    statuses.sort_unstable();
+    assert_eq!(statuses[0], 204, "{statuses:?}");
+    assert!(matches!(statuses[1], 401 | 403), "{statuses:?}");
+    let winner = if first.status() == 204 { first } else { second };
+    assert_eq!(
+        server.me(&common::session_cookie(&winner)).await.status(),
+        200
+    );
+}

@@ -1,3 +1,5 @@
+import { SESSION_ENDED_EVENT } from "@/lib/graphql";
+
 export async function login(username: string, password: string): Promise<void> {
   const res = await fetch("/auth/login", {
     method: "POST",
@@ -24,6 +26,9 @@ export async function changePassword(currentPassword: string, newPassword: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
+  if (res.status === 401) {
+    window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+  }
   if (!res.ok) {
     throw new Error(await errorMessage(res, "Changing the password failed"));
   }

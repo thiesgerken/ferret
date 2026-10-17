@@ -14,12 +14,14 @@ identity provider (e.g. Keycloak) later:
 
 All state lives in ferret's Postgres. The server itself is stateless.
 
-The path decides the credential, each API accepts exactly one kind:
+The path decides the credential, each API accepts exactly one kind (`/auth/password` is the
+exception, it needs the session cookie and the current password):
 
 | API | Credential |
 |---|---|
 | GraphQL `/graphql` (UI) | session cookie |
-| `/auth/...` (login, logout, password) | username and password, exchanged for the session cookie; logout and password change read the cookie |
+| `/auth/...` (login, logout) | username and password, exchanged for the session cookie; logout reads the cookie to end its session |
+| `/auth/password` | session cookie plus the current password |
 | REST `/api/...` | API key or plugin run token, as bearer |
 | REST `/internal/...` (own port) | worker PSK, as bearer |
 
@@ -97,7 +99,9 @@ Same flow as carapace:
    The new one follows the 12-character policy (`400` otherwise). A wrong current password gets
    `403 {"error": "the current password is wrong"}` after a full hash check, like a login. The
    `token_version` bump ends every other session, and the `204` re-issues this session's cookie
-   under the new version with its expiry unchanged, so the browser stays signed in.
+   under the new version with its expiry unchanged, so the browser stays signed in. The change only
+   applies if no other change bumped the version meanwhile (`401` otherwise). API keys and run
+   tokens stay valid: they don't depend on the password.
 
 **CSRF**: `/graphql` takes `POST` only, and `/graphql`, `/auth/login` and `/auth/password` accept
 only `Content-Type: application/json` (anything else is a `415`). Cross-site HTML forms can't send

@@ -191,9 +191,10 @@ pub async fn change_password(
         .await?
         .ok_or_else(not_signed_in)?;
     let Json(change) = change?;
-    let version = users::change_own_password(
+    let changed = users::change_own_password(
         &state.pool,
         user.id,
+        claims.ver,
         change.current_password,
         change.new_password,
     )
@@ -201,8 +202,14 @@ pub async fn change_password(
     .map_err(|error| match error {
         users::UserError::Invalid(message) => ApiError::bad_request(&message),
         users::UserError::Database(error) => error.into(),
-    })?
-    .ok_or_else(|| ApiError::forbidden("the current password is wrong"))?;
+    })?;
+    let version = match changed {
+        users::OwnPasswordChange::Changed { token_version } => token_version,
+        users::OwnPasswordChange::WrongPassword => {
+            return Err(ApiError::forbidden("the current password is wrong"));
+        }
+        users::OwnPasswordChange::SessionEnded => return Err(not_signed_in()),
+    };
     let now = unix_now();
     let remaining = Duration::from_secs(claims.exp.saturating_sub(now));
     let token = state.session_key.sign(&Claims {

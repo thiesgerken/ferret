@@ -7,6 +7,7 @@ import { fieldClass } from "@/lib/utils";
 export function AccountSettings() {
   const [error, setError] = useState("");
   const [changed, setChanged] = useState(false);
+  const [pending, setPending] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -18,6 +19,7 @@ export function AccountSettings() {
       setError("The new passwords don't match.");
       return;
     }
+    setPending(true);
     try {
       await changePassword(String(form.get("current")), String(form.get("new")));
       setError("");
@@ -25,6 +27,8 @@ export function AccountSettings() {
       formElement.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(false);
     }
   }
 
@@ -45,7 +49,8 @@ export function AccountSettings() {
       )}
       <button
         type="submit"
-        className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
+        disabled={pending}
+        className="rounded-lg disabled:opacity-60 bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
       >
         Change password
       </button>
