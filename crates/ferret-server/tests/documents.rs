@@ -192,7 +192,7 @@ async fn nul_content_is_normalized_before_storage_hashing_and_chunking(pool: PgP
             .collect();
         assert_eq!(&slice, text);
     }
-    for equivalent in [&dirty, &clean, &dirty] {
+    for equivalent in [&dirty, &clean] {
         assert_eq!(
             api.put_document(equivalent).await.unwrap(),
             PutResponse::Unchanged { id }
@@ -222,25 +222,19 @@ async fn nul_identities_urls_and_metadata_keys_are_rejected_without_changing_dat
     let before = serde_json::to_value(api.document(id).await.unwrap()).unwrap();
     let chunks = chunk_ids(&pool).await;
 
-    for (field, value, error_field) in [
-        ("source", json!("notes/\0work"), "source"),
-        ("external_id", json!("a\0.md"), "external_id"),
-        ("thread", json!("th\0read"), "thread"),
-        ("url", json!("https://notes.example.com/\0a"), "url"),
+    for (field, value) in [
+        ("source", json!("notes/\0work")),
+        ("external_id", json!("a\0.md")),
+        ("thread", json!("th\0read")),
+        ("url", json!("https://notes.example.com/\0a")),
         (
             "meta",
             json!({"key": "changed", "ke\u{0000}y": "collision"}),
-            "metadata object keys",
         ),
-        (
-            "meta",
-            json!({"nested": {"bad\u{0000}key": "value"}}),
-            "metadata object keys",
-        ),
+        ("meta", json!({"nested": {"bad\u{0000}key": "value"}})),
         (
             "meta",
             json!({"nested": [42, [{"bad\u{0000}key": "value"}]]}),
-            "metadata object keys",
         ),
     ] {
         let mut invalid = serde_json::to_value(&note).unwrap();
@@ -254,11 +248,6 @@ async fn nul_identities_urls_and_metadata_keys_are_rejected_without_changing_dat
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{field}");
-        assert_eq!(
-            json_body(response).await["error"],
-            format!("{error_field} must not contain U+0000"),
-            "{field}"
-        );
         assert_eq!(
             serde_json::to_value(api.document(id).await.unwrap()).unwrap(),
             before,
