@@ -1,6 +1,50 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #143 from thiesgerken/feat/vikunja-plugin
+  ([`a611b08`](https://github.com/thiesgerken/ferret/commit/a611b0890f373a00d6c72856c5724317e10e0cc3))
+
+- ✨ feat(plugins): add Vikunja task indexing
+  ([`a611b08`](https://github.com/thiesgerken/ferret/commit/a611b0890f373a00d6c72856c5724317e10e0cc3))
+
+### Other
+
+
+- 🔀 merge(plugins): merge main into Vikunja plugin branch
+  ([`3db99f9`](https://github.com/thiesgerken/ferret/commit/3db99f93d0941c3b624bec5b89bf160d01bdb779))
+
+- Merge pull request #146 from thiesgerken/docs-model-registry
+  ([`c250462`](https://github.com/thiesgerken/ferret/commit/c250462b9290ac57e37043dfe3440f35db009c0e))
+
+  📝 docs: the model registry and deleting stored embeddings in the user and operator docs
+
+- 🔀 Merge main into docs-model-registry, the registry docs on top of the endpoint rework
+  ([`fb60e01`](https://github.com/thiesgerken/ferret/commit/fb60e019f3bf4dcd4be7e543c358e0c02e4ec475))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs(agents): list the user and operator docs under "Read before working on a feature"
+  ([`157a15e`](https://github.com/thiesgerken/ferret/commit/157a15efd04643528173b32448df94947e84e431))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- 📝 docs: the model registry and deleting stored embeddings in the user and operator docs
+  ([`37a346e`](https://github.com/thiesgerken/ferret/commit/37a346ef2d547762155f7153cafc41983eb610e8))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.17.0 (2026-10-18)
 
 
@@ -41,6 +85,9 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(plugins): add Vikunja task indexing
+  ([`3bcca1e`](https://github.com/thiesgerken/ferret/commit/3bcca1ed2a57ea4bda2b577e32e49c477c4365f2))
 
 ### Other
 
@@ -101,6 +148,9 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+- ✅ test(frontend): remove relative-time wording assertion
+  ([`d15631d`](https://github.com/thiesgerken/ferret/commit/d15631d3ae843ccdcbc2616e9f37acc54958063f))
 
 ### 👷 CI/Build
 
