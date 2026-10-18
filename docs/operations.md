@@ -34,12 +34,12 @@ Removing a remembered exclusion requires no live run and resets state for a full
 ## Search and embedding failures
 
 - No hits: try keyword mode with a known ingested phrase, clear time/author/source filters, inspect exclusions and the latest plugin run. Empty-text documents have no chunks. Thread collapse can hide additional matching messages; the viewer navigates the thread.
-- Hybrid warns `semantic_unavailable`: keyword results remain usable; check TEI query eligibility, network, discovery status and inference latency. Semantic-only returns 503 rather than pretending to search by meaning.
-- Pending backlog does not move: check an enabled embedding-eligible TEI serves that model, server/database connectivity and pump errors. A query-enabled endpoint is not necessarily embedding-enabled, and vice versa.
-- All chunks embedded but uncached queries fail: query serving is a separate eligibility/latency path; external TEIs start with queries off. Inspect Admin switches/errors instead of re-ingesting everything.
-- Rejected chunks: inspect the actual TEI error and model/input configuration. Rejected per-chunk/model inputs are excluded from retries; there is no public mass-retry endpoint. Text/title changes create/invalidate eligible work, but do not edit user text merely to suppress an infrastructure error.
+- Hybrid warns `semantic_unavailable`: keyword results remain usable; check the model's query endpoint in Admin (reachable, last error), its network path, token and latency. Semantic-only returns 503 rather than pretending to search by meaning.
+- Pending backlog does not move: check the model's embedding endpoint in Admin. A failing endpoint is retried with a growing pause (up to a minute), a rate-limited one after its `Retry-After`. Answers that fail ferret's checks (dimension, vector count, non-finite or zero vectors) are discarded and show as the last error.
+- All chunks embedded but uncached queries fail: queries may go to a different endpoint (`query_api`) than chunks. Inspect its status in Admin instead of re-ingesting everything.
+- Rejected chunks: inspect the endpoint's actual error and model/input configuration. Rejected per-chunk/model inputs are excluded from retries; there is no public mass-retry endpoint. Text/title changes create/invalidate eligible work, but do not edit user text merely to suppress an infrastructure error.
 
-Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model name or delete embedding tables as a casual repair. TEI caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
+Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model name or delete embedding tables as a casual repair. Endpoint caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
 
 ## Upgrades and migrations
 
@@ -59,7 +59,7 @@ Secret changes need distinct procedures: session-secret invalidates sessions/run
 
 Back up:
 
-- The full Postgres database, including users, sessions, keys, connection credentials/cursors/runs, documents/chunks/vectors/cache, exclusions, judgments and TEI switches. Search results are not an export or backup.
+- The full Postgres database, including users, sessions, keys, connection credentials/cursors/runs, documents/chunks/vectors/cache, exclusions and judgments. Search results are not an export or backup.
 - Deployment values/server configuration and exact application/database image versions.
 - The required runtime secrets through your secret manager, particularly **config-key in a separately protected backup**. A database dump without it cannot recover stored origin credentials.
 

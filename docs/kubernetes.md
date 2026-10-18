@@ -8,9 +8,9 @@ You need Helm, kubectl access to your target cluster, Gateway API CRDs/controlle
 
 Choose a ReadWriteOnce StorageClass for the single-instance ParadeDB PVC and establish a database-consistent backup policy with your infrastructure tooling. The chart is not an HA Postgres operator. Its database Deployment uses Recreate because two Postgres processes must never open one data directory. A multi-replica server does not make the database highly available.
 
-Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/TEI/egress isolation policy; add your cluster's controls as required. Never put private port 8081 behind the Gateway.
+Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint/egress isolation policy; add your cluster's controls as required. Never put private port 8081 behind the Gateway.
 
-Check node architecture and capacity for TEI. The internal chart Deployment hard-codes an `amd64` node selector, so changing only its image tag does not support ARM-only clusters. On ARM-only infrastructure, disable internal TEIs and deploy native ARM TEIs separately, then list them in `externalTeis` and enable query use in Admin. First start downloads weights; plan model cache ephemeral storage/memory as well as database capacity. See [embeddings](embeddings.md).
+Decide where embeddings come from before installing: every configured model needs an OpenAI-compatible endpoint the server pods can reach (a TEI, a proxy such as LiteLLM, or a cloud API), and the chart refuses to render without one. The chart's optional `bundledTei` deploys one CPU TEI for one model; it hard-codes an `amd64` node selector, so ARM-only clusters run a native ARM TEI themselves and name it as the endpoint. A TEI's first start downloads weights; plan its cache storage and memory as well as database capacity. See [embeddings](embeddings.md).
 
 ## Choose secret management
 
@@ -48,7 +48,19 @@ ingress:
 postgres:
   persistence:
     storageClassName: your-rwo-storage-class
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
+      minSimilarity: 0.42
+      embeddingApi:
+        url: http://tei-qwen3.ai.svc:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
 ```
+
+For a first try without an embeddings service of your own, replace the model's `embeddingApi` with `bundledTei: true` and set `bundledTei.enabled: true`.
 
 From the repository root:
 
@@ -73,16 +85,9 @@ kubectl -n ferret get secret ferret-runtime \
 
 Open your HTTPS hostname and sign in as admin. Create a limited ordinary user if appropriate and a first [connection](connections.md). Inspect Activity and search a known origin title. A ready server confirms database reachability, not model download or a successful origin sync.
 
-## External TEI and scaling
+## Embedding capacity and scaling
 
-Keep default internal TEIs for query availability and add backfill capacity:
-
-```yaml
-externalTeis:
-  - http://192.168.1.20:8080
-```
-
-The URL must be reachable from the **server pods**. External entries start with queries off. Toggle query/embedding use in Admin after verifying the served model and dimension. If you set `tei.internal.enabled: false`, external endpoints must cover all configured models, and you must explicitly enable query use for them in Admin. Otherwise uncached semantic queries are unavailable even if embeddings exist. GPU TEI deployment/device scheduling is your responsibility; there is no current `tei.gpu`/per-model bulkUrl setting.
+Ferret sends a model's work to its endpoints and leaves capacity to them. For a big backfill, put a faster endpoint (a GPU TEI, a laptop's GPU in the LAN) behind the model's `embeddingApi` and keep `queryApi` on an always-on one, or let a proxy such as LiteLLM balance several TEIs under one model name. `concurrency` raises how many requests each server replica sends at once. The URLs must be reachable from the **server pods**, and an endpoint's token comes from an existing Secret (`tokenSecret`). GPU deployment and device scheduling are your responsibility.
 
 Server and worker replicas coordinate using Postgres claims/locks/notifications. Workers each process their claimed runs; extra replicas provide more simultaneous connections, not multiple simultaneous runs of one connection. Keep secrets/config and images aligned across replicas.
 
@@ -94,6 +99,6 @@ kubectl -n ferret logs deployment/ferret-plugins --since=10m
 kubectl -n ferret get events --sort-by=.lastTimestamp
 ```
 
-A Pending database pod usually needs PVC/scheduling investigation. A loaded frontend with failing API calls needs routing/server checks. TEI offline/unsuitable states need model/network/input-budget investigation. Use [operations](operations.md) for failure procedures, upgrades and backup/restore. Do not delete the kept PVC or Secret to “fix” an install: that crosses a data-loss boundary.
+A Pending database pod usually needs PVC/scheduling investigation. A loaded frontend with failing API calls needs routing/server checks. An unreachable endpoint or one whose answers fail ferret's checks shows its last error in Admin; investigate network, token, model name and dimension. Use [operations](operations.md) for failure procedures, upgrades and backup/restore. Do not delete the kept PVC or Secret to “fix” an install: that crosses a data-loss boundary.
 
 Implementation: [chart templates](../charts/ferret/templates/), [HTTPRoute](../charts/ferret/templates/httproute.yaml), [NetworkPolicy](../charts/ferret/templates/networkpolicy.yaml), [database persistence](../charts/ferret/templates/postgres.yaml), [configuration](configuration.md).

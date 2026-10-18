@@ -91,7 +91,8 @@ evaluation follows after v1, #21).
 _Avoid_: test set, benchmark
 
 **Embedding model**:
-A model that turns text into vectors for semantic search. Several can be live at once.
+A model that turns text into vectors for semantic search. Several can be live at once. Its `id`
+in the config is stored with every embedding, so it stands for one set of weights and prefixes.
 _Avoid_: encoder, model (unqualified)
 
 **Default model**:
@@ -101,11 +102,13 @@ _Avoid_: active model, primary model
 **Configured default**:
 The model the config names as `embedding.default`, used by every user who chose no default model.
 
-**TEI**:
-A text-embeddings-inference server that computes embeddings for one embedding model at a time.
-_Avoid_: embedder, embedding server
+**Embeddings endpoint**:
+The OpenAI-compatible endpoint an embedding model's embeddings come from, configured per model:
+one for chunks (`embedding_api`) and one for queries (`query_api`), often the same. A TEI, a proxy
+like LiteLLM or a cloud API. ferret doesn't manage it.
+_Avoid_: embedder, embedding server, TEI pool
 
-**TEI pool**:
-The TEIs ferret embeds with. Each works for whichever configured embedding model it serves,
-which the server discovers. An external TEI is one outside the deployment, e.g. a laptop's GPU.
-_Avoid_: bulk TEI, GPU TEI (as a role)
+**TEI**:
+A text-embeddings-inference server, one kind of embeddings endpoint. It computes embeddings for
+one model at a time.
+_Avoid_: embedder, embedding server
