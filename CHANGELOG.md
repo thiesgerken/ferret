@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.21.1 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #155 from thiesgerken/fix/nul-document-ingestion
+  ([`0f5ec9c`](https://github.com/thiesgerken/ferret/commit/0f5ec9c4c965dc94c7726e9afbff3e90f42ad994))
+
+- ✅ test(server): keep NUL ingestion assertions behavioral
+  ([`ec99766`](https://github.com/thiesgerken/ferret/commit/ec99766b4b7d22853d5f55db33eec6f2f45545e2))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): normalize NUL bytes during document ingestion
+  ([`0f5ec9c`](https://github.com/thiesgerken/ferret/commit/0f5ec9c4c965dc94c7726e9afbff3e90f42ad994))
+
+- 🐛 fix(server): normalize NUL bytes during document ingestion
+  ([`6ba1742`](https://github.com/thiesgerken/ferret/commit/6ba1742a634b776cdbc6d37fb44bd5c761caa90f))
+
 ## v0.21.0 (2026-10-18)
 
 
