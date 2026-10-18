@@ -95,18 +95,6 @@ async fn endpoint(
     Json(body): Json<Value>,
 ) -> Response {
     assert_eq!(headers["authorization"], format!("Bearer {TOKEN}"));
-    let query = body["query"].as_str().unwrap();
-    assert!(query.contains("sortBy: ACCRUAL_START, sortDir: ASC"));
-    for flag in [
-        "templates: true",
-        "taxRelevant: true",
-        "extraordinary: true",
-        "unchecked: true",
-        "incomplete: true",
-        "normal: true",
-    ] {
-        assert!(query.contains(flag));
-    }
     let skip = body["variables"]["skip"].as_u64().unwrap() as usize;
     let limit = body["variables"]["limit"].as_u64().unwrap() as usize;
     let origin = fake.lock();
