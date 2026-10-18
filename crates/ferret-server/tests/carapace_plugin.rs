@@ -244,18 +244,12 @@ async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(po
     );
     assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
 
-    // Repaired, and the trip's session deleted: what that file held goes with it, found in its
-    // version at the last indexed commit. The repaired file is as indexed then, so not in the diff.
     std::fs::write(&talos, &without_anna).unwrap();
     std::fs::remove_file(repo.path().join(TRIP)).unwrap();
     commit(repo.path(), "repair, forget the trip");
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
-    assert_eq!(
-        latest_run(&server, &cookie).await["stats"],
-        json!({"put": 0, "unchanged": 0, "deleted": 2})
-    );
     let documents = documents_per_source(&pool).await;
     assert_eq!(
         (documents["carapace/sessions"], documents["carapace/facts"]),

@@ -26,7 +26,7 @@ stateDiagram-v2
     Failed --> Due: next scheduled slot or Run now
 ```
 
-Only one live run of a connection is claimed at a time. Workers heartbeat their lease; an expired run fails and its run token stops authorizing writes. A successful finish saves the plugin cursor for the next run. A failed run may already have written documents: runs are not one transaction over the origin. Plugins commit a sweep only after a successful enumeration, preserving documents when enumeration fails.
+Only one live run of a connection is claimed at a time. Workers heartbeat their lease; an expired run fails and its run token stops authorizing writes. A successful finish saves the plugin cursor for the next run. A failed run may already have written documents: runs are not one transaction over the origin. After a failed or lost run, the next claim receives empty working state so the plugin fully reconciles potentially partial writes. The stored successful cursor remains unchanged until another run succeeds. Plugins commit a sweep only after a successful enumeration, preserving documents when enumeration fails.
 
 ## Activity and troubleshooting
 

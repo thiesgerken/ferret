@@ -765,3 +765,94 @@ async fn team_review_requests_are_ignored_but_submitted_reviews_require_an_autho
     );
     assert_eq!(retained[1].authors, ["reviewer"]);
 }
+
+#[sqlx::test(migrations = false)]
+async fn recovery_reconciles_files_overwritten_by_a_failed_run_then_reverted(pool: PgPool) {
+    let files = tempfile::tempdir().unwrap();
+    let checkout = tempfile::tempdir().unwrap();
+    git(checkout.path(), &["init", "-q", "-b", "main"]);
+    let stable = "# Cobalt stable note\n\nCobalt original content.";
+    std::fs::write(checkout.path().join("note.md"), stable).unwrap();
+    commit(checkout.path());
+    std::fs::create_dir_all(files.path().join("acme")).unwrap();
+    let bare = files.path().join("acme/notes.git");
+    git(
+        checkout.path(),
+        &["clone", "-q", "--bare", ".", bare.to_str().unwrap()],
+    );
+    git(&bare, &["update-server-info"]);
+    let (url, data) = serve(files.path()).await;
+    {
+        let mut data = data.lock();
+        add_repository(&mut data, repository(1, "acme/notes", &url, false));
+    }
+    let server = start_server(pool.clone()).await;
+    let connection = Connection::create(&server, &url, json!({})).await;
+    let result = connection.run().await;
+    assert_eq!(result["status"], "SUCCEEDED", "{result}");
+    let original = documents(&server).await.remove(0);
+    let saved_state: Value = sqlx::query_scalar("select state from connections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let transient = "# Cobalt transient note\n\nCobalt failed-run content.";
+    std::fs::write(checkout.path().join("note.md"), transient).unwrap();
+    std::fs::write(
+        checkout.path().join("transient.md"),
+        "Cobalt transient extra file.",
+    )
+    .unwrap();
+    commit(checkout.path());
+    publish(checkout.path(), &bare);
+    data.lock().failure = Some(("repos/acme/notes/issues:issues".to_owned(), 1));
+    let result = connection.run().await;
+    assert_eq!(result["status"], "FAILED", "{result}");
+    let partial = documents(&server).await;
+    assert_eq!(
+        partial
+            .iter()
+            .map(|document| (document.external_id.as_str(), document.text.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("note.md", transient),
+            ("transient.md", "Cobalt transient extra file.")
+        ],
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, Value>("select state from connections")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        saved_state,
+    );
+
+    std::fs::write(checkout.path().join("note.md"), stable).unwrap();
+    std::fs::remove_file(checkout.path().join("transient.md")).unwrap();
+    commit(checkout.path());
+    publish(checkout.path(), &bare);
+    data.lock().failure = None;
+    let result = connection.run().await;
+    assert_eq!(result["status"], "SUCCEEDED", "{result}");
+    let recovered = documents(&server).await;
+    assert_eq!(
+        recovered
+            .iter()
+            .map(|document| (document.external_id.as_str(), document.text.as_str()))
+            .collect::<Vec<_>>(),
+        [("note.md", stable)],
+    );
+    assert_eq!(recovered[0].id, original.id);
+    let recovered_state: Value = sqlx::query_scalar("select state from connections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_ne!(
+        recovered_state["repositories"]["acme/notes"]["commit"],
+        saved_state["repositories"]["acme/notes"]["commit"],
+    );
+    let result = connection.run().await;
+    assert_eq!(result["status"], "SUCCEEDED", "{result}");
+    assert_eq!(result["stats"]["put"], 0, "{result}");
+    assert_eq!(documents(&server).await[0].text, stable);
+}

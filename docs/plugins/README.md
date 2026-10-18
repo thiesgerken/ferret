@@ -9,10 +9,10 @@ A plugin is code in a worker, not code dynamically loaded into the server. Regis
 [plugins/mod.rs](../../crates/ferret-plugins/src/plugins/mod.rs) declares modules, `registrations()` and dispatch in `run()`. Each plugin provides a serde/schemars config struct and `async fn run(&Run) -> Result<Outcome, PluginError>`. `Run` contains:
 
 - an authenticated `ferret_api::Client` limited to the connection root;
-- `source`, decrypted `config`, previous successful `state` (initially `{}`);
+- `source`, decrypted `config`, reusable successful `state` (initially `{}`, also `{}` after a failed/lost run);
 - a run log and operator-fixed options (currently Git transport allowlist).
 
-`Outcome` returns JSON state and `RunStats { put, unchanged, deleted }`. The server saves state only on successful finish. Returning an error does not roll back earlier puts or deletes. Never use a new cursor until all origin pages and required writes have completed.
+`Outcome` returns JSON state and `RunStats { put, unchanged, deleted }`. The server saves state only on successful finish. Returning an error does not roll back earlier puts or deletes. After a failed/lost run, the next claim supplies `{}` instead of the stored cursor: those partial writes may no longer match it, so the plugin must fully reconcile. A subsequent successful run restores cursor reuse. Never use a new cursor until all origin pages and required writes have completed.
 
 ## A complete minimal plugin
 
@@ -99,7 +99,7 @@ All internal calls use `Authorization: Bearer <FERRET_WORKER_SECRET>` against th
 | `POST /internal/runs/{id}/heartbeat` | `{log_lines:[...]}` | 204, or 409 ended run |
 | `POST /internal/runs/{id}/finish` | succeeded/failed result plus `log_lines` | 204, or 409 ended run |
 
-Claim waits at most 60 seconds even if more is requested. Unknown worker ids return 404: register again. A claimed response includes `run_id`, `connection_id`, `plugin`, `source`, merged `config`, previous `state` and `token`. Use only `token` as bearer for public document/sync calls. Do not send the worker PSK to an origin or use it as a public key.
+Claim waits at most 60 seconds even if more is requested. Unknown worker ids return 404: register again. A claimed response includes `run_id`, `connection_id`, `plugin`, `source`, merged `config`, reusable `state` and `token`. Its state is `{}` initially or when the previous run failed/was lost; otherwise it is the previous successful state. Use only `token` as bearer for public document/sync calls. Do not send the worker PSK to an origin or use it as a public key.
 
 Successful finish body:
 

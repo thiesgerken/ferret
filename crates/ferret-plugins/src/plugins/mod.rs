@@ -61,7 +61,7 @@ pub struct Run {
     /// The connection's source root.
     pub source: String,
     pub config: Value,
-    /// The cursor the last successful run left, `{}` at first.
+    /// Reusable successful cursor, `{}` initially or after a failed/lost run.
     pub state: Value,
     pub log: Log,
     pub options: PluginOptions,

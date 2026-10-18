@@ -246,11 +246,7 @@ async fn only_a_successful_run_stores_its_state_and_a_finished_runs_token_dies(p
 
     run_now().await;
     let succeeded = claim_now(&internal, worker).await.unwrap();
-    assert_eq!(
-        succeeded.state,
-        json!({}),
-        "a failed run retries from the old cursor"
-    );
+    assert_eq!(succeeded.state, json!({}));
     internal
         .finish(succeeded.run_id, &success(json!({"cursor": "abc"})))
         .await
@@ -284,7 +280,17 @@ async fn a_run_without_heartbeat_is_lost_and_the_connection_runs_again(pool: PgP
     let internal = server.internal();
     let worker = register(&internal).await;
     connection_id(&server, "notes").await;
+    let completed = claim_now(&internal, worker).await.unwrap();
+    internal
+        .finish(completed.run_id, &success(json!({"cursor": "successful"})))
+        .await
+        .unwrap();
+    sqlx::query("update connections set next_run_at = now()")
+        .execute(&pool)
+        .await
+        .unwrap();
     let stale = claim_now(&internal, worker).await.unwrap();
+    assert_eq!(stale.state, json!({"cursor": "successful"}));
 
     for statement in [
         "update plugin_runs set heartbeat_at = now() - interval '3 minutes'",
@@ -302,6 +308,11 @@ async fn a_run_without_heartbeat_is_lost_and_the_connection_runs_again(pool: PgP
         .await
         .expect("the connection runs again");
     assert_ne!(next.run_id, stale.run_id);
+    assert_eq!(next.state, json!({}));
+    assert_eq!(
+        connection_state(&pool).await,
+        json!({"cursor": "successful"})
+    );
     let status: String = sqlx::query_scalar("select status from plugin_runs where id = $1")
         .bind(stale.run_id)
         .fetch_one(&pool)

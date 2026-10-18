@@ -55,7 +55,7 @@ One sync covers the entire connection root. Only after discovery and all selecte
 
 Reopened discussions and newly/restored accessible repositories are indexed automatically. A complete successful discovery result is authoritative; the plugin makes no extra repository-ID confirmation requests. Renames/transfers are new namespaces, not migrations: document IDs can change and content can be re-embedded. Manual exclusions and saved source filters remain attached to the old source; they are not silently moved.
 
-An error fails the run but independent repositories/categories are still attempted. Earlier puts can remain visible. No sweep is committed and no proposed cursor is saved after a discovery/read/write failure. One persistently failing repository can therefore delay removals elsewhere, including closed discussions or content whose access was revoked. The sweep itself is not a transaction with earlier puts.
+An error fails the run but independent repositories/categories are still attempted. Earlier puts can remain visible. No sweep is committed and no proposed cursor is saved after a discovery/read/write failure. The next claim after a failed/lost run receives empty working state, forcing a full file reconciliation: a file may have been overwritten by the failed run and then reverted at the origin, leaving no diff against the old successful commit. After a successful reconciliation, later runs reuse commit cursors again. One persistently failing repository can therefore delay removals elsewhere, including closed discussions or content whose access was revoked. The sweep itself is not a transaction with earlier puts.
 
 ## Verify and troubleshoot
 
