@@ -62,8 +62,8 @@ serving are that endpoint's job, ferret only measures its own work.
   endpoint must always mean the same weights, since vectors of another model would end up in this
   one's index. ferret can't detect a swap, so the deployment has to guarantee it.
 - **Dimension**: configured per model, since endpoints don't report it. The server creates the
-  model's partial HNSW index for it at startup, and refuses to start when the model's stored
-  embeddings have another one.
+  model's partial HNSW index for it at startup, and refuses to start when the
+  [model registry](#model-registry) knows the model with another one.
 - **Endpoints aren't contacted at startup**: one that is down doesn't keep the server from
   starting. An unreachable endpoint is a normal state: searches with its model answer by keyword,
   the pump backs off, and other models aren't held up.
@@ -128,6 +128,40 @@ queries: prefix and the query's words, without `"…"` quotes and `-word`s). Que
 
 Search embeds the query with the requested model and searches only that model's index, so vectors
 of different models are never compared.
+
+### Model registry
+
+A model's embeddings stay when it leaves the config, so they are reused if it comes back. The
+registry keeps track of them:
+
+```sql
+create table embedding_models (
+    id          text primary key,   -- the `model` stored with every embedding
+    dimension   integer not null,
+    first_seen  timestamptz not null default now()
+);
+```
+
+- **Every model that ever embedded** has a row, configured or not. The migration that created the
+  table seeded it from `chunk_embeddings` and `embedding_cache`, at startup the server adds every
+  configured model it doesn't know yet.
+- **The dimension is fixed.** The server refuses to start when a configured model is known with
+  another dimension: its HNSW index is built for one, and its vectors couldn't mix. Changing it
+  means removing the model from the config, deleting its embeddings and adding it again (or
+  another `id`). It equally refuses a model whose index name a stored model already has (`a.b`
+  and `a-b`).
+- **Admin → Embedding** lists every registered model: its chunk embeddings across users, the size
+  of its HNSW index (exact) and of its vectors in `chunk_embeddings` (estimated from their count,
+  the table is shared). Models that aren't configured are marked as such.
+- **Deleting** is for models that aren't configured: a configured one has to leave the config
+  first, so nothing embeds for it and no user's default is it. After a confirmation, it removes the
+  model's registry entry, its HNSW index and, through foreign keys, its chunk embeddings, cache
+  entries and failure records, in one transaction under the advisory lock that also guards index
+  creation. Documents, chunks and other models stay. If the model comes back later, the pump
+  embeds everything again.
+- **Rows need a registry entry** (foreign keys on `model` in `chunk_embeddings`, `embedding_cache`
+  and `embedding_failures`). A replica still configured for a deleted model, during a rolling
+  deploy, fails to write instead of leaving rows no entry accounts for.
 
 ## Chunking is shared
 

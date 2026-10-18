@@ -99,6 +99,10 @@ _Avoid_: encoder, model (unqualified)
 The embedding model a user's searches use unless a search asks for another one.
 _Avoid_: active model, primary model
 
+**Model registry**:
+Every embedding model that ever embedded, configured or not, with its dimension (`embedding_models`).
+Admin lists each model's stored embeddings, and deletes those of models that aren't configured.
+
 **Configured default**:
 The model the config names as `embedding.default`, used by every user who chose no default model.
 

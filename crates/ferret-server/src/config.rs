@@ -93,7 +93,7 @@ impl EmbeddingConfig {
             if model.dimension == 0 {
                 return Err(format!("embedding model {id:?}: dimension must be positive").into());
             }
-            if !slugs.insert(model.slug()) {
+            if !slugs.insert(slug(&model.id)) {
                 return Err(format!(
                     "embedding model {id:?} differs from another one only in `.`, `-` or `_`, \
                      which its index name can't tell apart"
@@ -116,12 +116,12 @@ impl EmbeddingConfig {
 /// Index names have room for this much of a model id: Postgres cuts identifiers at 63 bytes.
 const MAX_ID_CHARS: usize = 40;
 
-impl ModelConfig {
-    /// The id as part of an identifier: `.` and `-` become `_`.
-    pub fn slug(&self) -> String {
-        self.id.replace(['.', '-'], "_")
-    }
+/// A model id as part of an identifier: `.` and `-` become `_`.
+pub fn slug(id: &str) -> String {
+    id.replace(['.', '-'], "_")
+}
 
+impl ModelConfig {
     /// The endpoint that embeds chunks.
     pub fn embedding_api(&self) -> &ApiConfig {
         self.embedding_api
@@ -194,7 +194,7 @@ fn token_from(name: &str, value: Option<String>) -> Result<String, StartupError>
 
 /// Ids end up in SQL identifiers and literals (index names, partial index predicates), so they
 /// must not need quoting.
-fn is_valid_id(id: &str) -> bool {
+pub fn is_valid_id(id: &str) -> bool {
     let alphanumeric = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
     id.len() <= MAX_ID_CHARS
         && id.starts_with(alphanumeric)

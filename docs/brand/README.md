@@ -1,8 +1,13 @@
 # Brand
 
-ferret's mark is a ferret rearing up to look: head in profile, small low ear, the eye-mask, and a
-straight neck that ends on a flat base, so the mark sits on a text baseline. The face reads
-curious, not fierce.
+ferret's mark is an alert ferret in profile: a rounded ear, a long neck, and a soft dark eye mask
+inside a cream face. The tapered muzzle ends in a dark nose; a small catch-light keeps the eye
+curious, not fierce. The neck ends on a flat base so the mark sits on a text baseline.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+  <img src="logo-light.svg" alt="ferret" width="360">
+</picture>
 
 ## Files
 
@@ -24,10 +29,13 @@ The favicon set is in `frontend/src/app/` (`icon.svg`, `favicon.ico` with 16/32/
 | --- | --- | --- |
 | body | `oklch(0.5 0.09 60)` ≈ `#885629` | `oklch(0.72 0.1 65)` ≈ `#d0975f` |
 | eye mask | `#4d2d15` | `#4d2d15` |
-| pupil / catch-light | `#1c110a` / `#f3ece2` | same |
-| apple icon | tile `#885629`, ferret `#f3ece2`, mask and pupil as above | — |
+| face / inner ear / catch-light | `#f3ece2` | same |
+| pupil / nose | `#1c110a` | same |
+| apple icon | tile `#f3ece2`, light-theme mark | — |
 
 The body colour is the UI's `--brand`.
+The cream face and rounded dark mask are separate shapes, not a stripe across the eye.
+Preserve both when reproducing the coloured mark.
 
 ## Wordmark
 

@@ -30,7 +30,9 @@ use crate::{
     error::ApiError,
     exclusions::{self, ExclusionError},
     explore::{self, ExploreError, ExploreFilter, Order, Page},
-    judgments, runs,
+    judgments,
+    model_registry::{self, DeleteError},
+    runs,
     search::{self, RelativeRange, SearchError},
     users::{self, User, UserError},
 };
@@ -141,6 +143,16 @@ impl Query {
             .await
             .map_err(internal)?;
         Ok(statuses.into_iter().map(ModelStatus::from).collect())
+    }
+
+    /// Every embedding model that has embedded, configured or not, the configured ones first.
+    /// Admins only.
+    async fn stored_embedding_models(context: &Context) -> FieldResult<Vec<StoredEmbeddingModel>> {
+        require_admin(context)?;
+        let models = model_registry::list(&context.pool, &context.embedding)
+            .await
+            .map_err(internal)?;
+        Ok(models.into_iter().map(StoredEmbeddingModel::from).collect())
     }
 
     /// The signed-in user's API keys, newest first.
@@ -1422,6 +1434,23 @@ impl Mutation {
         Ok(model)
     }
 
+    /// Deletes the embeddings, cache entries and failure records of a model that isn't configured,
+    /// its index and its registry entry. Documents, chunks and other models stay. Returns its id.
+    /// Admins only.
+    async fn delete_embedding_model(context: &Context, id: String) -> FieldResult<String> {
+        require_admin(context)?;
+        match model_registry::delete(&context.pool, &context.embedding, &id).await {
+            Ok(()) => Ok(id),
+            Err(DeleteError::NotStored) => Err(invalid_input(format!(
+                "no embedding model {id:?} has stored embeddings"
+            ))),
+            Err(DeleteError::Configured) => Err(invalid_input(format!(
+                "embedding model {id:?} is configured: remove it from the config first"
+            ))),
+            Err(DeleteError::Database(error)) => Err(internal(error)),
+        }
+    }
+
     async fn create_api_key(context: &Context, input: NewApiKey) -> FieldResult<CreatedApiKey> {
         let new = api_keys::NewApiKey {
             name: input.name,
@@ -1705,6 +1734,37 @@ struct Worker {
     /// Asked for a run in the last two minutes, or is running one. A worker that asks again is
     /// online again. A restarted worker registers anew and leaves its old row offline.
     online: bool,
+}
+
+/// An embedding model of the registry, with what its embeddings take up. Sizes are in bytes.
+#[derive(GraphQLObject)]
+struct StoredEmbeddingModel {
+    id: String,
+    dimension: i32,
+    /// When it first embedded, or when the registry was created for older models.
+    first_seen: DateTime<Utc>,
+    /// Only a model that isn't configured can be deleted.
+    configured: bool,
+    /// Its chunk embeddings, across users.
+    embedded: i32,
+    /// Of its HNSW index, exact. Null while it has none.
+    index_bytes: Option<f64>,
+    /// Of its vectors in the shared `chunk_embeddings` table, estimated from their count.
+    row_bytes_estimate: f64,
+}
+
+impl From<model_registry::StoredModel> for StoredEmbeddingModel {
+    fn from(model: model_registry::StoredModel) -> Self {
+        Self {
+            id: model.id,
+            dimension: model.dimension,
+            first_seen: model.first_seen,
+            configured: model.configured,
+            embedded: count(model.embedded),
+            index_bytes: model.index_bytes.map(|bytes| bytes as f64),
+            row_bytes_estimate: model.row_bytes_estimate as f64,
+        }
+    }
 }
 
 #[derive(GraphQLObject)]

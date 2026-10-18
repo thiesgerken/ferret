@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 import { Section } from "@/components/page-shell";
 import { ModelEndpoints } from "@/components/model-endpoints";
+import { StoredEmbeddings } from "@/components/stored-embeddings";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { AdminQuery as AdminData } from "@/gql/graphql";
@@ -48,6 +49,14 @@ const AdminQuery = graphql(`
         pending
         failed
       }
+    }
+    storedEmbeddingModels {
+      id
+      dimension
+      configured
+      embedded
+      indexBytes
+      rowBytesEstimate
     }
   }
 `);
@@ -117,7 +126,10 @@ export function Admin() {
         icon={<Brain />}
         description={t("embeddingHint")}
       >
-        <ModelEndpoints models={data.embeddingStatus} />
+        <div className="space-y-6">
+          <ModelEndpoints models={data.embeddingStatus} />
+          <StoredEmbeddings models={data.storedEmbeddingModels} onChanged={reload} />
+        </div>
       </Section>
       <Section title={t("workers")} icon={<Server />} description={t("workersHint")}>
         <Workers workers={data.workers} />
