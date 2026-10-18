@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #141 from thiesgerken/140-model-registry
+  ([`5b00b49`](https://github.com/thiesgerken/ferret/commit/5b00b49778cb162ee746adb589abe2a50601dca7))
+
+- ✨ feat(embeddings): model registry, stored embeddings in Admin, delete for unconfigured models
+  ([`5b00b49`](https://github.com/thiesgerken/ferret/commit/5b00b49778cb162ee746adb589abe2a50601dca7))
+
+- ✨ feat(embeddings): a model registry with a dimension check, stored embeddings in Admin, and delete for models that aren't configured
+  ([`34b9889`](https://github.com/thiesgerken/ferret/commit/34b988986becbebfdd650152053d35e73b7764fc))
+
+  `embedding_models` records every model that ever embedded, seeded from chunk_embeddings and embedding_cache. The server refuses to start when a configured model is known with another dimension, or would share another stored model's index name. Admin lists every registered model with its embedding count, its HNSW index size and an estimate of its rows, and deletes the embeddings, cache entries, failure records, index and registry entry of a model that isn't configured.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(embeddings): foreign keys tie embeddings to the model registry
+  ([`87efe91`](https://github.com/thiesgerken/ferret/commit/87efe911ee59b8fbf9cd03e93e058fc93f558029))
+
+  A replica still configured for a deleted model (a rolling deploy) now fails to write instead of leaving rows no registry entry accounts for, and deleting the entry cascades to the model's embeddings, cache entries and failure records. The migration drops failure records of models that never embedded. Also: the Delete button is disabled while a delete runs, and ModelConfig::slug gives way to the free function.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
 ## v0.15.1 (2026-10-18)
 
 
