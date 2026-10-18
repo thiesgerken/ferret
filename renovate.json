@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":preserveSemverRanges"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Group patch, pin, and digest updates into a single PR",
+      "matchPackageNames": [
+        "*"
+      ],
+      "matchUpdateTypes": [
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "all routine dependency updates",
+      "groupSlug": "all-routine-dependencies"
+    },
+    {
+      "description": "Disable digest pinning for the Helm chart values file",
+      "matchManagers": [
+        "helm-values"
+      ],
+      "matchFileNames": [
+        "charts/carapace/values.yaml"
+      ],
+      "pinDigests": false
+    },
+    {
+      "description": "pnpm releases often and its minor/patch bumps are routine; the groupName splits them out of the grouped update PR so they can merge on green by themselves",
+      "matchDepNames": ["pnpm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "pnpm",
+      "automerge": true
+    }
+  ],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
+  "commitMessagePrefix": "⬆️ chore: ",
+  "commitMessageAction": "upgrade",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newVersion}}"
+}
