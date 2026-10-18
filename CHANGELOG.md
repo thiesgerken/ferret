@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.21.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #151 from thiesgerken/feat/karakeep-plugin
+  ([`bda5948`](https://github.com/thiesgerken/ferret/commit/bda59480eed9e9f422b675bfaedbebe0098d9166))
+
+- ✨ feat(plugins): add Karakeep saved-content plugin
+  ([`bda5948`](https://github.com/thiesgerken/ferret/commit/bda59480eed9e9f422b675bfaedbebe0098d9166))
+
+- ✨ Add Karakeep saved-content plugin
+  ([`6305a99`](https://github.com/thiesgerken/ferret/commit/6305a991670b153642360df88839ccdefa706b9c))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): preserve Karakeep titles after clearing overrides
+  ([`91587f4`](https://github.com/thiesgerken/ferret/commit/91587f4682850548bf3362b5e11cf9cf94da7d61))
+
 ## v0.20.1 (2026-10-18)
 
 
