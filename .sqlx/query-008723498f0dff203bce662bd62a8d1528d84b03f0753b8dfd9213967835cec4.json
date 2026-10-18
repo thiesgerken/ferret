@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select d.source, d.api_key_id, e.model, count(*) as \"embedded!\",\n                  sum(e.storage_bytes)::bigint as \"bytes!\"\n           from chunk_embeddings e join documents d on d.id = e.document_id\n           where d.user_id = $1 group by d.source, d.api_key_id, e.model",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "api_key_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "api_key_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chunk_embeddings",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "embedded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "008723498f0dff203bce662bd62a8d1528d84b03f0753b8dfd9213967835cec4"
+}

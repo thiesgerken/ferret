@@ -546,6 +546,11 @@ type PluginType {
 type Query {
   "The signed-in user."
   me: User!
+  """
+    Current signed-in-user content by writer, independent of ingest-feed filters.
+    Storage is an attribution estimate in bytes, excluding the shared embedding cache.
+  """
+  writerStatistics: WriterStatistics!
   "Every user. Admins only."
   users: [UserAccount!]!
   "The plugin workers seen in the last day, the most recently seen first. Admins only."
@@ -733,4 +738,39 @@ type Writer {
   name: String!
   "A lucide icon name."
   icon: String!
+}
+
+type WriterModelStorage {
+  model: String!
+  embedded: Int!
+  rowBytes: Float!
+  "Allocated by this writer's share of this model's stored embeddings across users."
+  indexBytes: Float!
+}
+
+type WriterStatistics {
+  documents: Int!
+  chunks: Int!
+  storage: WriterStorage!
+  rows: [WriterStatisticsRow!]!
+}
+
+type WriterStatisticsRow {
+  "Null represents retained content without known writer metadata."
+  writer: Writer
+  "Exact source paths, not overlapping hierarchical facet totals."
+  sources: [String!]!
+  documents: Int!
+  chunks: Int!
+  storage: WriterStorage!
+  models: [WriterModelStorage!]!
+}
+
+"Estimated bytes of current rows and allocated shared indexes, not reclaimable disk space."
+type WriterStorage {
+  documents: Float!
+  chunks: Float!
+  embeddings: Float!
+  indexes: Float!
+  total: Float!
 }

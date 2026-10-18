@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select\n            (select count(*) from documents) as \"documents!\",\n            (select count(*) from chunks) as \"chunks!\",\n            (select coalesce(sum(indexed_text_bytes), 0)::bigint from chunks) as \"text_bytes!\",\n            (select count(*) from chunk_embeddings) as \"embeddings!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "documents!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "chunks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "text_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "embeddings!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2c44b08e25771e92ef187bf6128aecd0f727452288efcaf32a7634b61a2a170d"
+}

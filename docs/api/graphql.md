@@ -55,6 +55,35 @@ query Activity($before: String) {
 
 Pass the last row's cursor for the next older page. Limits are 1–200, default 50. `writer` filters by key/connection id; `allUsers:true` requires admin. Do not confuse this cursor with REST search's numeric offset.
 
+`writerStatistics` always returns the signed-in user's current whole index, including for admins,
+independently of `activity(writer: ..., allUsers: ...)`. `writer: null` is the explicit Unknown
+writer group. Counts are exact; storage fields are estimated bytes:
+
+```graphql
+{
+  writerStatistics {
+    documents
+    chunks
+    storage { documents chunks embeddings indexes total }
+    rows {
+      writer { kind id name icon }
+      sources
+      documents
+      chunks
+      storage { documents chunks embeddings indexes total }
+      models { model embedded rowBytes indexBytes }
+    }
+  }
+}
+```
+
+Row sums reconcile with the returned user totals. Each percentage divides a row's count/storage
+by the corresponding user total, using zero when the denominator is zero. `models` includes
+unconfigured models with retained embeddings; `indexBytes` is the allocated share of that model's
+HNSW index. The shared embedding cache is not included. See [writer statistics](../indexing.md#writer-statistics-and-estimated-storage)
+for allocation, refresh cost and physical-storage exclusions.
+
+
 ## Create a scoped key
 
 ```sh

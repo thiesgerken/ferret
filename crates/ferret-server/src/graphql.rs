@@ -35,6 +35,7 @@ use crate::{
     runs,
     search::{self, RelativeRange, SearchError},
     users::{self, User, UserError},
+    writer_stats,
 };
 
 pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
@@ -67,6 +68,15 @@ impl Query {
     /// The signed-in user.
     fn me(context: &Context) -> &User {
         &context.user
+    }
+
+    /// Current signed-in-user content by writer, independent of ingest-feed filters.
+    /// Storage is an attribution estimate in bytes, excluding the shared embedding cache.
+    async fn writer_statistics(context: &Context) -> FieldResult<WriterStatistics> {
+        let statistics = writer_stats::load(&context.pool, context.user.id)
+            .await
+            .map_err(internal)?;
+        Ok(WriterStatistics::from(statistics))
     }
 
     /// Every user. Admins only.
@@ -712,6 +722,88 @@ impl From<ferret_api::Writer> for Writer {
             id: ID::new(writer.id.to_string()),
             name: writer.name,
             icon: writer.icon,
+        }
+    }
+}
+
+#[derive(GraphQLObject)]
+struct WriterStatistics {
+    documents: i32,
+    chunks: i32,
+    storage: WriterStorage,
+    rows: Vec<WriterStatisticsRow>,
+}
+
+#[derive(GraphQLObject)]
+struct WriterStatisticsRow {
+    /// Null represents retained content without known writer metadata.
+    writer: Option<Writer>,
+    /// Exact source paths, not overlapping hierarchical facet totals.
+    sources: Vec<String>,
+    documents: i32,
+    chunks: i32,
+    storage: WriterStorage,
+    models: Vec<WriterModelStorage>,
+}
+
+/// Estimated bytes of current rows and allocated shared indexes, not reclaimable disk space.
+#[derive(GraphQLObject)]
+struct WriterStorage {
+    documents: f64,
+    chunks: f64,
+    embeddings: f64,
+    indexes: f64,
+    total: f64,
+}
+
+#[derive(GraphQLObject)]
+struct WriterModelStorage {
+    model: String,
+    embedded: i32,
+    row_bytes: f64,
+    /// Allocated by this writer's share of this model's stored embeddings across users.
+    index_bytes: f64,
+}
+
+impl From<writer_stats::Storage> for WriterStorage {
+    fn from(storage: writer_stats::Storage) -> Self {
+        Self {
+            total: storage.total(),
+            documents: storage.documents,
+            chunks: storage.chunks,
+            embeddings: storage.embeddings,
+            indexes: storage.indexes,
+        }
+    }
+}
+
+impl From<writer_stats::Statistics> for WriterStatistics {
+    fn from(statistics: writer_stats::Statistics) -> Self {
+        Self {
+            documents: count(statistics.documents),
+            chunks: count(statistics.chunks),
+            storage: statistics.storage.into(),
+            rows: statistics
+                .rows
+                .into_iter()
+                .map(|row| WriterStatisticsRow {
+                    writer: row.writer.map(Writer::from),
+                    sources: row.sources.into_iter().collect(),
+                    documents: count(row.documents),
+                    chunks: count(row.chunks),
+                    storage: row.storage.into(),
+                    models: row
+                        .models
+                        .into_values()
+                        .map(|model| WriterModelStorage {
+                            model: model.model,
+                            embedded: count(model.embedded),
+                            row_bytes: model.row_bytes,
+                            index_bytes: model.index_bytes,
+                        })
+                        .collect(),
+                })
+                .collect(),
         }
     }
 }

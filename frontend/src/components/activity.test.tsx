@@ -29,19 +29,22 @@ const ingest = (id: string, overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+function storage(documents: number, chunks: number, embeddings: number, indexes: number) {
+  return { __typename: "WriterStorage", documents, chunks, embeddings, indexes, total: documents + chunks + embeddings + indexes };
+}
+
 function overview(isAdmin: boolean) {
   return {
     me: { __typename: "User", isAdmin },
-    explore: {
-      __typename: "Exploration",
-      total: 18945,
-      facets: {
-        __typename: "Facets",
-        sources: [
-          { __typename: "SourceCount", writer: { __typename: "Writer", id: "c1" } },
-          { __typename: "SourceCount", writer: { __typename: "Writer", id: "k1" } },
-        ],
-      },
+    writerStatistics: {
+      __typename: "WriterStatistics",
+      documents: 18945,
+      chunks: 1000,
+      storage: storage(1000, 1000, 1000, 1000),
+      rows: [
+        { __typename: "WriterStatisticsRow", writer, sources: ["notes", "notes/nested"], documents: 10000, chunks: 600, storage: storage(600, 600, 600, 600), models: [{ __typename: "WriterModelStorage", model: "retired", embedded: 600, rowBytes: 600, indexBytes: 200 }] },
+        { __typename: "WriterStatisticsRow", writer: null, sources: ["legacy"], documents: 8945, chunks: 400, storage: storage(400, 400, 400, 400), models: [] },
+      ],
     },
     embeddingModels: [
       {
@@ -109,14 +112,14 @@ function FilteredActivity() {
   return <Activity writer={writer} onWriterChange={setWriter} />;
 }
 
-async function renderActivity(isAdmin = false) {
+async function renderActivity(isAdmin = false, empty = false) {
   const operations: Operation[] = [];
   const client = createGraphqlClient(async (_url, init) => {
     const operation = JSON.parse(String(init?.body)) as Operation;
     operations.push(operation);
     switch (operation.operationName) {
       case "ActivityOverview":
-        return Response.json({ data: overview(isAdmin) });
+        return Response.json({ data: { ...overview(isAdmin), ...(empty ? { writerStatistics: { __typename: "WriterStatistics", documents: 0, chunks: 0, storage: storage(0, 0, 0, 0), rows: [] } } : {}) } });
       case "EmbedderStatus":
         return Response.json({ data: EMBEDDERS });
       default: {
@@ -143,7 +146,7 @@ test("shows the index's size and each model's progress", async () => {
   const { view, text } = await renderActivity();
 
   assert.match(text(), /Documents18,945/);
-  assert.match(text(), /Sources2/);
+  assert.match(text(), /Writers2/);
   assert.match(text(), /Chunks1,000/);
   assert.match(text(), /619 of 1,000 chunks embedded \(61%\)/);
   assert.match(text(), /381 pending, done in about 9 min/);
@@ -191,5 +194,36 @@ test("a connection's history narrows the feed to it", async () => {
 
   const feed = operations.filter((operation) => operation.operationName === "ActivityFeed");
   assert.equal(feed.at(-1)?.variables.writer, "c1");
+  await view.unmount();
+});
+
+test("writer details expose current paths, percentages and all stored models without narrowing with the feed", async () => {
+  const { view } = await renderActivity();
+  const table = view.container.querySelector("table")!;
+  const count = table.querySelector<HTMLElement>("span[tabindex='0']")!;
+  count.focus();
+  assert.equal(document.activeElement, count);
+  assert.equal(count.getAttribute("aria-label"), "10,000: 52.8% of your documents");
+  assert.match(table.textContent ?? "", /Unknown writer/);
+  assert.match(table.textContent ?? "", /notes\/nested/);
+  assert.match(table.textContent ?? "", /60% of your estimated storage/);
+  assert.match(table.textContent ?? "", /retired600 embeddings/);
+  const summaries = table.querySelectorAll<HTMLElement>("summary");
+  summaries[1].focus();
+  assert.equal(document.activeElement, summaries[1], "native details summaries are keyboard focusable");
+  summaries[1].click();
+  assert.ok(summaries[1].parentElement?.hasAttribute("open"));
+  const before = table.textContent;
+  await act(async () => view.container.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click());
+  await settle();
+  assert.equal(table.textContent, before, "feed filters leave the whole-index denominators alone");
+  await view.unmount();
+});
+
+test("an empty index keeps zero counts and storage valid", async () => {
+  const { view, text } = await renderActivity(false, true);
+  assert.match(text(), /Writers0/);
+  assert.match(text(), /Your total00≈ 0 byte/);
+  assert.doesNotMatch(text(), /NaN|undefined|Infinity/);
   await view.unmount();
 });

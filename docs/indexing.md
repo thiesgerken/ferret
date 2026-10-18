@@ -36,6 +36,60 @@ The ParadeDB BM25 index covers chunk text and title in German-stemmed, English-s
 
 Search is over bounded chunk candidates, not a full ranking of every document. It selects one best fused passage per document, then optionally collapses threads. [Search](search.md) owns the retrieval behavior.
 
+## Writer statistics and estimated storage
+
+Activity's **Index usage** table sits below the ingest feed and describes current indexed content,
+not cumulative run or API-burst counters. A document belongs to the connection whose root covers
+its source, otherwise to the API key that last put it. Revoked keys retain their identity. An
+unchanged put by another key can therefore move the document, its chunks and its stored embeddings
+between rows. Retained documents without writer metadata appear as **Unknown writer**.
+
+Each document and chunk counts once, across exact source paths, without summing overlapping
+parent/child source facets. Multiple embedding models do not multiply those counts. A document
+without chunks still contributes its document row and document-index allocation. Writer details
+list the associated exact source paths.
+
+Count percentages use the signed-in user's whole-index document or chunk total. Storage
+percentages use that user's total under the same estimation rules. The ingest-feed writer filter
+and the admin all-user switch do not change these rows or denominators. Empty totals use 0%.
+Counts reveal their percentages on hover or keyboard focus; native expandable writer/storage
+details work with keyboard, pointer and touch.
+
+**Estimated storage** adds:
+
+- **Documents:** a PostgreSQL row-size estimate of full text, metadata and every other document
+  field, including tuple-header overhead and a four-byte heap line pointer.
+- **Chunks:** the same estimate for chunk text, repeated titles/metadata and other chunk fields.
+- **Embeddings:** estimated complete stored embedding rows, including their filter columns and
+  row overhead, across every stored model, configured or not. Details show each model's stored
+  count, estimated row bytes and attributed HNSW bytes.
+- **Indexes:** current PostgreSQL relation sizes allocated across all users' current content.
+  Shared document/chunk indexes are allocated by the writer's fraction of their respective row
+  counts. Shared embedding indexes other than HNSW are allocated by embedding row count.
+  BM25 is allocated by UTF-8 bytes of chunk text plus repeated chunk titles. Each model's HNSW
+  index is allocated by the writer's fraction of that model's stored embeddings. A zero
+  denominator allocates zero bytes. User totals add only that user's shares, not the entire
+  shared indexes.
+
+The migration backfills row estimates once. Database triggers maintain them when stored content
+changes; generated chunk text-byte counts track text/title changes. Seen-time/API-key-only
+updates reuse document size estimates, but attribution is resolved afresh. Every visible-tab
+five-second Activity refresh reads current numeric sizes and counts in one repeatable-read
+snapshot. It does not rescan/detoast full document/chunk content or vectors for sizing. This is
+still an aggregate over current rows, not a constant-time counter or a cached ingestion total.
+
+These are attribution estimates, **not exact physical disk usage or bytes reclaimed by deletion**.
+Row estimates precede final TOAST compression/page placement and do not account for heap free
+space, dead tuples, page padding, TOAST bookkeeping, visibility/free-space maps or maintenance
+effects. Allocated physical indexes can retain free space after deletion and their allocation
+changes with other current content. Non-content tables (users, connections, runs, sessions,
+embedding failures/errors), WAL and backups are excluded.
+
+The **shared embedding cache is excluded**: it spans writers/users, includes query vectors and
+survives document deletion. Original files and binary assets remain at the origin and are not
+stored by Ferret. Admin's existing per-model stored-embedding view is separate and unchanged.
+
+
 ## Deletion, exclusions and rebuild boundaries
 
 Deleting a document cascades to chunks, per-chunk embeddings/failures and its judgments. Sweeping a sync applies the same document deletion to unseen items below its root. Excluding a connection document/thread deletes its copies and remembers the exclusion on the connection; removing it resets the plugin state for a fresh run. API-key documents have no remembered connection exclusion. Deleting a connection deletes its root's documents and run history, not origin content.

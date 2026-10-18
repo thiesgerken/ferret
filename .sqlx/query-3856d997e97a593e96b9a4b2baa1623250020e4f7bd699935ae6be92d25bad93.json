@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select t.relname as table_name, i.relname as index_name, a.amname,\n                pg_relation_size(i.oid) as \"bytes!\"\n         from pg_index x join pg_class t on t.oid = x.indrelid\n         join pg_class i on i.oid = x.indexrelid\n         join pg_am a on a.oid = i.relam\n         where t.oid in ('documents'::regclass, 'chunks'::regclass, 'chunk_embeddings'::regclass)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "table_name",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "pg_class",
+            "name": "relname"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "index_name",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "pg_class",
+            "name": "relname"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "amname",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "pg_am",
+            "name": "amname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "3856d997e97a593e96b9a4b2baa1623250020e4f7bd699935ae6be92d25bad93"
+}

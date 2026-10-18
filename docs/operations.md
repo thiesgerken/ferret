@@ -22,6 +22,12 @@ Server database connections disable ParadeDB's planner diagnostics (`paradedb.pl
 
 Activity distinguishes a **run** from an API-key **burst**. A burst groups a key's nearby writes and appears running while its last write was within ten minutes, then succeeded. It does not carry a worker lease/failure state. A run has claimed/running/succeeded/failed/lost behavior and an origin cursor. Admin all-user Activity requires an admin session.
 
+Activity also shows the signed-in user's current content and **Estimated storage** by writer,
+including Unknown writer. Its rows and percentages remain user-scoped even when an admin switches
+the ingest feed to all users. Expand writer names for paths and storage figures for the
+document/chunk/embedding/index and per-model breakdown. This is not a deletion-reclaim forecast:
+see [storage attribution and exclusions](indexing.md#writer-statistics-and-estimated-storage).
+
 ## Failed or stuck connections
 
 1. Read the Activity error/log and check whether the run failed or is still running. Due with no run suggests worker/internal-API/auth/capability failure; an origin authentication error suggests the plugin's credentials/address.
@@ -46,6 +52,12 @@ Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change
 ## Upgrades and migrations
 
 Read release notes and back up database/configuration/secrets before upgrading. Pin compatible server, worker and frontend versions and review chart value changes. Current server startup applies embedded sqlx migrations before listening; applied checksums are validated and concurrent migration runners are serialized. Never edit an applied migration file. A failed/partial migration or checksum mismatch is a startup failure to investigate, not a reason to remove migration records.
+
+The writer-statistics migration performs a one-time backfill over existing document, chunk and
+embedding rows, and adds stored numeric size estimates plus write-time triggers. Allow for its
+row updates, index maintenance, temporary disk/WAL growth and migration locks when scheduling an
+upgrade of a large index. Subsequent Activity polls read numeric sizes rather than sizing full
+content again. No manual backfill command or re-ingestion is needed.
 
 ```sh
 helm upgrade ferret ./charts/ferret -n ferret -f deployment-values.yaml
