@@ -95,6 +95,10 @@ The answer's `model` field isn't checked: proxies and cloud APIs name models the
   pause that doubles from 1 second up to a minute, logs the problem when its kind changes, and
   Admin shows it. Other models are not held up.
 
+An endpoint failure rolls back the batch's claim transaction before the pump retries, releasing
+its advisory locks. Pending chunks can be claimed again without another ingestion notification;
+retries still honor `Retry-After` or the normal error backoff.
+
 ## Backfill and cache
 
 Adding a configured model creates its partial HNSW index and makes existing chunks pending for
