@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #147 from thiesgerken/test-embedding-model
+  ([`abe2c27`](https://github.com/thiesgerken/ferret/commit/abe2c27fd96816ad60fad5f2d340a5c30912cde2))
+
+### ✨ Features
+
+
+- ✨ feat(admin): test a model's embedding endpoints from Admin
+  ([`abe2c27`](https://github.com/thiesgerken/ferret/commit/abe2c27fd96816ad60fad5f2d340a5c30912cde2))
+
+- ✨ feat(admin): test a model's embedding endpoints from Admin
+  ([`4d049ae`](https://github.com/thiesgerken/ferret/commit/4d049aea5b4e698f2a1ecfbe7cd94744411806a0))
+
+  A "Test" button per configured model in Admin → Embedding embeds a short text through each of the model's endpoints (the query endpoint too when it's a separate one), checks the answer like the pump does and shows the dimension and duration, or the error. Admin-only GraphQL mutation testEmbeddingModel(id). A test stores nothing and leaves the endpoints' reachability and last error alone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.18.0 (2026-10-18)
 
 
