@@ -2,6 +2,8 @@
 
 Use `git` for text files in a repository, including an Obsidian vault. The worker needs Git, network access to the remote, and read-only repository access. Public HTTPS repositories need no token. For a private repository use a fine-grained token restricted to reading that repository's contents; the plugin sends it as HTTP Basic authentication with username `x-access-token`.
 
+For automatic discovery of a Gitea account's repositories and open issue/PR discussions, use [Gitea](gitea.md).
+
 ## Set up
 
 In **Connections**, create plugin `git`, source `notes/git`, choose a name/icon, and schedule `0 * * * *`. Enter:
@@ -25,7 +27,7 @@ Replace owner/repository and branch. Add `token` only for a private HTTPS remote
 
 Each regular UTF-8 text file of at most 1 MiB becomes one document at the connection source. `external_id` is its repository-relative path; no threads are created. The first Markdown heading becomes the title, otherwise a readable file-name title is used for Markdown. Plain files keep their file name. Git history provides the first/last author dates and latest author name.
 
-The worker clones full history of one branch into a temporary directory for each run. The first run performs a full sync and sweep; later runs apply the diff from the saved commit, explicitly deleting removed paths. Renames are deletion plus addition. A missing ancestor commit or changed indexing settings causes a full sync. A file becoming binary, oversized, a symlink or a submodule is not indexed and its old document is removed. A failed run does not save the new cursor.
+The worker clones full history of one branch into a temporary directory for each run. The first run performs a full sync and sweep; later runs apply the diff from the saved commit, explicitly deleting removed paths. Renames are deletion plus addition. A missing ancestor commit, changed indexing settings or a previous failed/lost run causes a full sync. A file becoming binary, oversized, a symlink or a submodule is not indexed and its old document is removed. A failed run does not save the new cursor; its retry fully reconciles any partial writes.
 
 Open **Activity** after creation. A successful first run logs the cloned commit and full-sync reason, followed by put/unchanged/deleted counts. Search a known title in keyword mode with the connection source filter, then verify the origin link opens the indexed file.
 

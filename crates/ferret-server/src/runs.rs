@@ -229,7 +229,13 @@ async fn try_claim(
     .execute(&mut *tx)
     .await?;
     let Some(connection) = sqlx::query!(
-        "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state
+        r#"select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state,
+                  coalesce(
+                      (select r.status = 'succeeded' from plugin_runs r
+                       where r.connection_id = c.id
+                       order by r.started_at desc, r.id desc limit 1),
+                      true
+                  ) as "state_usable!"
          from connections c
          -- A disabled user's connections don't run: they would ingest for someone who can't
          -- sign in, with credentials an admin meant to switch off.
@@ -239,7 +245,7 @@ async fn try_claim(
                            where r.connection_id = c.id and r.status = 'running')
          order by c.next_run_at
          limit 1
-         for update skip locked",
+         for update skip locked"#,
         plugins,
     )
     .fetch_optional(&mut *tx)
@@ -323,7 +329,12 @@ async fn try_claim(
         plugin: connection.plugin,
         source: connection.source,
         config,
-        state: connection.state,
+        // Failed/lost runs may have written newer documents without saving their cursor.
+        state: if connection.state_usable {
+            connection.state
+        } else {
+            serde_json::json!({})
+        },
         token,
     }))
 }

@@ -47,7 +47,7 @@ pub struct ClaimedRun {
     /// The connection's source root. The run writes to it and below it.
     pub source: String,
     pub config: Value,
-    /// The cursor the last successful run left, `{}` at first.
+    /// Reusable successful cursor, `{}` initially or after a failed/lost run.
     pub state: Value,
     /// Bearer token for the public REST API: `ingest:write` below `source`, valid while the run
     /// is live.

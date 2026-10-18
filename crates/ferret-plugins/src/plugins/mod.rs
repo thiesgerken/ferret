@@ -11,6 +11,7 @@ use serde_json::Value;
 pub mod affine;
 pub mod carapace;
 pub mod git;
+pub mod gitea;
 pub mod imap;
 pub mod paperless;
 pub mod repo;
@@ -34,6 +35,11 @@ pub fn registrations() -> Vec<PluginRegistration> {
         PluginRegistration {
             name: git::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(git::GitConfig))
+                .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: gitea::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(gitea::GiteaConfig))
                 .expect("a schema serializes"),
         },
         PluginRegistration {
@@ -61,7 +67,7 @@ pub struct Run {
     /// The connection's source root.
     pub source: String,
     pub config: Value,
-    /// The cursor the last successful run left, `{}` at first.
+    /// Reusable successful cursor, `{}` initially or after a failed/lost run.
     pub state: Value,
     pub log: Log,
     pub options: PluginOptions,
@@ -119,6 +125,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
         affine::NAME => affine::run(run).await,
         carapace::NAME => carapace::run(run).await,
         git::NAME => git::run(run).await,
+        gitea::NAME => gitea::run(run).await,
         imap::NAME => imap::run(run).await,
         paperless::NAME => paperless::run(run).await,
         vikunja::NAME => vikunja::run(run).await,

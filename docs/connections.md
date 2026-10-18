@@ -10,7 +10,7 @@ Use a root such as `notes/work` or `mail/personal`: nonempty slash-separated seg
 
 A user's connection roots cannot overlap. Creation also rejects documents already below the new root. Ordinary API keys cannot write inside a connection's root, or start a sweep above it. This prevents another writer's sweep from deleting plugin-owned documents. Users have separate namespaces.
 
-Use the appropriate setup guide: [git](plugins/git.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md). Examples there are plugin configuration objects, not entire connection requests. In the UI enter their fields individually. A source is not an origin credential or remote folder.
+Use the appropriate setup guide: [git](plugins/git.md), [Gitea](plugins/gitea.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md). Examples there are plugin configuration objects, not entire connection requests. In the UI enter their fields individually. A source is not an origin credential or remote folder.
 
 ## Schedule and run lifecycle
 
@@ -26,7 +26,7 @@ stateDiagram-v2
     Failed --> Due: next scheduled slot or Run now
 ```
 
-Only one live run of a connection is claimed at a time. Workers heartbeat their lease; an expired run fails and its run token stops authorizing writes. A successful finish saves the plugin cursor for the next run. A failed run may already have written documents: runs are not one transaction over the origin. Plugins commit a sweep only after a successful enumeration, preserving documents when enumeration fails.
+Only one live run of a connection is claimed at a time. Workers heartbeat their lease; an expired run fails and its run token stops authorizing writes. A successful finish saves the plugin cursor for the next run. A failed run may already have written documents: runs are not one transaction over the origin. After a failed or lost run, the next claim receives empty working state so the plugin fully reconciles potentially partial writes. The stored successful cursor remains unchanged until another run succeeds. Plugins commit a sweep only after a successful enumeration, preserving documents when enumeration fails.
 
 ## Activity and troubleshooting
 

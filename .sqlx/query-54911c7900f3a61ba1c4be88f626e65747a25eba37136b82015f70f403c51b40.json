@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state\n         from connections c\n         -- A disabled user's connections don't run: they would ingest for someone who can't\n         -- sign in, with credentials an admin meant to switch off.\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and exists (select 1 from users u where u.id = c.user_id and u.enabled)\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
+  "query": "select c.id, c.user_id, c.plugin, c.source, c.config, c.credentials, c.schedule, c.state,\n                  coalesce(\n                      (select r.status = 'succeeded' from plugin_runs r\n                       where r.connection_id = c.id\n                       order by r.started_at desc, r.id desc limit 1),\n                      true\n                  ) as \"state_usable!\"\n         from connections c\n         -- A disabled user's connections don't run: they would ingest for someone who can't\n         -- sign in, with credentials an admin meant to switch off.\n         where c.enabled and c.plugin = any($1) and c.next_run_at <= now()\n           and exists (select 1 from users u where u.id = c.user_id and u.enabled)\n           and not exists (select 1 from plugin_runs r\n                           where r.connection_id = c.id and r.status = 'running')\n         order by c.next_run_at\n         limit 1\n         for update skip locked",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,12 @@
             "name": "state"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "state_usable!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -105,8 +111,9 @@
       false,
       true,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "96f68055f963cad37de8c73db7bcc365d309cbde1896d0afc0e72b87e66abcbf"
+  "hash": "54911c7900f3a61ba1c4be88f626e65747a25eba37136b82015f70f403c51b40"
 }

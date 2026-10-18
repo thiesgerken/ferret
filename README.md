@@ -42,9 +42,9 @@ where that source's own tools take over, instead of guessing which tool's search
 - 🔗 **Find it here, open it there.** Every hit deep-links to its origin: the Paperless document,
   the file in your git forge or Obsidian vault, the carapace session. ferret keeps a copy to search
   it, never to become the place you read it.
-- 🔌 **Plugins for your systems, a REST API for everything else.** git repos, Paperless, carapace,
-  IMAP mailboxes, AFFiNE workspaces and Vikunja tasks sync on a schedule. Anything else sends documents with a
-  plain HTTP `PUT`.
+- 🔌 **Plugins for your systems, a REST API for everything else.** git repos, Gitea accounts,
+  Paperless, carapace, IMAP mailboxes, AFFiNE workspaces and Vikunja tasks sync on a schedule.
+  Anything else sends documents with a plain HTTP `PUT`.
 - 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
   recipe and the note about your home bar in the same query, and the agent knows where to dig
   deeper with that source's own tools. It's the search you use too, through the REST API or as an
@@ -102,6 +102,7 @@ respective sources.
 | plugin | indexes | a hit links to |
 | --- | --- | --- |
 | git | Markdown and text files of a repository, e.g. an Obsidian vault | the file in your forge or vault, at its commit |
+| Gitea | default-branch files and open issue/PR discussions across account-associated repositories | the file, issue, PR, comment or review in Gitea |
 | Paperless | documents with their OCR text | the document in Paperless |
 | carapace | facts, skills and archived sessions of a knowledge repository | the file or session in carapace |
 | IMAP | a mailbox, with its threads kept together | the mail, e.g. as a `mid:` link |
@@ -137,7 +138,7 @@ Start at the [documentation index](docs/README.md), or go directly to:
 - [Search](docs/search.md): query syntax, filters, ranking and origin links.
 - [Connections](docs/connections.md): schedules, runs, exclusions and data ownership.
 - [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
-- Plugin setup: [git](docs/plugins/git.md), [Paperless](docs/plugins/paperless.md),
+- Plugin setup: [git](docs/plugins/git.md), [Gitea](docs/plugins/gitea.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md),
   [Vikunja](docs/plugins/vikunja.md).
 - [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
