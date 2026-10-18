@@ -38,11 +38,11 @@ Search is over bounded chunk candidates, not a full ranking of every document. I
 
 ## Writer statistics and estimated storage
 
-Activity's **Your index by writer** table describes current indexed content, not cumulative run or
-API-burst counters. A document belongs to the connection whose root covers its source, otherwise
-to the API key that last put it. Revoked keys retain their identity. An unchanged put by another
-key can therefore move the document, its chunks and its stored embeddings between rows. Retained
-documents without writer metadata appear as **Unknown writer**.
+Activity's **Index usage** table sits below the ingest feed and describes current indexed content,
+not cumulative run or API-burst counters. A document belongs to the connection whose root covers
+its source, otherwise to the API key that last put it. Revoked keys retain their identity. An
+unchanged put by another key can therefore move the document, its chunks and its stored embeddings
+between rows. Retained documents without writer metadata appear as **Unknown writer**.
 
 Each document and chunk counts once, across exact source paths, without summing overlapping
 parent/child source facets. Multiple embedding models do not multiply those counts. A document

@@ -272,7 +272,7 @@
     "writers": "Writers",
     "chunks": "Chunks",
     "writer": "Writer",
-    "writerStatistics": "Your index by writer",
+    "writerStatistics": "Index usage",
     "writerStatisticsHint": "Current content across all your sources, independent of the ingest feed.",
     "estimatedStorage": "Estimated storage",
     "sourcePaths": "Source paths",

@@ -141,9 +141,6 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
         <Tile icon={<Rows3 />} label={t("chunks")} value={data.writerStatistics.chunks} />
         <Tile icon={<Database />} label={t("embedded")} value={defaultModel ? Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100) / 100 : null} percent />
       </div>
-      <Section title={t("writerStatistics")} icon={<Database />} description={t("writerStatisticsHint")}>
-        <WriterStatisticsTable statistics={data.writerStatistics} />
-      </Section>
       <Section title={t("embedding")} icon={<Brain />} description={t("embeddingHint")}>
         <Embedders models={data.embeddingModels} global={embedders?.embeddingStatus} />
       </Section>
@@ -182,6 +179,9 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
         {/* Keyed by the filter, so its older pages start over. */}
         <IngestFeed key={`${writer}:${allUsers}`} writer={writer} allUsers={allUsers} now={now} refresh={tick} />
       </section>
+      <Section title={t("writerStatistics")} icon={<Database />} description={t("writerStatisticsHint")}>
+        <WriterStatisticsTable statistics={data.writerStatistics} />
+      </Section>
     </div>
   );
 }
