@@ -43,7 +43,11 @@ async fn serve() -> Result<(), StartupError> {
     // Only needed while no enabled admin exists, so its absence is judged by the bootstrap.
     let bootstrap_password = env::var("FERRET_BOOTSTRAP_PASSWORD").ok();
 
-    let pool = PgPool::connect(&database_url).await?;
+    // Non-search joins legitimately use Postgres plans; keep unrelated database warnings visible.
+    let database_options = database_url
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .options([("paradedb.planner_warnings", "off")]);
+    let pool = PgPool::connect_with(database_options).await?;
     ferret_server::migrate(&pool).await?;
     ferret_server::bootstrap_admin(&pool, bootstrap_password.as_deref()).await?;
     let embedding = Arc::new(embeddings::prepare(&pool, config.embedding).await?);
