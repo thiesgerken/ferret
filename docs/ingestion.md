@@ -37,9 +37,11 @@ curl --fail-with-body -sS -X PUT "$FERRET_URL/api/documents" \
   --data-binary @/tmp/ferret-note.json
 ```
 
-The first response is `{"outcome":"created","id":"<uuid>"}`. Repeating the identical request returns `unchanged` with that id. Updating any serialized document field, including timestamps or metadata, returns `updated`. Do not set `modified_at` to the current time on each enumeration: that defeats no-op detection. `excluded` has no id and means a user's exclusion prevented storage.
+The first response is `{"outcome":"created","id":"<uuid>"}`. Repeating an equivalent normalized request returns `unchanged` with that id. Updating any serialized document field after normalization, including timestamps or metadata, returns `updated`. Do not set `modified_at` to the current time on each enumeration: that defeats no-op detection. `excluded` has no id and means a user's exclusion prevented storage.
 
 A put replaces the complete document, not selected fields. Omitted optional values become absent; `authors`, timestamps, `source`, `external_id`, `content_type` and `text` are required. `meta` defaults to an empty object. Content types are `markdown`, `plain`, `email`. `url` is an origin deep link; without it Ferret's viewer is the origin. `thread` groups documents only within one exact source. Timestamps are RFC 3339. Unknown fields are rejected.
+
+Ferret strips U+0000 (NUL) from document text, title, every author and recursively nested metadata string values before exclusion checks, hashing and chunking. Read-back contains the normalized values, and chunk offsets point into normalized text. Adding or removing only these NUL characters does not trigger an update. NUL in `source`, `external_id`, `thread`, `url` or metadata object keys at any depth instead returns 400 without changing stored data. Fix those inputs at the producer; Ferret will not rewrite identities, URLs or keys.
 
 Chunking happens with the put; embeddings are asynchronous. Updates reuse unchanged chunk text where possible, but changing the title invalidates its embedding input. The writer is the connection or API key that last put the document, including an unchanged put. Revoking a key does not delete its documents.
 

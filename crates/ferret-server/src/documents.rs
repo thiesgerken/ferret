@@ -35,6 +35,61 @@ pub async fn put(
 ) -> Result<Json<PutResponse>, ApiError> {
     caller.require(Scope::IngestWrite)?;
     let Json(document) = document?;
+    put_document(&state, &caller, document).await.map(Json)
+}
+
+#[tracing::instrument(
+    name = "document_put",
+    skip_all,
+    fields(source = %document.source, external_id = %document.external_id)
+)]
+async fn put_document(
+    state: &AppState,
+    caller: &ApiCaller,
+    mut document: DocumentPut,
+) -> Result<PutResponse, ApiError> {
+    normalize_document(&mut document).inspect_err(|error| {
+        tracing::warn!(?error, "document put rejected");
+    })?;
+    caller.require_source(&document.source)?;
+    connections::check_api_key_may_write(&state.pool, caller, &document.source, false).await?;
+
+    let mut tx = state.pool.begin().await?;
+    exclusions::lock_source(
+        &mut tx,
+        caller.user_id,
+        &document.source,
+        exclusions::SourceLock::Shared,
+    )
+    .await?;
+    if exclusions::is_excluded(&mut *tx, caller.user_id, &document).await? {
+        return Ok(PutResponse::Excluded);
+    }
+    let response = upsert(&mut tx, caller.user_id, caller.api_key_id(), &document).await?;
+    let counts = match response {
+        PutResponse::Unchanged { .. } => Counts {
+            unchanged: 1,
+            ..Counts::default()
+        },
+        _ => Counts {
+            put: 1,
+            ..Counts::default()
+        },
+    };
+    activity::record(&mut tx, caller, counts).await?;
+    tx.commit().await?;
+    Ok(response)
+}
+
+fn normalize_document(document: &mut DocumentPut) -> Result<(), ApiError> {
+    reject_nul(&document.source, "source")?;
+    reject_nul(&document.external_id, "external_id")?;
+    if let Some(thread) = &document.thread {
+        reject_nul(thread, "thread")?;
+    }
+    if let Some(url) = &document.url {
+        reject_nul(url, "url")?;
+    }
     if !sources::is_valid(&document.source) {
         return Err(ApiError::bad_request(&format!(
             "{:?} is not a source path like `notes` or `mail/personal`",
@@ -51,34 +106,48 @@ pub async fn put(
             "url must not use the {scheme}: scheme"
         )));
     }
-    caller.require_source(&document.source)?;
-    connections::check_api_key_may_write(&state.pool, &caller, &document.source, false).await?;
 
-    let mut tx = state.pool.begin().await?;
-    exclusions::lock_source(
-        &mut tx,
-        caller.user_id,
-        &document.source,
-        exclusions::SourceLock::Shared,
-    )
-    .await?;
-    if exclusions::is_excluded(&mut *tx, caller.user_id, &document).await? {
-        return Ok(Json(PutResponse::Excluded));
+    document.text.retain(|c| c != '\0');
+    if let Some(title) = &mut document.title {
+        title.retain(|c| c != '\0');
     }
-    let response = upsert(&mut tx, caller.user_id, caller.api_key_id(), &document).await?;
-    let counts = match response {
-        PutResponse::Unchanged { .. } => Counts {
-            unchanged: 1,
-            ..Counts::default()
-        },
-        _ => Counts {
-            put: 1,
-            ..Counts::default()
-        },
-    };
-    activity::record(&mut tx, &caller, counts).await?;
-    tx.commit().await?;
-    Ok(Json(response))
+    for author in &mut document.authors {
+        author.retain(|c| c != '\0');
+    }
+    normalize_metadata(&mut document.meta)
+}
+
+fn reject_nul(value: &str, field: &str) -> Result<(), ApiError> {
+    if value.contains('\0') {
+        return Err(ApiError::bad_request(&format!(
+            "{field} must not contain U+0000"
+        )));
+    }
+    Ok(())
+}
+
+fn normalize_metadata(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ApiError> {
+    for (key, value) in object {
+        reject_nul(key, "metadata object keys")?;
+        normalize_metadata_value(value)?;
+    }
+    Ok(())
+}
+
+fn normalize_metadata_value(value: &mut serde_json::Value) -> Result<(), ApiError> {
+    match value {
+        serde_json::Value::String(value) => value.retain(|c| c != '\0'),
+        serde_json::Value::Array(values) => {
+            for value in values {
+                normalize_metadata_value(value)?;
+            }
+        }
+        serde_json::Value::Object(object) => normalize_metadata(object)?,
+        _ => {}
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

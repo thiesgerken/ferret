@@ -121,6 +121,163 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
+async fn nul_content_is_normalized_before_storage_hashing_and_chunking(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    let paragraph = "Grüße 🦦 aus Köln. ".repeat(80);
+    let mut clean = document(
+        "notes/work",
+        "nul-é.md",
+        &format!("{paragraph}\n\n{paragraph}\n\n{paragraph}"),
+    );
+    clean.title = Some("Grüße 🦦".to_owned());
+    clean.authors = vec!["Zoë".to_owned(), "René 🦦".to_owned(), String::new()];
+    clean.url = Some("https://notes.example.com/nul".to_owned());
+    clean.thread = Some("thread-é".to_owned());
+    clean.meta = json!({
+        "label": "ab",
+        "empty": "",
+        "nested": {
+            "array": ["Grüße 🦦", 42, true, null, ["xy", {"deep": "é🦦"}]],
+            "object": {"value": "kept"}
+        }
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    let mut dirty = clean.clone();
+    dirty.text = format!("\0{}\0", clean.text.replace('ü', "ü\0"));
+    dirty.title = Some("\0Grü\0ße 🦦\0".to_owned());
+    dirty.authors = vec![
+        "\0Zoë".to_owned(),
+        "Re\0né 🦦\0".to_owned(),
+        "\0\0".to_owned(),
+    ];
+    dirty.meta = json!({
+        "label": "\0a\0b\0",
+        "empty": "\0\0",
+        "nested": {
+            "array": ["Grü\0ße 🦦", 42, true, null, ["x\0y", {"deep": "\0é🦦\0"}]],
+            "object": {"value": "ke\0pt"}
+        }
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+
+    let created = api.put_document(&dirty).await.unwrap();
+    let id = created.id().unwrap();
+    assert_eq!(created, PutResponse::Created { id });
+    let stored = api.document(id).await.unwrap();
+    let mut stored = serde_json::to_value(stored).unwrap();
+    stored.as_object_mut().unwrap().remove("id");
+    stored.as_object_mut().unwrap().remove("writer");
+    assert_eq!(stored, serde_json::to_value(&clean).unwrap());
+
+    let chunks: Vec<(Uuid, String, i32, i32, Option<String>)> = sqlx::query_as(
+        "select id, text, start_offset, end_offset, title from chunks order by ordinal",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(chunks.len() > 1);
+    for (_, text, start, end, title) in &chunks {
+        assert!(!text.contains('\0'));
+        assert_eq!(title, &clean.title);
+        let slice: String = clean
+            .text
+            .chars()
+            .skip(*start as usize)
+            .take((end - start) as usize)
+            .collect();
+        assert_eq!(&slice, text);
+    }
+    for equivalent in [&dirty, &clean, &dirty] {
+        assert_eq!(
+            api.put_document(equivalent).await.unwrap(),
+            PutResponse::Unchanged { id }
+        );
+    }
+    let after: Vec<(Uuid, String, i32, i32, Option<String>)> = sqlx::query_as(
+        "select id, text, start_offset, end_offset, title from chunks order by ordinal",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after, chunks);
+}
+
+#[sqlx::test(migrations = false)]
+async fn nul_identities_urls_and_metadata_keys_are_rejected_without_changing_data(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let key = server
+        .create_api_key(&["INGEST_WRITE", "SEARCH_READ"], None)
+        .await;
+    let api = server.api_with_key(&key);
+    let mut note = document("notes/work", "a.md", "Original text.");
+    note.thread = Some("thread".to_owned());
+    note.url = Some("https://notes.example.com/a".to_owned());
+    note.meta = json!({"key": "original"}).as_object().unwrap().clone();
+    let id = api.put_document(&note).await.unwrap().id().unwrap();
+    let before = serde_json::to_value(api.document(id).await.unwrap()).unwrap();
+    let chunks = chunk_ids(&pool).await;
+
+    for (field, value, error_field) in [
+        ("source", json!("notes/\0work"), "source"),
+        ("external_id", json!("a\0.md"), "external_id"),
+        ("thread", json!("th\0read"), "thread"),
+        ("url", json!("https://notes.example.com/\0a"), "url"),
+        (
+            "meta",
+            json!({"key": "changed", "ke\u{0000}y": "collision"}),
+            "metadata object keys",
+        ),
+        (
+            "meta",
+            json!({"nested": {"bad\u{0000}key": "value"}}),
+            "metadata object keys",
+        ),
+        (
+            "meta",
+            json!({"nested": [42, [{"bad\u{0000}key": "value"}]]}),
+            "metadata object keys",
+        ),
+    ] {
+        let mut invalid = serde_json::to_value(&note).unwrap();
+        invalid["text"] = json!("Must not replace the original.");
+        invalid[field] = value;
+        let response = server
+            .request(Method::PUT, "/api/documents")
+            .header(header::AUTHORIZATION, format!("Bearer {key}"))
+            .json(&invalid)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{field}");
+        assert_eq!(
+            json_body(response).await["error"],
+            format!("{error_field} must not contain U+0000"),
+            "{field}"
+        );
+        assert_eq!(
+            serde_json::to_value(api.document(id).await.unwrap()).unwrap(),
+            before,
+            "{field}"
+        );
+        assert_eq!(chunk_ids(&pool).await, chunks, "{field}");
+    }
+    let count: i64 = sqlx::query_scalar("select count(*) from documents")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(
+        api.put_document(&note).await.unwrap(),
+        PutResponse::Unchanged { id }
+    );
+}
+
+#[sqlx::test(migrations = false)]
 async fn delete_removes_the_document_and_its_chunks(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let api = server.admin_api().await;
