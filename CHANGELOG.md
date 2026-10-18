@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.20.1 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #154 from thiesgerken/fix/paradedb-planner-warnings
+  ([`c2e8a13`](https://github.com/thiesgerken/ferret/commit/c2e8a13ddd1759fb5c5178fa7c56f7075cab8548))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): silence ParadeDB planner diagnostics
+  ([`c2e8a13`](https://github.com/thiesgerken/ferret/commit/c2e8a13ddd1759fb5c5178fa7c56f7075cab8548))
+
+- 🐛 fix(server): silence ParadeDB planner diagnostics
+  ([`c57c2af`](https://github.com/thiesgerken/ferret/commit/c57c2af694a283a85f2e493aad5da90e45d549a2))
+
 ## v0.20.0 (2026-10-18)
 
 
