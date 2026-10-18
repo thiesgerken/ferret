@@ -48,7 +48,7 @@ pub enum SearchMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DocumentPut {
-    /// A source path like `notes` or `mail/zoho`.
+    /// A source path like `notes` or `mail/personal`.
     pub source: String,
     /// Stable id given by the ingester, unique within the source.
     pub external_id: String,

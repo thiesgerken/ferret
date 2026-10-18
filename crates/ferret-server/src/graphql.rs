@@ -558,7 +558,7 @@ struct NewConnection {
     /// A lucide icon name in kebab-case, e.g. `git-branch`.
     icon: String,
     plugin: String,
-    /// The source root, e.g. `notes` or `mail/zoho`. Can't contain or lie below another
+    /// The source root, e.g. `notes` or `mail/personal`. Can't contain or lie below another
     /// connection's root.
     source: String,
     /// The plugin config as JSON text, valid against the plugin's schema.

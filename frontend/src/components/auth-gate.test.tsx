@@ -20,7 +20,7 @@ function renderGate(respond: Responder, page = <p id="page">page</p>) {
 const unauthorized = () => new Response("unauthorized", { status: 401 });
 
 function signedIn(isAdmin: boolean): Responder {
-  return () => Response.json({ data: { me: { __typename: "User", username: "thies", displayName: null, isAdmin } } });
+  return () => Response.json({ data: { me: { __typename: "User", username: "alex", displayName: null, isAdmin } } });
 }
 
 test("shows the login form instead of the page when the server answers 401", async () => {
@@ -38,7 +38,7 @@ test("shows the page and the app menu when signed in", async () => {
 
   assert.ok(view.container.querySelector("#page"));
   const menu = view.container.querySelector("#app-menu");
-  assert.match(menu?.textContent ?? "", /Signed in as thies/);
+  assert.match(menu?.textContent ?? "", /Signed in as alex/);
   assert.equal(menu?.querySelector("a[href='/admin']"), null);
   await view.unmount();
 });

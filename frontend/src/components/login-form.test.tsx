@@ -19,11 +19,11 @@ test("posts the credentials and reports success", async (t) => {
   let signedIn = false;
   const view = await renderReact(<LoginForm onSignedIn={() => (signedIn = true)} />);
 
-  await submit(view.container, "thies", "hunter2");
+  await submit(view.container, "alex", "hunter2");
 
   const [url, init] = fetchMock.mock.calls[0].arguments as [string, RequestInit];
   assert.equal(url, "/auth/login");
-  assert.deepEqual(JSON.parse(String(init.body)), { username: "thies", password: "hunter2" });
+  assert.deepEqual(JSON.parse(String(init.body)), { username: "alex", password: "hunter2" });
   assert.equal(signedIn, true);
   await view.unmount();
 });
@@ -35,7 +35,7 @@ test("shows the server's error and stays on the form when sign-in is rejected", 
   let signedIn = false;
   const view = await renderReact(<LoginForm onSignedIn={() => (signedIn = true)} />);
 
-  await submit(view.container, "thies", "wrong");
+  await submit(view.container, "alex", "wrong");
 
   assert.equal(view.container.querySelector("[role=alert]")?.textContent, "invalid username or password");
   assert.equal(signedIn, false);

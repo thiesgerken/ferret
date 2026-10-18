@@ -20,7 +20,7 @@ test("the default state is the bare route", () => {
 
 test("a state survives the round trip through the URL", () => {
   const state: ExploreState = {
-    sources: ["mail/zoho", "notes"],
+    sources: ["mail/personal", "notes"],
     contentTypes: ["EMAIL"],
     authors: ["Ada"],
     month: "2026-01",

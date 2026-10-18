@@ -139,7 +139,7 @@ pub async fn create(
     validate_label(&new.name, &new.icon)?;
     if !sources::is_valid(&new.source) {
         return invalid(format!(
-            "{:?} is not a source path like `notes` or `mail/zoho`",
+            "{:?} is not a source path like `notes` or `mail/personal`",
             new.source
         ));
     }

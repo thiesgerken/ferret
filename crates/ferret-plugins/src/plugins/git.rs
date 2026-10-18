@@ -270,8 +270,8 @@ impl Indexer<'_> {
 /// How `title` names documents, part of the indexing settings: a new rule renames every document.
 pub(super) const TITLES: &str = "first heading, else the Markdown file's name in words";
 
-/// A Markdown file's first `# ` heading, else its name in words (`tavascan_review.md` becomes
-/// "Tavascan Review"). Other files keep their name, which says what they are (`main.rs`).
+/// A Markdown file's first `# ` heading, else its name in words (`product_review.md` becomes
+/// "Product Review"). Other files keep their name, which says what they are (`main.rs`).
 pub(super) fn title(path: &str, text: &str, content_type: ContentType) -> String {
     let file_name = path.rsplit('/').next().unwrap_or(path);
     if content_type != ContentType::Markdown {
@@ -343,11 +343,11 @@ mod tests {
         );
         assert_eq!(
             title(
-                "research/tavascan_review.md",
+                "research/product_review.md",
                 "no heading",
                 ContentType::Markdown
             ),
-            "Tavascan Review"
+            "Product Review"
         );
         assert_eq!(
             title("notes/2026-07-klima-anlage.md", "", ContentType::Markdown),

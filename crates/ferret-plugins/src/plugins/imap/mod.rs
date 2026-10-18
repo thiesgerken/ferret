@@ -32,15 +32,14 @@ const QUOTES: &str = "containers, markers, runs of 3 lines of earlier mails in t
 #[serde(deny_unknown_fields)]
 #[schemars(title = "IMAP")]
 pub struct ImapConfig {
-    /// The IMAP server, e.g. `imap.zoho.eu`, with `:port` unless it's 993.
+    /// The IMAP server, e.g. `imap.example.com`, with `:port` unless it's 993.
     server: String,
     /// Whether to connect with TLS. Without it, the password crosses the network in plain text:
     /// only for a server next to the worker.
     #[serde(default = "tls_by_default")]
     tls: bool,
     username: String,
-    /// An app password where the provider offers them (Zoho: My Account → Security → App
-    /// Passwords), rather than the account's own.
+    /// An app password where the provider offers one, rather than the account's own password.
     #[schemars(extend("writeOnly" = true))]
     password: String,
     /// Folders not to index, by name. Folders the server marks as trash, junk or drafts are

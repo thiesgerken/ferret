@@ -30,7 +30,7 @@ async function scrollToEnd() {
 }
 import { SearchResults } from "./search-results";
 
-/** notes belongs to the git connection "Notes", mail/zoho came in through an API key. */
+/** notes belongs to the git connection "Notes", mail/personal came in through an API key. */
 const writerOf = (source: string) =>
   source.startsWith("notes")
     ? { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Notes", icon: "notebook" }
@@ -106,10 +106,10 @@ async function renderResults(
           hits:
             operation.variables.input.q === "many"
               ? operation.variables.input.offset
-                ? [hit("b", "mail/zoho", []), hit("d", "notes", [])]
-                : [hit("a", "notes", []), hit("b", "mail/zoho", [])]
+                ? [hit("b", "mail/personal", []), hit("d", "notes", [])]
+                : [hit("a", "notes", []), hit("b", "mail/personal", [])]
               : operation.variables.input.q === "invoice"
-              ? [hit("a", "notes", ["thies"]), hit("b", "mail/zoho", ["Allianz", "thies"])]
+              ? [hit("a", "notes", ["alex"]), hit("b", "mail/personal", ["Allianz", "alex"])]
               : operation.variables.input.q === "nothing"
                 ? []
                 : [hit("c", "notes", [])],
@@ -124,13 +124,13 @@ async function renderResults(
             __typename: "SearchFacets",
             sources: [
               { __typename: "SourceCount", value: "notes", count: 12, writer: writerOf("notes") },
-              { __typename: "SourceCount", value: "mail/zoho", count: 3, writer: writerOf("mail/zoho") },
+              { __typename: "SourceCount", value: "mail/personal", count: 3, writer: writerOf("mail/personal") },
               ...(operation.variables.input.q === "grouped"
                 ? [{ __typename: "SourceCount", value: "notes/journal", count: 2, writer: writerOf("notes/journal") }]
                 : []),
             ],
             authors: [
-              { __typename: "FacetCount", value: "thies", count: 9 },
+              { __typename: "FacetCount", value: "alex", count: 9 },
               { __typename: "FacetCount", value: "Allianz", count: 2 },
             ],
             areLowerBounds: false,
@@ -226,7 +226,7 @@ test("each hit shows its relevance as bars, the exact values on hover, and its w
   assert.equal(bars(b).getAttribute("aria-label"), "all words found (BM25 3.5)");
   assert.equal(filled(b), 2, "keyword-only: its BM25 against the best one shown");
   assert.equal(a.querySelector("p span[title]")?.textContent, "Notes", "the connection's root is its name");
-  assert.equal(b.querySelector("p span[title='mail/zoho']")?.textContent, "mail import › mail › zoho");
+  assert.equal(b.querySelector("p span[title='mail/personal']")?.textContent, "mail import › mail › personal");
   await view.unmount();
 });
 
@@ -244,15 +244,15 @@ test("offers the matches' sources and authors with their counts as filters", asy
 
   assert.deepEqual(
     facetChips(view.container).map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
-    ["Notes 12", "mail import › mail › zoho 3", "thies 9", "Allianz 2"],
+    ["Notes 12", "mail import › mail › personal 3", "alex 9", "Allianz 2"],
     "sources, then authors, as the facets order them",
   );
-  await act(async () => chip("mail import › mail › zoho").click());
-  await act(async () => chip("thies").click());
+  await act(async () => chip("mail import › mail › personal").click());
+  await act(async () => chip("alex").click());
 
   assert.deepEqual(changes, [
-    { ...STATE, sources: ["mail/zoho"] },
-    { ...STATE, sources: ["mail/zoho"], authors: ["thies"] },
+    { ...STATE, sources: ["mail/personal"] },
+    { ...STATE, sources: ["mail/personal"], authors: ["alex"] },
   ]);
   await view.unmount();
 });
@@ -445,7 +445,7 @@ test("the column groups a writer's sources under its name, the chips keep full l
   const [full, short] = [0, 1].map((i) => buttons.map((b) => b.querySelectorAll("[data-label] > span")[i]?.textContent ?? null));
 
   assert.deepEqual(heading, ["Notes"], "only the writer with several sources gets a heading");
-  assert.deepEqual(full, ["Notes", "Notes › journal", "mail import › mail › zoho"]);
+  assert.deepEqual(full, ["Notes", "Notes › journal", "mail import › mail › personal"]);
   assert.deepEqual(short, ["All", "journal", null]);
   await view.unmount();
 });

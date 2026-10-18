@@ -133,7 +133,7 @@ pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
         .find(|source| !sources::is_valid(source))
     {
         return Err(SearchError::Invalid(format!(
-            "{invalid:?} is not a source path like `notes` or `mail/zoho`"
+            "{invalid:?} is not a source path like `notes` or `mail/personal`"
         )));
     }
     Ok(query)

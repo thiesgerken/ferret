@@ -125,7 +125,7 @@ pub async fn explore(
         .find(|source| !sources::is_valid(source))
     {
         return Err(ExploreError::Invalid(format!(
-            "{invalid:?} is not a source path like `notes` or `mail/zoho`"
+            "{invalid:?} is not a source path like `notes` or `mail/personal`"
         )));
     }
     if !(1..=MAX_LIMIT).contains(&page.limit) || page.offset < 0 {

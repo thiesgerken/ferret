@@ -47,7 +47,7 @@ async fn notes_and_mail(server: &TestServer) -> String {
         ("notes", "car", "My car broke down on the motorway."),
         ("notes", "garage", "The garage repairs the car on Monday."),
         (
-            "mail/zoho",
+            "mail/personal",
             "invoice",
             "Your car insurance invoice is attached.",
         ),

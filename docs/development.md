@@ -35,7 +35,7 @@ Use `docker compose logs -f server plugins` and Activity for different layers of
 Optional carapace demo:
 
 ```sh
-export CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me
+export CARAPACE_KNOWLEDGE_DIR=/absolute/path/to/knowledge-repository
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 scripts/demo-seed.sh
 ```

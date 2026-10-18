@@ -6,14 +6,14 @@ import { matchingOn, parseSearch, searchHref, toggle, toggleMatching } from "./s
 test("search state round-trips through the URL", () => {
   const state = {
     q: "invoice 2026",
-    sources: ["paperless", "mail/zoho"],
+    sources: ["paperless", "mail/personal"],
     authors: ["Allianz"],
     range: "month" as const,
     model: "qwen3",
     mode: "keyword" as const,
   };
   const href = searchHref(state);
-  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fzoho&author=Allianz&range=month&model=qwen3&mode=keyword");
+  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fpersonal&author=Allianz&range=month&model=qwen3&mode=keyword");
   assert.deepEqual(parseSearch(new URLSearchParams(href.slice(2))), state);
 });
 
