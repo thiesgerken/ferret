@@ -1,6 +1,6 @@
 # Moneta expenses
 
-Use `moneta` to search every expense visible to a Moneta API key's owner. Requires a deployment including the merged [Moneta timestamp API change](https://gitea.gerken.haus/thies/Moneta/pulls/252), which exposes `Expense.createdAt` and `Expense.updatedAt`. Deploy it before enabling the connection. Older schemas fail the run rather than substitute ingestion or changelog timestamps.
+Use `moneta` to search every expense visible to a Moneta API key's owner.
 
 ## Set up
 
@@ -54,7 +54,7 @@ Changed counts, duplicate/out-of-order IDs, incomplete pages, missing/invalid re
 Search for a distinctive expense comment, bank statement, category, line item and receipt OCR phrase. Open the origin link and check the selected expense. Run unchanged, edit an expense, rename an account/category without editing the expense, then delete an expense or remove its visibility and use **Run now** to observe reconciliation. Check **Activity** for put/unchanged/deleted counts.
 
 - **401/403 or GraphQL errors:** check the read key, expiration/revocation and its owner's visibility. Do not grant write access to fix indexing.
-- **Invalid expense page:** check that the timestamp API change is deployed and that `/graphql` reaches Moneta directly. Required data has no compatibility fallback.
+- **Invalid expense page:** check that `/graphql` reaches Moneta directly and returns all required expense fields.
 - **Redirect:** use an internal/direct worker URL rather than an interactive login proxy.
 - **Changed/incomplete listing:** let origin edits settle and retry. Failed runs retain documents that were not seen.
 - **Wrong origin address:** set `public_url`; the next full run updates existing links.
