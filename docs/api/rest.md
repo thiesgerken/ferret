@@ -101,6 +101,10 @@ Requires `ingest:write`. Send a complete JSON object:
 
 Unknown fields are rejected. A put replaces stored fields at the same `(user,source,external_id)`, not a patch. See the complete runnable [ingestion example](../ingestion.md).
 
+Before exclusion checks, hashing or chunking, Ferret removes U+0000 (NUL) from `text`, `title`, each `authors` string and metadata string values at every nesting depth, including arrays and objects. Other characters and non-string metadata values are preserved. Read-back and chunk offsets refer to this normalized text. Dirty and equivalent clean payloads have the same unchanged/hash behavior.
+
+NUL in `source`, `external_id`, `thread`, `url` or any metadata object key returns 400 with a field-specific error. These fields are never silently rewritten: doing so could change an identity, URL or metadata key. A rejected put leaves any existing document unchanged.
+
 Successful response is exactly one of these shapes:
 
 ```json
