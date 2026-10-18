@@ -172,13 +172,17 @@ limit $2;  -- the model's batch size, at most 32
 - A failed batch (unreachable, an error status, an answer that fails a check) leaves its chunks
   pending, and the loop tries again after a pause that doubles from 1 s to 60 s. New chunks don't
   cut the pause short: a burst of ingests must not hammer an endpoint that is down. The endpoint
-  logs the first failure of an outage only, and keeps its last error and whether it answered at
-  all for Admin, in memory per server process, until its next success.
-- A 429 makes the loop wait for `Retry-After` (30 s without one). The endpoint is busy, not slow,
-  so the batch size stays.
+  logs a failure when its kind changes (unreachable, an error status, an invalid answer, a 429),
+  not on every retry, and keeps its last error and whether it answered at all for Admin, in
+  memory per server process, until its next success.
+- A 429 makes every loop of the model wait for `Retry-After` (30 s without one), checked right
+  before each request. The endpoint is busy, not slow, so the batch size stays.
 - The endpoint rejecting a batch (400, 413 too long, 422 untokenizable) makes the pump retry its
   texts one by one. Texts it rejects alone (more tokens than characters, e.g. emoji or CJK) land
-  in `embedding_failures` (chunk, model, error) and leave the queue. A changed text is a new chunk
+  in `embedding_failures` (chunk, model, error) and leave the queue. When it rejects every text of
+  a batch of several, the endpoint is at fault (a proxy answers an unknown model with a 400), so
+  the batch fails like any endpoint failure and nothing is recorded. Rejections show as the
+  endpoint's last error. A changed text is a new chunk
   and a changed title deletes the failure, so either gets another chance.
 - Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for the
   endpoint. The final insert locks the chunks `for share` and skips those deleted meanwhile.

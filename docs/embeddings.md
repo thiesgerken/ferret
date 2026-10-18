@@ -86,11 +86,14 @@ The answer's `model` field isn't checked: proxies and cloud APIs name models the
 - **400, 413 or 422:** the endpoint refused inputs (too long, untokenizable). The pump finds the
   culprits one by one, records them in `embedding_failures` and skips them from then on, so one
   bad input does not stall every other chunk. Changing a document's text or title gives its
-  chunks another chance.
-- **429:** the model's pump waits for `Retry-After` (30 seconds without one). The batch size stays.
+  chunks another chance. When every input of a batch of several is refused, the endpoint is at
+  fault (a proxy answers a mistyped model name with a 400), and the batch fails like below
+  instead.
+- **429:** every pump loop of the model waits for `Retry-After` (30 seconds without one). The
+  batch size stays.
 - **Unreachable, timed out or any other error:** a normal state. The pump tries again after a
-  pause that doubles from 1 second up to a minute, logs the problem once per outage, and Admin
-  shows it. Other models are not held up.
+  pause that doubles from 1 second up to a minute, logs the problem when its kind changes, and
+  Admin shows it. Other models are not held up.
 
 ## Backfill and cache
 
