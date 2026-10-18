@@ -18,3 +18,20 @@ from (
     select model, vector_dims(embedding), null from embedding_cache
 ) stored
 group by model, dimension;
+
+-- Failure records carry no dimension, so they can't register a model. Those of models that never
+-- embedded anything only make the pump try their chunks once more.
+delete from embedding_failures f
+where not exists (select 1 from embedding_models m where m.id = f.model);
+
+-- A model's rows exist only while it is registered, also across replicas: one still configured for
+-- a model an admin deleted (a rolling deploy) fails to insert instead of leaving rows behind that no
+-- registry entry accounts for. Deleting the entry deletes them.
+-- ponytail: only chunk_embeddings has an index leading with `model`, so a delete scans the cache
+-- and the failures. Fine for a rare admin action, an index on (model) if it gets slow.
+alter table chunk_embeddings
+    add foreign key (model) references embedding_models on delete cascade;
+alter table embedding_cache
+    add foreign key (model) references embedding_models on delete cascade;
+alter table embedding_failures
+    add foreign key (model) references embedding_models on delete cascade;

@@ -152,9 +152,13 @@ create table embedding_models (
   the table is shared). Models that aren't configured are marked as such.
 - **Deleting** is for models that aren't configured: a configured one has to leave the config
   first, so nothing embeds for it and no user's default is it. After a confirmation, it removes the
-  model's chunk embeddings, cache entries, failure records, HNSW index and registry entry, in one
-  transaction under the advisory lock that also guards index creation. Documents, chunks and other
-  models stay. If the model comes back later, the pump embeds everything again.
+  model's registry entry, its HNSW index and, through foreign keys, its chunk embeddings, cache
+  entries and failure records, in one transaction under the advisory lock that also guards index
+  creation. Documents, chunks and other models stay. If the model comes back later, the pump
+  embeds everything again.
+- **Rows need a registry entry** (foreign keys on `model` in `chunk_embeddings`, `embedding_cache`
+  and `embedding_failures`). A replica still configured for a deleted model, during a rolling
+  deploy, fails to write instead of leaving rows no entry accounts for.
 
 ## Chunking is shared
 

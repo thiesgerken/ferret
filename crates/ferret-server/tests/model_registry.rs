@@ -72,15 +72,8 @@ async fn the_migration_registers_every_model_with_stored_embeddings(pool: PgPool
         .unwrap();
     server.wait_for_embeddings(1).await;
     drop(server);
-    // A model that only cached a query embedding before it left the config.
-    sqlx::query(
-        "insert into embedding_cache (text_hash, model, embedding) values ('\\x00', 'retired', '[1,2,3]')",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
     // Back to the state before the registry, with the data the migration finds on prod.
-    sqlx::query("drop table embedding_models")
+    sqlx::query("drop table embedding_models cascade")
         .execute(&pool)
         .await
         .unwrap();
@@ -88,6 +81,21 @@ async fn the_migration_registers_every_model_with_stored_embeddings(pool: PgPool
         .execute(&pool)
         .await
         .unwrap();
+    // A model that only cached a query embedding before it left the config, and one that only
+    // ever failed.
+    sqlx::query(
+        "insert into embedding_cache (text_hash, model, embedding) values ('\\x00', 'retired', '[1,2,3]')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into embedding_failures (chunk_id, model, error, at)
+         select id, 'refused', 'too long', now() from chunks limit 1",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     ferret_server::migrate(&pool).await.unwrap();
 
@@ -97,6 +105,10 @@ async fn the_migration_registers_every_model_with_stored_embeddings(pool: PgPool
             (MODEL.to_owned(), DIMENSION as i32),
             ("retired".to_owned(), 3)
         ]
+    );
+    assert_eq!(
+        embeddings_of(&pool, "embedding_failures", "refused").await,
+        0
     );
 }
 
@@ -229,6 +241,37 @@ async fn deleting_a_model_that_isnt_configured_removes_exactly_its_data(pool: Pg
         .await
         .unwrap();
     assert_eq!(chunks_after, chunks);
+}
+
+/// A replica still configured for a deleted model (a rolling deploy) can't leave rows behind.
+#[sqlx::test(migrations = false)]
+async fn embeddings_of_a_model_that_isnt_registered_are_refused(pool: PgPool) {
+    let server = beta_left_the_config(pool.clone()).await;
+    let cookie = server.sign_in().await;
+    server
+        .graphql(
+            &cookie,
+            "mutation { deleteEmbeddingModel(id: \"beta\") }",
+            json!({}),
+        )
+        .await;
+
+    let late_write = sqlx::query(
+        "insert into chunk_embeddings
+             (chunk_id, model, document_id, user_id, source, content_type, ts, embedding)
+         select chunk_id, 'beta', document_id, user_id, source, content_type, ts, embedding
+         from chunk_embeddings where model = 'alpha' limit 1",
+    )
+    .execute(&pool)
+    .await;
+
+    let error = late_write.unwrap_err();
+    assert!(
+        error
+            .as_database_error()
+            .is_some_and(|error| error.is_foreign_key_violation()),
+        "{error}"
+    );
 }
 
 #[sqlx::test(migrations = false)]

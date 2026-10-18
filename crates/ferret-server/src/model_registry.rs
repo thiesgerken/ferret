@@ -148,8 +148,8 @@ impl From<sqlx::Error> for DeleteError {
     }
 }
 
-/// Deletes the embeddings, cache entries and failure records of the model `id`, its index and its
-/// registry entry. Documents, chunks and other models stay.
+/// Deletes the registry entry of the model `id`, its embeddings, cache entries and failure records
+/// with it (foreign keys), and its index. Documents, chunks and other models stay.
 pub async fn delete(pool: &PgPool, embedding: &Embedding, id: &str) -> Result<(), DeleteError> {
     if embedding.model(id).is_some() {
         return Err(DeleteError::Configured);
@@ -167,15 +167,6 @@ pub async fn delete(pool: &PgPool, embedding: &Embedding, id: &str) -> Result<()
     }
     // Registered ids come from validated configs, so the index name needs no quoting.
     assert!(config::is_valid_name(id), "registered model id {id:?}");
-    sqlx::query!("delete from chunk_embeddings where model = $1", id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query!("delete from embedding_cache where model = $1", id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query!("delete from embedding_failures where model = $1", id)
-        .execute(&mut *tx)
-        .await?;
     // Last: dropping the index locks chunk_embeddings against every search and pump batch until
     // the commit.
     sqlx::query(AssertSqlSafe(format!(

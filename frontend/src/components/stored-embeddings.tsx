@@ -25,7 +25,7 @@ const UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
 export function StoredEmbeddings({ models, onChanged }: { models: StoredModel[]; onChanged: () => void }) {
   const t = useTranslations("storedEmbeddings");
   const format = useFormatter();
-  const [, remove] = useMutation(DeleteEmbeddingModelMutation);
+  const [{ fetching: deleting }, remove] = useMutation(DeleteEmbeddingModelMutation);
   const [error, setError] = useState("");
 
   function bytes(value: number) {
@@ -79,8 +79,10 @@ export function StoredEmbeddings({ models, onChanged }: { models: StoredModel[];
                     <button
                       type="button"
                       onClick={() => handleDelete(model)}
+                      // A second delete after the first would only fail: the first already took it.
+                      disabled={deleting}
                       aria-label={t("deleteModel", { model: model.id })}
-                      className="rounded-md px-2 py-1 text-sm text-destructive hover:bg-accent"
+                      className="rounded-md px-2 py-1 text-sm text-destructive hover:bg-accent disabled:opacity-50"
                     >
                       {t("delete")}
                     </button>

@@ -103,7 +103,7 @@ impl EmbeddingConfig {
                 )
                 .into());
             }
-            if !slugs.insert(model.slug()) {
+            if !slugs.insert(slug(&model.name)) {
                 return Err(format!(
                     "embedding model {:?} differs from another one only in `.`, `-` or `_`, \
                      which its index name can't tell apart",
@@ -132,12 +132,6 @@ impl EmbeddingConfig {
 
 /// Index names have room for this much of a model name: Postgres cuts identifiers at 63 bytes.
 const MAX_NAME_CHARS: usize = 40;
-
-impl ModelConfig {
-    pub fn slug(&self) -> String {
-        slug(&self.name)
-    }
-}
 
 /// A model name as part of an identifier: `.` and `-` become `_`.
 pub fn slug(name: &str) -> String {
