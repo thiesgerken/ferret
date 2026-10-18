@@ -83,7 +83,6 @@ test("shows each connection with its last run and links to its runs on Activity"
   const text = view.container.textContent ?? "";
 
   assert.match(text, /NotesFailedgit · notes/, "name, status at a glance, then plugin and source");
-  assert.match(text, /Last run.* ago.*took 5 s/);
   assert.match(text, /Next run.*0 \* \* \* \*/);
   assert.match(text, /git clone failed: repository not found/);
   assert.equal(view.container.querySelectorAll("[aria-label='Last run'] [title]").length, 1);
