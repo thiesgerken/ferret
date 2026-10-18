@@ -39,7 +39,7 @@ async function renderViewer(
           title: "A note",
           text,
           url,
-          authors: ["alex"],
+          authors: ["thies"],
           createdAt: "2026-01-01T12:00:00Z",
           modifiedAt: "2026-01-02T12:00:00Z",
           previousInThread: null,
@@ -109,6 +109,14 @@ test("the header names the document's writer, the full source in the tooltip", a
   const source = view.container.querySelector("header span[title]");
   assert.equal(source?.getAttribute("title"), "notes/2026");
   assert.equal(source?.textContent, "Notes › 2026");
+  await view.unmount();
+});
+
+test("email shows its headers above the body", async () => {
+  const view = await renderViewer("EMAIL", "Hello,\nthe invoice.", null);
+
+  assert.match(view.container.querySelector("dl")?.textContent ?? "", /FromthiesSubjectA noteDate/);
+  assert.equal(view.container.querySelector("#hit"), null);
   await view.unmount();
 });
 

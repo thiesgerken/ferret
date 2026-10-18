@@ -87,7 +87,7 @@ lint, and PR images and chart published as `:pr<N>`.
   lies in the future, take the day after it, with the current UTC time of day, so a migration
   still sorts after the ones it builds on.
 - Invalid state fails loudly: required config and fields stay required, no silent defaults.
-- Keep hints, examples, fixtures and demo data independent of the maintainer's setup: use reserved example domains and fictional users, not personal hostnames, accounts or provider-specific instructions.
+- Keep hints, examples, fixtures and demo data independent of the maintainer's deployment: use reserved example domains, not personal hostnames, local checkout paths or provider-specific setup instructions.
 
 ### Commits
 

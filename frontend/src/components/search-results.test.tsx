@@ -109,7 +109,7 @@ async function renderResults(
                 ? [hit("b", "mail/personal", []), hit("d", "notes", [])]
                 : [hit("a", "notes", []), hit("b", "mail/personal", [])]
               : operation.variables.input.q === "invoice"
-              ? [hit("a", "notes", ["alex"]), hit("b", "mail/personal", ["Allianz", "alex"])]
+              ? [hit("a", "notes", ["thies"]), hit("b", "mail/personal", ["Allianz", "thies"])]
               : operation.variables.input.q === "nothing"
                 ? []
                 : [hit("c", "notes", [])],
@@ -130,7 +130,7 @@ async function renderResults(
                 : []),
             ],
             authors: [
-              { __typename: "FacetCount", value: "alex", count: 9 },
+              { __typename: "FacetCount", value: "thies", count: 9 },
               { __typename: "FacetCount", value: "Allianz", count: 2 },
             ],
             areLowerBounds: false,
@@ -244,15 +244,15 @@ test("offers the matches' sources and authors with their counts as filters", asy
 
   assert.deepEqual(
     facetChips(view.container).map((b) => `${label(b)} ${b.querySelector(".tabular-nums")?.textContent}`),
-    ["Notes 12", "mail import › mail › personal 3", "alex 9", "Allianz 2"],
+    ["Notes 12", "mail import › mail › personal 3", "thies 9", "Allianz 2"],
     "sources, then authors, as the facets order them",
   );
   await act(async () => chip("mail import › mail › personal").click());
-  await act(async () => chip("alex").click());
+  await act(async () => chip("thies").click());
 
   assert.deepEqual(changes, [
     { ...STATE, sources: ["mail/personal"] },
-    { ...STATE, sources: ["mail/personal"], authors: ["alex"] },
+    { ...STATE, sources: ["mail/personal"], authors: ["thies"] },
   ]);
   await view.unmount();
 });
