@@ -18,6 +18,8 @@ kubectl -n ferret logs deployment/ferret-plugins --since=10m
 
 Logs are structured JSON with an info default; configure `RUST_LOG` or chart `server.logLevel`. Plugin run logs/errors are visible in Activity; the server keeps a 64 Ki-character tail, not an unbounded audit trail. Workers deliberately disable async-imap command tracing to avoid logging passwords. Custom plugin logs must avoid secrets and raw response bodies.
 
+Server database connections disable ParadeDB's planner diagnostics (`paradedb.planner_warnings = off`): ordinary joins and embedding backlog counts legitimately use PostgreSQL plans rather than ParadeDB's optimized scans. This does not disable custom scans or change query planning; other database warnings and errors retain their log levels. To investigate missed ParadeDB optimizations, use a separate SQL session with `SET paradedb.planner_warnings = warning` and inspect the query with `EXPLAIN`.
+
 Activity distinguishes a **run** from an API-key **burst**. A burst groups a key's nearby writes and appears running while its last write was within ten minutes, then succeeded. It does not carry a worker lease/failure state. A run has claimed/running/succeeded/failed/lost behavior and an origin cursor. Admin all-user Activity requires an admin session.
 
 ## Failed or stuck connections
