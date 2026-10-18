@@ -111,7 +111,7 @@ on `chunk_embeddings`, `documents (user_id, source, thread, created_at, id)` (pa
 
 ## Sources
 
-Source names are paths (`carapace/facts`, `mail/zoho`). A connection (a plugin configured by a
+Source names are paths (`carapace/facts`, `mail/personal`). A connection (a plugin configured by a
 user) owns a root and may write into any source below it ([plugins.md](plugins.md#contract)).
 
 - Filters match by path prefix, segment-wise: `source=carapace` finds `carapace/facts` and
@@ -317,7 +317,7 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&col
 - **Facets**: `facets` counts the matches per source and for the 20 most frequent (and the selected)
   authors, like `total`. Each facet applies every filter except its own, so the other sources stay
   visible while one is selected, and a selected root that is a parent of the stored sources (`mail`
-  over `mail/zoho`) gets its covering count. A collapsed thread counts for every author of its
+  over `mail/personal`) gets its covering count. A collapsed thread counts for every author of its
   matching documents, as the author filter keeps a thread in which one of them is theirs.
   `are_lower_bounds` means what `total_is_lower_bound` means.
 - **Size and paging**: `k` hits, 10 by default, at most 100, aggregated from the fused candidate

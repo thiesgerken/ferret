@@ -254,7 +254,7 @@ async fn content_types_filter_and_may_repeat(pool: PgPool) {
 async fn sources_filter_by_path_prefix_and_may_repeat(pool: PgPool) {
     let server = start_server(pool).await;
     let api = server.admin_api().await;
-    for source in ["notes", "notes/work", "notes-old", "mail/zoho"] {
+    for source in ["notes", "notes/work", "notes-old", "mail/personal"] {
         api.put_document(&document(source, source, "shared word"))
             .await
             .unwrap();
@@ -277,7 +277,7 @@ async fn sources_filter_by_path_prefix_and_may_repeat(pool: PgPool) {
     notes_and_mail.sort();
 
     assert_eq!(notes, ["notes", "notes/work"]);
-    assert_eq!(notes_and_mail, ["mail/zoho", "notes/work"]);
+    assert_eq!(notes_and_mail, ["mail/personal", "notes/work"]);
 }
 
 #[sqlx::test(migrations = false)]

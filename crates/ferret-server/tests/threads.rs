@@ -6,12 +6,12 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// A mail thread of three invoices in `mail/zoho`, written out of order, a lone invoice mail, and a
+/// A mail thread of three invoices in `mail/personal`, written out of order, a lone invoice mail, and a
 /// thread of the same name in another source. Returns the thread's ids, oldest first.
 async fn ingest(api: &Client) -> Vec<Uuid> {
     let mut thread = Vec::new();
     for (external_id, created) in [("reply-2", 12), ("start", 10), ("reply-1", 11)] {
-        let mut mail = document("mail/zoho", external_id, "About the invoice for March.");
+        let mut mail = document("mail/personal", external_id, "About the invoice for March.");
         mail.thread = Some("invoices".to_owned());
         mail.created_at = day(created);
         thread.push((
@@ -19,10 +19,10 @@ async fn ingest(api: &Client) -> Vec<Uuid> {
             api.put_document(&mail).await.unwrap().id().unwrap(),
         ));
     }
-    api.put_document(&document("mail/zoho", "lone", "Another invoice."))
+    api.put_document(&document("mail/personal", "lone", "Another invoice."))
         .await
         .unwrap();
-    let mut elsewhere = document("mail/gmail", "other", "An invoice somewhere else.");
+    let mut elsewhere = document("mail/other", "other", "An invoice somewhere else.");
     elsewhere.thread = Some("invoices".to_owned());
     api.put_document(&elsewhere).await.unwrap();
     thread.sort();
@@ -38,7 +38,7 @@ fn invoices() -> SearchQuery {
 
 fn thread_query() -> ThreadQuery {
     ThreadQuery {
-        source: "mail/zoho".to_owned(),
+        source: "mail/personal".to_owned(),
         thread: "invoices".to_owned(),
     }
 }
@@ -102,9 +102,9 @@ async fn search_collapses_a_thread_into_its_best_hit(pool: PgPool) {
     assert_eq!(
         groups,
         [
-            ("mail/gmail", Some("invoices"), 0),
-            ("mail/zoho", None, 0),
-            ("mail/zoho", Some("invoices"), 2),
+            ("mail/other", Some("invoices"), 0),
+            ("mail/personal", None, 0),
+            ("mail/personal", Some("invoices"), 2),
         ]
     );
     assert_eq!(all.len(), 5);
@@ -119,7 +119,7 @@ async fn k_counts_threads_not_documents(pool: PgPool) {
 
     let hits = api
         .search(&SearchQuery {
-            sources: vec!["mail/zoho".to_owned()],
+            sources: vec!["mail/personal".to_owned()],
             k: Some(2),
             ..invoices()
         })

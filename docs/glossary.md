@@ -32,7 +32,7 @@ _Avoid_: window, session
 ## Ingestion
 
 **Source**:
-A path-shaped namespace that documents belong to, e.g. `mail/zoho` or `carapace/facts`. A source
+A path-shaped namespace that documents belong to, e.g. `mail/personal` or `carapace/facts`. A source
 includes every source below it.
 _Avoid_: collection, index, origin (an origin is the external system)
 

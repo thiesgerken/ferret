@@ -231,8 +231,8 @@ async fn connections_and_keys_take_a_name_and_an_icon(pool: PgPool) {
 #[sqlx::test(migrations = false)]
 async fn a_root_over_a_connections_and_a_keys_documents_has_no_single_writer(pool: PgPool) {
     let server = start_server(pool).await;
-    let run = notes_connection(&server, "mail/zoho").await;
-    run.put_document(&document("mail/zoho", "a", "An invoice by mail."))
+    let run = notes_connection(&server, "mail/personal").await;
+    run.put_document(&document("mail/personal", "a", "An invoice by mail."))
         .await
         .unwrap();
     server
@@ -258,7 +258,7 @@ async fn a_root_over_a_connections_and_a_keys_documents_has_no_single_writer(poo
         json!([
             {"value": "mail", "writer": null},
             {"value": "mail/notes", "writer": {"kind": "API_KEY"}},
-            {"value": "mail/zoho", "writer": {"kind": "CONNECTION"}},
+            {"value": "mail/personal", "writer": {"kind": "CONNECTION"}},
         ]),
         "{body}"
     );

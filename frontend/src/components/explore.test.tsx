@@ -25,7 +25,7 @@ const EXPLORATION = {
     {
       __typename: "ExploredDocument",
       id: "d1",
-      source: "mail/zoho",
+      source: "mail/personal",
       writer: { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Mail", icon: "mail" },
       externalId: "msg-1",
       contentType: "EMAIL",
@@ -40,7 +40,7 @@ const EXPLORATION = {
     sources: [
       {
         __typename: "SourceCount",
-        value: "mail/zoho",
+        value: "mail/personal",
         count: 51,
         writer: { __typename: "Writer", kind: "CONNECTION", id: "c1", name: "Mail", icon: "mail" },
       },
@@ -93,7 +93,7 @@ test("lists a page of documents that open the viewer, with facet counts", async 
   assert.equal(link.getAttribute("href"), "/view?id=d1");
   assert.equal(link.textContent, "msg-1", "the external id stands in for a missing title");
   assert.match(view.container.querySelector("tbody")!.textContent ?? "", /Email.*Ada, Grace/);
-  assert.equal(view.container.querySelector("tbody span[title='mail/zoho']")?.textContent, "Mail › zoho");
+  assert.equal(view.container.querySelector("tbody span[title='mail/personal']")?.textContent, "Mail › personal");
   assert.match(view.container.querySelector("aside")!.textContent ?? "", /Ada30/);
   assert.match(view.container.textContent ?? "", /51–51 of 51 documents/);
   await view.unmount();
@@ -101,17 +101,17 @@ test("lists a page of documents that open the viewer, with facet counts", async 
 
 test("a facet narrows the table and starts over at the first page", async () => {
   const { view, changes, button } = await renderExplore(STATE);
-  assert.equal(button("Mail › zoho").closest("li")?.querySelector("[title]")?.getAttribute("title"), "mail/zoho", "a source reads under its writer");
+  assert.equal(button("Mail › personal").closest("li")?.querySelector("[title]")?.getAttribute("title"), "mail/personal", "a source reads under its writer");
 
   await act(async () => {
-    button("Mail › zoho").click();
+    button("Mail › personal").click();
   });
   await act(async () => {
     button("January 2026").click();
   });
 
   assert.deepEqual(changes, [
-    { ...STATE, sources: ["mail/zoho"], page: 0 },
+    { ...STATE, sources: ["mail/personal"], page: 0 },
     { ...STATE, month: "2026-01", page: 0 },
   ]);
   await view.unmount();
