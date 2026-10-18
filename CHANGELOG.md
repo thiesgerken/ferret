@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.22.0 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #157 from thiesgerken/feat/moneta-plugin
+  ([`959883a`](https://github.com/thiesgerken/ferret/commit/959883adbf2e015a86cf12ebda0190228f4e4e3a))
+
+- 📝 docs(moneta): remove rollout history from plugin guide
+  ([`86f3ab1`](https://github.com/thiesgerken/ferret/commit/86f3ab1e49e29658ba9f3262237a04714af7e671))
+
+- ✅ test(moneta): assert behavior rather than query spelling
+  ([`2db9280`](https://github.com/thiesgerken/ferret/commit/2db92807bd170d3e5647a137d9d9700e5e5fd7dd))
+
+### ✨ Features
+
+
+- ✨ feat(moneta): index rendered expenses with full reconciliation
+  ([`959883a`](https://github.com/thiesgerken/ferret/commit/959883adbf2e015a86cf12ebda0190228f4e4e3a))
+
+- ✨ feat(moneta): index rendered expenses with full reconciliation
+  ([`1b10a59`](https://github.com/thiesgerken/ferret/commit/1b10a596ee89ce49a4aa12d0cbccb2248fe64395))
+
 ## v0.21.2 (2026-10-18)
 
 
