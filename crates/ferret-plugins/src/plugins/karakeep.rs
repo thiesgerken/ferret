@@ -286,7 +286,10 @@ fn to_document(
         source: source.to_owned(),
         external_id: bookmark.id,
         content_type: ContentType::Plain,
-        title: bookmark.title.or(fallback_title),
+        title: bookmark
+            .title
+            .filter(|title| !title.is_empty())
+            .or(fallback_title),
         text,
         url: Some(url.into()),
         thread: None,

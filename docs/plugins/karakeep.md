@@ -29,7 +29,7 @@ One bookmark becomes one plain-text document at the connection's source root, wi
 
 The document includes:
 
-- the bookmark title, or the extracted link title/upload filename when the bookmark has no title;
+- the bookmark title, or the extracted link title/upload filename when the custom title is unset or empty;
 - the original URL, upload filename and tag names;
 - all text from `/api/v1/bookmarks/{bookmarkId}/content?format=text`, following every continuation cursor beyond the default 12,000-character first response;
 - bookmark notes under **Bookmark notes**;

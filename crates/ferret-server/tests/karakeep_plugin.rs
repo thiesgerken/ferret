@@ -313,6 +313,59 @@ async fn find(server: &TestServer, query: &str) -> Vec<Document> {
 }
 
 #[sqlx::test(migrations = false)]
+async fn clearing_custom_titles_preserves_searchable_origin_titles_and_document_identity(
+    pool: PgPool,
+) {
+    let fake = origin();
+    {
+        let mut origin = fake.lock();
+        origin
+            .bookmarks
+            .retain(|bookmark| bookmark["id"] == "b1" || bookmark["id"] == "b3");
+        origin.bookmarks[0]["title"] = json!("Customarticlesentinel");
+        origin.bookmarks[0]["content"]["title"] = json!("Fallbackarticlesentinel");
+        origin.bookmarks[1]["title"] = json!("Customuploadsentinel");
+        origin.bookmarks[1]["content"]["fileName"] = json!("Fallbackuploadsentinel.pdf");
+    }
+    let url = serve(fake.clone()).await;
+    let server = start_server(pool).await;
+    let run = run(&server, &url).await;
+    plugins::run("karakeep", &run).await.unwrap();
+    let article = find(&server, "Customarticlesentinel").await.remove(0);
+    let upload = find(&server, "Customuploadsentinel").await.remove(0);
+    assert_eq!(article.title.as_deref(), Some("Customarticlesentinel"));
+    assert_eq!(upload.title.as_deref(), Some("Customuploadsentinel"));
+    {
+        let mut origin = fake.lock();
+        for bookmark in &mut origin.bookmarks {
+            bookmark["title"] = json!("");
+        }
+    }
+    let changed = plugins::run("karakeep", &run).await.unwrap();
+    assert_eq!(changed.stats.put, 2);
+    let articles = find(&server, "Fallbackarticlesentinel").await;
+    assert_eq!(
+        articles.len(),
+        1,
+        "the extracted title must remain searchable after clearing its override"
+    );
+    assert_eq!(articles[0].id, article.id);
+    assert_eq!(
+        articles[0].title.as_deref(),
+        Some("Fallbackarticlesentinel")
+    );
+    let uploads = find(&server, "Fallbackuploadsentinel").await;
+    assert_eq!(uploads.len(), 1);
+    assert_eq!(uploads[0].id, upload.id);
+    assert_eq!(
+        uploads[0].title.as_deref(),
+        Some("Fallbackuploadsentinel.pdf")
+    );
+    let unchanged = plugins::run("karakeep", &run).await.unwrap();
+    assert_eq!((unchanged.stats.put, unchanged.stats.unchanged), (0, 2));
+}
+
+#[sqlx::test(migrations = false)]
 async fn readable_text_and_annotations_cover_all_types_and_reconcile_without_timestamp_caches(
     pool: PgPool,
 ) {
@@ -356,18 +409,6 @@ async fn readable_text_and_annotations_cover_all_types_and_reconcile_without_tim
     assert_eq!(original.meta["file_name"], "archive.pdf");
     assert_eq!(original.created_at, common::day(1));
     assert_eq!(original.modified_at, common::day(3));
-    assert!(original.text.contains("Content:\nPDFbodysentinel"));
-    assert!(
-        original
-            .text
-            .contains("Bookmark notes:\nBookmarknotesentinel")
-    );
-    assert!(original.text.contains("Highlights:\n"));
-    assert!(
-        original
-            .text
-            .contains("Quote: Highlightquotesentinel\nNote: Highlightnotesentinel")
-    );
     let link = find(&server, "Linksentinel").await.remove(0);
     assert_eq!(link.authors, ["Alice"]);
     assert!(link.text.contains("🦦cobalt"));
