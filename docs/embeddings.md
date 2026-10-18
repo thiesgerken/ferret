@@ -49,10 +49,10 @@ Every endpoint gets the same request: `POST {url}/embeddings` with `model`, `inp
 
 **A TEI directly.** [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference)
 serves the OpenAI route at `/v1/embeddings`, so `url: http://tei:80/v1` with the Hugging Face
-model id as `model`. Start it without `--auto-truncate`: an over-long input is then refused and
-recorded, rather than silently cut. Its `--max-batch-tokens` caps the input length, which must
-stay at 2202 tokens or more (200 title characters, two newlines and a chunk of up to 2000
-characters). The chart's `bundledTei` deploys one such TEI for one model.
+model id as `model`. Its `--max-batch-tokens` caps the input length, which must stay at 2202
+tokens or more (200 title characters, two newlines and a chunk of up to 2000 characters): TEI
+truncates longer inputs by default, which would embed only a chunk's beginning. The chart's
+`bundledTei` deploys one such TEI for one model.
 
 **A self-hosted proxy.** [LiteLLM](https://docs.litellm.ai/docs/embedding/supported_embedding) in
 front of several TEIs (a CPU TEI in the cluster, a laptop's GPU for a backfill) balances and fails

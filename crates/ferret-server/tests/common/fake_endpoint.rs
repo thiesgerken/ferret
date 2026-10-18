@@ -1,6 +1,6 @@
-//! A stand-in for an OpenAI-compatible embeddings endpoint with TEI's behaviour: `POST
-//! /v1/embeddings` rejects over-long inputs with a 413 like TEI without `--auto-truncate`, and
-//! inputs it can't tokenize with a 422. It can also want a bearer token, rate-limit, fail, hang
+//! A stand-in for an OpenAI-compatible embeddings endpoint: `POST /v1/embeddings` rejects
+//! over-long inputs with a 413 like TEI with `--auto-truncate false`, and inputs it can't tokenize
+//! with a 422. It can also want a bearer token, rate-limit, fail, hang
 //! and answer with broken vectors.
 
 use std::sync::{Arc, Mutex};

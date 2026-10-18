@@ -72,9 +72,10 @@ serving are that endpoint's job, ferret only measures its own work.
 - **A cloud endpoint receives every chunk and every search query**: the privacy boundary moves
   with the endpoint.
 
-- **No silent truncation**: a TEI started without `--auto-truncate` (the default) rejects an
-  over-long text instead of embedding its beginning. Such inputs land in `embedding_failures`
-  (see below).
+- **Truncation is the endpoint's call**: TEI truncates over-long inputs by default
+  (`auto_truncate`), other endpoints refuse them. A refused input lands in `embedding_failures`
+  (see below). Chunks are capped so that a model with an input limit of 2202 tokens or more never
+  sees one too long.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
