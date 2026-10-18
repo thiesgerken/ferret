@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.21.2 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #156 from thiesgerken/fix/embedding-rollback
+  ([`c8bf7d7`](https://github.com/thiesgerken/ferret/commit/c8bf7d732fafadb7e6661cbe6f8a57a2e9fb315c))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): await failed embedding batch rollback
+  ([`c8bf7d7`](https://github.com/thiesgerken/ferret/commit/c8bf7d732fafadb7e6661cbe6f8a57a2e9fb315c))
+
+- 🐛 fix(server): await failed embedding batch rollback
+  ([`0c82b07`](https://github.com/thiesgerken/ferret/commit/0c82b07a0fdaee833ed8d33d54199329f1663440))
+
 ## v0.21.1 (2026-10-18)
 
 
