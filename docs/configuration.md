@@ -57,7 +57,7 @@ These example URLs must be reachable **from the server**. `tei` is Compose/inter
 | `embedding.models` | required list containing the default model |
 | `models[].name` | required unique lowercase name, 1–40 characters, `[a-z0-9][a-z0-9._-]*`, ends alphanumeric |
 | `models[].model_id` | required unique Hugging Face model id reported by TEI |
-| `models[].dimension` | required positive integer, checked against returned/cached vectors |
+| `models[].dimension` | required positive integer, checked against returned vectors and the [model registry](embeddings.md#stored-embeddings-and-the-model-registry): a changed dimension refuses startup |
 | `models[].query_prefix` | defaults to empty string; prepended to positive query text |
 | `models[].document_prefix` | defaults to empty string; prepended to title/chunk text |
 | `models[].min_similarity` | required finite-range cutoff, at least 0 and below 1 |
@@ -91,6 +91,6 @@ The static production frontend does not read a runtime API-origin environment va
 
 There is no generic YAML/environment overlay or hot reload. Server required environment values and YAML are read at startup. Exported environment values override Cargo's non-forced development defaults, but `DATABASE_URL` is for tooling/tests; it does not replace runtime `FERRET_DATABASE_URL`. Docker Compose supplies its own explicit container environment.
 
-Connection changes, users, keys, exclusions, personal model defaults and TEI switches live in Postgres. TEI switches update live; discovery refreshes every ten seconds. YAML controls endpoint membership and model definitions, not repeated overwriting of persisted switches. A checksum of rendered chart config rolls server pods on model/TEI membership changes; secret changes need deliberate rollout/coordination. See [embeddings](embeddings.md) before changing model identity and [operations](operations.md) before changing secrets.
+Connection changes, users, keys, exclusions, personal model defaults, the [model registry](embeddings.md#stored-embeddings-and-the-model-registry) and TEI switches live in Postgres. TEI switches update live; discovery refreshes every ten seconds. YAML controls endpoint membership and model definitions, not repeated overwriting of persisted switches. A checksum of rendered chart config rolls server pods on model/TEI membership changes; secret changes need deliberate rollout/coordination. See [embeddings](embeddings.md) before changing model identity and [operations](operations.md) before changing secrets.
 
 Implementation: [server startup](../crates/ferret-server/src/main.rs), [YAML validation](../crates/ferret-server/src/config.rs), [worker startup](../crates/ferret-plugins/src/main.rs), [frontend dev proxy](../frontend/next.config.ts), [Cargo defaults](../.cargo/config.toml), [Helm translation](../charts/ferret/templates/_helpers.tpl).

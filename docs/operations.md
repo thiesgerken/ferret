@@ -39,7 +39,7 @@ Removing a remembered exclusion requires no live run and resets state for a full
 - All chunks embedded but uncached queries fail: query serving is a separate eligibility/latency path; external TEIs start with queries off. Inspect Admin switches/errors instead of re-ingesting everything.
 - Rejected chunks: inspect the actual TEI error and model/input configuration. Rejected per-chunk/model inputs are excluded from retries; there is no public mass-retry endpoint. Text/title changes create/invalidate eligible work, but do not edit user text merely to suppress an infrastructure error.
 
-Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model name or delete embedding tables as a casual repair. TEI caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
+Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model name or delete embedding tables as a casual repair. To remove the stored embeddings of a model that is no longer configured, use the delete in Admin's [stored embeddings](embeddings.md#stored-embeddings-and-the-model-registry) list rather than deleting rows. TEI caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
 
 ## Upgrades and migrations
 
