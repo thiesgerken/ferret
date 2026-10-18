@@ -14,6 +14,7 @@ pub mod git;
 pub mod gitea;
 pub mod imap;
 pub mod karakeep;
+pub mod moneta;
 pub mod paperless;
 pub mod repo;
 pub mod vikunja;
@@ -51,6 +52,11 @@ pub fn registrations() -> Vec<PluginRegistration> {
         PluginRegistration {
             name: karakeep::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(karakeep::KarakeepConfig))
+                .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: moneta::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(moneta::MonetaConfig))
                 .expect("a schema serializes"),
         },
         PluginRegistration {
@@ -134,6 +140,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
         gitea::NAME => gitea::run(run).await,
         imap::NAME => imap::run(run).await,
         karakeep::NAME => karakeep::run(run).await,
+        moneta::NAME => moneta::run(run).await,
         paperless::NAME => paperless::run(run).await,
         vikunja::NAME => vikunja::run(run).await,
         other => Err(format!("this worker doesn't know the plugin {other:?}").into()),

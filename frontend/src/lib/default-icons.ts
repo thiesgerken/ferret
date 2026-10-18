@@ -6,6 +6,7 @@ const PLUGIN_ICONS: Record<string, string> = {
   paperless: "file-text",
   imap: "mail",
   karakeep: "bookmark",
+  moneta: "wallet",
   vikunja: "list-checks",
 };
 
