@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.19.1 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #150 from thiesgerken/chore/generic-setup-examples
+  ([`24e3250`](https://github.com/thiesgerken/ferret/commit/24e325034dedb2359f9b36e553964a486d5e09b8))
+
+- Merge pull request #148 from thiesgerken/readme-screenshots
+  ([`c1f3a7c`](https://github.com/thiesgerken/ferret/commit/c1f3a7c43d9cc98377889b36988834eaccc2455c))
+
+  📝 docs(readme): retake the screenshots after the endpoint rework
+
+- 📝 docs(readme): retake the screenshots after the endpoint rework
+  ([`7a1f23c`](https://github.com/thiesgerken/ferret/commit/7a1f23c6449321bfdaf231f7953a405ff49a66da))
+
+  Activity shows both models (Qwen3 and bge-m3) fully embedded with their endpoints instead of the TEI pool. Activity is now a full-page capture, so it ends after the ingests instead of mid-card.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🩹 Patches
+
+
+- 🩹 fix(examples): remove maintainer-specific setup references
+  ([`24e3250`](https://github.com/thiesgerken/ferret/commit/24e325034dedb2359f9b36e553964a486d5e09b8))
+
+- 🩹 fix(examples): retain original names in demo and test data
+  ([`8bb8f50`](https://github.com/thiesgerken/ferret/commit/8bb8f50389500e1bf07ae7629271f896e30ada94))
+
+- 🩹 fix(examples): remove maintainer-specific setup references
+  ([`8e23c8f`](https://github.com/thiesgerken/ferret/commit/8e23c8f3e8298ddf5f8a75b4eab9bd4d0edf4cbc))
+
 ## v0.19.0 (2026-10-18)
 
 
