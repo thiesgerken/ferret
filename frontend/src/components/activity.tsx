@@ -33,7 +33,7 @@ const ActivityOverviewQueryDocument = graphql(`
       }
     }
     embeddingModels {
-      name
+      id
       configuredDefault
       embedded
       chunks
@@ -63,15 +63,20 @@ const ActivityOverviewQueryDocument = graphql(`
 const EmbedderStatusQueryDocument = graphql(`
   query EmbedderStatus {
     embeddingStatus {
-      name
+      id
       embedded
       chunks
       etaSeconds
-    }
-    teis {
-      url
-      model
-      ...TeiCardFields
+      embeddingApi {
+        url
+        model
+        ...EndpointCardFields
+      }
+      queryApi {
+        url
+        model
+        ...EndpointCardFields
+      }
     }
   }
 `);
@@ -134,7 +139,7 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
         <Tile icon={<Database />} label={t("embedded")} value={defaultModel ? Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100) / 100 : null} percent />
       </div>
       <Section title={t("embedding")} icon={<Brain />} description={t("embeddingHint")}>
-        <Embedders models={data.embeddingModels} global={embedders && { models: embedders.embeddingStatus, teis: embedders.teis }} />
+        <Embedders models={data.embeddingModels} global={embedders?.embeddingStatus} />
       </Section>
       {data.connections.length > 0 && (
         <Section title={t("connections")} icon={<ListTree />} description={t("connectionsHint")}>

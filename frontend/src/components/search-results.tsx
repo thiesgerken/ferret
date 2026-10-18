@@ -80,7 +80,7 @@ const SearchHitsQueryDocument = graphql(`
 const EmbeddingModelNamesQuery = graphql(`
   query EmbeddingModelNames {
     embeddingModels {
-      name
+      id
       minSimilarity
     }
   }
@@ -121,7 +121,7 @@ export function SearchResults({
   const roots = useConnectionRoots();
   const hits = data?.search.hits ?? [];
   // The bars need the cut-off of the model that ran. Until the models are in, hits go without.
-  const minSimilarity = models?.embeddingModels.find((model) => model.name === data?.search.model)?.minSimilarity;
+  const minSimilarity = models?.embeddingModels.find((model) => model.id === data?.search.model)?.minSimilarity;
   const relevance =
     minSimilarity === undefined
       ? null
@@ -169,7 +169,7 @@ export function SearchResults({
             state={state}
             facets={data?.search.facets}
             roots={roots}
-            models={models?.embeddingModels.map((model) => model.name) ?? []}
+            models={models?.embeddingModels.map((model) => model.id) ?? []}
             ranModel={data?.search.model}
             onChange={onChange}
           />
