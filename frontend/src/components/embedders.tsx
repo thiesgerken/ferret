@@ -2,38 +2,33 @@
 
 import { Circle } from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { TeiCard } from "@/components/tei-card";
+import { ModelEndpointCards } from "@/components/endpoint-card";
 import type { ActivityOverviewQuery, EmbedderStatusQuery } from "@/gql/graphql";
 import { formatDuration } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 type Model = ActivityOverviewQuery["embeddingModels"][number];
 type GlobalModel = EmbedderStatusQuery["embeddingStatus"][number];
-type Tei = EmbedderStatusQuery["teis"][number];
-
-/** What admins see beyond their own chunks: the whole index, and the TEIs of the pool. */
-type Global = { models: GlobalModel[]; teis: Tei[] };
 
 /**
  * Each embedding model's progress over the user's chunks: how much is embedded, how fast the pump
- * goes and when it's done. Admins also see the whole index and every TEI serving the model.
+ * goes and when it's done. Admins also see the whole index and the model's endpoints.
  */
-export function Embedders({ models, global }: { models: Model[]; global: Global | undefined }) {
+export function Embedders({ models, global }: { models: Model[]; global: GlobalModel[] | undefined }) {
   return (
     <div className="space-y-4">
       {models.map((model) => (
         <ModelProgress
-          key={model.name}
+          key={model.id}
           model={model}
-          global={global?.models.find(({ name }) => name === model.name)}
-          teis={global?.teis.filter((tei) => tei.model === model.name) ?? []}
+          global={global?.find(({ id }) => id === model.id)}
         />
       ))}
     </div>
   );
 }
 
-function ModelProgress({ model, global, teis }: { model: Model; global: GlobalModel | undefined; teis: Tei[] }) {
+function ModelProgress({ model, global }: { model: Model; global: GlobalModel | undefined }) {
   const t = useTranslations();
   const locale = useLocale();
   const format = useFormatter();
@@ -42,7 +37,7 @@ function ModelProgress({ model, global, teis }: { model: Model; global: GlobalMo
     <div className="space-y-4 rounded-xl border border-border p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium">
-          {model.name}
+          {model.id}
           {model.configuredDefault && <span className="text-xs font-normal text-muted-foreground"> · {t("common.default")}</span>}
         </p>
         <p className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -53,7 +48,7 @@ function ModelProgress({ model, global, teis }: { model: Model; global: GlobalMo
       <div>
         <div
           role="progressbar"
-          aria-label={t("embedders.progressLabel", { model: model.name })}
+          aria-label={t("embedders.progressLabel", { model: model.id })}
           aria-valuenow={Math.floor(share * 100)}
           className="h-2 overflow-hidden rounded-full bg-muted"
         >
@@ -86,13 +81,13 @@ function ModelProgress({ model, global, teis }: { model: Model; global: GlobalMo
           warn={model.failed > 0}
         />
       </dl>
-      {global && <GlobalProgress model={global} teis={teis} />}
+      {global && <GlobalProgress model={global} />}
     </div>
   );
 }
 
-/** Admins only: the whole index, and every TEI serving the model. */
-function GlobalProgress({ model, teis }: { model: GlobalModel; teis: Tei[] }) {
+/** Admins only: the whole index, and the model's endpoints. */
+function GlobalProgress({ model }: { model: GlobalModel }) {
   const t = useTranslations("embedders");
   const locale = useLocale();
   return (
@@ -102,13 +97,7 @@ function GlobalProgress({ model, teis }: { model: GlobalModel; teis: Tei[] }) {
           ? t("allUsers", { embedded: model.embedded, chunks: model.chunks })
           : t("allUsersEta", { embedded: model.embedded, chunks: model.chunks, duration: formatDuration(model.etaSeconds, locale) })}
       </p>
-      {teis.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {teis.map((tei) => (
-            <TeiCard key={tei.url} tei={tei} />
-          ))}
-        </div>
-      )}
+      <ModelEndpointCards embeddingApi={model.embeddingApi} queryApi={model.queryApi} />
     </div>
   );
 }

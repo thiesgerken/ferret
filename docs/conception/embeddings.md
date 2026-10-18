@@ -13,86 +13,89 @@ marks. Turning them into metrics is post-v1 (#21).
 
 ## Models
 
-Models and TEIs are configuration, not database state, because the Helm chart deploys them:
+Models and their endpoints are configuration, not database state, because the Helm chart (or
+whoever deploys ferret) decides them:
 
 ```yaml
 embedding:
   default: qwen3-embedding-0.6b
   models:
-    - name: qwen3-embedding-0.6b
-      model_id: Qwen/Qwen3-Embedding-0.6B    # what a TEI serving it reports in /info
-      dimension: 1024                        # of its vectors
+    - id: qwen3-embedding-0.6b                # stored with every embedding
+      dimension: 1024                         # of its vectors
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       document_prefix: ""
-      min_similarity: 0.42                   # see Similarity cut-off
-  teis:
-    - url: http://ferret-tei-qwen3-embedding-0-6b:80
-    - url: http://192.168.1.20:8080          # e.g. a laptop's GPU in the LAN
-      external: true                         # starts with queries off
+      min_similarity: 0.42                    # see Similarity cut-off
+      embedding_api:                          # computes the chunks' embeddings
+        url: http://litellm:4000/v1
+        model: qwen3-embed                    # what the endpoint calls the model
+        token_env: FERRET_LITELLM_TOKEN       # optional, a bearer token from the environment
+        concurrency: 4                        # optional, requests at once per server replica
+      query_api:                              # computes the queries' embeddings
+        url: http://tei:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
 ```
 
 The configuration is a YAML file the server reads from `FERRET_CONFIG_FILE` (Helm: a ConfigMap).
-Model names end up in index names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`,
-ending in a letter or digit, at most 40 characters, and no two names may differ only in `.`, `_`
-and `-`. No two models may share a `model_id`.
+Model ids end up in index names and SQL literals, so they are limited to `[a-z0-9][a-z0-9._-]*`,
+ending in a letter or digit, at most 40 characters, and no two ids may differ only in `.`, `_` and
+`-`.
 
-### The TEI pool
+### Endpoints
 
-A TEI isn't tied to a model: every TEI works for whichever configured model it currently serves.
-A laptop is listed once and helps with whatever model it has loaded.
+ferret doesn't manage the servers that compute embeddings. Each model names the OpenAI-compatible
+endpoint that computes them: a TEI, a proxy such as LiteLLM, or a cloud API. Routing, failover and
+serving are that endpoint's job, ferret only measures its own work.
 
-- **Discovery**: at startup and every 10 seconds, the server asks every TEI's `/info` for its
-  `model_id` and matches it with the configured models. A TEI that doesn't answer is offline, one
-  serving a model no configured one has is unused (Admin shows its model), one whose
-  `max_input_length` is too short is unsuitable (see below). A TEI that switches models moves to
-  the other model with the next look. TEIs that are down don't keep the server from starting:
-  searches answer by keyword until a TEI serves the model.
-- **Every answer is checked**: embeddings go through TEI's OpenAI-compatible `/v1/embeddings`,
-  whose answer names the model that computed them (TEI's `served_model_name`). An answer from
-  another model than discovered, with another dimension than the model's, or with a vector missing
-  is discarded, never written, and the TEI is asked again in the background. A TEI started with
-  `--served-model-name` is unsuitable: under a fixed name, its answers couldn't show that it
-  loaded another model meanwhile. Vectors of two models therefore don't mix as TEIs come and go
-  (two models of one dimension under the same model id would, which no config allows). The route
-  normalizes like `/embed`.
-- **Dimension**: configured per model, since `/info` doesn't report it. The server creates the
+- **Two roles**: `embedding_api` embeds chunks, `query_api` embeds search queries. A model needs
+  at least one, and the one that is set serves both when the other is missing. This way, queries go
+  to a small, always-on endpoint while a backfill runs elsewhere. `concurrency` (default 1) only
+  exists on the endpoint that embeds chunks.
+- **One request shape**: every endpoint gets `POST {url}/embeddings` with `model`, `input` and
+  `encoding_format: float`, plus `Authorization: Bearer` when the endpoint has a `token_env`. The
+  server reads the token at startup and refuses to start when the variable is unset or empty,
+  since a typo would otherwise send requests without it.
+- **Every answer is checked**: exactly one vector per input, `index` covering 0..n-1, every vector
+  of the configured dimension, finite and with a norm above 0. An answer that fails a check is
+  discarded as a whole, nothing of it is written. The answer's `model` field isn't checked:
+  proxies and cloud APIs name models their own way.
+- **Not ferret's job**: verifying that the endpoint serves the right weights. A model name at the
+  endpoint must always mean the same weights, since vectors of another model would end up in this
+  one's index. ferret can't detect a swap, so the deployment has to guarantee it.
+- **Dimension**: configured per model, since endpoints don't report it. The server creates the
   model's partial HNSW index for it at startup, and refuses to start when the
   [model registry](#model-registry) knows the model with another one.
-- **Switches** (Admin, table `teis`): per TEI, on/off, queries, embedding. New TEIs of the
-  deployment get all three, external ones (`external: true`) no queries, so searches don't depend
-  on a laptop that may go to sleep. A change takes effect at once on the server that made it,
-  within 10 seconds on the others, without a restart. Rows of TEIs that left the config go at
-  startup.
-- **Queries** go to an enabled query TEI of the model, one without a pump batch in flight first,
-  then the others in config order, until one answers within the 5 s query timeout.
-- **The pump** runs one loop per TEI that may embed, for the model it serves. A faster TEI simply
-  claims more batches. On a TEI that also answers queries, batches stay short (about 2 s), so a
-  query never waits long behind one.
+- **Endpoints aren't contacted at startup**: one that is down doesn't keep the server from
+  starting. An unreachable endpoint is a normal state: searches with its model answer by keyword,
+  the pump backs off, and other models aren't held up.
+- **Queries** go to the model's query endpoint, with a 5 s timeout. When it fails, a hybrid search
+  answers by keyword and says so, a semantic-only search fails.
+- **A cloud endpoint receives every chunk and every search query**: the privacy boundary moves
+  with the endpoint.
 
-- **No silent truncation**: a TEI started without `--auto-truncate` (the default) rejects an
-  over-long text instead of embedding its beginning. With it, the length check below still keeps
-  every input within the limit.
+- **Truncation is the endpoint's call**: TEI truncates over-long inputs by default
+  (`auto_truncate`), other endpoints refuse them. A refused input lands in `embedding_failures`
+  (see below). Chunks are capped so that a model with an input limit of 2202 tokens or more never
+  sees one too long.
 
 - **Prefixes**: asymmetric models expect an instruction on the query side (Qwen3-Embedding) or
   `query: ` / `passage: ` markers (E5 family). Without them recall drops noticeably. The prefix is
   part of the cache key (`text_hash` covers the whole input: prefix, title and text), so changing
   it never serves stale vectors.
-- **Backfills**: big ones (the first import, a new model) run on a GPU TEI listed as external,
-  e.g. a laptop's. It embeds next to the CPU TEI, taking most batches. Switching the CPU TEI's
-  embedding off in Admin leaves it all to the GPU and keeps the CPU for queries. One Service over
-  CPU and GPU pods wouldn't work: HTTP keep-alive pins connections to pods, so the split would be
-  random. The compose dev setup lists a second CPU TEI (`tei-bulk`) as external, to show both
-  kinds.
+- **Backfills**: big ones (the first import, a new model) go to whatever endpoint the model's
+  `embedding_api` names, e.g. a GPU TEI or a proxy in front of several, with `concurrency` to keep
+  it busy. Queries stay on the `query_api`, so searches don't wait behind the backfill.
+- **Deployment**: the Helm chart deploys no TEI by default. `bundledTei` deploys one CPU TEI for
+  exactly one model, for a quickstart. The compose dev setup runs a Qwen3 TEI (`tei`) and a bge-m3
+  one (`tei-bge`) scaled to 0, so the second model shows an unreachable endpoint until it's scaled
+  up.
 
-- **A TEI whose `max_input_length` is below the longest embedded input is unsuitable**: it serves
-  the model but isn't used. TEI would otherwise reject or truncate long chunks. The embedded input is the
-  model's `document_prefix`, the title capped at 200 characters, a blank line and the chunk (at
-  most 2000 characters). The check covers title and chunk, 2202 characters, and leaves the prefix
-  out. It compares them one to one with `max_input_length` tokens: Latin
-  text never takes more than one token per character, so a model that accepts 2202 tokens takes
-  every input.
-- **Adding a model**: the server creates its partial HNSW index, and once a TEI serves it, the
-  pump backfills it.
+- **The longest embedded input** is the model's `document_prefix`, the title capped at 200
+  characters, a blank line and the chunk (at most 2000 characters): title and chunk come to 2202
+  characters. Latin text never takes more than one token per character, so a model that accepts
+  2202 tokens takes every input. ferret doesn't ask the endpoint for its limit, an input it
+  rejects is recorded and skipped.
+- **Adding a model**: the server creates its partial HNSW index, and the pump backfills it through
+  the model's endpoint.
 - **Removing a model** is not implemented yet (#21): its index and rows stay until dropped by hand.
 
 ## Storage
@@ -145,7 +148,7 @@ create table embedding_models (
 - **The dimension is fixed.** The server refuses to start when a configured model is known with
   another dimension: its HNSW index is built for one, and its vectors couldn't mix. Changing it
   means removing the model from the config, deleting its embeddings and adding it again (or
-  another `name`). It equally refuses a model whose index name a stored model already has (`a.b`
+  another `id`). It equally refuses a model whose index name a stored model already has (`a.b`
   and `a-b`).
 - **Admin → Embedding** lists every registered model: its chunk embeddings across users, the size
   of its HNSW index (exact) and of its vectors in `chunk_embeddings` (estimated from their count,
@@ -190,53 +193,56 @@ select id, text, title from (
     limit 256
 ) candidates
 where pg_try_advisory_xact_lock(hashtextextended(id::text || $1, 0))
-limit $2;  -- the TEI's batch size, at most 32 and TEI's max_client_batch_size
+limit $2;  -- the model's batch size, at most 32
 ```
 
-- Each TEI's loop claims chunks of the model the TEI serves, newest first.
-- Each batch: look up `embedding_cache`, send the misses to the TEI, write `chunk_embeddings` and
-  `embedding_cache` in one transaction.
-- `LISTEN chunks_pending` wakes the loops after an ingest, so does a TEI that changed. All loops of
-  all replicas share the queue through the advisory locks.
+- Each model has `concurrency` loops per server replica, which claim its chunks newest first.
+- Each batch: look up `embedding_cache`, send the misses to the model's `embedding_api`, write
+  `chunk_embeddings` and `embedding_cache` in one transaction.
+- `LISTEN chunks_pending` wakes the loops after an ingest. All loops of all replicas share the
+  queue through the advisory locks, so no chunk is embedded twice.
 - A statement trigger on `chunks` sends the notification, delivered when the ingest commits. The
   pump also polls every 30 s, which picks up after outages.
-- A failed batch or query is logged and stored with the TEI (`teis.last_error`) until its next
-  success, for Admin. The pump keeps retrying while the TEI is listed as serving.
-- TEI rejecting a batch (413 too long, 422 untokenizable) makes the pump retry its texts one by
-  one. Texts TEI rejects alone
-  (more tokens than characters, e.g. emoji or CJK) land in `embedding_failures` (chunk, model,
-  error) and leave the queue. A changed text is a new chunk and a changed title deletes the
-  failure, so either gets another chance.
-- Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for TEI.
-  The final insert locks the chunks `for share` and skips those deleted meanwhile.
+- A failed batch (unreachable, an error status, an answer that fails a check) leaves its chunks
+  pending, and the loop tries again after a pause that doubles from 1 s to 60 s. New chunks don't
+  cut the pause short: a burst of ingests must not hammer an endpoint that is down. The endpoint
+  logs a failure when its kind changes (unreachable, an error status, an invalid answer, a 429),
+  not on every retry, and keeps its last error and whether it answered at all for Admin, in
+  memory per server process, until its next success.
+- A 429 makes every loop of the model wait for `Retry-After` (30 s without one), checked right
+  before each request. The endpoint is busy, not slow, so the batch size stays.
+- The endpoint rejecting a batch (400, 413 too long, 422 untokenizable) makes the pump retry its
+  texts one by one. Texts it rejects alone (more tokens than characters, e.g. emoji or CJK) land
+  in `embedding_failures` (chunk, model, error) and leave the queue. When it rejects every text of
+  a batch of several, the endpoint is at fault (a proxy answers an unknown model with a 400), so
+  the batch fails like any endpoint failure and nothing is recorded. Rejections show as the
+  endpoint's last error. A changed text is a new chunk
+  and a changed title deletes the failure, so either gets another chance.
+- Advisory locks instead of row locks: a `PUT` that changes a claimed chunk never waits for the
+  endpoint. The final insert locks the chunks `for share` and skips those deleted meanwhile.
 - Timeouts: 5 s for a query embedding (then keyword-only), 60 s for a pump batch.
-- The batch size adapts per TEI and server: a timeout, or a batch that took longer than its target,
-  halves it (down to 1), a batch that took less than half the target adds one (up to 32). The
-  target is the 60 s timeout, and about 2 s on a TEI that also answers queries. TEI computes a
-  request to the end even after the pump gave up on it, so on a CPU too slow for 32 long chunks,
-  retrying the same batch would queue behind the abandoned one and time out again, forever. A GPU
-  TEI stays at 32.
+- The batch size adapts per model and server: a timeout, or a batch that took longer than its
+  target, halves it (down to 1), a batch that took less than half the target adds one (up to 32).
+  The target is the 60 s timeout, and about 2 s when one endpoint embeds chunks and queries, so a
+  query never waits long behind a batch. A TEI computes a request to the end even after the pump
+  gave up on it, so on a CPU too slow for 32 long chunks, retrying the same batch would queue
+  behind the abandoned one and time out again, forever. A GPU endpoint stays at 32.
 
 ### Progress
 
 What the Activity page shows per model:
 
-- **Backlog**: the user's chunks still pending and those TEI refused (Admin: per source, across
-  users).
+- **Backlog**: the user's chunks still pending and those the endpoint rejected (Admin: per source,
+  across users).
 - **Rate**: embeddings written in the last 10 minutes (`chunk_embeddings.embedded_at`), per
   minute, across users: the pump is shared, so every user sees it. It's read from the database,
   so it holds across server processes and restarts. ETA is the backlog divided by it, optimistic
   for one user while others' chunks wait too. Admins also get the global embedded and total
   chunks.
-- **Batch size**: the pump's current one, per server process (it adapts per process).
-- **TEI** (Admin): per configured URL (queries, pump, or both), TEI's own figures from its
-  Prometheus `/metrics`, read on demand at most every 3 s and kept for a minute: queue size,
-  average batch size, inputs embedded per minute, failed requests, and the share of the minute
-  spent in inference as a CPU proxy. TEI records each input of a batch with the batch's
-  inference time, so that share divides the inference time by the average batch size, which is
-  approximate when batch sizes vary. A TEI restart resets its counters, the samples before it
-  are dropped. The
-  pump's TEI also gets an ETA from its throughput. No Prometheus server is involved.
+- **Endpoints** (Admin, and admins on Activity): each model's endpoints with their URL and model
+  name, whether the last request reached them, and the last error with its time. As the answering
+  server process saw them: the state lives in memory. Hardware and inference metrics are the
+  endpoint's business, not ferret's.
 
 ## Per-user model choice
 
@@ -252,7 +258,7 @@ What the Activity page shows per model:
 - At startup, users whose default model is no longer configured are reset to the configured
   default, each with a logged warning.
 
-v1 configures a single model, but adding one is a config change plus a TEI Deployment, and
+v1 configures a single model, but adding one is a config change naming its endpoint, and
 switching to it needs nothing but a choice in Settings once its backfill is done.
 
 ## Similarity cut-off

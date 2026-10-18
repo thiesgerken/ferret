@@ -2,8 +2,8 @@ mod common;
 
 use common::{
     MODEL, TestServer, document, embedding_config,
-    fake_tei::{DIMENSION, FakeTei, MAX_INPUT_LENGTH},
-    model, start_semantic_server, start_server, start_server_with, tei_config,
+    fake_endpoint::{DIMENSION, FakeEndpoint},
+    model, start_semantic_server, start_server, start_server_with,
 };
 use ferret_server::config::EmbeddingConfig;
 use serde_json::{Value, json};
@@ -41,12 +41,11 @@ async fn index_exists(pool: &PgPool, model: &str) -> bool {
 /// `alpha` and `beta` embed two documents each, then the server restarts with `alpha` only:
 /// `beta`'s embeddings stay behind.
 async fn beta_left_the_config(pool: PgPool) -> TestServer {
-    let alpha = FakeTei::serving("org/alpha", MAX_INPUT_LENGTH).await;
-    let beta = FakeTei::serving("org/beta", MAX_INPUT_LENGTH).await;
+    let alpha = FakeEndpoint::start().await;
+    let beta = FakeEndpoint::start().await;
     let both = EmbeddingConfig {
         default: "alpha".to_owned(),
         models: vec![model("alpha", &alpha), model("beta", &beta)],
-        teis: vec![tei_config(&alpha), tei_config(&beta)],
     };
     let server = start_server_with(pool.clone(), alpha.clone(), both).await;
     let api = server.admin_api().await;
@@ -57,7 +56,7 @@ async fn beta_left_the_config(pool: PgPool) -> TestServer {
     }
     server.wait_for_embeddings(4).await;
     drop(server);
-    let alpha_only = embedding_config(model("alpha", &alpha), &[&alpha]);
+    let alpha_only = embedding_config(model("alpha", &alpha));
     start_server_with(pool, alpha, alpha_only).await
 }
 
@@ -127,10 +126,10 @@ async fn a_dimension_that_contradicts_the_registry_stops_the_server_even_without
     pool: PgPool,
 ) {
     let server = start_server(pool.clone()).await;
-    let tei = server.tei.clone();
+    let endpoint = server.endpoint.clone();
     drop(server);
 
-    let mut config = embedding_config(model(MODEL, &tei), &[&tei]);
+    let mut config = embedding_config(model(MODEL, &endpoint));
     config.models[0].dimension = 1024;
     let error = ferret_server::embeddings::prepare(&pool, config)
         .await
@@ -147,17 +146,17 @@ async fn a_dimension_that_contradicts_the_registry_stops_the_server_even_without
 
 #[sqlx::test(migrations = false)]
 async fn a_model_whose_index_name_another_stored_model_has_stops_the_server(pool: PgPool) {
-    let tei = FakeTei::serving("org/a", MAX_INPUT_LENGTH).await;
+    let endpoint = FakeEndpoint::start().await;
     let server = start_server_with(
         pool.clone(),
-        tei.clone(),
-        embedding_config(model("a.b", &tei), &[&tei]),
+        endpoint.clone(),
+        embedding_config(model("a.b", &endpoint)),
     )
     .await;
     drop(server);
 
     let error =
-        ferret_server::embeddings::prepare(&pool, embedding_config(model("a-b", &tei), &[&tei]))
+        ferret_server::embeddings::prepare(&pool, embedding_config(model("a-b", &endpoint)))
             .await
             .err()
             .unwrap();

@@ -12,7 +12,7 @@ const ModelsQuery = graphql(`
       defaultEmbeddingModel
     }
     embeddingModels {
-      name
+      id
       configuredDefault
       embedded
       chunks
@@ -47,7 +47,7 @@ export function ModelsSettings() {
     return null;
   }
   const chosen = data.me.defaultEmbeddingModel;
-  const configured = data.embeddingModels.find((model) => model.configuredDefault)!.name;
+  const configured = data.embeddingModels.find((model) => model.configuredDefault)!.id;
 
   return (
     <fieldset className="space-y-2">
@@ -65,10 +65,10 @@ export function ModelsSettings() {
           </label>
         </li>
         {data.embeddingModels.map((model) => (
-          <li key={model.name} className="p-4 text-sm">
+          <li key={model.id} className="p-4 text-sm">
             <label className="flex items-center gap-3">
-              <input type="radio" name="model" checked={chosen === model.name} onChange={() => choose(model.name)} />
-              <span className="flex-1 font-medium">{model.name}</span>
+              <input type="radio" name="model" checked={chosen === model.id} onChange={() => choose(model.id)} />
+              <span className="flex-1 font-medium">{model.id}</span>
               <span className="text-muted-foreground"><Coverage embedded={model.embedded} chunks={model.chunks} /></span>
             </label>
           </li>

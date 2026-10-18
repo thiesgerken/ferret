@@ -9,9 +9,9 @@ import { ModelsSettings } from "./models-settings";
 
 type Operation = { operationName: string; variables: Record<string, unknown> };
 
-const model = (name: string, configuredDefault: boolean, embedded: number, chunks = 1200) => ({
+const model = (id: string, configuredDefault: boolean, embedded: number, chunks = 1200) => ({
   __typename: "EmbeddingModel",
-  name,
+  id,
   configuredDefault,
   embedded,
   chunks,

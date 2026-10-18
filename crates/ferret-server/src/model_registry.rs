@@ -31,7 +31,7 @@ pub async fn lock_indexes(tx: &mut PgConnection) -> Result<(), sqlx::Error> {
 /// whose index name the stored embeddings of another model already have. A refused start records
 /// nothing.
 pub async fn register(pool: &PgPool, models: &[Model]) -> Result<(), StartupError> {
-    let ids: Vec<String> = models.iter().map(|model| model.name().to_owned()).collect();
+    let ids: Vec<String> = models.iter().map(|model| model.id().to_owned()).collect();
     let dimensions: Vec<i32> = models.iter().map(dimension).collect();
     // Inserting before checking also catches a replica that registered another dimension at the
     // same time.
@@ -50,22 +50,22 @@ pub async fn register(pool: &PgPool, models: &[Model]) -> Result<(), StartupErro
         .await?;
     for model in models {
         for stored in &registered {
-            if stored.id == model.name() && stored.dimension != dimension(model) {
+            if stored.id == model.id() && stored.dimension != dimension(model) {
                 return Err(format!(
                     "embedding model {} has stored embeddings of {} dimensions, the config says {}. \
                      To change it, remove the model from the config, delete its embeddings in \
-                     Admin and add it again, or give it another name",
-                    model.name(),
+                     Admin and add it again, or give it another id",
+                    model.id(),
                     stored.dimension,
                     model.dimension()
                 )
                 .into());
             }
-            if stored.id != model.name() && index_name(&stored.id) == index_name(model.name()) {
+            if stored.id != model.id() && index_name(&stored.id) == index_name(model.id()) {
                 return Err(format!(
                     "embedding model {} would share its index name with the stored embeddings of \
-                     {}: delete those in Admin first, or give it another name",
-                    model.name(),
+                     {}: delete those in Admin first, or give it another id",
+                    model.id(),
                     stored.id
                 )
                 .into());
@@ -166,7 +166,7 @@ pub async fn delete(pool: &PgPool, embedding: &Embedding, id: &str) -> Result<()
         return Err(DeleteError::NotStored);
     }
     // Registered ids come from validated configs, so the index name needs no quoting.
-    assert!(config::is_valid_name(id), "registered model id {id:?}");
+    assert!(config::is_valid_id(id), "registered model id {id:?}");
     // Last: dropping the index locks chunk_embeddings against every search and pump batch until
     // the commit.
     sqlx::query(AssertSqlSafe(format!(

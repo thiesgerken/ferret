@@ -50,8 +50,9 @@ where that source's own tools take over, instead of guessing which tool's search
   deeper with that source's own tools. It's the search you use too, through the REST API or as an
   MCP server. API keys are scoped to sources and to read or write, so an agent sees exactly what
   you hand it.
-- ⚡ **Embeddings on your own hardware.** A pool of TEI servers, in the cluster and on your
-  laptop's GPU for big backfills, switched on and off live from Admin. Activity shows the progress.
+- ⚡ **Embeddings from wherever you like.** Each model names an OpenAI-compatible endpoint: a TEI
+  in the cluster, a LiteLLM in front of your laptop's GPU for big backfills, or a cloud API.
+  Activity shows the progress.
 - ☸️ **Self-hosted, Kubernetes-native.** A Helm chart, Postgres (ParadeDB and pgvector) as the only
   store, secrets generated on install.
 
@@ -94,7 +95,7 @@ respective sources.
   </picture>
 </p>
 
-<p align="center"><em>Activity: what's indexed and embedded, the TEI pool with an in-cluster server and an external one that only embeds, and every sync as it happens.</em></p>
+<p align="center"><em>Activity: what's indexed and embedded, and every sync as it happens.</em></p>
 
 ## 🔌 Sources
 
