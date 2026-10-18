@@ -19,57 +19,59 @@ server:
   # -- Extra environment variables for the server container
   extraEnv: []
 
-# -- Embedding models for semantic search. With tei.internal.enabled, each gets its own CPU TEI
-# Deployment. Any TEI of the pool (internal or externalTeis) works for whichever of these models
-# it serves: the server asks every TEI for its model and matches `modelId`.
+# -- Embedding models for semantic search. Each names the OpenAI-compatible endpoint that computes
+# its embeddings: a TEI, a proxy like LiteLLM, or a cloud API (see docs/embeddings.md). The model
+# below has none yet: give it an embeddingApi, or set bundledTei for the quickstart.
 embedding:
-  # -- The model searches use by default, one of the names below
+  # -- The model searches use by default, one of the ids below
   default: qwen3-embedding-0.6b
   models:
-    # -- name: stored with every embedding, [a-z0-9][a-z0-9._-]*. Renaming a model re-embeds
-    # everything under the new name.
-    - name: qwen3-embedding-0.6b
-      # -- Hugging Face model id: the internal TEI serves it, and a TEI reporting it in /info works
-      # for this model. Two models can't share one.
-      modelId: Qwen/Qwen3-Embedding-0.6B
-      # -- Of the model's vectors. TEI doesn't report it: every answer is checked against it, and
-      # the model's index is built for it.
+    # -- id: stored with every embedding, [a-z0-9][a-z0-9._-]*. A new id re-embeds everything.
+    - id: qwen3-embedding-0.6b
+      # -- Of the model's vectors: every answer is checked against it, and the model's index is
+      # built for it.
       dimension: 1024
       queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       documentPrefix: ""
       # -- Semantic candidates less similar to the query are dropped (cosine similarity, 0 to 1).
       # Model-specific, see embeddings.md for how to calibrate it.
       minSimilarity: 0.42
-      # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on
-      # small CPU nodes. It also caps the input length, which must stay at 2202 or more (title and
-      # chunk, see embeddings.md).
-      maxBatchTokens: 4096
-      # -- Room for the downloaded model. A full cache evicts only this pod.
-      cacheSize: 4Gi
-      # -- The request is the RSS measured after warmup (1.93 GiB).
-      resources:
-        requests:
-          cpu: 500m
-          memory: 2Gi
-        limits:
-          memory: 4Gi
+      # -- The endpoint that embeds chunks, e.g.
+      # `{url: http://litellm:4000/v1, model: qwen3-embed, tokenSecret: {name: litellm, key: token},
+      # concurrency: 4}`. tokenSecret names a key of an existing Secret, sent as a bearer token.
+      # concurrency is requests at once per server replica (default 1).
+      # embeddingApi: {}
+      # -- The endpoint that embeds search queries, same shape without concurrency. Either one
+      # serves both when the other is missing.
+      # queryApi: {}
+      # -- Instead of endpoints: the bundled TEI computes this model (bundledTei.enabled).
+      # bundledTei: true
 
-tei:
+# -- A CPU TEI in the cluster for one model, for a quickstart without an embeddings service of
+# your own. Exactly one model sets `bundledTei: true` instead of endpoints, the chart fills in
+# that model's URL and model name.
+bundledTei:
+  enabled: false
+  # -- The Hugging Face model it serves, which must be the flagged model's.
+  modelId: Qwen/Qwen3-Embedding-0.6B
+  # -- TEI's batch budget in tokens. TEI's own default (16384) gets its warmup OOM-killed on small
+  # CPU nodes. It also caps the input length, which must stay at 2202 or more (title and chunk,
+  # see embeddings.md).
+  maxBatchTokens: 4096
+  # -- Room for the downloaded model. A full cache evicts only this pod.
+  cacheSize: 4Gi
+  # -- The request is the RSS measured after warmup (1.93 GiB, Qwen3-Embedding-0.6B).
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 4Gi
   image:
     registry: ghcr.io
     repository: huggingface/text-embeddings-inference
     tag: "cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
     pullPolicy: IfNotPresent
-  internal:
-    # -- One CPU TEI per model in the cluster, which answers queries and embeds. Off only when
-    # externalTeis serve every model.
-    enabled: true
-
-# -- TEIs outside this chart, as URLs, e.g. a laptop's GPU in the LAN for a backfill
-# (`http://192.168.1.20:8080`) or a GPU TEI deployed separately. Each works for whichever
-# configured model it serves, and starts with queries off: Admin switches each TEI on and off, for
-# queries and for the embed pump. Remove one that's gone for good.
-externalTeis: []
 
 # -- Plugin workers: claim runs from the server's internal API and ingest through the public one.
 plugins:

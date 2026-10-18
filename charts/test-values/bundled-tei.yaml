@@ -1,0 +1,12 @@
+# The quickstart: the bundled TEI computes the one model.
+ingress:
+  hostname: ferret.example.com
+bundledTei:
+  enabled: true
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      minSimilarity: 0.42
+      bundledTei: true

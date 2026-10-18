@@ -1,14 +1,7 @@
-{{- /* With tei.internal.enabled, a CPU TEI per model. The server finds out itself which model a TEI
-serves, the chart only lists them in its config. */}}
-{{- if .Values.tei.internal.enabled }}
-{{- $teiNames := dict }}
-{{- range $model := .Values.embedding.models }}
-{{- $name := include "ferret.teiName" (dict "root" $ "model" $model) }}
-{{- if hasKey $teiNames $name }}
-{{- fail (printf "models %q and %q share the TEI name %q" (get $teiNames $name) $model.name $name) }}
-{{- end }}
-{{- $_ := set $teiNames $name $model.name }}
-{{- $component := trimPrefix (printf "%s-" $.Release.Name) $name }}
+{{- /* A CPU TEI for the one model that sets bundledTei, for a quickstart. Real deployments name
+their own endpoints. */}}
+{{- if .Values.bundledTei.enabled }}
+{{- $name := printf "%s-tei" .Release.Name }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -16,17 +9,17 @@ metadata:
   name: {{ $name }}
   labels:
     {{- include "ferret.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/component: tei
 spec:
   replicas: 1
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+      {{- include "ferret.selectorLabels" (dict "root" $ "component" "tei") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 8 }}
+        {{- include "ferret.selectorLabels" (dict "root" $ "component" "tei") | nindent 8 }}
     spec:
       {{- with $.Values.priorityClassName }}
       priorityClassName: {{ . }}
@@ -36,18 +29,18 @@ spec:
         kubernetes.io/arch: amd64
       containers:
         - name: tei
-          image: {{ include "ferret.image" (dict "root" $ "image" $.Values.tei.image) }}
-          imagePullPolicy: {{ $.Values.tei.image.pullPolicy }}
+          image: {{ include "ferret.image" (dict "root" $ "image" $.Values.bundledTei.image) }}
+          imagePullPolicy: {{ $.Values.bundledTei.image.pullPolicy }}
           args:
             - --model-id
-            - {{ required "embedding.models[].modelId is required" $model.modelId | quote }}
+            - {{ required "bundledTei.modelId is required" $.Values.bundledTei.modelId | quote }}
             # Explicit: the default (16384) gets the warmup OOM-killed on small CPU nodes.
             - --max-batch-tokens
-            - {{ required "embedding.models[].maxBatchTokens is required" $model.maxBatchTokens | quote }}
+            - {{ required "bundledTei.maxBatchTokens is required" $.Values.bundledTei.maxBatchTokens | quote }}
           ports:
             - name: http
               containerPort: 80
-          {{- with $model.resources }}
+          {{- with $.Values.bundledTei.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -73,7 +66,7 @@ spec:
         # ponytail: re-downloaded on every pod start. A PVC per model if restarts get slow.
         - name: models
           emptyDir:
-            sizeLimit: {{ required "embedding.models[].cacheSize is required" $model.cacheSize }}
+            sizeLimit: {{ required "bundledTei.cacheSize is required" $.Values.bundledTei.cacheSize }}
 ---
 apiVersion: v1
 kind: Service
@@ -81,13 +74,12 @@ metadata:
   name: {{ $name }}
   labels:
     {{- include "ferret.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/component: tei
 spec:
   selector:
-    {{- include "ferret.selectorLabels" (dict "root" $ "component" $component) | nindent 4 }}
+    {{- include "ferret.selectorLabels" (dict "root" $ "component" "tei") | nindent 4 }}
   ports:
     - name: http
       port: 80
       targetPort: http
-{{- end }}
 {{- end }}
