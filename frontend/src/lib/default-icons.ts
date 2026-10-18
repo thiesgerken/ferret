@@ -5,6 +5,7 @@ const PLUGIN_ICONS: Record<string, string> = {
   carapace: "brain",
   paperless: "file-text",
   imap: "mail",
+  karakeep: "bookmark",
   vikunja: "list-checks",
 };
 
