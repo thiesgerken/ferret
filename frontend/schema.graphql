@@ -476,6 +476,12 @@ type Mutation {
     configured default. Returns it.
   """
   setDefaultEmbeddingModel(model: String): String
+  """
+    Deletes the embeddings, cache entries and failure records of a model that isn't configured,
+    its index and its registry entry. Documents, chunks and other models stay. Returns its id.
+    Admins only.
+  """
+  deleteEmbeddingModel(id: String!): String!
   createApiKey(input: NewApiKey!): CreatedApiKey!
   """
     Switches a TEI of the pool on or off, for queries or the embed pump. Takes effect at once
@@ -527,6 +533,11 @@ type Query {
   teis: [Tei!]!
   "Each embedding model's backlog, the default first. Admins only."
   embeddingStatus: [ModelStatus!]!
+  """
+    Every embedding model that has embedded, configured or not, the configured ones first.
+    Admins only.
+  """
+  storedEmbeddingModels: [StoredEmbeddingModel!]!
   "The signed-in user's API keys, newest first."
   apiKeys: [ApiKey!]!
   """
@@ -624,6 +635,22 @@ type SourceCount {
     (a root over a connection's documents and a key's).
   """
   writer: Writer
+}
+
+"An embedding model of the registry, with what its embeddings take up. Sizes are in bytes."
+type StoredEmbeddingModel {
+  id: String!
+  dimension: Int!
+  "When it first embedded, or when the registry was created for older models."
+  firstSeen: DateTime!
+  "Only a model that isn't configured can be deleted."
+  configured: Boolean!
+  "Its chunk embeddings, across users."
+  embedded: Int!
+  "Of its HNSW index, exact. Null while it has none."
+  indexBytes: Float
+  "Of its vectors in the shared `chunk_embeddings` table, estimated from their count."
+  rowBytesEstimate: Float!
 }
 
 """

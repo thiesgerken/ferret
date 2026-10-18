@@ -372,6 +372,20 @@
     "status": "Status",
     "lastSeen": "Last seen"
   },
+  "storedEmbeddings": {
+    "title": "Stored embeddings",
+    "model": "Model",
+    "embedded": "Embeddings",
+    "index": "Index",
+    "rows": "Rows",
+    "rowsHint": "Estimated: the vectors' share of the table all models share.",
+    "dimensions": "{dimension, number} dimensions",
+    "notConfigured": "not configured",
+    "none": "none",
+    "delete": "Delete",
+    "deleteModel": "Delete the embeddings of {model}",
+    "confirmDelete": "Delete everything stored for {model}? That's {embedded, plural, one {# embedding} other {# embeddings}}, its cache entries and failure records, its HNSW index and its registry entry. Documents, chunks and other models stay. If {model} comes back to the config, everything is embedded again."
+  },
   "explore": {
     "contentType": {
       "MARKDOWN": "Markdown",

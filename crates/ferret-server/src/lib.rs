@@ -29,6 +29,7 @@ mod highlight;
 mod icons;
 mod judgments;
 mod mcp;
+mod model_registry;
 mod runs;
 mod search;
 mod search_query;

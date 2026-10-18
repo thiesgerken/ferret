@@ -17,7 +17,7 @@ use crate::{
     StartupError,
     chunking::MAX_CHUNK_CHARS,
     config::{EmbeddingConfig, ModelConfig},
-    tei,
+    model_registry, tei,
     tei_load::{Load, TeiLoad},
     tei_pool::{self, BATCH_TIMEOUT, Discovery, Tei, TeiState, Use},
 };
@@ -51,7 +51,7 @@ impl Model {
     }
 
     fn index_name(&self) -> String {
-        format!("chunk_embeddings_hnsw_{}", self.config.slug())
+        model_registry::index_name(self.name())
     }
 }
 
@@ -108,29 +108,10 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     config.validate()?;
     let mut configs = config.models;
     configs.sort_by_key(|model| model.name != config.default);
-    let mut models = Vec::new();
-    for config in configs {
-        let model = Model { config };
-        // Vectors of another dimension can't share the model's index.
-        let stored = sqlx::query_scalar!(
-            r#"select vector_dims(embedding) as "dimension!" from embedding_cache
-               where model = $1 limit 1"#,
-            model.config.name,
-        )
-        .fetch_optional(pool)
-        .await?;
-        if let Some(stored) = stored
-            && usize::try_from(stored).ok() != Some(model.dimension())
-        {
-            return Err(format!(
-                "embedding model {} has embeddings of {stored} dimensions, the config says {}",
-                model.name(),
-                model.dimension()
-            )
-            .into());
-        }
-        create_index(pool, &model).await?;
-        models.push(model);
+    let models: Vec<Model> = configs.into_iter().map(|config| Model { config }).collect();
+    model_registry::register(pool, &models).await?;
+    for model in &models {
+        create_index(pool, model).await?;
     }
     reset_removed_defaults(pool, &models).await?;
     tei_pool::sync_config(pool, &config.teis).await?;
@@ -246,10 +227,7 @@ async fn reset_removed_defaults(pool: &PgPool, models: &[Model]) -> Result<(), s
 
 async fn create_index(pool: &PgPool, model: &Model) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    // Replicas starting together would race on the index name.
-    sqlx::query!("select pg_advisory_xact_lock(hashtext('chunk_embeddings_hnsw'))")
-        .execute(&mut *tx)
-        .await?;
+    model_registry::lock_indexes(&mut tx).await?;
     // Validated names (config.rs) need no quoting, and DDL takes no bind parameters.
     sqlx::query(AssertSqlSafe(format!(
         "create index if not exists {} on chunk_embeddings

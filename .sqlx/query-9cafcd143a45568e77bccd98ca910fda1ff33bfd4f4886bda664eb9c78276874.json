@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from chunk_embeddings where model = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9cafcd143a45568e77bccd98ca910fda1ff33bfd4f4886bda664eb9c78276874"
+}

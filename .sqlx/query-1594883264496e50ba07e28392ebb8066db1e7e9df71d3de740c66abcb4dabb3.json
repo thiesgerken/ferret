@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select id, dimension from embedding_models",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "embedding_models",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "dimension",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "embedding_models",
+            "name": "dimension"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1594883264496e50ba07e28392ebb8066db1e7e9df71d3de740c66abcb4dabb3"
+}

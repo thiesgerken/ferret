@@ -134,15 +134,19 @@ impl EmbeddingConfig {
 const MAX_NAME_CHARS: usize = 40;
 
 impl ModelConfig {
-    /// The name as part of an identifier: `.` and `-` become `_`.
     pub fn slug(&self) -> String {
-        self.name.replace(['.', '-'], "_")
+        slug(&self.name)
     }
+}
+
+/// A model name as part of an identifier: `.` and `-` become `_`.
+pub fn slug(name: &str) -> String {
+    name.replace(['.', '-'], "_")
 }
 
 /// Names end up in SQL identifiers and literals (index names, partial index predicates), so they
 /// must not need quoting.
-fn is_valid_name(name: &str) -> bool {
+pub fn is_valid_name(name: &str) -> bool {
     let alphanumeric = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
     name.len() <= MAX_NAME_CHARS
         && name.starts_with(alphanumeric)

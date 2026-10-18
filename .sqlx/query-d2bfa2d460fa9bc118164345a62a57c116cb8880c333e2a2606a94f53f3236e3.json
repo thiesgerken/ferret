@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select model, count(*) as \"count!\" from chunk_embeddings group by model",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chunk_embeddings",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "d2bfa2d460fa9bc118164345a62a57c116cb8880c333e2a2606a94f53f3236e3"
+}
