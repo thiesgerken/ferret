@@ -144,17 +144,28 @@ impl Endpoint {
         dimension: usize,
         timeout: Duration,
     ) -> Result<Vec<Vec<f32>>, EndpointError> {
-        let result = self
-            .request(http, texts, timeout)
-            .await
-            .and_then(|response| {
-                check(response, texts.len(), dimension).map_err(EndpointError::Invalid)
-            });
+        let result = self.embed_unrecorded(http, texts, dimension, timeout).await;
         match &result {
             Ok(_) => self.succeeded(),
             Err(error) => self.failed(error),
         }
         result
+    }
+
+    /// Like `embed`, but leaves the endpoint's health alone: an admin's test must not change what
+    /// the pump and Admin see.
+    pub async fn embed_unrecorded(
+        &self,
+        http: &reqwest::Client,
+        texts: &[String],
+        dimension: usize,
+        timeout: Duration,
+    ) -> Result<Vec<Vec<f32>>, EndpointError> {
+        self.request(http, texts, timeout)
+            .await
+            .and_then(|response| {
+                check(response, texts.len(), dimension).map_err(EndpointError::Invalid)
+            })
     }
 
     async fn request(

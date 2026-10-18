@@ -120,9 +120,36 @@ test("shows users, each model's endpoints with the backlog, and the workers", as
   assert.match(text, /unreachable: connection refused/);
   assert.match(text, /http:\/\/tei-bge:80\/v1ReachableQueries · BAAI\/bge-m3/);
   assert.match(text, /notes71/);
-  assert.match(text, /qwen31,024 dimensionshttp:\/\/tei:80\/v1Not asked yetChunks and queries · Qwen\/Qwen3-Embedding-0\.6BEverything is embedded\./);
+  assert.match(text, /qwen31,024 dimensionsTesthttp:\/\/tei:80\/v1Not asked yetChunks and queries · Qwen\/Qwen3-Embedding-0\.6BEverything is embedded\./);
   assert.match(text, /ferret-plugins-0git, paperlessonline/);
   assert.match(text, /ferret-plugins-oldgitoffline/);
+  await view.unmount();
+});
+
+test("testing a model shows how each of its endpoints answered", async () => {
+  const { view, operations } = await renderAdmin(() =>
+    Response.json({
+      data: {
+        testEmbeddingModel: [
+          { __typename: "EndpointTest", role: "CHUNKS", durationMs: 180, dimension: 1024, error: null },
+          { __typename: "EndpointTest", role: "QUERIES", durationMs: 5003, dimension: null, error: "unreachable: operation timed out" },
+        ],
+      },
+    }),
+  );
+
+  await act(async () => {
+    view.container.querySelector<HTMLButtonElement>("button[aria-label='Test the endpoints of bge-m3']")!.click();
+  });
+  await settle();
+
+  const test = operations.find((operation) => operation.operationName === "TestEmbeddingModel");
+  assert.deepEqual(test?.variables, { id: "bge-m3" });
+  const results = [...view.container.querySelectorAll("[aria-label='Test results'] li")].map((result) => result.textContent);
+  assert.deepEqual(results, [
+    "Chunks: 1,024 dimensions in 180 ms",
+    "Queries: failed after 5,003 ms: unreachable: operation timed out",
+  ]);
   await view.unmount();
 });
 

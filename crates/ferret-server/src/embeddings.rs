@@ -41,6 +41,8 @@ const SHARED_BATCH_TARGET: Duration = Duration::from_secs(2);
 /// A failing endpoint is tried again after this, doubling up to `MAX_BACKOFF`.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
+/// What an admin's test embeds.
+const TEST_TEXT: &str = "Does this endpoint embed?";
 
 pub struct Model {
     pub config: ModelConfig,
@@ -309,6 +311,24 @@ pub struct SourceBacklog {
     pub failed: i64,
 }
 
+/// What a model uses an endpoint for.
+#[derive(Clone, Copy)]
+pub enum EndpointRole {
+    ChunksAndQueries,
+    Chunks,
+    Queries,
+}
+
+/// How one of a model's endpoints answered an admin's test.
+pub struct EndpointTest {
+    pub role: EndpointRole,
+    pub url: String,
+    pub model: String,
+    pub took: Duration,
+    /// The returned vector's dimension.
+    pub result: Result<usize, EndpointError>,
+}
+
 impl Embedding {
     pub fn default_model(&self) -> &Model {
         &self.models[0]
@@ -409,6 +429,50 @@ impl Embedding {
         .execute(pool)
         .await?;
         Ok(hash)
+    }
+
+    /// Embeds a short text through each of `model`'s endpoints, with the prefix and timeout of
+    /// the role it has and checked like every answer. Stores nothing and leaves the endpoints'
+    /// health alone.
+    pub async fn test(&self, model: &Model) -> Vec<EndpointTest> {
+        if Arc::ptr_eq(&model.embedding_api, &model.query_api) {
+            return vec![
+                self.test_endpoint(model, EndpointRole::ChunksAndQueries)
+                    .await,
+            ];
+        }
+        let (chunks, queries) = tokio::join!(
+            self.test_endpoint(model, EndpointRole::Chunks),
+            self.test_endpoint(model, EndpointRole::Queries)
+        );
+        vec![chunks, queries]
+    }
+
+    async fn test_endpoint(&self, model: &Model, role: EndpointRole) -> EndpointTest {
+        let (endpoint, prefix, timeout) = match role {
+            EndpointRole::ChunksAndQueries | EndpointRole::Chunks => (
+                &model.embedding_api,
+                &model.config.document_prefix,
+                BATCH_TIMEOUT,
+            ),
+            EndpointRole::Queries => (&model.query_api, &model.config.query_prefix, QUERY_TIMEOUT),
+        };
+        let started = Instant::now();
+        let result = endpoint
+            .embed_unrecorded(
+                &self.http,
+                &[format!("{prefix}{TEST_TEXT}")],
+                model.dimension(),
+                timeout,
+            )
+            .await;
+        EndpointTest {
+            role,
+            url: endpoint.url.clone(),
+            model: endpoint.model.clone(),
+            took: started.elapsed(),
+            result: result.map(|vectors| vectors[0].len()),
+        }
     }
 }
 
