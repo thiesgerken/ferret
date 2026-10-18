@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.15.1 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #138 from thiesgerken/brand/soft-mask-logo
+  ([`6eb6ca1`](https://github.com/thiesgerken/ferret/commit/6eb6ca17006871aeba22917d9817618deeb43c30))
+
+- Merge pull request #135 from thiesgerken/docs/operations-development
+  ([`ce691dc`](https://github.com/thiesgerken/ferret/commit/ce691dc01afc32ce5536325ec7e40acaf1afba52))
+
+  📝 docs(operations): complete deployment and development guides
+
+- 📝 docs(operations): correct credential failure recovery lifecycle
+  ([`db517c7`](https://github.com/thiesgerken/ferret/commit/db517c72ed878d7a8d7ad217f7ac0a783c832cb7))
+
+- 📝 docs(operations): complete deployment and development guides
+  ([`d283e55`](https://github.com/thiesgerken/ferret/commit/d283e553c0b1e6b1e20242d567f781ff4112a5d9))
+
+- Merge pull request #134 from thiesgerken/docs/technical-reference
+  ([`7135527`](https://github.com/thiesgerken/ferret/commit/713552743bdba1f7070e9288cc278e4b00bcd824))
+
+  📝 docs(reference): document architecture APIs and plugin contract
+
+- 📝 docs(api): describe shipped MCP search pagination
+  ([`e38b3ee`](https://github.com/thiesgerken/ferret/commit/e38b3eed6ab9a4a261471f73e5a9580a34a917d9))
+
+- 📝 docs(reference): document architecture APIs and plugin contract
+  ([`3a90c99`](https://github.com/thiesgerken/ferret/commit/3a90c9949f5a05ee8d68d592919be8d4be5b89e5))
+
+- Merge pull request #133 from thiesgerken/docs/getting-started
+  ([`68dbb75`](https://github.com/thiesgerken/ferret/commit/68dbb754aa8a238b7ad803ce5f0af917b7b1dbd2))
+
+  📝 docs(start): document quickstart and integrations
+
+- 📝 docs(start): match English search mode labels
+  ([`4b13eae`](https://github.com/thiesgerken/ferret/commit/4b13eae33e54636017375bffdfc1558d9168965f))
+
+- 📝 docs(mcp): document shipped transport and verified tools
+  ([`afd0946`](https://github.com/thiesgerken/ferret/commit/afd0946ee7fd2fa5159ba6ca86db66cbc16b4299))
+
+- Merge remote-tracking branch 'origin/main' into docs/getting-started
+  ([`9cc1189`](https://github.com/thiesgerken/ferret/commit/9cc11890029fd2e676ca4a8f6e0301e242624cbf))
+
+### 💄 UI/UX
+
+
+- 💄 style(brand): adopt the soft-mask ferret logo
+  ([`6eb6ca1`](https://github.com/thiesgerken/ferret/commit/6eb6ca17006871aeba22917d9817618deeb43c30))
+
+- 💄 style(brand): adopt the soft-mask ferret logo
+  ([`0403e57`](https://github.com/thiesgerken/ferret/commit/0403e5737c78c44b9b3265fc2e84b4f62cb4f862))
+
 ## v0.15.0 (2026-10-17)
 
 
@@ -15,11 +69,41 @@
 
   # Conflicts: #	Cargo.lock #	crates/ferret-server/Cargo.toml
 
+- 📝 docs(start): use real thread navigation controls
+  ([`f9816b0`](https://github.com/thiesgerken/ferret/commit/f9816b0d8e2d8d84d906293d8e5ce03a897c724b))
+
+- 📝 docs(connections): clarify exclusion restoration and ownership
+  ([`394faac`](https://github.com/thiesgerken/ferret/commit/394faac9049c854616218ee2b1f24c14aff68841))
+
+- 📝 docs(start): document quickstart and integrations
+  ([`f3ef756`](https://github.com/thiesgerken/ferret/commit/f3ef756d7f82eb022393d2e9a6b999b29ee69a54))
+
 ### ✨ Features
 
 
 - ✨ feat(server): an MCP server at /mcp with search, get_document and list_sources
   ([`da4c1c6`](https://github.com/thiesgerken/ferret/commit/da4c1c61163b26ac3f22438ec5d9566eb7aeee61))
+
+- ✨ feat(server): an MCP server at /mcp with search, get_document and list_sources
+  ([`852a284`](https://github.com/thiesgerken/ferret/commit/852a28445e1b414f896cbb2b9549058e19ceef41))
+
+  Agents with an MCP client use ferret without a skill: Streamable HTTP (rmcp), stateless with JSON responses, authenticated with the API keys of /api (search:read, their sources). The tools call the same search and document code as REST and GraphQL. The HTTPRoute, the compose proxy and next dev route /mcp to the server.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(server): MCP's limit is checked and named as the agent sees it, and the docs count MCP
+  ([`0ab3445`](https://github.com/thiesgerken/ferret/commit/0ab344522c2412ee7979f60cb53f10b5d4dfd407))
+
+  The search tool rejects an out-of-range limit under its own name and states the range in its schema. The shared service functions' doc comments, auth.md's typical keys and the v1 scope now include MCP, and rmcp no longer sits under reqwest's comment.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ## v0.14.0 (2026-10-17)
 
@@ -75,13 +159,6 @@
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
 
-- 📝 docs(plugins): IMAP folder matching, ordering and refetches
-  ([`56bdd1d`](https://github.com/thiesgerken/ferret/commit/56bdd1da7a0a93d629120460a70aab900f75550d))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
 ### ✨ Features
 
 
@@ -98,26 +175,6 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
-
-- ✨ feat(plugins): index a mailbox over IMAP
-  ([`2e32564`](https://github.com/thiesgerken/ferret/commit/2e325647b8ecd06c1400846e4b6465c2d8d7f543))
-
-  One document per mail, identified by its Message-ID, in the connection's root (e.g. mail/zoho). Every run is a sync over the account's folders, fetching only mails no earlier run indexed; moves and copies aren't fetched again, a new UIDVALIDITY refetches its folder. Quoted text is stripped by HTML containers, text markers and a diff against the thread's earlier mails. Tests run against a throwaway Dovecot.
-
-  Fixes #112
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-- ✨ feat(server): an MCP server at /mcp with search, get_document and list_sources
-  ([`852a284`](https://github.com/thiesgerken/ferret/commit/852a28445e1b414f896cbb2b9549058e19ceef41))
-
-  Agents with an MCP client use ferret without a skill: Streamable HTTP (rmcp), stateless with JSON responses, authenticated with the API keys of /api (search:read, their sources). The tools call the same search and document code as REST and GraphQL. The HTTPRoute, the compose proxy and next dev route /mcp to the server.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ### 🐛 Bug Fixes
 
@@ -137,51 +194,6 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
-
-- 🐛 fix(plugins): match excluded folders by name segment and order mails by Date
-  ([`5105909`](https://github.com/thiesgerken/ferret/commit/510590916ccf5790ad777dcf6d14fde4f61060f7))
-
-  Excluded folders compare with the last segment of a folder's path, decoded from modified UTF-7, so INBOX.Trash and Entwürfe match. New mails are put in the order of their Date (else arrival), the date the thread diff compares, and each thread is asked from ferret once per run.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-### 🔧 Configuration
-
-
-- 🔧 chore(compose): scale the test Dovecot to 0 by default
-  ([`c06fd65`](https://github.com/thiesgerken/ferret/commit/c06fd65db7928c34007c311f385076c82f1b0b27))
-
-  The Dovecot is only for testing the IMAP plugin, so a plain `docker compose up` leaves it out. CI and the docs start it with `--scale dovecot=1`.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
-
-### 🔒 Security
-
-
-- 🔒 fix(plugins): keep async-imap's command traces out of the logs
-  ([`865116d`](https://github.com/thiesgerken/ferret/commit/865116dabcad19e13913cb139eb2eb585069296e))
-
-  async-imap traces every command it sends, including LOGIN with the password, and RUST_LOG=trace would put it into the worker's logs.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
-
-### ♻️ Refactoring
-
-
-- ♻️ refactor(server): MCP's limit is checked and named as the agent sees it, and the docs count MCP
-  ([`0ab3445`](https://github.com/thiesgerken/ferret/commit/0ab344522c2412ee7979f60cb53f10b5d4dfd407))
-
-  The search tool rejects an out-of-range limit under its own name and states the range in its schema. The shared service functions' doc comments, auth.md's typical keys and the v1 scope now include MCP, and rmcp no longer sits under reqwest's comment.
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ## v0.12.5 (2026-10-17)
 
@@ -586,6 +598,13 @@
 - Merge pull request #114 from thiesgerken/source-help-text
   ([`a3614e3`](https://github.com/thiesgerken/ferret/commit/a3614e35ecb32ca16af5e165a62ed25185d6f5fb))
 
+- 📝 docs(plugins): IMAP folder matching, ordering and refetches
+  ([`56bdd1d`](https://github.com/thiesgerken/ferret/commit/56bdd1da7a0a93d629120460a70aab900f75550d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ### 💄 UI/UX
 
 
@@ -598,6 +617,56 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🔧 Configuration
+
+
+- 🔧 chore(compose): scale the test Dovecot to 0 by default
+  ([`c06fd65`](https://github.com/thiesgerken/ferret/commit/c06fd65db7928c34007c311f385076c82f1b0b27))
+
+  The Dovecot is only for testing the IMAP plugin, so a plain `docker compose up` leaves it out. CI and the docs start it with `--scale dovecot=1`.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): match excluded folders by name segment and order mails by Date
+  ([`5105909`](https://github.com/thiesgerken/ferret/commit/510590916ccf5790ad777dcf6d14fde4f61060f7))
+
+  Excluded folders compare with the last segment of a folder's path, decoded from modified UTF-7, so INBOX.Trash and Entwürfe match. New mails are put in the order of their Date (else arrival), the date the thread diff compares, and each thread is asked from ferret once per run.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🔒 Security
+
+
+- 🔒 fix(plugins): keep async-imap's command traces out of the logs
+  ([`865116d`](https://github.com/thiesgerken/ferret/commit/865116dabcad19e13913cb139eb2eb585069296e))
+
+  async-imap traces every command it sends, including LOGIN with the password, and RUST_LOG=trace would put it into the worker's logs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index a mailbox over IMAP
+  ([`2e32564`](https://github.com/thiesgerken/ferret/commit/2e325647b8ecd06c1400846e4b6465c2d8d7f543))
+
+  One document per mail, identified by its Message-ID, in the connection's root (e.g. mail/zoho). Every run is a sync over the account's folders, fetching only mails no earlier run indexed; moves and copies aren't fetched again, a new UIDVALIDITY refetches its folder. Quoted text is stripped by HTML containers, text markers and a diff against the thread's earlier mails. Tests run against a throwaway Dovecot.
+
+  Fixes #112
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
 ## v0.8.0 (2026-10-17)
 
