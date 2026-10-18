@@ -39,7 +39,7 @@ Removing a remembered exclusion requires no live run and resets state for a full
 - All chunks embedded but uncached queries fail: queries may go to a different endpoint (`query_api`) than chunks. Inspect its status in Admin instead of re-ingesting everything.
 - Rejected chunks: inspect the endpoint's actual error and model/input configuration. Rejected per-chunk/model inputs are excluded from retries; there is no public mass-retry endpoint. Text/title changes create/invalidate eligible work, but do not edit user text merely to suppress an infrastructure error.
 
-Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model name or delete embedding tables as a casual repair. Endpoint caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
+Use [embeddings](embeddings.md) for model-identity/backfill rules. Do not change weights/prefixes under an existing model id or delete embedding tables as a casual repair. To remove the stored embeddings of a model that is no longer configured, use the delete in Admin's [stored embeddings](embeddings.md#stored-embeddings-and-the-model-registry) list rather than deleting rows. Endpoint caches/weights are reconstructible; document/user/connection state is not equivalently disposable.
 
 ## Upgrades and migrations
 

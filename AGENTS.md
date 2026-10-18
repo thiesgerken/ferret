@@ -14,6 +14,9 @@ Read before working on a feature:
 - `docs/glossary.md`: the domain vocabulary. Use its terms in code, tests, commits and PRs, and
   avoid the ones it lists under _Avoid_.
 - `docs/adr/`: decisions and why they were made
+- `docs/*.md`, `docs/api/` and `docs/plugins/`: the user and operator docs, the maintained
+  documentation of current behavior (configuration, operations, indexing, search, embeddings,
+  the APIs, each plugin)
 
 Every PR must assess whether the maintained documentation (not `docs/conception/`) needs updating and update it when applicable.
 

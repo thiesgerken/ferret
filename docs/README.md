@@ -27,7 +27,7 @@ Ferret is a personal search index. It copies text from origins, indexes it, and 
 
 - [Architecture](architecture.md): components, data flows and public/internal boundaries.
 - [Indexing](indexing.md): documents, chunks, storage and derived-data invariants.
-- [Embeddings](embeddings.md): models, their endpoints (TEI, proxy, cloud), backfills and failure behavior.
+- [Embeddings](embeddings.md): models, their endpoints (TEI, proxy, cloud), backfills, stored embeddings and failure behavior.
 - [Plugin implementation](plugins/README.md): schemas, registration, claims and safe run lifecycles.
 - [Development](development.md): repository development commands.
 - [Source](../crates/): server, shared API types, and plugin workers.

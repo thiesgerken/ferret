@@ -112,13 +112,48 @@ Document input is document prefix plus at most 200 title characters, two newline
 words. Input/model hashes allow shared cache reuse across users. A model's vectors stay separate
 from other models' vectors.
 
-Startup rejects a cached dimension inconsistent with config, but an equal dimension does not
+Startup rejects a dimension that contradicts the
+[model registry](#stored-embeddings-and-the-model-registry), but an equal dimension does not
 establish semantic compatibility. Changing the cutoff changes retrieval filtering, not vectors.
 
 Users can select a default in Settings; it applies to their UI and API-key searches. Requests can
 explicitly choose another configured model. The configured default is used without a personal
 choice; startup clears personal defaults for removed models. Selection is allowed before coverage
-completes, so semantic results can be partial.
+completes, so semantic results can be partial. Removing a model from config keeps its stored
+embeddings for reuse if it returns; deleting them is a separate Admin action (below).
+
+## Stored embeddings and the model registry
+
+`embedding_models` records every model that ever embedded, configured or not, with its dimension
+and when it was first seen. Its migration seeded it from existing chunk vectors and cached query
+vectors; startup adds configured models it does not know yet. `chunk_embeddings`,
+`embedding_cache` and `embedding_failures` reference it, so a model's rows exist only while it is
+registered.
+
+Startup refuses to start when:
+
+- a configured model is registered with another dimension. Its HNSW index is built for one
+  dimension, and vectors of two cannot share it. To change the dimension under the same `id`,
+  remove the model from config, delete its embeddings in Admin and add it again; otherwise choose
+  a new `id`.
+- a configured model's index name equals another registered model's (ids that differ only by `.`,
+  `-` or `_`, e.g. `a.b` and `a-b`). Delete the other model's embeddings first or choose another
+  `id`.
+
+Admin → Embedding → Stored embeddings lists every registered model with its chunk embeddings
+across all users, the exact size of its HNSW index and an estimated size of its rows (count ×
+vector size: the table is shared, so this is not exact). Models that are no longer configured are
+marked as such.
+
+Only those can be deleted. Deleting a configured model is rejected: remove it from YAML and restart
+first, so no pump embeds for it and no personal default points at it (startup resets those). After
+a confirmation that names the model and its embedding count, one transaction removes its chunk
+embeddings, cached document and query vectors, failure records, HNSW index and registry entry.
+Documents, chunks, other models and user settings stay. Dropping the index blocks searches and
+pump batches briefly at the end of the transaction. If the model returns later, it is registered
+anew and backfilled from scratch. With several server replicas, delete only after every replica
+runs without the model: one still configured for it fails its writes on the foreign key until it
+is rolled.
 
 ## Failures and progress
 
