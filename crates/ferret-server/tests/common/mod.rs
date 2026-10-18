@@ -7,7 +7,7 @@
 // Every test file compiles its own copy of this module and uses only part of it.
 #![allow(dead_code)]
 
-pub mod fake_tei;
+pub mod fake_endpoint;
 
 use std::{
     sync::Arc,
@@ -15,12 +15,12 @@ use std::{
 };
 
 use chrono::{DateTime, TimeZone, Utc};
-use fake_tei::FakeTei;
+use fake_endpoint::FakeEndpoint;
 use ferret_api::internal::InternalClient;
 use ferret_api::{Client, ContentType, DocumentPut};
 use ferret_server::{
     AppState, ConfigKey, SessionKey, WorkerSecret,
-    config::{EmbeddingConfig, ModelConfig, TeiConfig},
+    config::{ApiConfig, EmbeddingConfig, ModelConfig},
     embeddings,
 };
 use reqwest::{Response, header};
@@ -35,6 +35,8 @@ const CONFIG_KEY: &str = "dGVzdCBjb25maWcga2V5IG9mIHRoaXJ0eS10d28gYnk=";
 pub const MODEL: &str = "fake";
 pub const QUERY_PREFIX: &str = "query: ";
 pub const DOCUMENT_PREFIX: &str = "passage: ";
+/// What the test models call their model at the endpoint.
+pub const ENDPOINT_MODEL: &str = "fake/fake-embedding";
 /// Generous, since a busy CI runner embeds slowly.
 const POLL_BUDGET: Duration = Duration::from_secs(30);
 pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
@@ -42,8 +44,8 @@ pub const WORKER_SECRET: &str = "the workers' pre-shared key, 32+ bytes";
 pub struct TestServer {
     /// The machine API's client.
     pub api: Client,
-    /// The default model's TEI.
-    pub tei: FakeTei,
+    /// The default model's endpoint.
+    pub endpoint: FakeEndpoint,
     pool: PgPool,
     url: String,
     /// The plugin workers' API, on its own listener like in production.
@@ -64,28 +66,33 @@ impl Drop for TestServer {
 /// bootstrap admin (`admin` / [`ADMIN_PASSWORD`]) and the embedding model, but without the
 /// pump. Nothing gets embedded, so searches behave like keyword searches.
 pub async fn start_server(pool: PgPool) -> TestServer {
-    let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
-    let config = embedding_config(model(MODEL, &tei), &[&tei]);
-    start(pool, tei, config, false).await
+    let endpoint = FakeEndpoint::start().await;
+    let config = embedding_config(model(MODEL, &endpoint));
+    start(pool, endpoint, config, false).await
 }
 
 /// Like [`start_server`], with the pump.
 pub async fn start_semantic_server(pool: PgPool) -> TestServer {
-    let tei = FakeTei::start(fake_tei::MAX_INPUT_LENGTH).await;
-    let config = embedding_config(model(MODEL, &tei), &[&tei]);
-    start_server_with(pool, tei, config).await
+    let endpoint = FakeEndpoint::start().await;
+    let config = embedding_config(model(MODEL, &endpoint));
+    start_server_with(pool, endpoint, config).await
 }
 
-/// Like [`start_semantic_server`], with the given models.
+/// Like [`start_semantic_server`], with the given models. `endpoint` is the default model's.
 pub async fn start_server_with(
     pool: PgPool,
-    tei: FakeTei,
+    endpoint: FakeEndpoint,
     embedding: EmbeddingConfig,
 ) -> TestServer {
-    start(pool, tei, embedding, true).await
+    start(pool, endpoint, embedding, true).await
 }
 
-async fn start(pool: PgPool, tei: FakeTei, embedding: EmbeddingConfig, pump: bool) -> TestServer {
+async fn start(
+    pool: PgPool,
+    endpoint: FakeEndpoint,
+    embedding: EmbeddingConfig,
+    pump: bool,
+) -> TestServer {
     ferret_server::migrate(&pool)
         .await
         .expect("migrations apply");
@@ -129,7 +136,7 @@ async fn start(pool: PgPool, tei: FakeTei, embedding: EmbeddingConfig, pump: boo
     ]);
     TestServer {
         api: Client::new(url.clone()),
-        tei,
+        endpoint,
         pool,
         url,
         internal_url,
@@ -153,33 +160,35 @@ pub async fn eventually<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>
     }
 }
 
-/// A model of what `tei` serves, with the test prefixes.
-pub fn model(name: &str, tei: &FakeTei) -> ModelConfig {
+/// A model computed by `endpoint` for chunks and queries, with the test prefixes.
+pub fn model(id: &str, endpoint: &FakeEndpoint) -> ModelConfig {
     ModelConfig {
-        name: name.to_owned(),
-        model_id: tei.model_id(),
-        dimension: fake_tei::DIMENSION,
+        id: id.to_owned(),
+        dimension: fake_endpoint::DIMENSION,
         query_prefix: QUERY_PREFIX.to_owned(),
         document_prefix: DOCUMENT_PREFIX.to_owned(),
         // The fake's vectors are never negative, so no candidate is dropped.
         min_similarity: 0.0,
+        embedding_api: Some(api(endpoint)),
+        query_api: None,
     }
 }
 
-/// `model` as the only and default model, with `teis` as the pool.
-pub fn embedding_config(model: ModelConfig, teis: &[&FakeTei]) -> EmbeddingConfig {
+/// `endpoint` as a config's endpoint.
+pub fn api(endpoint: &FakeEndpoint) -> ApiConfig {
+    ApiConfig {
+        url: endpoint.api_url(),
+        model: ENDPOINT_MODEL.to_owned(),
+        token_env: None,
+        concurrency: None,
+    }
+}
+
+/// `model` as the only and default model.
+pub fn embedding_config(model: ModelConfig) -> EmbeddingConfig {
     EmbeddingConfig {
-        default: model.name.clone(),
+        default: model.id.clone(),
         models: vec![model],
-        teis: teis.iter().map(|tei| tei_config(tei)).collect(),
-    }
-}
-
-/// `tei` as a TEI of the deployment.
-pub fn tei_config(tei: &FakeTei) -> TeiConfig {
-    TeiConfig {
-        url: tei.url.clone(),
-        external: false,
     }
 }
 

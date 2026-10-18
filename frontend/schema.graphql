@@ -53,13 +53,6 @@ enum SearchMode {
   """ SEMANTIC
 }
 
-enum TeiState {
-  "Serves a configured model." ONLINE
-  "Its `/info` doesn't answer." OFFLINE
-  "Serves a model no configured one uses." UNUSED
-  "Serves a configured model, but can't be used for it (see `problem`)." UNSUITABLE
-}
-
 "A time range up to now."
 enum TimeRange {
   DAY
@@ -140,13 +133,6 @@ input SearchInput {
   "The embedding model of the semantic half. The user's default model when left out." model: String
   "Whether hits of one thread fold into the best one. Yes when left out." collapse: Boolean
   "Which halves run. `HYBRID` when left out. Judgments ignore it." mode: SearchMode
-}
-
-"Switches to change, the others stay."
-input TeiUpdate {
-  enabled: Boolean
-  queries: Boolean
-  embedding: Boolean
 }
 
 input UserUpdate {
@@ -245,7 +231,7 @@ type Document {
   can be chosen before it covers everything, its semantic half is partial until then.
 """
 type EmbeddingModel {
-  name: String!
+  id: String!
   "Whether searches use it when the user chose no default."
   configuredDefault: Boolean!
   "The cosine similarity below which search drops the model's semantic candidates."
@@ -259,7 +245,7 @@ type EmbeddingModel {
   chunks: Int!
   "The user's chunks still waiting for the embed pump."
   pending: Int!
-  "The user's chunks TEI refused, which the pump leaves out."
+  "The user's chunks the model's endpoint rejected, which the pump leaves out."
   failed: Int!
   """
     Chunks per minute the pump embedded over the last 10 minutes, across users: the pump is
@@ -272,11 +258,14 @@ type EmbeddingModel {
   """
   etaSeconds: Int
   """
-    Whether an enabled TEI serves the model for search queries, as of the server's last look
-    (every 10 seconds).
+    Whether the endpoint for search queries answered its last request from the answering
+    server process. True before the first one.
   """
   online: Boolean!
-  "Whether an enabled TEI embeds the model's chunks. Without one, `pending` stays."
+  """
+    Whether the endpoint for chunks answered its last request from the answering server
+    process. While it doesn't, `pending` stays.
+  """
   embedding: Boolean!
 }
 
@@ -414,13 +403,33 @@ type Ingest {
   owner: String
 }
 
+"""
+  An OpenAI-compatible endpoint from the config, and how the answering server process's
+  requests to it went.
+"""
+type ModelEndpoint {
+  url: String!
+  "What the endpoint calls the model."
+  model: String!
+  "Whether it answered the last request at all, null before the first one."
+  reachable: Boolean
+  "The last failure, until the next success."
+  lastError: String
+  lastErrorAt: DateTime
+}
+
 type ModelStatus {
-  name: String!
-  "The Hugging Face model a TEI must serve to work for it."
-  modelId: String!
+  id: String!
   isDefault: Boolean!
   "Of its vectors, from the config."
   dimension: Int!
+  "Computes the embeddings of chunks."
+  embeddingApi: ModelEndpoint!
+  """
+    Computes the embeddings of search queries, the same as `embeddingApi` when the config
+    names one endpoint.
+  """
+  queryApi: ModelEndpoint!
   "Chunks still to embed, per source and across users. Empty when everything is embedded."
   backlog: [SourceBacklog!]!
   "Chunks with an embedding for this model, across users."
@@ -477,11 +486,6 @@ type Mutation {
   """
   setDefaultEmbeddingModel(model: String): String
   createApiKey(input: NewApiKey!): CreatedApiKey!
-  """
-    Switches a TEI of the pool on or off, for queries or the embed pump. Takes effect at once
-    on the answering server process, within 10 seconds on the others. Admins only.
-  """
-  updateTei(url: String!, input: TeiUpdate!): Tei!
   "Renames one of the signed-in user's keys or changes its icon."
   updateApiKey(id: ID!, name: String!, icon: String!): ApiKey!
   """
@@ -523,8 +527,6 @@ type Query {
     200, 50 when left out.
   """
   activity(writer: ID, before: String, limit: Int, allUsers: Boolean): [Ingest!]!
-  "Every TEI of the pool, in config order. Admins only."
-  teis: [Tei!]!
   "Each embedding model's backlog, the default first. Admins only."
   embeddingStatus: [ModelStatus!]!
   "The signed-in user's API keys, newest first."
@@ -609,7 +611,7 @@ type SourceBacklog {
   source: String!
   "Waiting for the embed pump."
   pending: Int!
-  "Refused by TEI, so the pump leaves them out."
+  "Rejected by the endpoint, so the pump leaves them out."
   failed: Int!
 }
 
@@ -624,55 +626,6 @@ type SourceCount {
     (a root over a connection's documents and a key's).
   """
   writer: Writer
-}
-
-"""
-  A TEI of the pool. Which model it serves is asked every 10 seconds. The figures from its
-  `/metrics` are null while they don't answer, the rates average the last minute and are null
-  until two readings a few seconds apart exist.
-"""
-type Tei {
-  url: String!
-  "Not part of the deployment (config): starts with queries off."
-  external: Boolean!
-  enabled: Boolean!
-  "Whether it may embed search queries."
-  queries: Boolean!
-  "Whether the embed pump may use it."
-  embedding: Boolean!
-  state: TeiState!
-  "Why it's offline, unused or unsuitable."
-  problem: String
-  "The model id from its `/info`, null while it doesn't answer."
-  servedModel: String
-  "The configured model it serves."
-  model: String
-  "Its last failure (pump batch or query), until its next success."
-  lastError: String
-  lastErrorAt: DateTime
-  "A pump batch of the answering server process is in flight."
-  busy: Boolean!
-  """
-    Chunks per pump batch in the answering server process, null while it may not embed. It
-    shrinks on a TEI too slow for full batches, and stays short on one that also answers
-    queries.
-  """
-  pumpBatchSize: Int
-  "Inputs waiting in TEI's queue."
-  queueSize: Int
-  "Average inputs per inference batch."
-  batchSize: Float
-  "Inputs embedded per minute."
-  throughputPerMinute: Float
-  "Failed requests since TEI started."
-  failures: Int
-  """
-    Share of the last minute TEI spent in inference, a CPU proxy. Can exceed 1 with batches
-    in parallel.
-  """
-  load: Float
-  "While it may embed: seconds until its model's backlog is embedded at its throughput."
-  etaSeconds: Int
 }
 
 type TextPart {

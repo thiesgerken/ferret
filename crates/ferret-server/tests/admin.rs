@@ -116,7 +116,7 @@ async fn only_admins_see_and_change_users_workers_and_models(pool: PgPool) {
     for query in [
         "{ users { id } }",
         "{ workers { id } }",
-        "{ embeddingStatus { name } }",
+        "{ embeddingStatus { id } }",
         "mutation { createUser(input: {username: \"mallory\", password: \"a long enough password\", isAdmin: true}) { id } }",
     ] {
         let body = server.graphql(&grace, query, json!({})).await;
@@ -212,7 +212,10 @@ async fn admins_see_workers_tei_health_and_the_backlog_per_source(pool: PgPool) 
     }
     const STATUS: &str = "{
         workers { name plugins }
-        embeddingStatus { name modelId isDefault dimension backlog { source pending failed } }
+        embeddingStatus {
+            id isDefault dimension backlog { source pending failed }
+            embeddingApi { model reachable lastError } queryApi { model }
+        }
     }";
 
     let status = graphql_ok(&server, &admin, STATUS, json!({})).await;
@@ -225,10 +228,11 @@ async fn admins_see_workers_tei_health_and_the_backlog_per_source(pool: PgPool) 
     assert_eq!(
         status["embeddingStatus"],
         json!([{
-            "name": common::MODEL,
-            "modelId": common::fake_tei::FAKE_MODEL_ID,
+            "id": common::MODEL,
             "isDefault": true,
-            "dimension": common::fake_tei::DIMENSION,
+            "dimension": common::fake_endpoint::DIMENSION,
+            "embeddingApi": {"model": common::ENDPOINT_MODEL, "reachable": null, "lastError": null},
+            "queryApi": {"model": common::ENDPOINT_MODEL},
             "backlog": [
                 {"source": "mail", "pending": 1, "failed": 0},
                 {"source": "notes", "pending": 2, "failed": 0},
