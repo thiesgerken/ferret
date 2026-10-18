@@ -1,17 +1,30 @@
 mod common;
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use common::{
     DOCUMENT_PREFIX, ENDPOINT_MODEL, MODEL, QUERY_PREFIX, TestServer, api, document,
     embedding_config, eventually,
     fake_endpoint::{Broken, DIMENSION, FakeEndpoint},
-    model, start_server_with,
+    model, start_server, start_server_with,
 };
 use ferret_api::SearchQuery;
-use ferret_server::config::{ApiConfig, EmbeddingConfig};
+use ferret_server::{
+    config::{ApiConfig, EmbeddingConfig},
+    embeddings,
+};
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgPool, postgres::PgPoolOptions};
+use tokio::{
+    sync::{Notify, watch},
+    task::JoinSet,
+};
 
 const STATUS: &str = "{ embeddingStatus { id embeddingApi { url reachable lastError } } }";
 
@@ -153,6 +166,71 @@ async fn a_rate_limited_pump_waits_as_long_as_it_is_told(pool: PgPool) {
     // The 429 and the batch after the pause, no retries in between.
     assert_eq!(endpoint.rate_limited(), 1);
     assert_eq!(endpoint.models().len(), 2);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_rate_limited_batch_progresses_while_its_old_connection_return_is_delayed(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let endpoint = server.endpoint.clone();
+    let embedding = Arc::new(
+        embeddings::prepare(&pool, embedding_config(model(MODEL, &endpoint)))
+            .await
+            .unwrap(),
+    );
+    server
+        .admin_api()
+        .await
+        .put_document(&document("notes", "car", "My car broke down."))
+        .await
+        .unwrap();
+
+    let paused = Arc::new(Notify::new());
+    let held_once = Arc::new(AtomicBool::new(false));
+    // Dropping the sender also releases cleanup if an assertion panics.
+    let (resume_return, return_resumed) = watch::channel(());
+    let pump_pool = PgPoolOptions::new()
+        .min_connections(3)
+        .max_connections(3)
+        .after_release({
+            let endpoint = endpoint.clone();
+            let paused = paused.clone();
+            move |_, _| {
+                let endpoint = endpoint.clone();
+                let paused = paused.clone();
+                let held_once = held_once.clone();
+                let mut resumed = return_resumed.clone();
+                Box::pin(async move {
+                    // Only this pool's pump uses transactions, and its first batch receives the 429.
+                    // Do not query the returning connection: that would flush its queued rollback.
+                    if endpoint.rate_limited() > 0 && !held_once.swap(true, Ordering::SeqCst) {
+                        paused.notify_one();
+                        let _ = resumed.changed().await;
+                    }
+                    Ok(true)
+                })
+            }
+        })
+        .connect_with(pool.connect_options().as_ref().clone())
+        .await
+        .unwrap();
+    // One listener and the failed claim leave a warm alternate backend available.
+    let mut pump = JoinSet::new();
+    endpoint.rate_limit_for(Duration::from_secs(2));
+    let started = Instant::now();
+    pump.spawn(embeddings::run_pump(pump_pool.clone(), embedding));
+    tokio::time::timeout(Duration::from_secs(5), paused.notified())
+        .await
+        .expect("the failed batch's connection return must reach the barrier");
+    tokio::time::timeout(Duration::from_secs(5), server.wait_for_embeddings(1))
+        .await
+        .expect("embedding must progress without returning the old connection or another ingest");
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert_eq!(endpoint.rate_limited(), 1);
+    assert_eq!(endpoint.models().len(), 2);
+
+    drop(resume_return);
+    pump.shutdown().await;
+    pump_pool.close().await;
 }
 
 #[sqlx::test(migrations = false)]

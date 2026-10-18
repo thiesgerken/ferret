@@ -623,7 +623,14 @@ async fn embed_batch(
             missing.push((hash.clone(), text.clone()));
         }
     }
-    let rejected = cache_embeddings(&mut tx, http, model, missing).await?;
+    let rejected = match cache_embeddings(&mut tx, http, model, missing).await {
+        Ok(rejected) => rejected,
+        Err(error) => {
+            // Another pool connection may claim before drop's queued rollback releases our locks.
+            tx.rollback().await?;
+            return Err(error);
+        }
+    };
     if !rejected.is_empty() {
         let rejected_chunks: Vec<_> = chunks
             .iter()
