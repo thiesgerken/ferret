@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.20.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #149 from thiesgerken/feat/gitea-plugin
+  ([`5825beb`](https://github.com/thiesgerken/ferret/commit/5825beb00e8e40e52079a79c9275afc4bdfca6a6))
+
+- ✨ feat(plugins): index Gitea repositories and open discussions
+  ([`5825beb`](https://github.com/thiesgerken/ferret/commit/5825beb00e8e40e52079a79c9275afc4bdfca6a6))
+
+### Other
+
+
+- 🔀 merge(plugins): merge main into Gitea plugin branch
+  ([`49883f0`](https://github.com/thiesgerken/ferret/commit/49883f06b786cb172a893b853aa784572979f7f5))
+
 ## v0.19.1 (2026-10-18)
 
 
@@ -148,6 +166,9 @@
 - ✨ feat(plugins): add Vikunja task indexing
   ([`3bcca1e`](https://github.com/thiesgerken/ferret/commit/3bcca1ed2a57ea4bda2b577e32e49c477c4365f2))
 
+- ✨ feat(plugins): index Gitea repositories and open discussions
+  ([`d981bb4`](https://github.com/thiesgerken/ferret/commit/d981bb4e291427b01fc8b5eb560545412e9af938))
+
 ### Other
 
 
@@ -194,6 +215,9 @@
 
   Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
 
+- ✅ test(frontend): remove relative-time wording assertion
+  ([`d15631d`](https://github.com/thiesgerken/ferret/commit/d15631d3ae843ccdcbc2616e9f37acc54958063f))
+
 - Merge pull request #144 from thiesgerken/fix-connections-test-clock
   ([`1eff919`](https://github.com/thiesgerken/ferret/commit/1eff919b01e949d5e0edaf739e67dfb4aa667aad))
 
@@ -207,9 +231,6 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
-
-- ✅ test(frontend): remove relative-time wording assertion
-  ([`d15631d`](https://github.com/thiesgerken/ferret/commit/d15631d3ae843ccdcbc2616e9f37acc54958063f))
 
 ### 👷 CI/Build
 
@@ -236,6 +257,12 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- 🐛 fix(runs): reconcile partial writes after failed or lost runs
+  ([`4850e74`](https://github.com/thiesgerken/ferret/commit/4850e74051182f3633972772d2476da748d99718))
+
+- 🐛 fix(gitea): ignore team review requests without authors
+  ([`933f370`](https://github.com/thiesgerken/ferret/commit/933f3706a5e75005be78514fde1a5e2f05b05ba9))
 
 ### 🔧 Configuration
 
