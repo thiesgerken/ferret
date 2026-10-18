@@ -87,11 +87,58 @@ async fn an_answer_failing_a_check_is_discarded_and_the_pump_tries_again(pool: P
 }
 
 #[sqlx::test(migrations = false)]
+async fn an_endpoint_refusing_every_input_fails_instead_of_its_inputs(pool: PgPool) {
+    let endpoint = FakeEndpoint::start().await;
+    let config = embedding_config(model(MODEL, &endpoint));
+    let server = start_server_with(pool.clone(), endpoint.clone(), config).await;
+    endpoint.forget_the_model();
+    // One document of several chunks, so the pump claims them as one batch.
+    let long: String = (0..400)
+        .map(|index| format!("Sentence {index} about my car. "))
+        .collect();
+
+    server
+        .admin_api()
+        .await
+        .put_document(&document("notes", "car", &long))
+        .await
+        .unwrap();
+    let status = eventually("the endpoint reported", async || {
+        let status = embedding_api(&server, MODEL).await;
+        status["lastError"]
+            .as_str()
+            .is_some_and(|error| error.contains("rejected every input"))
+            .then_some(status)
+    })
+    .await;
+    let failures: i64 = sqlx::query_scalar("select count(*) from embedding_failures")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert!(
+        status["lastError"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid model name"),
+        "{status}"
+    );
+    assert_eq!(failures, 0);
+    endpoint.recover();
+    let chunks: i64 = sqlx::query_scalar("select count(*) from chunks")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(chunks > 1, "{chunks}");
+    server.wait_for_embeddings(chunks).await;
+}
+
+#[sqlx::test(migrations = false)]
 async fn a_rate_limited_pump_waits_as_long_as_it_is_told(pool: PgPool) {
     let endpoint = FakeEndpoint::start().await;
     let config = embedding_config(model(MODEL, &endpoint));
     let server = start_server_with(pool, endpoint.clone(), config).await;
-    endpoint.rate_limit(1, Some(2));
+    endpoint.rate_limit_for(Duration::from_secs(2));
 
     let started = Instant::now();
     server
@@ -104,7 +151,43 @@ async fn a_rate_limited_pump_waits_as_long_as_it_is_told(pool: PgPool) {
 
     assert!(started.elapsed() >= Duration::from_secs(2));
     // The 429 and the batch after the pause, no retries in between.
+    assert_eq!(endpoint.rate_limited(), 1);
     assert_eq!(endpoint.models().len(), 2);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_429_pauses_every_pump_loop_of_the_model(pool: PgPool) {
+    let endpoint = FakeEndpoint::start().await;
+    let mut many_loops = model(MODEL, &endpoint);
+    many_loops.embedding_api.as_mut().unwrap().concurrency = Some(4);
+    let server = start_server_with(pool, endpoint.clone(), embedding_config(many_loops)).await;
+    let api = server.admin_api().await;
+    endpoint.rate_limit_for(Duration::from_secs(3));
+
+    api.put_document(&document("notes", "note-0", "My car broke down."))
+        .await
+        .unwrap();
+    eventually("the 429 reported", async || {
+        let status = embedding_api(&server, MODEL).await;
+        status["lastError"]
+            .as_str()
+            .is_some_and(|error| error.contains("rate limited"))
+            .then_some(())
+    })
+    .await;
+    // Chunks for the other loops, which would run into the limit unless they pause too.
+    for index in 1..4 {
+        api.put_document(&document(
+            "notes",
+            &format!("note-{index}"),
+            "My car broke down.",
+        ))
+        .await
+        .unwrap();
+    }
+    server.wait_for_embeddings(4).await;
+
+    assert_eq!(endpoint.rate_limited(), 1);
 }
 
 #[sqlx::test(migrations = false)]

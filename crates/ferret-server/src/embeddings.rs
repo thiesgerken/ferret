@@ -495,9 +495,8 @@ async fn pump(pool: PgPool, embedding: Arc<Embedding>, model: usize) {
                 backoff = MIN_BACKOFF;
                 tracing::debug!(model = %model.id(), count, "embedded chunks");
             }
-            Err(EmbedError::Endpoint(EndpointError::RateLimited(wait))) => {
-                tokio::time::sleep(wait).await;
-            }
+            // The endpoint keeps the pause, see `cache_embeddings`.
+            Err(EmbedError::Endpoint(EndpointError::RateLimited(_))) => {}
             Err(error) => {
                 // The endpoint logs its own failures, once per outage.
                 if let EmbedError::Database(error) = &error {
@@ -642,6 +641,11 @@ async fn cache_embeddings(
             .embed(http, &texts, model.dimension(), BATCH_TIMEOUT)
             .await
     };
+    // Every loop of the model waits out a 429, not only the one that got it. Right before the
+    // request: a loop that checked earlier may have claimed chunks the 429'd loop just released.
+    if let Some(until) = model.embedding_api.paused_until() {
+        tokio::time::sleep_until(until.into()).await;
+    }
     let started = Instant::now();
     let (hashes, vectors) = match embed(texts.clone()).await {
         Ok(vectors) => {
@@ -656,6 +660,7 @@ async fn cache_embeddings(
         }
         Err(EndpointError::Rejected(_)) => {
             // Find the culprits one by one.
+            let batch = texts.len();
             let mut embedded_hashes = Vec::new();
             let mut vectors = Vec::new();
             for (hash, text) in hashes.into_iter().zip(texts) {
@@ -669,6 +674,16 @@ async fn cache_embeddings(
                     }
                     Err(error) => return Err(error.into()),
                 }
+            }
+            // Every input of a batch at once points at the endpoint (a proxy answers an unknown
+            // model with a 400), not at the inputs: recording them would fail the whole backlog.
+            if batch > 1 && embedded_hashes.is_empty() {
+                let example = rejected.into_values().next().unwrap_or_default();
+                let error = EndpointError::Failed(format!(
+                    "rejected every input of a batch of {batch}, e.g. with {example}"
+                ));
+                model.embedding_api.failed(&error);
+                return Err(error.into());
             }
             (embedded_hashes, vectors)
         }

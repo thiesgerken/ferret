@@ -3,7 +3,10 @@
 //! with a 422. It can also want a bearer token, rate-limit, fail, hang
 //! and answer with broken vectors.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json, Router,
@@ -39,6 +42,8 @@ enum Health {
     Down,
     /// Never answers, like a TEI that is stuck.
     Hanging,
+    /// Answers every request with a 400, like a proxy asked for a model it doesn't know.
+    UnknownModel,
 }
 
 /// How answers are broken.
@@ -69,8 +74,10 @@ struct FakeState {
     health: Health,
     /// Wanted as `Authorization: Bearer <token>`.
     token: Option<String>,
-    /// The next requests are answered with a 429 and this `Retry-After`, if any.
-    rate_limited: Option<(usize, Option<u64>)>,
+    /// Requests until then are answered with a 429 and a `Retry-After` up to then.
+    rate_limited_until: Option<Instant>,
+    /// How many requests got a 429.
+    rate_limited: usize,
     broken: Option<Broken>,
 }
 
@@ -110,9 +117,14 @@ impl FakeEndpoint {
         self.state.lock().unwrap().token = Some(token.to_owned());
     }
 
-    /// The next `requests` requests fail with a 429, with `Retry-After: <seconds>` if given.
-    pub fn rate_limit(&self, requests: usize, retry_after: Option<u64>) {
-        self.state.lock().unwrap().rate_limited = Some((requests, retry_after));
+    /// For `duration`, every request fails with a 429 whose `Retry-After` names the seconds left.
+    pub fn rate_limit_for(&self, duration: Duration) {
+        self.state.lock().unwrap().rate_limited_until = Some(Instant::now() + duration);
+    }
+
+    /// How many requests got a 429 so far.
+    pub fn rate_limited(&self) -> usize {
+        self.state.lock().unwrap().rate_limited
     }
 
     /// From now on, answers are broken this way.
@@ -130,6 +142,12 @@ impl FakeEndpoint {
         let mut state = self.state.lock().unwrap();
         state.health = Health::Up;
         state.broken = None;
+    }
+
+    /// From now on, every request fails with a 400, like a proxy asked for a model it doesn't
+    /// know.
+    pub fn forget_the_model(&self) {
+        self.state.lock().unwrap().health = Health::UnknownModel;
     }
 
     /// From now on, no request gets an answer, like a TEI that is stuck.
@@ -162,6 +180,12 @@ async fn embeddings(
         Health::Up => {}
         Health::Down => return error(StatusCode::SERVICE_UNAVAILABLE, "model is overloaded"),
         Health::Hanging => std::future::pending().await,
+        Health::UnknownModel => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Invalid model name passed in model=fake/fake-embedding",
+            );
+        }
     }
     let mut state = state.lock().unwrap();
     state.models.push(request.model);
@@ -173,16 +197,16 @@ async fn embeddings(
             return error(StatusCode::UNAUTHORIZED, "invalid token");
         }
     }
-    if let Some((requests, retry_after)) = state.rate_limited.take() {
-        if requests > 1 {
-            state.rate_limited = Some((requests - 1, retry_after));
-        }
+    if let Some(left) = state
+        .rate_limited_until
+        .and_then(|until| until.checked_duration_since(Instant::now()))
+    {
+        state.rate_limited += 1;
         let mut response = error(StatusCode::TOO_MANY_REQUESTS, "slow down");
-        if let Some(seconds) = retry_after {
-            response
-                .headers_mut()
-                .insert(header::RETRY_AFTER, seconds.into());
-        }
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            left.as_millis().div_ceil(1000).to_string().parse().unwrap(),
+        );
         return response;
     }
     assert_eq!(request.encoding_format, "float");

@@ -1,7 +1,11 @@
 //! A client for OpenAI-compatible embeddings endpoints: TEI, proxies like LiteLLM, cloud APIs.
 //! One request shape for all of them. Every answer is checked before anything is stored.
 
-use std::{fmt, sync::Mutex, time::Duration};
+use std::{
+    fmt,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use chrono::{DateTime, Utc};
 use reqwest::{StatusCode, header::RETRY_AFTER};
@@ -28,6 +32,10 @@ pub struct Health {
     pub reachable: Option<bool>,
     /// The last failure, until the next success.
     pub last_error: Option<(String, DateTime<Utc>)>,
+    /// The kind of the last failure, see `EndpointError::kind`.
+    failing: Option<&'static str>,
+    /// Until when the endpoint asked for a pause (a 429's `Retry-After`).
+    paused_until: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -58,6 +66,17 @@ impl fmt::Display for EndpointError {
 impl std::error::Error for EndpointError {}
 
 impl EndpointError {
+    /// What went wrong, without the details that differ from one retry to the next.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Unreachable(_) => "unreachable",
+            Self::RateLimited(_) => "rate limited",
+            Self::Rejected(_) => "rejected inputs",
+            Self::Failed(_) => "failed",
+            Self::Invalid(_) => "invalid answer",
+        }
+    }
+
     pub fn is_timeout(&self) -> bool {
         matches!(self, Self::Unreachable(error) if error.is_timeout())
     }
@@ -107,6 +126,15 @@ impl Endpoint {
             .clone()
     }
 
+    /// Until when the endpoint asked for a pause. The pump waits, a search tries anyway.
+    pub fn paused_until(&self) -> Option<Instant> {
+        self.health
+            .lock()
+            .expect("no panics while updating")
+            .paused_until
+            .filter(|until| *until > Instant::now())
+    }
+
     /// The vectors of `texts` in their order, each `dimension` long, finite and not zero.
     /// Records how the request went.
     pub async fn embed(
@@ -124,8 +152,6 @@ impl Endpoint {
             });
         match &result {
             Ok(_) => self.succeeded(),
-            // The endpoint is fine, the inputs aren't.
-            Err(EndpointError::Rejected(_)) => self.succeeded(),
             Err(error) => self.failed(error),
         }
         result
@@ -179,19 +205,35 @@ impl Endpoint {
         }
         *health = Health {
             reachable: Some(true),
-            last_error: None,
+            paused_until: health.paused_until,
+            ..Health::default()
         };
     }
 
-    /// Logs only the first of a run of failures: an endpoint that is down fails every retry.
-    fn failed(&self, error: &EndpointError) {
+    /// Shows `error` in Admin until the next success. Logs only when the kind of failure
+    /// changes: an endpoint that is down fails every retry.
+    pub fn failed(&self, error: &EndpointError) {
         let mut health = self.health.lock().expect("no panics while updating");
-        if health.last_error.is_none() {
-            tracing::warn!(url = %self.url, model = %self.model, %error, "the embeddings endpoint fails");
+        let kind = error.kind();
+        if health.failing != Some(kind) {
+            match error {
+                EndpointError::RateLimited(_) => {
+                    tracing::info!(url = %self.url, model = %self.model, %error, "the embeddings endpoint asks for a pause")
+                }
+                _ => {
+                    tracing::warn!(url = %self.url, model = %self.model, %error, "the embeddings endpoint fails")
+                }
+            }
         }
+        let paused_until = match error {
+            EndpointError::RateLimited(wait) => Some(Instant::now() + *wait),
+            _ => health.paused_until,
+        };
         *health = Health {
             reachable: Some(!matches!(error, EndpointError::Unreachable(_))),
             last_error: Some((error.to_string(), Utc::now())),
+            failing: Some(kind),
+            paused_until,
         };
     }
 }
