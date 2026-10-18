@@ -69,8 +69,9 @@ rate within the API's limits.
 - **A model name always means the same weights.** Ferret checks every answer's shape, not which
   model computed it: vectors from other weights would land in this model's index unnoticed and
   rank nonsense. Swapping the model behind a name needs a new `id` in ferret.
-- **A cloud endpoint receives every chunk and every search query.** Restrict what reaches it with
-  the sources you ingest, or keep sensitive sources on a model with a self-hosted endpoint.
+- **A cloud endpoint receives every chunk and every search query.** Every model embeds every
+  chunk of every source, so a cloud endpoint for any model sees all of them, mail and chats
+  included. When a source must not leave, every model needs a self-hosted endpoint.
 
 ## Requests and answers
 

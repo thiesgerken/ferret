@@ -373,6 +373,11 @@ the deployment, as in carapace. docker-compose exists for local development only
 - **Third parties' text reaches the LLM provider** of every agent turn that reads search results.
   Mitigations: per-chat denylists at ingestion (never ingested, never leaked), and deciding which
   agent sessions get the skill at all.
+- **A cloud embeddings endpoint receives everything**: every model embeds every chunk of every
+  source, mail and chats included, and every search query goes to its query endpoint. That's a
+  wider exposure than an agent's, which only reads what its key may search. Mitigation: keep every
+  model on a self-hosted endpoint (TEI) when any source must not leave, and only then use a cloud
+  API ([embeddings.md](../embeddings.md#what-the-endpoint-must-guarantee)).
 - **Prompt injection**: anyone who messages me can plant text an agent will read. Search output
   labels every hit with source and author and delimits the text as data.
 - **Credentials are scoped**: an agent's API key can only search, a plugin run's token can only
