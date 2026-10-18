@@ -158,7 +158,7 @@ async fn every_users_activity_is_for_admins_only(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
-async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgPool) {
+async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_endpoints(pool: PgPool) {
     let server = start_semantic_server(pool).await;
     let api = server.admin_api().await;
     api.put_document(&document("notes", "a", "A car."))
@@ -172,7 +172,7 @@ async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgP
             &cookie,
             "{
                 embeddingModels { pending failed ratePerMinute etaSeconds online embedding }
-                teis { state model busy pumpBatchSize queueSize load }
+                embeddingStatus { embeddingApi { reachable lastError } }
             }",
             json!({}),
         )
@@ -189,13 +189,9 @@ async fn a_model_reports_the_users_backlog_the_pumps_rate_and_its_teis(pool: PgP
         (&model["online"], &model["embedding"]),
         (&json!(true), &json!(true))
     );
-    // The fake TEI has no /metrics.
     assert_eq!(
-        body["data"]["teis"],
-        json!([{
-            "state": "ONLINE", "model": common::MODEL, "busy": false, "pumpBatchSize": 32,
-            "queueSize": null, "load": null,
-        }])
+        body["data"]["embeddingStatus"],
+        json!([{"embeddingApi": {"reachable": true, "lastError": null}}])
     );
 }
 

@@ -4,8 +4,8 @@ import { Brain, Server, Users2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 import { Section } from "@/components/page-shell";
+import { ModelEndpoints } from "@/components/model-endpoints";
 import { StoredEmbeddings } from "@/components/stored-embeddings";
-import { TeiPool } from "@/components/tei-pool";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
 import type { AdminQuery as AdminData } from "@/gql/graphql";
@@ -31,25 +31,24 @@ const AdminQuery = graphql(`
       online
     }
     embeddingStatus {
-      name
-      modelId
+      id
       isDefault
       dimension
+      embeddingApi {
+        url
+        model
+        ...EndpointCardFields
+      }
+      queryApi {
+        url
+        model
+        ...EndpointCardFields
+      }
       backlog {
         source
         pending
         failed
       }
-    }
-    teis {
-      url
-      model
-      servedModel
-      state
-      enabled
-      queries
-      embedding
-      ...TeiCardFields
     }
     storedEmbeddingModels {
       id
@@ -128,7 +127,7 @@ export function Admin() {
         description={t("embeddingHint")}
       >
         <div className="space-y-6">
-          <TeiPool models={data.embeddingStatus} teis={data.teis} onChanged={reload} />
+          <ModelEndpoints models={data.embeddingStatus} />
           <StoredEmbeddings models={data.storedEmbeddingModels} onChanged={reload} />
         </div>
       </Section>

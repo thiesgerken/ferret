@@ -4,10 +4,11 @@
 
 - **ferret-server** (Rust) owns Postgres and is the only component that talks to it. It serves the
   UI's GraphQL API, a REST API for machines, and an internal API for plugin workers. It also
-  schedules plugin runs and pumps chunks to the embedder.
+  schedules plugin runs and pumps chunks to each model's embeddings endpoint.
 - **ferret-plugins** (Rust) workers pull plugin runs from the server via long polling and ingest
   through the same REST API any external ingester uses.
-- **TEI** computes embeddings.
+- **Embeddings endpoints** compute embeddings: per model an OpenAI-compatible endpoint (a TEI, a
+  proxy like LiteLLM, or a cloud API) that the deployment provides.
 - **frontend** (Next.js) is a copy of carapace's stack and look: Google-like search page, plus
   Explore, Connections, Settings and Admin.
 
@@ -23,8 +24,8 @@ coordination goes through Postgres (`SKIP LOCKED` and advisory locks, `LISTEN/NO
                     ┌──────────┐      ┌──────────────────────┐      │   external ingesters,
  browser ─────────► │ frontend │      │ ferret-server        │ ◄────┘   agents (MCP, skills)
                     │ (Next.js)│      │  :8080 public        │
-                    └──────────┘      │    GraphQL (UI)      │ ──────► TEI (per model)
-                                      │    REST (machines)   │          embeddings
+                    └──────────┘      │    GraphQL (UI)      │ ──────► embeddings endpoints
+                                      │    REST (machines)   │          (per model, OpenAI API)
                                       │    MCP (agents)      │
                                       │  :8081 internal      │
                                       │    worker API        │ ──────► Postgres
@@ -258,18 +259,19 @@ without it.
 
 ## Embedding orchestration
 
-- **TEI** runs as its own Deployment per configured model, one CPU replica each, plus any TEIs
-  outside the chart, e.g. a laptop's GPU for backfills. They form a pool: each works for whichever
-  model it serves, which the server discovers ([embeddings.md](embeddings.md#the-tei-pool)).
+- **Embeddings endpoints** are outside ferret: each model names the OpenAI-compatible endpoint
+  that embeds its chunks and the one that embeds queries, often the same
+  ([embeddings.md](embeddings.md#endpoints)). Routing, failover and serving are the endpoint's job.
 - **The embed pump** is a tokio task in ferret-server. `LISTEN chunks_pending` wakes it (polling as
-  fallback). It runs one loop per TEI that may embed: each claims up to 32 chunks the
-  TEI's model hasn't embedded yet, newest first, under transaction-scoped advisory locks, sends them
-  to the TEI, and writes `chunk_embeddings` and `embedding_cache` in one transaction. Chunks
-  TEI rejects (a 4xx) go to `embedding_failures` and are skipped from then on, so one bad chunk
-  can't block the rest.
-- **Several pumps** (one per TEI and server replica) share the queue through those advisory locks: they
-  skip each other's chunks, and an ingest never waits for a pump's TEI call. No worker protocol:
-  routing texts through ferret-plugins would only add a hop.
+  fallback). It runs `concurrency` loops per model (default 1): each claims up to 32 chunks the
+  model hasn't embedded yet, newest first, under transaction-scoped advisory locks, sends them to
+  the model's endpoint, checks the answer, and writes `chunk_embeddings` and `embedding_cache` in
+  one transaction. Chunks the endpoint rejects (400, 413, 422) go to `embedding_failures` and are
+  skipped from then on, so one bad chunk can't block the rest. An endpoint that is down only holds
+  up its own model: the loops back off and try again.
+- **Several loops** (per model and server replica) share the queue through those advisory locks:
+  they skip each other's chunks, and an ingest never waits for an endpoint call. No worker
+  protocol: routing texts through ferret-plugins would only add a hop.
 - **Newest documents first**: during the initial backfill (hours), recent documents become
   semantically searchable first. Keyword search covers everything from the moment of ingest.
 - Settings shows how much of the user's chunks each model has embedded. The backlog per source and
@@ -287,7 +289,7 @@ the frontend. In development Next rewrites those paths to the local server, as i
 | **Explore** (`/explore`) | v1: a filterable, sortable table of documents with facet counts (per source, content type, the 20 most frequent authors plus the selected ones, month in UTC), opening the viewer. v2: the map (UMAP via Embedding Atlas) |
 | **Connections** (`/connections`) | One card per connection: plugin, schedule, last run, next run. Detail: config form (from the plugin's JSON Schema), schedule, run now, run history with logs, excluded documents and threads with "Include again", disable, delete. Document count and embedding backlog per card are post-v1 (#21) |
 | **Settings** (`/settings`) | Account (change your own password, #54), API keys, Models (coverage on my data and my default model in v1; recall@10 and MRR on my judgments after v1, #21), Language |
-| **Admin** (`/admin`) | Users, workers and their plugins, models and their backfill, system status (TEI health). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen. A restarted worker registers anew, so it shows as a new row while its old one stays offline |
+| **Admin** (`/admin`) | Users, workers and their plugins, models with their backfill and endpoints (reachable, last error). A worker is online while it asks for runs (an idle one every 30 s) or holds a running run, offline after two minutes without either, and listed for a day after it was last seen. A restarted worker registers anew, so it shows as a new row while its old one stays offline |
 
 Everything except Search is reached through an app menu in the top right, like Google's.
 
@@ -316,8 +318,8 @@ The Helm chart, modelled on carapace's:
 - `ferret-plugins` Deployment, without a service account token: runs read files from repositories
   they don't control.
 - `frontend` Deployment.
-- With `tei.internal.enabled`, one TEI Deployment per configured embedding model, on CPU.
-  `externalTeis` lists TEIs outside the chart, e.g. a GPU for backfills.
+- No TEI by default: each model names its endpoints in the values, with tokens from existing
+  Secrets. `bundledTei` deploys one CPU TEI for exactly one model, for a quickstart.
 - Postgres Deployment with the ParadeDB image and a PVC, like carapace's own Postgres (no operator
   for now).
 - Ingress as a Gateway API `HTTPRoute`, like carapace's, and a NetworkPolicy for the internal port.

@@ -82,8 +82,8 @@ services:
     volumes:
       - ./docker/dovecot-test.conf:/etc/dovecot/conf.d/ferret-test.conf:ro
 
-  # The TEI pool (docker/ferret.yaml): tei answers queries and embeds in short batches, tei-bulk
-  # stands in for a TEI outside the deployment (a laptop in the LAN), which only embeds.
+  # The embedding models' endpoints (docker/ferret.yaml): tei computes Qwen3 for queries and the
+  # embed pump.
   tei: &tei
     # amd64 only. On Apple Silicon use the native build instead of emulation:
     # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
@@ -104,17 +104,14 @@ services:
       timeout: 3s
       # The first start downloads the model.
       start_period: 10m
-    # Four times tei-bulk's weight: when both want the CPU, a query gets most of it. A weight, not a
-    # limit, so the pump still uses every core that queries leave idle.
-    cpu_shares: 4096
 
-  tei-bulk:
+  # bge-m3, a second model. Off unless `docker compose up -d --scale tei-bge=1 tei-bge`: until
+  # then its endpoint is unreachable, which Admin shows. Its model needs about 2 GB of memory more.
+  tei-bge:
     <<: *tei
-    depends_on:
-      # Both share the model cache, so the first start downloads it once, in tei.
-      tei:
-        condition: service_healthy
-    cpu_shares: 1024
+    command: ["--model-id", "BAAI/bge-m3", "--max-batch-tokens", "4096"]
+    deploy:
+      replicas: 0
 
 volumes:
   pgdata:

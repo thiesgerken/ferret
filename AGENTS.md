@@ -4,7 +4,8 @@
 
 ferret is a personal search index: keyword (BM25) and semantic search over notes, documents, mail,
 chats and agent memory, pointing back to where each piece lives. Rust (axum, sqlx) on Postgres with
-ParadeDB `pg_search` and pgvector, embeddings from TEI, Next.js frontend.
+ParadeDB `pg_search` and pgvector, embeddings from an OpenAI-compatible endpoint per model (TEI in
+development), Next.js frontend.
 
 Read before working on a feature:
 
@@ -13,6 +14,9 @@ Read before working on a feature:
 - `docs/glossary.md`: the domain vocabulary. Use its terms in code, tests, commits and PRs, and
   avoid the ones it lists under _Avoid_.
 - `docs/adr/`: decisions and why they were made
+- `docs/*.md`, `docs/api/` and `docs/plugins/`: the user and operator docs, the maintained
+  documentation of current behavior (configuration, operations, indexing, search, embeddings,
+  the APIs, each plugin)
 
 Every PR must assess whether the maintained documentation (not `docs/conception/`) needs updating and update it when applicable.
 
@@ -23,8 +27,9 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
   `docker compose up -d --scale dovecot=1 dovecot` for the IMAP plugin's tests
 - Build: `cargo build --workspace`
 - Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
-  The config file's TEI URLs must be reachable from the host (compose's `docker/ferret.yaml` uses
-  `http://tei:80` and `http://tei-bulk:80`, which only work inside compose).
+  The config file's endpoint URLs must be reachable from the host (compose's `docker/ferret.yaml`
+  uses `http://tei:80/v1` and `http://tei-bge:80/v1`, which only work inside compose). `tei-bge`
+  (bge-m3) is scaled to 0: `docker compose up -d --scale tei-bge=1 tei-bge` starts it.
 - Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`
 - After changing a query or a migration, refresh the sqlx query metadata (needs
   `cargo install sqlx-cli` and a migrated database):

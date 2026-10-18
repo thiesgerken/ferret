@@ -2,13 +2,18 @@
 embedding:
   default: qwen3-embedding-0.6b
   models:
-    - name: qwen3-embedding-0.6b
-      model_id: Qwen/Qwen3-Embedding-0.6B
+    - id: qwen3-embedding-0.6b
       dimension: 1024
       query_prefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
       min_similarity: 0.42
-  # tei-bulk is marked external like a laptop would be: it starts with queries off.
-  teis:
-    - url: http://tei:80
-    - url: http://tei-bulk:80
-      external: true
+      embedding_api:
+        url: http://tei:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
+    # Unreachable until `docker compose up -d --scale tei-bge=1 tei-bge`: Admin shows its error,
+    # and Qwen3 keeps working. min_similarity isn't calibrated for bge-m3 (see embeddings.md).
+    - id: bge-m3
+      dimension: 1024
+      min_similarity: 0.5
+      embedding_api:
+        url: http://tei-bge:80/v1
+        model: BAAI/bge-m3

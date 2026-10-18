@@ -20,6 +20,7 @@ mod connections;
 mod content_type;
 mod credentials;
 mod documents;
+mod embedding_api;
 pub mod embeddings;
 mod error;
 mod exclusions;
@@ -35,9 +36,6 @@ mod search;
 mod search_query;
 mod sources;
 mod syncs;
-mod tei;
-mod tei_load;
-mod tei_pool;
 mod users;
 mod writers;
 

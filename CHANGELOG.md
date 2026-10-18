@@ -1,6 +1,145 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #142 from thiesgerken/139-openai-endpoints
+  ([`3f21cd4`](https://github.com/thiesgerken/ferret/commit/3f21cd4c20c6a45cff06bf98d54ebedfe44bef05))
+
+- ✨ feat(server): embeddings through an OpenAI-compatible endpoint per model
+  ([`3f21cd4`](https://github.com/thiesgerken/ferret/commit/3f21cd4c20c6a45cff06bf98d54ebedfe44bef05))
+
+- ✨ feat(chart): an endpoint per model, and an optional bundled TEI
+  ([`baa3108`](https://github.com/thiesgerken/ferret/commit/baa3108b236b6c47ba95b2ecbc2012719eb31707))
+
+  Models name their embeddingApi and queryApi, with a token from an existing Secret. No TEI by default: bundledTei deploys one CPU TEI for exactly one model, for a quickstart. The chart refuses to render without an endpoint per model, with a bundled TEI for no or several models, and with the old tei, externalTeis or per-model TEI values. CI checks the renders and the refusals (scripts/check-chart.sh).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(frontend): each model's endpoints with reachability and last error
+  ([`c69916d`](https://github.com/thiesgerken/ferret/commit/c69916ddd109ea70c469b3e5e7c1cdef0442f978))
+
+  Admin's Embedding tab and the admins' part of Activity show every model's endpoints (one card when one endpoint does both) with whether it answered and its last error, next to the backlog. The TEI cards, switches and load figures are gone, and models go by id.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- ✨ feat(server): embeddings through an OpenAI-compatible endpoint per model
+  ([`5dc60ab`](https://github.com/thiesgerken/ferret/commit/5dc60ab90165e416a3766b9ea1baad1d191defe7))
+
+  Each model names the endpoint that computes its embeddings, for chunks (embedding_api) and queries (query_api), with an optional bearer token from the environment and a concurrency per replica. TEI, LiteLLM and cloud APIs all get POST {url}/embeddings. Every answer is checked (count, index, dimension, finite, norm), a 429 pauses the pump for Retry-After, an unreachable endpoint is backed off and reported in Admin. The config's model `name` is now `id`, with the same stored value.
+
+  TEI discovery, the per-TEI pumps, switches, load and metrics are gone, and so are the teis table and the GraphQL teis/updateTei fields.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### Other
+
+
+- 🔀 merge main into 139-openai-endpoints
+  ([`b92d751`](https://github.com/thiesgerken/ferret/commit/b92d7515f2c7630935550c2a4704b2fbbb84622c))
+
+  Brings in the model registry (#141). Its code follows the name→id rename, the registry tests use the fake endpoint, and drop_teis is re-dated after the registry's migration.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- 📝 docs: refused batches, the model-wide 429 pause and logging per kind
+  ([`032281d`](https://github.com/thiesgerken/ferret/commit/032281d8708fdd6f59cf6f380925d840e594aafa))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- 📝 docs: a cloud embeddings endpoint sees every chunk of every source
+  ([`c664ad6`](https://github.com/thiesgerken/ferret/commit/c664ad64fa5dedf099a14197b82e50faa45ec589))
+
+  Every model embeds every chunk, so keeping sensitive sources away from a cloud endpoint means self-hosted endpoints for every model.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- 📝 docs: TEI truncates over-long inputs by default
+  ([`b78f165`](https://github.com/thiesgerken/ferret/commit/b78f165e0e2ade950e87816df8e032a454c7e405))
+
+  Checked against TEI 1.9.4, whose /info reports auto_truncate: true. The docs no longer promise that a TEI refuses an over-long input.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- 📝 docs: embedding endpoints per model, setups, migration and ADR 0007
+  ([`1186918`](https://github.com/thiesgerken/ferret/commit/1186918dd2266f01682e782a8573d8f63dd732bd))
+
+  embeddings.md covers the config, three setups (a TEI, LiteLLM, a cloud API), what the endpoint must guarantee, the answer checks, and the way from a TEI pool config (keep id = old name). Architecture, conception, configuration, operations, Kubernetes, quickstart, development and the glossary drop the TEI pool. ADR 0007 records why.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+- Merge pull request #144 from thiesgerken/fix-connections-test-clock
+  ([`1eff919`](https://github.com/thiesgerken/ferret/commit/1eff919b01e949d5e0edaf739e67dfb4aa667aad))
+
+  ✅ test(frontend): deterministic connections test, no hang after a failed assertion
+
+- ✅ test(frontend): pin the clock for the connections' last run, and unmount after a failed test
+  ([`88398ad`](https://github.com/thiesgerken/ferret/commit/88398ad2a954ed21ff6cf623b7b98dc9f5f7b78a))
+
+  The connections test compared a fixed run date with the real clock, so it broke once the date moved on. And a failed assertion skipped the test's unmount, leaving the page's clock interval to keep the run alive forever. renderReact now unmounts whatever is still mounted after each test.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_0182NU5DS1c8iPNewjhSN63F
+
+### 👷 CI/Build
+
+
+- 👷 ci(chart): the no-TEI-by-default check renders the defaults with an endpoint
+  ([`aaae2c7`](https://github.com/thiesgerken/ferret/commit/aaae2c71500d7682bb40760de1704f845b11abb8))
+
+  The defaults alone don't render, so the check could never fail.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): a refusing endpoint fails instead of its inputs, and a 429 pauses the whole model
+  ([`32e0ed7`](https://github.com/thiesgerken/ferret/commit/32e0ed71fd807d6911849d492cf18a8cf946186b))
+
+  A proxy answers an unknown model with a 400 to everything: a batch of several whose every input is refused now fails the endpoint (backoff, last error) instead of recording the whole backlog in embedding_failures. Any refusal shows as the endpoint's last error.
+
+  A 429 pauses every pump loop of the model until Retry-After, checked right before each request. Failures are logged when their kind changes, and a 429 as a pause rather than an outage.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
+### 🔧 Configuration
+
+
+- 🔧 chore(compose): one Qwen3 TEI, bge-m3 scaled to 0, no tei-bulk
+  ([`b275876`](https://github.com/thiesgerken/ferret/commit/b2758766120f11bd9833c8f1981f7e28fa6bc9bc))
+
+  docker/ferret.yaml names each model's endpoint. bge-m3's TEI starts only with --scale tei-bge=1, so the stack shows an unreachable endpoint in Admin until then, while Qwen3 keeps working.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01QBjAQrLb2qGNiYxmgQHByo
+
 ## v0.16.0 (2026-10-18)
 
 
