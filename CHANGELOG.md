@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.23.0 (2026-10-18)
+
+
+### Other
+
+
+- Merge pull request #165 from thiesgerken/feat/writer-storage-stats
+  ([`f3a7811`](https://github.com/thiesgerken/ferret/commit/f3a78118c3779d7000b9435db2b99e2caa89dc65))
+
+- configure renovate
+  ([`9c8d81d`](https://github.com/thiesgerken/ferret/commit/9c8d81dcfced0f0cc5a8205cfa3686188f1b08e4))
+
+### ✨ Features
+
+
+- ✨ feat(activity): show writer counts and estimated storage
+  ([`f3a7811`](https://github.com/thiesgerken/ferret/commit/f3a78118c3779d7000b9435db2b99e2caa89dc65))
+
+- ✨ feat(activity): show writer counts and estimated storage
+  ([`535867e`](https://github.com/thiesgerken/ferret/commit/535867ede770c77b31a2a669ff7bf391272a0b52))
+
+### 💄 UI/UX
+
+
+- 💄 style(activity): place index usage below recent ingests
+  ([`7f69053`](https://github.com/thiesgerken/ferret/commit/7f69053b5cdc854dba063132e1e64e2d5fd01a87))
+
 ## v0.22.0 (2026-10-18)
 
 
