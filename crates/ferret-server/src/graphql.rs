@@ -1434,6 +1434,18 @@ impl Mutation {
         Ok(model)
     }
 
+    /// Embeds a short text through each endpoint of a configured model, checked like every
+    /// answer. Stores nothing and leaves the endpoints' status alone. Admins only.
+    async fn test_embedding_model(context: &Context, id: String) -> FieldResult<Vec<EndpointTest>> {
+        require_admin(context)?;
+        let model = context
+            .embedding
+            .model(&id)
+            .ok_or_else(|| invalid_input(format!("no embedding model {id:?} is configured")))?;
+        let tests = context.embedding.test(model).await;
+        Ok(tests.into_iter().map(EndpointTest::from).collect())
+    }
+
     /// Deletes the embeddings, cache entries and failure records of a model that isn't configured,
     /// its index and its registry entry. Documents, chunks and other models stay. Returns its id.
     /// Admins only.
@@ -1814,6 +1826,48 @@ impl From<embeddings::EndpointStatus> for ModelEndpoint {
             reachable: status.health.reachable,
             last_error,
             last_error_at,
+        }
+    }
+}
+
+/// What a model uses an endpoint for.
+#[derive(GraphQLEnum)]
+enum EndpointRole {
+    ChunksAndQueries,
+    Chunks,
+    Queries,
+}
+
+/// How one of a model's endpoints answered a test.
+#[derive(GraphQLObject)]
+struct EndpointTest {
+    role: EndpointRole,
+    url: String,
+    model: String,
+    duration_ms: i32,
+    /// The returned vector's, null when the test failed.
+    dimension: Option<i32>,
+    /// Why the test failed, null when it passed.
+    error: Option<String>,
+}
+
+impl From<embeddings::EndpointTest> for EndpointTest {
+    fn from(test: embeddings::EndpointTest) -> Self {
+        let (dimension, error) = match test.result {
+            Ok(dimension) => (Some(count(dimension as i64)), None),
+            Err(error) => (None, Some(error.to_string())),
+        };
+        Self {
+            role: match test.role {
+                embeddings::EndpointRole::ChunksAndQueries => EndpointRole::ChunksAndQueries,
+                embeddings::EndpointRole::Chunks => EndpointRole::Chunks,
+                embeddings::EndpointRole::Queries => EndpointRole::Queries,
+            },
+            url: test.url,
+            model: test.model,
+            duration_ms: count(test.took.as_millis() as i64),
+            dimension,
+            error,
         }
     }
 }

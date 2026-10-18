@@ -28,6 +28,13 @@ enum DocumentOrder {
   SOURCE
 }
 
+"What a model uses an endpoint for."
+enum EndpointRole {
+  CHUNKS_AND_QUERIES
+  CHUNKS
+  QUERIES
+}
+
 enum IngestKind {
   RUN
   API
@@ -269,6 +276,18 @@ type EmbeddingModel {
   embedding: Boolean!
 }
 
+"How one of a model's endpoints answered a test."
+type EndpointTest {
+  role: EndpointRole!
+  url: String!
+  model: String!
+  durationMs: Int!
+  "The returned vector's, null when the test failed."
+  dimension: Int
+  "Why the test failed, null when it passed."
+  error: String
+}
+
 type ExcludedDocuments {
   "One, or the documents of the whole thread."
   deleted: Int!
@@ -485,6 +504,11 @@ type Mutation {
     configured default. Returns it.
   """
   setDefaultEmbeddingModel(model: String): String
+  """
+    Embeds a short text through each endpoint of a configured model, checked like every
+    answer. Stores nothing and leaves the endpoints' status alone. Admins only.
+  """
+  testEmbeddingModel(id: String!): [EndpointTest!]!
   """
     Deletes the embeddings, cache entries and failure records of a model that isn't configured,
     its index and its registry entry. Documents, chunks and other models stay. Returns its id.

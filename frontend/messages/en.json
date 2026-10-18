@@ -319,7 +319,12 @@
     "allEmbedded": "Everything is embedded.",
     "source": "Source",
     "pending": "Pending",
-    "refused": "Rejected by the endpoint"
+    "refused": "Rejected by the endpoint",
+    "test": "Test",
+    "testLabel": "Test the endpoints of {model}",
+    "testResults": "Test results",
+    "testPassed": "{role}: {dimension, number} dimensions in {ms, number} ms",
+    "testFailed": "{role}: failed after {ms, number} ms: {error}"
   },
   "admin": {
     "users": "Users",

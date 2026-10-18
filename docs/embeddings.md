@@ -168,6 +168,11 @@ time. Both come from the answering server process's own requests. ETA is a recen
 estimate, absent without progress, not an SLA. A completed plugin run does not mean backfill is
 done.
 
+**Test** on a model in Admin embeds a short text through each of its endpoints, with the document
+prefix for chunks and the query prefix for queries, checks the answer like any other and shows the
+dimension and duration, or the error. A test stores nothing and leaves the endpoint's status alone,
+so it also works while the pump backs off.
+
 ## ⚠️ From versions with a TEI pool
 
 Earlier versions managed a pool of TEIs (`embedding.teis`, switches in Admin, `externalTeis` and

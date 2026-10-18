@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use common::{
     DOCUMENT_PREFIX, ENDPOINT_MODEL, MODEL, QUERY_PREFIX, TestServer, api, document,
     embedding_config, eventually,
-    fake_endpoint::{Broken, FakeEndpoint},
+    fake_endpoint::{Broken, DIMENSION, FakeEndpoint},
     model, start_server_with,
 };
 use ferret_api::SearchQuery;
@@ -320,4 +320,99 @@ async fn queries_and_chunks_go_to_their_own_endpoints(pool: PgPool) {
     assert!(chunks.models().iter().all(|model| model == ENDPOINT_MODEL));
     assert_eq!(queries.embedded(), [format!("{QUERY_PREFIX}vehicle")]);
     assert_eq!(queries.models(), ["query-model"]);
+}
+
+const TEST: &str = "mutation ($id: String!) {
+    testEmbeddingModel(id: $id) { role url model durationMs dimension error }
+}";
+
+/// An admin's test of `model`'s endpoints.
+async fn test_model(server: &TestServer, model: &str) -> Value {
+    let cookie = server.sign_in().await;
+    server.graphql(&cookie, TEST, json!({ "id": model })).await
+}
+
+async fn cached(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("select count(*) from embedding_cache")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_test_embeds_through_the_endpoint_and_changes_nothing(pool: PgPool) {
+    let endpoint = FakeEndpoint::start().await;
+    let config = embedding_config(model(MODEL, &endpoint));
+    let server = start_server_with(pool.clone(), endpoint.clone(), config).await;
+
+    let passed = test_model(&server, MODEL).await;
+    endpoint.break_down();
+    let failed = test_model(&server, MODEL).await;
+    let unknown = test_model(&server, "unknown").await;
+
+    assert_eq!(passed["errors"], Value::Null, "{passed}");
+    let [test] = passed["data"]["testEmbeddingModel"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one endpoint for chunks and queries: {passed}");
+    };
+    assert_eq!(test["role"], "CHUNKS_AND_QUERIES");
+    assert_eq!(test["url"], endpoint.api_url());
+    assert_eq!(test["model"], ENDPOINT_MODEL);
+    assert_eq!(test["dimension"], DIMENSION);
+    assert_eq!(test["error"], Value::Null);
+    assert!(test["durationMs"].is_i64(), "{test}");
+    assert!(endpoint.embedded()[0].starts_with(DOCUMENT_PREFIX));
+    let error = &failed["data"]["testEmbeddingModel"][0]["error"];
+    assert!(error.as_str().unwrap().contains("503"), "{failed}");
+    assert_eq!(
+        failed["data"]["testEmbeddingModel"][0]["dimension"],
+        Value::Null
+    );
+    assert!(
+        unknown["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no embedding model \"unknown\" is configured"),
+        "{unknown}"
+    );
+    // Neither the failure nor the success shows as the endpoint's status, and nothing is cached.
+    let status = embedding_api(&server, MODEL).await;
+    assert_eq!(status["reachable"], Value::Null, "{status}");
+    assert_eq!(status["lastError"], Value::Null, "{status}");
+    assert_eq!(cached(&pool).await, 0);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_test_checks_a_separate_query_endpoint_with_the_query_prefix(pool: PgPool) {
+    let chunks = FakeEndpoint::start().await;
+    let queries = FakeEndpoint::start().await;
+    let mut split = model(MODEL, &chunks);
+    split.query_api = Some(ApiConfig {
+        model: "query-model".to_owned(),
+        ..api(&queries)
+    });
+    let server = start_server_with(pool, chunks.clone(), embedding_config(split)).await;
+    queries.break_answers(Broken::Dimension);
+
+    let body = test_model(&server, MODEL).await;
+
+    assert_eq!(body["errors"], Value::Null, "{body}");
+    let tests = body["data"]["testEmbeddingModel"].as_array().unwrap();
+    assert_eq!(tests.len(), 2, "{body}");
+    assert_eq!(tests[0]["role"], "CHUNKS");
+    assert_eq!(tests[0]["dimension"], DIMENSION);
+    assert_eq!(tests[1]["role"], "QUERIES");
+    assert_eq!(tests[1]["model"], "query-model");
+    assert!(
+        tests[1]["error"]
+            .as_str()
+            .unwrap()
+            .contains("257 dimensions instead of 256"),
+        "{body}"
+    );
+    assert!(chunks.embedded()[0].starts_with(DOCUMENT_PREFIX));
+    assert!(queries.embedded()[0].starts_with(QUERY_PREFIX));
 }

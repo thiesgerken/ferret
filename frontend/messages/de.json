@@ -319,7 +319,12 @@
     "allEmbedded": "Alles ist eingebettet.",
     "source": "Quelle",
     "pending": "Ausstehend",
-    "refused": "Vom Endpunkt abgelehnt"
+    "refused": "Vom Endpunkt abgelehnt",
+    "test": "Testen",
+    "testLabel": "Endpunkte von {model} testen",
+    "testResults": "Testergebnisse",
+    "testPassed": "{role}: {dimension, number} Dimensionen in {ms, number} ms",
+    "testFailed": "{role}: nach {ms, number} ms fehlgeschlagen: {error}"
   },
   "admin": {
     "users": "Benutzer",
