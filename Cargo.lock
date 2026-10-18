@@ -1253,6 +1253,7 @@ dependencies = [
  "jsonschema",
  "jsonwebtoken",
  "juniper",
+ "parking_lot",
  "reqwest",
  "rmcp",
  "rust-stemmers",
