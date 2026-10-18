@@ -55,6 +55,26 @@ const ADMIN_DATA = {
     tei({ url: "http://macbook:8080", external: true, queries: false }),
     tei({ url: "http://old-tei:80", model: null, servedModel: "intfloat/e5-small", state: "UNUSED", problem: "No configured model uses intfloat/e5-small." }),
   ],
+  storedEmbeddingModels: [
+    {
+      __typename: "StoredEmbeddingModel",
+      id: "bge-m3",
+      dimension: 1024,
+      configured: true,
+      embedded: 12000,
+      indexBytes: 52428800,
+      rowBytesEstimate: 24672000,
+    },
+    {
+      __typename: "StoredEmbeddingModel",
+      id: "e5-small",
+      dimension: 384,
+      configured: false,
+      embedded: 1,
+      indexBytes: null,
+      rowBytesEstimate: 776,
+    },
+  ],
 };
 
 /** A TEI of bge-m3 that's on for queries and embedding, unless `overrides` say otherwise. */
@@ -232,3 +252,40 @@ test("a model without a TEI for queries or embedding says what that means", asyn
   await view.unmount();
 });
 
+
+test("lists the stored embeddings, and only models that aren't configured can be deleted", async () => {
+  const { view } = await renderAdmin();
+  const rows = [...view.container.querySelectorAll("tr")].map((row) => row.textContent);
+
+  assert.ok(rows.includes("bge-m3 · 1,024 dimensions12,00050 MB≈ 23.5 MB"), rows.join("\n"));
+  assert.ok(rows.includes("e5-small · 384 dimensions · not configured1none≈ 776 byteDelete"), rows.join("\n"));
+  assert.equal(view.container.querySelectorAll("button[aria-label^='Delete the embeddings of']").length, 1);
+  await view.unmount();
+});
+
+test("deleting a model's embeddings asks first, naming the model and its count", async (t) => {
+  const asked: string[] = [];
+  let confirmed = false;
+  t.mock.method(window, "confirm", (message: string) => {
+    asked.push(message);
+    return confirmed;
+  });
+  const { view, operations } = await renderAdmin(() => Response.json({ data: { deleteEmbeddingModel: "e5-small" } }));
+  const button = view.container.querySelector<HTMLButtonElement>("button[aria-label='Delete the embeddings of e5-small']")!;
+
+  await act(async () => button.click());
+  await settle();
+  assert.equal(operations.filter((operation) => operation.operationName === "DeleteEmbeddingModel").length, 0, "cancelled");
+
+  confirmed = true;
+  await act(async () => button.click());
+  await settle();
+
+  assert.match(asked[0], /^Delete everything stored for e5-small\? That's 1 embedding,/);
+  const remove = operations.filter((operation) => operation.operationName === "DeleteEmbeddingModel");
+  assert.deepEqual(
+    remove.map((operation) => operation.variables),
+    [{ id: "e5-small" }],
+  );
+  await view.unmount();
+});

@@ -4,6 +4,7 @@ import { Brain, Server, Users2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 import { Section } from "@/components/page-shell";
+import { StoredEmbeddings } from "@/components/stored-embeddings";
 import { TeiPool } from "@/components/tei-pool";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "@/gql";
@@ -49,6 +50,14 @@ const AdminQuery = graphql(`
       queries
       embedding
       ...TeiCardFields
+    }
+    storedEmbeddingModels {
+      id
+      dimension
+      configured
+      embedded
+      indexBytes
+      rowBytesEstimate
     }
   }
 `);
@@ -118,7 +127,10 @@ export function Admin() {
         icon={<Brain />}
         description={t("embeddingHint")}
       >
-        <TeiPool models={data.embeddingStatus} teis={data.teis} onChanged={reload} />
+        <div className="space-y-6">
+          <TeiPool models={data.embeddingStatus} teis={data.teis} onChanged={reload} />
+          <StoredEmbeddings models={data.storedEmbeddingModels} onChanged={reload} />
+        </div>
       </Section>
       <Section title={t("workers")} icon={<Server />} description={t("workersHint")}>
         <Workers workers={data.workers} />

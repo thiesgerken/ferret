@@ -372,6 +372,20 @@
     "status": "Status",
     "lastSeen": "Zuletzt gesehen"
   },
+  "storedEmbeddings": {
+    "title": "Gespeicherte Einbettungen",
+    "model": "Modell",
+    "embedded": "Einbettungen",
+    "index": "Index",
+    "rows": "Zeilen",
+    "rowsHint": "Geschätzt: der Anteil der Vektoren an der Tabelle, die sich alle Modelle teilen.",
+    "dimensions": "{dimension, number} Dimensionen",
+    "notConfigured": "nicht konfiguriert",
+    "none": "keiner",
+    "delete": "Löschen",
+    "deleteModel": "Einbettungen von {model} löschen",
+    "confirmDelete": "Alles löschen, was für {model} gespeichert ist? Das sind {embedded, plural, one {# Einbettung} other {# Einbettungen}}, die Cache-Einträge und Fehlereinträge, der HNSW-Index und der Registereintrag. Dokumente, Chunks und andere Modelle bleiben. Kommt {model} zurück in die Konfiguration, wird alles neu eingebettet."
+  },
   "explore": {
     "contentType": {
       "MARKDOWN": "Markdown",

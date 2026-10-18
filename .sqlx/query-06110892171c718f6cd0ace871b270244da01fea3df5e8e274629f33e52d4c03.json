@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into embedding_models (id, dimension)\n         select * from unnest($1::text[], $2::int[])\n         on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06110892171c718f6cd0ace871b270244da01fea3df5e8e274629f33e52d4c03"
+}
