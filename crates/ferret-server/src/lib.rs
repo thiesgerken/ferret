@@ -37,6 +37,7 @@ mod search_query;
 mod sources;
 mod syncs;
 mod users;
+mod writer_stats;
 mod writers;
 
 pub use auth::SessionKey;

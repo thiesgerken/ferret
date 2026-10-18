@@ -10,6 +10,7 @@ import { IngestFeed } from "@/components/ingest-feed";
 import { NamedIcon } from "@/components/named-icon";
 import { Section } from "@/components/page-shell";
 import { RunDots } from "@/components/run-status";
+import { WriterStatisticsTable } from "@/components/writer-statistics";
 import { graphql } from "@/gql";
 import type { ActivityOverviewQuery } from "@/gql/graphql";
 import { activityHref } from "@/lib/activity-url";
@@ -22,14 +23,17 @@ const ActivityOverviewQueryDocument = graphql(`
     me {
       isAdmin
     }
-    explore(input: { limit: 1 }) {
-      total
-      facets {
-        sources {
-          writer {
-            id
-          }
-        }
+    writerStatistics {
+      documents
+      chunks
+      storage { documents chunks embeddings indexes total }
+      rows {
+        writer { kind id name icon }
+        sources
+        documents
+        chunks
+        storage { documents chunks embeddings indexes total }
+        models { model embedded rowBytes indexBytes }
       }
     }
     embeddingModels {
@@ -128,16 +132,18 @@ export function Activity({ writer, onWriterChange }: { writer: string | null; on
   if (!data) return null;
 
   const defaultModel = data.embeddingModels.find((model) => model.configuredDefault) ?? data.embeddingModels[0];
-  const sources = new Set(data.explore.facets.sources.map((source) => source.writer?.id ?? null)).size;
 
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile icon={<FileText />} label={t("documents")} value={data.explore.total} />
-        <Tile icon={<Layers />} label={t("sources")} value={sources} />
-        <Tile icon={<Rows3 />} label={t("chunks")} value={defaultModel?.chunks ?? 0} />
+        <Tile icon={<FileText />} label={t("documents")} value={data.writerStatistics.documents} />
+        <Tile icon={<Layers />} label={t("writers")} value={data.writerStatistics.rows.length} />
+        <Tile icon={<Rows3 />} label={t("chunks")} value={data.writerStatistics.chunks} />
         <Tile icon={<Database />} label={t("embedded")} value={defaultModel ? Math.floor((defaultModel.chunks ? defaultModel.embedded / defaultModel.chunks : 1) * 100) / 100 : null} percent />
       </div>
+      <Section title={t("writerStatistics")} icon={<Database />} description={t("writerStatisticsHint")}>
+        <WriterStatisticsTable statistics={data.writerStatistics} />
+      </Section>
       <Section title={t("embedding")} icon={<Brain />} description={t("embeddingHint")}>
         <Embedders models={data.embeddingModels} global={embedders?.embeddingStatus} />
       </Section>
