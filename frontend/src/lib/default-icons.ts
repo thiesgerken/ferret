@@ -5,6 +5,7 @@ const PLUGIN_ICONS: Record<string, string> = {
   carapace: "brain",
   paperless: "file-text",
   imap: "mail",
+  vikunja: "list-checks",
 };
 
 export function defaultPluginIcon(plugin: string): string {
