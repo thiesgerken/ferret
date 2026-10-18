@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     DOCUMENT_PREFIX, MODEL, QUERY_PREFIX, document, embedding_config, eventually,
-    fake_tei::{FakeTei, MAX_INPUT_LENGTH, UNEMBEDDABLE},
+    fake_endpoint::{FakeEndpoint, UNEMBEDDABLE},
     model, start_semantic_server, start_server_with,
 };
 use ferret_api::{Client, Hit, SearchMode, SearchQuery};
@@ -88,7 +88,7 @@ async fn the_model_and_its_prefixes_are_used_and_identical_texts_embedded_once(p
         search(&api, query("text")).await;
     }
 
-    let embedded = server.tei.embedded();
+    let embedded = server.endpoint.embedded();
     let count = |text: &str| embedded.iter().filter(|embedded| *embedded == text).count();
     assert_eq!(
         count(&format!("{DOCUMENT_PREFIX}same\n\nThe same text twice.")),
@@ -131,10 +131,10 @@ async fn a_configured_dimension_that_differs_from_stored_embeddings_stops_the_se
         .await
         .unwrap();
     server.wait_for_embeddings(1).await;
-    let tei = server.tei.clone();
+    let endpoint = server.endpoint.clone();
     drop(server);
 
-    let mut config = embedding_config(model(MODEL, &tei), &[&tei]);
+    let mut config = embedding_config(model(MODEL, &endpoint));
     config.models[0].dimension = 1024;
     let error = ferret_server::embeddings::prepare(&pool, config)
         .await
@@ -204,7 +204,7 @@ async fn without_the_embedding_model_search_answers_by_keyword_and_says_so(pool:
         .unwrap();
     server.wait_for_embeddings(1).await;
 
-    server.tei.break_down();
+    server.endpoint.break_down();
     let response = api.search(&query("car")).await.unwrap();
     let cookie = server.sign_in().await;
     let graphql = server
@@ -278,9 +278,9 @@ async fn a_keyword_search_does_not_embed_the_query(pool: PgPool) {
         .await
         .unwrap();
     server.wait_for_embeddings(1).await;
-    let embedded_before = server.tei.embedded().len();
+    let embedded_before = server.endpoint.embedded().len();
 
-    server.tei.break_down();
+    server.endpoint.break_down();
     let response = api
         .search(&in_mode("car", SearchMode::Keyword))
         .await
@@ -288,7 +288,7 @@ async fn a_keyword_search_does_not_embed_the_query(pool: PgPool) {
 
     assert_eq!(ids(&response.hits), ["car"]);
     assert_eq!(response.semantic_unavailable, None);
-    assert_eq!(server.tei.embedded().len(), embedded_before);
+    assert_eq!(server.endpoint.embedded().len(), embedded_before);
 }
 
 #[sqlx::test(migrations = false)]
@@ -300,7 +300,7 @@ async fn a_semantic_search_without_the_embedding_model_fails(pool: PgPool) {
         .unwrap();
     server.wait_for_embeddings(1).await;
 
-    server.tei.break_down();
+    server.endpoint.break_down();
     let error = api
         .search(&in_mode("car", SearchMode::Semantic))
         .await
@@ -361,7 +361,7 @@ async fn a_stuck_embedding_model_degrades_search_to_keywords_quickly(pool: PgPoo
         .unwrap();
     server.wait_for_embeddings(1).await;
 
-    server.tei.hang();
+    server.endpoint.hang();
     let started = Instant::now();
     let response = api.search(&query("car")).await.unwrap();
 
@@ -387,7 +387,7 @@ async fn the_title_is_embedded_with_every_chunk_and_a_new_title_re_embeds(pool: 
     api.put_document(&note).await.unwrap();
     server.wait_for_embeddings(1).await;
 
-    let embedded = server.tei.embedded();
+    let embedded = server.endpoint.embedded();
     for title in ["My car", "My bike"] {
         let input = format!("{DOCUMENT_PREFIX}{title}\n\nBroke down on the highway.");
         assert!(embedded.contains(&input), "{embedded:?}");
@@ -438,16 +438,16 @@ async fn long_titles_are_capped_in_the_embedded_input(pool: PgPool) {
         "{DOCUMENT_PREFIX}{}\n\nBroke down on the highway.",
         &title[..200]
     );
-    assert!(server.tei.embedded().contains(&capped));
+    assert!(server.endpoint.embedded().contains(&capped));
 }
 
 #[sqlx::test(migrations = false)]
 async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: PgPool) {
-    let tei = FakeTei::start(MAX_INPUT_LENGTH).await;
-    let mut strict = model(MODEL, &tei);
+    let endpoint = FakeEndpoint::start().await;
+    let mut strict = model(MODEL, &endpoint);
     strict.min_similarity = 0.3;
-    let config = embedding_config(strict, &[&tei]);
-    let server = start_server_with(pool, tei, config).await;
+    let config = embedding_config(strict);
+    let server = start_server_with(pool, endpoint, config).await;
     let api = server.admin_api().await;
     api.put_document(&document("notes", "car", "My car broke down."))
         .await

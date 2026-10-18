@@ -41,10 +41,11 @@ See [architecture.md](architecture.md). In short:
 
 - **ferret-server** (Rust: axum, sqlx, juniper) is the only component with database access. GraphQL
   for the UI, REST for machines, an internal API for plugin workers. It schedules plugin runs and
-  pumps chunks to the embedder.
+  pumps chunks to each model's embeddings endpoint.
 - **ferret-plugins** workers pull runs via long polling and ingest through the public REST API.
-- **TEI** (Hugging Face [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference))
-  computes embeddings, and later also serves the reranker.
+- **Embeddings endpoints** compute embeddings: per model an OpenAI-compatible endpoint, e.g. a
+  [TEI](https://github.com/huggingface/text-embeddings-inference), a proxy like LiteLLM or a cloud
+  API ([embeddings.md](embeddings.md#endpoints)). ferret doesn't manage them.
 - **frontend**: Next.js, stack and look copied from carapace.
 
 ## Data model
@@ -191,7 +192,8 @@ All in one transaction:
 2. **Same `content_hash` as stored**: bump `seen_at`, done.
 3. **Changed**: chunk, then diff chunks by `text_hash`. Unchanged chunks keep their embedding
    unless the title changed (it is part of the embedded input). New chunks are left to the embed
-   pump, which takes cached embeddings from `embedding_cache` and sends only misses to TEI.
+   pump, which takes cached embeddings from `embedding_cache` and sends only misses to the model's
+   endpoint.
 4. Commit. The BM25 index updates transactionally, so keyword search sees the document now.
 
 Plugins can therefore resend everything on every run without cost.
@@ -254,12 +256,12 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&col
   doesn't "match a little". It uses the user's default model unless `model=` says otherwise.
   Filters, `-word` and `"phrases"` apply to both halves, the every-word rule only to BM25. A chunk
   without an embedding yet (backfill) is found by keyword only. If the query can't be embedded
-  within 5 s (TEI down, stuck or broken), the search answers with the keyword half alone and says
+  within 5 s (its endpoint down, stuck or broken), the search answers with the keyword half alone and says
   so: `semantic_unavailable` (REST) and `semanticUnavailable` (GraphQL) carry the reason, `null`
   when the semantic half ran, the UI shows a notice above the hits, and the server logs a warning.
-  Keyword search is complete on its own, a restarting TEI shouldn't make ferret useless.
+  Keyword search is complete on its own, a restarting endpoint shouldn't make ferret useless.
 - **Mode**: `mode=hybrid` (the default) runs both halves as above. `keyword` runs BM25 alone and
-  doesn't embed the query, so it never touches TEI. `semantic` runs the vector half alone with the
+  doesn't embed the query, so it never touches the endpoint. `semantic` runs the vector half alone with the
   model's cut-off, and fails with 503 (GraphQL: an `UNAVAILABLE` error) when the query can't be
   embedded: falling back to keywords would answer a different question than the one asked. The
   ranking, `total`, the facets, paging and `total_is_lower_bound` all come from the halves that
@@ -345,8 +347,8 @@ Login, sessions, API keys and scopes: see [auth.md](auth.md).
 
 ## Deployment
 
-Kubernetes-native: a Helm chart (server, plugin workers, frontend, TEI, Postgres) is the
-deployment, as in carapace. docker-compose exists for local development only. Details in
+Kubernetes-native: a Helm chart (server, plugin workers, frontend, Postgres, optionally a TEI) is
+the deployment, as in carapace. docker-compose exists for local development only. Details in
 [architecture.md](architecture.md#deployment).
 
 ## Consumers
@@ -371,6 +373,11 @@ deployment, as in carapace. docker-compose exists for local development only. De
 - **Third parties' text reaches the LLM provider** of every agent turn that reads search results.
   Mitigations: per-chat denylists at ingestion (never ingested, never leaked), and deciding which
   agent sessions get the skill at all.
+- **A cloud embeddings endpoint receives everything**: every model embeds every chunk of every
+  source, mail and chats included, and every search query goes to its query endpoint. That's a
+  wider exposure than an agent's, which only reads what its key may search. Mitigation: keep every
+  model on a self-hosted endpoint (TEI) when any source must not leave, and only then use a cloud
+  API ([embeddings.md](../embeddings.md#what-the-endpoint-must-guarantee)).
 - **Prompt injection**: anyone who messages me can plant text an agent will read. Search output
   labels every hit with source and author and delimits the text as data.
 - **Credentials are scoped**: an agent's API key can only search, a plugin run's token can only
@@ -399,8 +406,9 @@ chats and saved articles are on the roadmap. Details in [plugins.md](plugins.md)
   check (license, German quality, TEI support): jina-embeddings-v5-text-small, Granite Embedding
   Multilingual R2, DenseOn (all 2026). bge-m3 (January 2024) is the fallback if none of them runs
   in TEI.
-- **Hardware**: CPU for queries and incremental ingest, a GPU (gaming PC, laptop) for backfills,
-  listed in the chart's `externalTeis` ([embeddings.md](embeddings.md#the-tei-pool)).
+- **Hardware**: CPU for queries and incremental ingest, a GPU (gaming PC, laptop) for backfills:
+  the model's `embedding_api` names the GPU's endpoint, its `query_api` the CPU's
+  ([embeddings.md](embeddings.md#endpoints)).
 
 ## v1 scope
 

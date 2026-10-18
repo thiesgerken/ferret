@@ -20,33 +20,67 @@ app.kubernetes.io/component: {{ .component }}
 {{- .Values.secrets.existingSecret | default (printf "%s-secrets" .Release.Name) -}}
 {{- end }}
 
-{{/* The name of a model's internal TEI Deployment and Service; pass (dict "root" $ "model" .).
-Kubernetes names allow no dots or underscores. */}}
-{{- define "ferret.teiName" -}}
-{{- $name := printf "%s-tei-%s" .root.Release.Name (.model.name | replace "." "-" | replace "_" "-") -}}
-{{- if not (regexMatch "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$" $name) -}}
-{{- fail (printf "model %q: %q is no valid Kubernetes name (DNS-1035 label of at most 63 characters)" .model.name $name) -}}
-{{- end -}}
-{{- $name -}}
+{{/* The environment variable holding an endpoint's token; pass (dict "model" . "role" "EMBEDDING").
+Environment variable names allow no dots or dashes. */}}
+{{- define "ferret.tokenEnv" -}}
+FERRET_TOKEN_{{ .model.id | upper | replace "." "_" | replace "-" "_" }}_{{ .role }}
+{{- end }}
+
+{{/* An endpoint of the server's config; pass (dict "api" .embeddingApi "model" . "role" "EMBEDDING"). */}}
+{{- define "ferret.api" -}}
+url: {{ required (printf "model %q: an endpoint needs a url" .model.id) .api.url | quote }}
+model: {{ required (printf "model %q: an endpoint needs a model" .model.id) .api.model | quote }}
+{{- with .api.tokenSecret }}
+{{- if not (and .name .key) }}
+{{- fail (printf "model %q: tokenSecret needs a name and a key" $.model.id) }}
+{{- end }}
+token_env: {{ include "ferret.tokenEnv" (dict "model" $.model "role" $.role) }}
+{{- end }}
+{{- with .api.concurrency }}
+concurrency: {{ . }}
+{{- end }}
+{{- end }}
+
+{{/* Fails on values the chart doesn't take (any more), which would otherwise be ignored without a
+word, and on a bundled TEI without exactly one model for it. */}}
+{{- define "ferret.checkValues" -}}
+{{- if or .Values.tei .Values.externalTeis }}
+{{- fail "tei and externalTeis were replaced by per-model endpoints (embeddingApi, queryApi) and the optional bundledTei, see the chart README" }}
+{{- end }}
+{{- $bundled := list }}
+{{- range .Values.embedding.models }}
+{{- if .name }}
+{{- fail (printf "model %q: name is now id (keep the value to keep its embeddings)" .name) }}
+{{- end }}
+{{- $id := required "embedding.models[].id is required" .id }}
+{{- if or .modelId .maxBatchTokens .cacheSize .resources .bulkUrl }}
+{{- fail (printf "model %q: modelId, maxBatchTokens, cacheSize, resources and bulkUrl belong to a TEI: set bundledTei, or name your own endpoint in embeddingApi, see the chart README" $id) }}
+{{- end }}
+{{- if .bundledTei }}
+{{- if not $.Values.bundledTei.enabled }}
+{{- fail (printf "model %q sets bundledTei, but bundledTei.enabled is off" $id) }}
+{{- end }}
+{{- if or .embeddingApi .queryApi }}
+{{- fail (printf "model %q sets bundledTei and endpoints: the bundled TEI is its endpoint" $id) }}
+{{- end }}
+{{- $bundled = append $bundled $id }}
+{{- else if not (or .embeddingApi .queryApi) }}
+{{- fail (printf "model %q needs an embeddingApi or a queryApi, or bundledTei: true" $id) }}
+{{- end }}
+{{- end }}
+{{- if and .Values.bundledTei.enabled (ne (len $bundled) 1) }}
+{{- fail (printf "bundledTei serves exactly one model, but %d set bundledTei: true" (len $bundled)) }}
+{{- end }}
 {{- end }}
 
 {{/* The server's config.yaml (FERRET_CONFIG_FILE). */}}
 {{- define "ferret.config" -}}
-{{- /* Values of earlier chart versions, which would otherwise be ignored without a word. */}}
-{{- if .Values.tei.gpu }}
-{{- fail "tei.gpu was replaced by externalTeis: deploy the GPU TEI separately and list its URL there, see the chart README" }}
-{{- end }}
-{{- range .Values.embedding.models }}
-{{- if .bulkUrl }}
-{{- fail (printf "model %q: bulkUrl was replaced by externalTeis, see the chart README" .name) }}
-{{- end }}
-{{- end }}
+{{- include "ferret.checkValues" . -}}
 embedding:
   default: {{ .Values.embedding.default | quote }}
   models:
-    {{- range .Values.embedding.models }}
-    - name: {{ .name | quote }}
-      model_id: {{ required "embedding.models[].modelId is required" .modelId | quote }}
+    {{- range $model := .Values.embedding.models }}
+    - id: {{ .id | quote }}
       dimension: {{ required "embedding.models[].dimension is required" .dimension }}
       {{- with .queryPrefix }}
       query_prefix: {{ . | quote }}
@@ -55,18 +89,35 @@ embedding:
       document_prefix: {{ . | quote }}
       {{- end }}
       min_similarity: {{ required "embedding.models[].minSimilarity is required" .minSimilarity }}
+      {{- if .bundledTei }}
+      embedding_api:
+        url: "http://{{ $.Release.Name }}-tei:80/v1"
+        model: {{ $.Values.bundledTei.modelId | quote }}
+      {{- end }}
+      {{- with .embeddingApi }}
+      embedding_api:
+        {{- include "ferret.api" (dict "api" . "model" $model "role" "EMBEDDING") | nindent 8 }}
+      {{- end }}
+      {{- with .queryApi }}
+      query_api:
+        {{- include "ferret.api" (dict "api" . "model" $model "role" "QUERY") | nindent 8 }}
+      {{- end }}
     {{- end }}
-  {{- if not (or .Values.tei.internal.enabled .Values.externalTeis) }}
-  {{- fail "no TEI: enable tei.internal or list externalTeis" }}
-  {{- end }}
-  teis:
-    {{- if .Values.tei.internal.enabled }}
-    {{- range .Values.embedding.models }}
-    - url: "http://{{ include "ferret.teiName" (dict "root" $ "model" .) }}:80"
-    {{- end }}
-    {{- end }}
-    {{- range .Values.externalTeis }}
-    - url: {{ . | quote }}
-      external: true
-    {{- end }}
+{{- end }}
+
+{{/* The server's environment variables for the endpoints' tokens. */}}
+{{- define "ferret.tokenEnvs" -}}
+{{- range $model := .Values.embedding.models }}
+{{- range $role, $api := dict "EMBEDDING" $model.embeddingApi "QUERY" $model.queryApi }}
+{{- with $api }}
+{{- with .tokenSecret }}
+- name: {{ include "ferret.tokenEnv" (dict "model" $model "role" $role) }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .name }}
+      key: {{ .key }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}

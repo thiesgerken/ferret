@@ -78,12 +78,14 @@ async function renderConnections(
   return { view, operations, button };
 }
 
-test("shows each connection with its last run and links to its runs on Activity", async () => {
+test("shows each connection with its last run and links to its runs on Activity", async (t) => {
+  // Two hours after the fixture's run, which the page shows relative to the clock.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-17T12:00:00Z") });
   const { view } = await renderConnections();
   const text = view.container.textContent ?? "";
 
   assert.match(text, /NotesFailedgit · notes/, "name, status at a glance, then plugin and source");
-  assert.match(text, /Last run.* ago.*took 5 s/);
+  assert.match(text, /Last run.*2 hours ago.*took 5 sec/);
   assert.match(text, /Next run.*0 \* \* \* \*/);
   assert.match(text, /git clone failed: repository not found/);
   assert.equal(view.container.querySelectorAll("[aria-label='Last run'] [title]").length, 1);

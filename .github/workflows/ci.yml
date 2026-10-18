@@ -173,8 +173,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
-      - run: helm lint charts/ferret --set ingress.hostname=ferret.example.com
-      - run: helm template ferret charts/ferret --set ingress.hostname=ferret.example.com > /dev/null
+      - run: scripts/check-chart.sh
 
   # A chart per PR that points at its images: <version>-pr.<N> follows the mutable :pr<N> tags,
   # <version>-pr.<N>.g<sha> pins the immutable :pr<N>-<sha> ones (an ArgoCD pin then also re-pulls).

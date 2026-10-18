@@ -12,7 +12,7 @@ On Apple Silicon select the native ARM TEI image in the same shell before starti
 export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
 ```
 
-The default CPU TEI image is amd64. Emulating it is not the recommended local path. Both TEI services share a model cache; `tei-bulk` waits for `tei` to finish loading Qwen/Qwen3-Embedding-0.6B.
+The default CPU TEI image is amd64. Emulating it is not the recommended local path. `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable, which is how an endpoint that is down looks.
 
 ## Start and sign in
 

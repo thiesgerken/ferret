@@ -13,3 +13,6 @@ SQLX_OFFLINE = "true"
 # code) keeps 2-3 open. From 10 parallel tests on, dropping the test databases waits out a 30 s
 # pool timeout. If tests ever need more connections each, lower this or give them smaller pools.
 RUST_TEST_THREADS = "6"
+# The bearer token an embedding endpoint's `token_env` names in the server tests. Set here because
+# tests can't set environment variables safely while other tests run.
+FERRET_TEST_EMBEDDING_TOKEN = "the endpoint's test token"

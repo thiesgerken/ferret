@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into embedding_cache (text_hash, model, embedding)\n             values ($1, $2, $3::text::halfvec)\n             on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9d828ed044ef276de452cc809d2fc6601fbb728e5eba6f2ae5b4eb1325362176"
+}

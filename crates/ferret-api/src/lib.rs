@@ -177,8 +177,8 @@ pub struct SearchResponse {
     pub facets: SearchFacets,
     /// The search's time on the server.
     pub took_ms: u32,
-    /// Why the semantic half of a hybrid search didn't run (e.g. TEI is down), so the hits are
-    /// keyword matches only. `None` when it ran, and in the other modes.
+    /// Why the semantic half of a hybrid search didn't run (e.g. its endpoint is down), so the hits
+    /// are keyword matches only. `None` when it ran, and in the other modes.
     pub semantic_unavailable: Option<String>,
     /// The embedding model the semantic half used, or would have.
     pub model: String,

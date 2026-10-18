@@ -1,0 +1,24 @@
+# A model on a token-protected proxy for chunks and a TEI for queries, and one on a single endpoint.
+ingress:
+  hostname: ferret.example.com
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      queryPrefix: "Query: "
+      minSimilarity: 0.42
+      embeddingApi:
+        url: http://litellm:4000/v1
+        model: qwen3-embed
+        tokenSecret: {name: litellm, key: token}
+        concurrency: 4
+      queryApi:
+        url: http://tei:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
+    - id: bge-m3
+      dimension: 1024
+      minSimilarity: 0.5
+      embeddingApi:
+        url: https://api.example.com/v1
+        model: bge-m3

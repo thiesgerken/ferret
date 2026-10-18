@@ -87,7 +87,7 @@ async function renderResults(
     if (operation.operationName === "EmbeddingModelNames") {
       return Response.json({
         data: {
-          embeddingModels: models.map((name) => ({ __typename: "EmbeddingModel", name, minSimilarity: 0.42 })),
+          embeddingModels: models.map((id) => ({ __typename: "EmbeddingModel", id, minSimilarity: 0.42 })),
         },
       });
     }
