@@ -46,7 +46,7 @@ function overview(isAdmin: boolean) {
     embeddingModels: [
       {
         __typename: "EmbeddingModel",
-        name: "qwen3",
+        id: "qwen3",
         configuredDefault: true,
         embedded: 619,
         chunks: 1000,
@@ -76,28 +76,29 @@ function overview(isAdmin: boolean) {
 }
 
 const EMBEDDERS = {
-  embeddingStatus: [{ __typename: "ModelStatus", name: "qwen3", embedded: 5000, chunks: 20000, etaSeconds: 7200 }],
-  teis: [
+  embeddingStatus: [
     {
-      __typename: "Tei",
-      url: "http://tei-bulk:80",
-      model: "qwen3",
-      external: false,
-      enabled: true,
-      queries: false,
-      embedding: true,
-      state: "ONLINE",
-      problem: null,
-      lastError: null,
-      lastErrorAt: null,
-      busy: true,
-      pumpBatchSize: 16,
-      queueSize: 3,
-      batchSize: 7.5,
-      throughputPerMinute: 120,
-      failures: 0,
-      load: 0.93,
+      __typename: "ModelStatus",
+      id: "qwen3",
+      embedded: 5000,
+      chunks: 20000,
       etaSeconds: 7200,
+      embeddingApi: {
+        __typename: "ModelEndpoint",
+        url: "http://litellm:4000/v1",
+        model: "qwen3-embed",
+        reachable: false,
+        lastError: "unreachable: connection refused",
+        lastErrorAt: null,
+      },
+      queryApi: {
+        __typename: "ModelEndpoint",
+        url: "http://tei:80/v1",
+        model: "Qwen/Qwen3-Embedding-0.6B",
+        reachable: true,
+        lastError: null,
+        lastErrorAt: null,
+      },
     },
   ],
 };
@@ -151,15 +152,14 @@ test("shows the index's size and each model's progress", async () => {
   await view.unmount();
 });
 
-test("admins see every TEI's load, queue and throughput", async () => {
+test("admins see the whole index and the model's endpoints", async () => {
   const { view, operations, text } = await renderActivity(true);
 
   assert.ok(operations.some((operation) => operation.operationName === "EmbedderStatus"));
   assert.match(text(), /All users: 5,000 of 20,000 chunks embedded, done in about 2 h/);
   assert.match(text(), /Queries onlineEmbedding online/, "the model's health");
-  assert.match(text(), /http:\/\/tei-bulk:80OnlineEmbedding/);
-  assert.match(text(), /Load93%/);
-  assert.match(text(), /Queue3Batch7\.5Throughput120 \/ minFailures0Pump batch16 · busyBacklog done in2 h/);
+  assert.match(text(), /http:\/\/litellm:4000\/v1UnreachableChunks · qwen3-embedLast error: unreachable: connection refused/);
+  assert.match(text(), /http:\/\/tei:80\/v1ReachableQueries · Qwen\/Qwen3-Embedding-0\.6B/);
   await view.unmount();
 });
 

@@ -48,7 +48,7 @@ pub enum SearchMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DocumentPut {
-    /// A source path like `notes` or `mail/zoho`.
+    /// A source path like `notes` or `mail/personal`.
     pub source: String,
     /// Stable id given by the ingester, unique within the source.
     pub external_id: String,
@@ -177,8 +177,8 @@ pub struct SearchResponse {
     pub facets: SearchFacets,
     /// The search's time on the server.
     pub took_ms: u32,
-    /// Why the semantic half of a hybrid search didn't run (e.g. TEI is down), so the hits are
-    /// keyword matches only. `None` when it ran, and in the other modes.
+    /// Why the semantic half of a hybrid search didn't run (e.g. its endpoint is down), so the hits
+    /// are keyword matches only. `None` when it ran, and in the other modes.
     pub semantic_unavailable: Option<String>,
     /// The embedding model the semantic half used, or would have.
     pub model: String,

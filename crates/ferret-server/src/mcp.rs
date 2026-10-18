@@ -34,7 +34,7 @@ const INSTRUCTIONS: &str = "ferret is the user's personal search index: notes, d
 chats and agent memory from many origins, searchable by keyword and meaning in one place. Each \
 document points back to where it lives (its `url`). Search ferret first when you need to find \
 something the user wrote, received or stored, before reaching for origin-specific tools: it \
-tells you what exists and where. Sources are path-shaped namespaces like `mail/zoho` or \
+tells you what exists and where. Sources are path-shaped namespaces like `mail/personal` or \
 `notes`, and a source includes every source below it.";
 
 /// The `/mcp` endpoint. Stateless: every request stands alone, so any replica can answer it.

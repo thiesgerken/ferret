@@ -133,7 +133,7 @@ pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
         .find(|source| !sources::is_valid(source))
     {
         return Err(SearchError::Invalid(format!(
-            "{invalid:?} is not a source path like `notes` or `mail/zoho`"
+            "{invalid:?} is not a source path like `notes` or `mail/personal`"
         )));
     }
     Ok(query)
@@ -164,7 +164,7 @@ pub async fn find(
             facets: SearchFacets::default(),
             took_ms: millis_since(started),
             semantic_unavailable: None,
-            model: model.name().to_owned(),
+            model: model.id().to_owned(),
         });
     }
     let documents_in_scope = sqlx::query_scalar!(
@@ -192,9 +192,9 @@ pub async fn find(
         excluded: &query.excluded,
         phrases: &query.phrases,
     };
-    // The vector half gets the words without operators. Without it (TEI down or broken), a hybrid
-    // search still answers by keyword, and the response says so.
-    let unavailable = format!("the embedding model {} is unavailable", model.name());
+    // The vector half gets the words without operators. Without it (endpoint down or broken), a
+    // hybrid search still answers by keyword, and the response says so.
+    let unavailable = format!("the embedding model {} is unavailable", model.id());
     let query_hash = match request.mode {
         SearchMode::Keyword => None,
         mode => match embedding
@@ -204,7 +204,7 @@ pub async fn find(
             Ok(query_hash) => Some(query_hash),
             Err(EmbedError::Database(error)) => return Err(error.into()),
             Err(error) => {
-                tracing::warn!(model = %model.config.name, %error, "the query can't be embedded");
+                tracing::warn!(model = %model.config.id, %error, "the query can't be embedded");
                 if mode == SearchMode::Semantic {
                     return Err(SearchError::Unavailable(unavailable));
                 }
@@ -317,7 +317,7 @@ pub async fn find(
         facets,
         took_ms: millis_since(started),
         semantic_unavailable,
-        model: model.name().to_owned(),
+        model: model.id().to_owned(),
     })
 }
 
@@ -655,7 +655,7 @@ fn push_nearest(
     query_hash: &[u8],
     filters: &Filters,
 ) {
-    // Validated model names need no quoting (config.rs). The dimension and name are literals so
+    // Validated model ids need no quoting (config.rs). The dimension and name are literals so
     // the planner can use the model's partial index.
     let dimension = model.dimension();
     sql.push(format!(
@@ -664,8 +664,8 @@ fn push_nearest(
     ))
     .push_bind(query_hash.to_vec())
     .push(format!(
-        " and model = '{name}')::halfvec({dimension}) as distance ",
-        name = model.config.name,
+        " and model = '{id}')::halfvec({dimension}) as distance ",
+        id = model.config.id,
     ));
     push_embeddings_in_scope(sql, model, filters);
     sql.push(" order by distance limit ")
@@ -678,8 +678,8 @@ fn push_embeddings_in_scope(sql: &mut QueryBuilder<Postgres>, model: &Model, fil
     if !filters.phrases.is_empty() {
         sql.push(" join chunks c on c.id = e.chunk_id");
     }
-    // Validated model names need no quoting (config.rs).
-    sql.push(format!(" where e.model = '{}' and ", model.config.name));
+    // Validated model ids need no quoting (config.rs).
+    sql.push(format!(" where e.model = '{}' and ", model.config.id));
     filters.push(sql, "e");
 }
 

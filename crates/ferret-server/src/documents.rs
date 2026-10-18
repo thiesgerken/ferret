@@ -37,7 +37,7 @@ pub async fn put(
     let Json(document) = document?;
     if !sources::is_valid(&document.source) {
         return Err(ApiError::bad_request(&format!(
-            "{:?} is not a source path like `notes` or `mail/zoho`",
+            "{:?} is not a source path like `notes` or `mail/personal`",
             document.source
         )));
     }

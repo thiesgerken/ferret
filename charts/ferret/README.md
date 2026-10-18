@@ -1,9 +1,9 @@
 # ferret Helm chart
 
-Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend, ParadeDB
-and one CPU [TEI](https://github.com/huggingface/text-embeddings-inference) per embedding model
-(`embedding.models`). TEIs outside the chart, e.g. a laptop's GPU for a backfill, join through
-`externalTeis`.
+Deploys [ferret](https://github.com/thiesgerken/ferret): server, plugin workers, frontend and
+ParadeDB. Embeddings come from an OpenAI-compatible endpoint per model that you name (a
+[TEI](https://github.com/huggingface/text-embeddings-inference), a proxy like LiteLLM, or a cloud
+API). For a quickstart, the chart can bring one CPU TEI along (`bundledTei`).
 
 For the infrastructure walkthrough, see [Kubernetes](../../docs/kubernetes.md). This page and
 [values.yaml](values.yaml) own chart-specific installation/settings; [operations](../../docs/operations.md)
@@ -20,9 +20,13 @@ owns health, troubleshooting, upgrades and backup/restore procedures.
 
 ## Install
 
+Every model in `embedding.models` needs an endpoint (see [Embedding endpoints](#embedding-endpoints)),
+the chart refuses to render without one. The quickest start is the bundled TEI:
+
 ```bash
 helm install ferret ./charts/ferret --namespace ferret --create-namespace \
-  --set ingress.hostname=ferret.example.com
+  --set ingress.hostname=ferret.example.com \
+  --set bundledTei.enabled=true --set 'embedding.models[0].bundledTei=true'
 ```
 
 Then sign in as `admin` with the generated bootstrap password:
@@ -45,35 +49,63 @@ set `secrets.existingSecret`:
 | `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 | `config-key` | encrypts plugin credentials, 32 bytes in base64 (`openssl rand -base64 32`); back it up apart from the database |
 
-## TEIs
+## Embedding endpoints
 
-ferret embeds with a pool of TEIs. Each works for whichever configured model it serves: the server
-asks every TEI's `/info` for its model every 10 seconds and matches the model's `modelId`, and it
-checks every answer for the model and dimension, so a TEI may switch models at any time.
-
-- `tei.internal.enabled` (default): one CPU TEI per model in the cluster. It answers queries and
-  embeds, in short batches so a query never waits long behind one.
-- `externalTeis`: URLs of TEIs outside the chart, e.g. a laptop with a GPU in the same LAN for a
-  big backfill (the first import, a new model), or a GPU TEI you deploy separately. They start
-  with queries off, so searches don't depend on a laptop that may go to sleep.
+Each model names the endpoint that embeds its chunks (`embeddingApi`) and the one that embeds
+search queries (`queryApi`). Either one serves both when the other is missing. ferret sends
+`POST {url}/embeddings` with `model` and `input` to every kind of endpoint, checks every answer
+(one vector per input, the configured `dimension`, finite values, not all zero) and leaves
+routing, failover and serving to the endpoint.
 
 ```yaml
-externalTeis:
-  - http://192.168.1.20:8080
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      queryPrefix: "Instruct: Given a search query, retrieve relevant passages from personal notes, documents and chats\nQuery: "
+      minSimilarity: 0.42
+      embeddingApi:
+        url: http://litellm.ai.svc:4000/v1
+        model: qwen3-embed
+        tokenSecret: {name: litellm, key: token}
+        concurrency: 4
+      queryApi:
+        url: http://tei-qwen3.ai.svc:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
 ```
 
-Admin switches each TEI on and off, for queries and for the embed pump, without a restart. Every
-TEI that may embed pumps on its own: a fast GPU simply takes more batches than the CPU TEI. A TEI
-that is down or serves a model no configured one uses shows as such in Admin and is skipped.
-Remove an external TEI from the list once it's gone for good.
+- `tokenSecret` names a key of an existing Secret. The chart hands it to the server as an
+  environment variable, which goes out as `Authorization: Bearer`.
+- `concurrency` (default 1) is how many embedding requests one server replica runs at once for
+  the model. Only the endpoint that embeds chunks takes it.
+- An endpoint that is down is a normal state: the pump tries again later, searches with that
+  model answer by keyword, and Admin shows the last error. Other models aren't held up.
+- A model name at the endpoint must always mean the same weights: ferret can't tell when they
+  change, and vectors of another model would end up in this one's index.
+- A cloud endpoint receives every chunk and every search query.
 
-### ⚠️ From chart versions with `tei.gpu` or `bulkUrl`
+More setups (TEI, LiteLLM, a cloud API) in [embeddings.md](../../docs/embeddings.md).
 
-Every model needs its `dimension` (1024 for Qwen3-Embedding-0.6B). `tei.gpu.*` and the models'
-`bulkUrl` are gone, and the chart refuses to render while they're set. Deploy a GPU TEI yourself (TEI's image for your GPU generation, e.g. `89-1.9.4`, with the
-model's `--model-id`) and list its Service URL in `externalTeis`. A `bulkUrl` becomes an entry of
-`externalTeis` as it is. Unlike `bulk_url`, the CPU TEI keeps embedding next to it unless Admin
-switches its embedding off.
+### The bundled TEI
+
+`bundledTei.enabled` deploys one CPU TEI (`<release>-tei`) for exactly one model, which sets
+`bundledTei: true` instead of endpoints. The chart fills in its URL and model name. `modelId`,
+`maxBatchTokens`, `cacheSize`, `resources` and `image` configure it. The chart refuses to render
+when no model or more than one sets the flag, or when a model sets it with the TEI off.
+
+### ⚠️ From chart versions with `tei.*` or `externalTeis`
+
+ferret no longer manages a TEI pool. The chart refuses to render while `tei`, `externalTeis` or a
+model's `name`, `modelId`, `maxBatchTokens`, `cacheSize`, `resources` or `bulkUrl` is set.
+
+- `name` becomes `id`. **Keep the value**: embeddings are stored under it, and a new id
+  re-embeds everything.
+- The per-model TEI settings move to `bundledTei` (one model), or to a TEI you deploy yourself
+  and name in `embeddingApi`.
+- An external TEI (a laptop's GPU) becomes the model's `embeddingApi` with `url:
+  http://192.168.1.20:8080/v1`, and the in-cluster TEI its `queryApi`. Routing between several
+  TEIs for one model is a proxy's job (LiteLLM).
 
 ## Uninstall
 

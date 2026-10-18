@@ -43,7 +43,13 @@ async fn ingest(api: &Client) {
             "Ada",
             (2026, 2, 1),
         ),
-        ("mail/zoho", "d", ContentType::Plain, "Linus", (2026, 2, 14)),
+        (
+            "mail/personal",
+            "d",
+            ContentType::Plain,
+            "Linus",
+            (2026, 2, 14),
+        ),
     ];
     for (source, external_id, content_type, author, (year, month, day)) in docs {
         let mut put = document(source, external_id, "Some text.");
@@ -85,7 +91,7 @@ async fn lists_every_document_newest_first_with_facet_counts(pool: PgPool) {
          )
          insert into documents (id, user_id, source, external_id, content_type, authors,
                                 created_at, modified_at, meta, text, content_hash, seen_at)
-         select uuidv7(), id, 'mail/zoho', 'bobs', 'plain', '{Bob}', now(), now(), '{}', 'Bob.',
+         select uuidv7(), id, 'mail/personal', 'bobs', 'plain', '{Bob}', now(), now(), '{}', 'Bob.',
                 '\\x00', now()
          from bob",
     )
@@ -102,7 +108,7 @@ async fn lists_every_document_newest_first_with_facet_counts(pool: PgPool) {
         json!({
             "sources": [
                 {"value": "notes/work", "count": 2},
-                {"value": "mail/zoho", "count": 1},
+                {"value": "mail/personal", "count": 1},
                 {"value": "notes/home", "count": 1},
             ],
             "contentTypes": [

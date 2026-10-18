@@ -25,7 +25,7 @@ async fn ingest(api: &Client) {
         "Invoice for the car insurance.",
     );
     paperless.authors = vec!["Allianz".to_owned()];
-    let mut mail = document("mail/zoho", "invoice-b", "Your invoice is attached.");
+    let mut mail = document("mail/personal", "invoice-b", "Your invoice is attached.");
     mail.authors = vec!["Stadtwerke".to_owned(), "billing".to_owned()];
     mail.created_at = day(10);
     mail.content_type = ContentType::Email;
@@ -267,7 +267,7 @@ async fn each_facet_counts_the_matches_under_every_filter_but_its_own(pool: PgPo
     assert_eq!(response.total, 1);
     assert_eq!(
         source_counts(&response.facets.sources),
-        [("mail/zoho", 1), ("notes", 1), ("paperless/2026", 1)]
+        [("mail/personal", 1), ("notes", 1), ("paperless/2026", 1)]
     );
     assert_eq!(counts(&response.facets.authors), [("someone", 1)]);
     assert!(!response.facets.are_lower_bounds);
@@ -385,7 +385,7 @@ async fn a_selected_parent_root_gets_its_covering_count(pool: PgPool) {
         source_counts(&response.facets.sources),
         [
             ("mail", 1),
-            ("mail/zoho", 1),
+            ("mail/personal", 1),
             ("notes", 1),
             ("paperless/2026", 1)
         ]
@@ -397,7 +397,7 @@ async fn a_collapsed_thread_counts_for_every_author_of_its_members(pool: PgPool)
     let server = start_server(pool).await;
     let api = server.admin_api().await;
     ingest(&api).await;
-    let mut reply = document("mail/zoho", "invoice-reply", "Got the invoice, thanks.");
+    let mut reply = document("mail/personal", "invoice-reply", "Got the invoice, thanks.");
     reply.thread = Some("invoices".to_owned());
     reply.authors = vec!["Anna".to_owned()];
     api.put_document(&reply).await.unwrap();

@@ -1,24 +1,19 @@
 mod common;
 
-use common::{
-    TestServer, document,
-    fake_tei::{FakeTei, MAX_INPUT_LENGTH},
-    model, start_server_with, tei_config,
-};
+use common::{TestServer, document, fake_endpoint::FakeEndpoint, model, start_server_with};
 use ferret_api::SearchQuery;
 use ferret_server::config::EmbeddingConfig;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
-/// Two models on their own fake TEIs, `alpha` the configured default.
-async fn two_models(pool: PgPool) -> (TestServer, FakeTei) {
-    let alpha = FakeTei::serving("org/alpha", MAX_INPUT_LENGTH).await;
-    let beta = FakeTei::serving("org/beta", MAX_INPUT_LENGTH).await;
+/// Two models on their own fake endpoints, `alpha` the configured default.
+async fn two_models(pool: PgPool) -> (TestServer, FakeEndpoint) {
+    let alpha = FakeEndpoint::start().await;
+    let beta = FakeEndpoint::start().await;
     let config = EmbeddingConfig {
         default: "alpha".to_owned(),
         models: vec![model("beta", &beta), model("alpha", &alpha)],
-        teis: vec![tei_config(&alpha), tei_config(&beta)],
     };
     (start_server_with(pool, alpha, config).await, beta)
 }
@@ -128,7 +123,7 @@ async fn models_list_the_users_coverage(pool: PgPool) {
     let models = server
         .graphql(
             &cookie,
-            "{ embeddingModels { name configuredDefault embedded chunks } }",
+            "{ embeddingModels { id configuredDefault embedded chunks } }",
             json!({}),
         )
         .await;
@@ -136,8 +131,8 @@ async fn models_list_the_users_coverage(pool: PgPool) {
     assert_eq!(
         models["data"]["embeddingModels"],
         json!([
-            {"name": "alpha", "configuredDefault": true, "embedded": 2, "chunks": 2},
-            {"name": "beta", "configuredDefault": false, "embedded": 2, "chunks": 2},
+            {"id": "alpha", "configuredDefault": true, "embedded": 2, "chunks": 2},
+            {"id": "beta", "configuredDefault": false, "embedded": 2, "chunks": 2},
         ])
     );
 }
@@ -147,13 +142,12 @@ async fn a_default_model_removed_from_the_config_is_reset_at_startup(pool: PgPoo
     let (server, _beta) = two_models(pool.clone()).await;
     let cookie = server.sign_in().await;
     set_default(&server, &cookie, json!("beta")).await;
-    let alpha = server.tei.clone();
+    let alpha = server.endpoint.clone();
     drop(server);
 
     let config = EmbeddingConfig {
         default: "alpha".to_owned(),
         models: vec![model("alpha", &alpha)],
-        teis: vec![tei_config(&alpha)],
     };
     ferret_server::embeddings::prepare(&pool, config)
         .await

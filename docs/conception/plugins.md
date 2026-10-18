@@ -39,8 +39,8 @@ are the files plugin's job ([Roadmap](#roadmap)).
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |
 
 - One document per file, `external_id = {path}`, `title` from the first `# ` heading of a
-  Markdown file (deeper ones don't count), else its name in words (`tavascan_review.md` becomes
-  "Tavascan Review": no extension, `_` and `-` as spaces, lowercase words capitalized). Other files
+  Markdown file (deeper ones don't count), else its name in words (`product_review.md` becomes
+  "Product Review": no extension, `_` and `-` as spaces, lowercase words capitalized). Other files
   keep their name (`main.rs`). `authors` from the last commit touching the file, `created_at` from
   the first.
 - Only regular files: symlinks and submodules are skipped (a symlink could point at the worker's
@@ -162,12 +162,12 @@ change its rendering freely.
 
 ### IMAP
 
-Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing with
+Indexes a mailbox over IMAP. MIME parsing with
 [`mail-parser`](https://crates.io/crates/mail-parser).
 
 | Config | Meaning |
 |---|---|
-| `server` | e.g. `imap.zoho.eu`, with `:port` unless it's 993 |
+| `server` | e.g. `imap.example.com`, with `:port` unless it's 993 |
 | `tls` | default on. Off sends the password in plain text: only for a server next to the worker (the compose Dovecot, tests) |
 | `username`, `password` | `password` is write-only, an app password where the provider has them |
 | `exclude_folders` | by name, default Trash, Spam, Junk, Drafts, compared case-insensitively with the last segment of a folder's path (`INBOX.Trash` is `Trash`), decoded from IMAP's modified UTF-7 (`Entwürfe`, not `Entw&APw-rfe`). Folders the server marks `\Trash`, `\Junk` or `\Drafts` (RFC 6154) are always left out, whatever their name |
@@ -179,7 +179,7 @@ Indexes a mailbox over IMAP, starting with the private Zoho one. MIME parsing wi
   document and a move to another folder is invisible to ferret. A mail without one gets a
   stand-in from the hash of its `Date`, `Subject` and sender (`no-message-id-…`), which survives
   moves as well.
-- Source = the connection's root, e.g. `mail/zoho`. Folders are not recorded (a folder filter
+- Source = the connection's root, e.g. `mail/personal`. Folders are not recorded (a folder filter
   would require tracking moves).
 - `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
 - `content_type = email`, `title` = subject, `authors` = the senders' names (their addresses where

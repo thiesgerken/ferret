@@ -28,14 +28,14 @@ docker compose up -d --build
 scripts/demo-seed.sh
 ```
 
-The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. First startup builds images and downloads weights; TEIs share a cache. `tei` can query and embed, while the external-marked `tei-bulk` starts embedding-only. This is development/demo configuration with public secrets, not a deployment recipe.
+The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. First startup builds images and downloads weights. `tei` serves Qwen3 for queries and the embed pump; `tei-bge` (bge-m3) is scaled to 0 until `docker compose up -d --scale tei-bge=1 tei-bge`. This is development/demo configuration with public secrets, not a deployment recipe.
 
 Use `docker compose logs -f server plugins` and Activity for different layers of diagnostics. Rebuild the service you changed with `docker compose up -d --build server` (or plugins/frontend); frontend static output is baked into its image, not hot-reloaded from the checkout. Do not start a second project on occupied fixed ports or seed an existing personal index. Use isolated project names, host-port overrides and separate volumes when working alongside one.
 
 Optional carapace demo:
 
 ```sh
-export CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me
+export CARAPACE_KNOWLEDGE_DIR=/absolute/path/to/knowledge-repository
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 scripts/demo-seed.sh
 ```
@@ -57,7 +57,7 @@ export FERRET_BOOTSTRAP_PASSWORD=ferret-development
 cargo run -p ferret-server
 ```
 
-Create host-ferret.yaml from the complete [configuration example](configuration.md#complete-server-yaml), replacing TEI URLs with addresses reachable from the host. Compose's `http://tei:80` names are not host DNS. Run an independent TEI with a host-published port, or configure an existing reachable TEI; do not copy container-only addresses and then diagnose their expected DNS failure as a model bug. TEIs may be offline at startup, but semantic queries need an eligible endpoint.
+Create host-ferret.yaml from the complete [configuration example](configuration.md#complete-server-yaml), replacing endpoint URLs with addresses reachable from the host. Compose's `http://tei:80/v1` names are not host DNS. Run an independent TEI with a host-published port, or configure an existing reachable endpoint; do not copy container-only addresses and then diagnose their expected DNS failure as a model bug. Endpoints may be down at startup, but semantic queries need a reachable one.
 
 In another terminal, with the same worker secret:
 
@@ -101,7 +101,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 helm lint charts/ferret --set ingress.hostname=ferret.example.com
 ```
 
-[.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; TEI-specific tests use their checked fake service where configured. See actual test setup before assuming an external account/GPU is required.
+[.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; embedding tests use a fake OpenAI-compatible endpoint (`tests/common/fake_endpoint.rs`). See actual test setup before assuming an external account/GPU is required.
 
 The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
 

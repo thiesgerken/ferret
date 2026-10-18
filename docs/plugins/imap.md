@@ -17,6 +17,8 @@ Create plugin `imap`, source `mail/personal`, a name/icon and schedule `*/15 * *
 }
 ```
 
+Use your provider's IMAP hostname; `imap.example.com` is a placeholder.
+
 `server`, `username`, `password` are required. Port defaults to 993, TLS defaults to true. This is implicit TLS, not a STARTTLS configuration. Disabling TLS sends the password in cleartext and is suitable only for a test server next to the worker. `exclude_folders` defaults to Trash/Spam/Junk/Drafts; providing a list replaces that default. Server folders marked trash, junk or drafts are always excluded. `url_template` is optional: omit it to use Ferret's viewer. A `mid:` origin requires an operating-system mail handler that understands it; Ferret cannot install that handler for you.
 
 ## Identity, threads and content

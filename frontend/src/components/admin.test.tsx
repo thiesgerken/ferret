@@ -43,17 +43,22 @@ const ADMIN_DATA = {
   embeddingStatus: [
     {
       __typename: "ModelStatus",
-      name: "bge-m3",
-      modelId: "BAAI/bge-m3",
+      id: "bge-m3",
       isDefault: true,
       dimension: 1024,
+      embeddingApi: endpoint({ url: "http://litellm:4000/v1", model: "bge", reachable: false, lastError: "unreachable: connection refused", lastErrorAt: "2026-01-02T11:00:00Z" }),
+      queryApi: endpoint({ url: "http://tei-bge:80/v1", model: "BAAI/bge-m3", reachable: true }),
       backlog: [{ __typename: "SourceBacklog", source: "notes", pending: 7, failed: 1 }],
     },
-  ],
-  teis: [
-    tei({ url: "http://tei-bge:80", lastError: "TEI answered 503", lastErrorAt: "2026-01-02T11:00:00Z" }),
-    tei({ url: "http://macbook:8080", external: true, queries: false }),
-    tei({ url: "http://old-tei:80", model: null, servedModel: "intfloat/e5-small", state: "UNUSED", problem: "No configured model uses intfloat/e5-small." }),
+    {
+      __typename: "ModelStatus",
+      id: "qwen3",
+      isDefault: false,
+      dimension: 1024,
+      embeddingApi: endpoint({ url: "http://tei:80/v1", model: "Qwen/Qwen3-Embedding-0.6B", reachable: null }),
+      queryApi: endpoint({ url: "http://tei:80/v1", model: "Qwen/Qwen3-Embedding-0.6B", reachable: null }),
+      backlog: [],
+    },
   ],
   storedEmbeddingModels: [
     {
@@ -77,31 +82,8 @@ const ADMIN_DATA = {
   ],
 };
 
-/** A TEI of bge-m3 that's on for queries and embedding, unless `overrides` say otherwise. */
-function tei(overrides: Record<string, unknown>) {
-  return {
-    __typename: "Tei",
-    url: "http://tei:80",
-    model: "bge-m3",
-    servedModel: "BAAI/bge-m3",
-    external: false,
-    enabled: true,
-    queries: true,
-    embedding: true,
-    state: "ONLINE",
-    problem: null,
-    lastError: null,
-    lastErrorAt: null,
-    busy: false,
-    pumpBatchSize: 16,
-    queueSize: 0,
-    batchSize: 4.5,
-    throughputPerMinute: 120,
-    failures: 0,
-    load: 0.4,
-    etaSeconds: 60,
-    ...overrides,
-  };
+function endpoint(fields: { url: string; model: string; reachable: boolean | null; lastError?: string; lastErrorAt?: string }) {
+  return { __typename: "ModelEndpoint", lastError: null, lastErrorAt: null, ...fields };
 }
 
 /** Renders the page against a fake server that records every operation and answers mutations
@@ -128,20 +110,46 @@ async function renderAdmin(
   return { view, operations };
 }
 
-test("shows users, the TEIs by model with the backlog, and the workers", async () => {
+test("shows users, each model's endpoints with the backlog, and the workers", async () => {
   const { view } = await renderAdmin();
   const text = view.container.textContent ?? "";
 
   assert.match(text, /grace · Grace/);
-  assert.match(text, /bge-m3 · defaultBAAI\/bge-m3 · 1,024 dimensions/);
-  assert.match(text, /http:\/\/tei-bge:80Online/);
-  assert.match(text, /http:\/\/macbook:8080ExternalOnline/);
-  assert.match(text, /TEI answered 503/);
-  assert.match(text, /Unused \(intfloat\/e5-small\)http:\/\/old-tei:80UnusedNo configured model uses intfloat\/e5-small\./);
-  assert.equal(view.container.querySelector("[role=status]"), null, "queries and embedding are served");
+  assert.match(text, /bge-m3 · default1,024 dimensions/);
+  assert.match(text, /http:\/\/litellm:4000\/v1UnreachableChunks · bge/);
+  assert.match(text, /unreachable: connection refused/);
+  assert.match(text, /http:\/\/tei-bge:80\/v1ReachableQueries · BAAI\/bge-m3/);
   assert.match(text, /notes71/);
+  assert.match(text, /qwen31,024 dimensionsTesthttp:\/\/tei:80\/v1Not asked yetChunks and queries · Qwen\/Qwen3-Embedding-0\.6BEverything is embedded\./);
   assert.match(text, /ferret-plugins-0git, paperlessonline/);
   assert.match(text, /ferret-plugins-oldgitoffline/);
+  await view.unmount();
+});
+
+test("testing a model shows how each of its endpoints answered", async () => {
+  const { view, operations } = await renderAdmin(() =>
+    Response.json({
+      data: {
+        testEmbeddingModel: [
+          { __typename: "EndpointTest", role: "CHUNKS", durationMs: 180, dimension: 1024, error: null },
+          { __typename: "EndpointTest", role: "QUERIES", durationMs: 5003, dimension: null, error: "unreachable: operation timed out" },
+        ],
+      },
+    }),
+  );
+
+  await act(async () => {
+    view.container.querySelector<HTMLButtonElement>("button[aria-label='Test the endpoints of bge-m3']")!.click();
+  });
+  await settle();
+
+  const test = operations.find((operation) => operation.operationName === "TestEmbeddingModel");
+  assert.deepEqual(test?.variables, { id: "bge-m3" });
+  const results = [...view.container.querySelectorAll("[aria-label='Test results'] li")].map((result) => result.textContent);
+  assert.deepEqual(results, [
+    "Chunks: 1,024 dimensions in 180 ms",
+    "Queries: failed after 5,003 ms: unreachable: operation timed out",
+  ]);
   await view.unmount();
 });
 
@@ -219,39 +227,6 @@ test("creates a user and sets a password", async () => {
   assert.equal(view.container.querySelector("#new-password"), null, "the form closes once it's set");
   await view.unmount();
 });
-
-test("a TEI's switch changes only that switch", async () => {
-  const { view, operations } = await renderAdmin(() =>
-    Response.json({ data: { updateTei: { __typename: "Tei", url: "http://macbook:8080", enabled: true, queries: true, embedding: true } } }),
-  );
-
-  await act(async () => {
-    view.container.querySelector<HTMLButtonElement>("[role=switch][aria-label='Queries: http://macbook:8080']")!.click();
-  });
-  await settle();
-
-  const update = operations.find((operation) => operation.operationName === "UpdateTei");
-  assert.deepEqual(update?.variables, { url: "http://macbook:8080", input: { queries: true } });
-  assert.ok(operations.filter((operation) => operation.operationName === "Admin").length > 1, "reloaded");
-  await view.unmount();
-});
-
-test("a model without a TEI for queries or embedding says what that means", async () => {
-  const { view } = await renderAdmin(undefined, {
-    ...ADMIN_DATA,
-    teis: [tei({ url: "http://tei-bge:80", queries: false }), tei({ url: "http://macbook:8080", state: "OFFLINE", embedding: true })].map(
-      (offline, index) => (index === 0 ? { ...offline, embedding: false } : offline),
-    ),
-  });
-
-  const warnings = [...view.container.querySelectorAll("[role=status]")].map((warning) => warning.textContent);
-  assert.deepEqual(warnings, [
-    "No enabled TEI answers this model's queries: searches with it find keyword matches only.",
-    "No enabled TEI embeds this model's chunks: its backlog doesn't move.",
-  ]);
-  await view.unmount();
-});
-
 
 test("lists the stored embeddings, and only models that aren't configured can be deleted", async () => {
   const { view } = await renderAdmin();

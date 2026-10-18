@@ -1,5 +1,5 @@
 # Development only: lets the plugin worker index a local carapace knowledge repository.
-#   CARAPACE_KNOWLEDGE_DIR=../carapace/data/knowledges/me \
+#   CARAPACE_KNOWLEDGE_DIR=/absolute/path/to/knowledge-repository \
 #     docker compose -f docker-compose.yml -f docker-compose.demo.yml up
 # then scripts/demo-seed.sh with the same CARAPACE_KNOWLEDGE_DIR.
 services:

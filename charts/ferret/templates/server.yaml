@@ -65,6 +65,9 @@ spec:
                 secretKeyRef:
                   name: {{ include "ferret.secretName" . }}
                   key: config-key
+            {{- with include "ferret.tokenEnvs" . | trim }}
+            {{- . | nindent 12 }}
+            {{- end }}
             {{- with .Values.server.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -76,8 +79,7 @@ spec:
             - name: config
               mountPath: /etc/ferret
               readOnly: true
-          # Startup covers migrations, Postgres and, on a fresh install, TEI downloading its model:
-          # the server waits up to 10 minutes for it before giving up.
+          # Startup covers migrations and waiting for Postgres.
           startupProbe:
             tcpSocket:
               port: http

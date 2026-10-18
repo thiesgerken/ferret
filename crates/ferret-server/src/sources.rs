@@ -1,4 +1,4 @@
-//! Source paths: `/`-separated namespaces like `mail/zoho`, where a source includes every source
+//! Source paths: `/`-separated namespaces like `mail/personal`, where a source includes every source
 //! below it.
 
 /// Whether `path` is a well-formed source path: non-empty segments, no leading, trailing or
@@ -46,10 +46,10 @@ mod tests {
 
     #[test]
     fn validates_paths() {
-        for path in ["notes", "mail/zoho", "carapace/facts/2026"] {
+        for path in ["notes", "mail/personal", "carapace/facts/2026"] {
             assert!(is_valid(path), "{path}");
         }
-        for path in ["", "/notes", "notes/", "mail//zoho", " notes", "notes "] {
+        for path in ["", "/notes", "notes/", "mail//personal", " notes", "notes "] {
             assert!(!is_valid(path), "{path:?}");
         }
     }
@@ -79,25 +79,25 @@ mod tests {
     fn covers_by_segment() {
         assert!(covers("carapace", "carapace"));
         assert!(covers("carapace", "carapace/facts"));
-        assert!(covers("mail/zoho", "mail/zoho/inbox"));
+        assert!(covers("mail/personal", "mail/personal/inbox"));
         assert!(!covers("carapace", "carapace-old"));
         assert!(!covers("carapace/facts", "carapace"));
-        assert!(!covers("mail/zoho", "mail/gmail"));
+        assert!(!covers("mail/personal", "mail/other"));
     }
 
     /// Search filters with the SQL twin of `covers`, which must not drift from it.
     #[sqlx::test(migrations = false)]
     async fn the_sql_function_agrees_with_covers(pool: sqlx::PgPool) {
         crate::migrate(&pool).await.unwrap();
-        let roots = ["notes", "notes/work", "mail/zoho", "carapace"];
+        let roots = ["notes", "notes/work", "mail/personal", "carapace"];
         let paths = [
             "notes",
             "notes/work",
             "notes/work/a",
             "notes-old",
             "notesx/a",
-            "mail/zoho/inbox",
-            "mail/gmail",
+            "mail/personal/inbox",
+            "mail/other",
             "carapace-old",
             "carapace/facts",
         ];
