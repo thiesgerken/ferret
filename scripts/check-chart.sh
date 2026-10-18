@@ -9,8 +9,14 @@ for values in charts/test-values/*.yaml; do
   helm lint "$chart" -f "$values" >/dev/null
   helm template ferret "$chart" -f "$values" >/dev/null
 done
-# The defaults name no endpoint, and deploy no TEI.
-if helm template ferret "$chart" --set ingress.hostname=ferret.example.com 2>/dev/null | grep -q -- '-tei'; then
+# The defaults deploy no TEI. They name no endpoint either, so the model gets one here (`--set`
+# on a list replaces the whole list, hence the model's other required fields).
+defaults=$(helm template ferret "$chart" --set ingress.hostname=ferret.example.com \
+  --set 'embedding.models[0].id=qwen3-embedding-0.6b' \
+  --set 'embedding.models[0].dimension=1024' --set 'embedding.models[0].minSimilarity=0.42' \
+  --set 'embedding.models[0].embeddingApi.url=http://tei/v1' \
+  --set 'embedding.models[0].embeddingApi.model=Qwen/Qwen3-Embedding-0.6B')
+if grep -q 'name: ferret-tei' <<<"$defaults"; then
   echo "the defaults render a TEI" >&2
   exit 1
 fi
