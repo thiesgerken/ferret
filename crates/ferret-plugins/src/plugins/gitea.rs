@@ -90,7 +90,7 @@ struct Comment {
 struct Review {
     id: u64,
     body: String,
-    user: User,
+    user: Option<User>,
     state: String,
     html_url: String,
     submitted_at: DateTime<Utc>,
@@ -436,13 +436,16 @@ impl Gitea {
                 if matches!(review.state.as_str(), "PENDING" | "REQUEST_REVIEW") {
                     continue;
                 }
+                let user = review
+                    .user
+                    .ok_or_else(|| format!("Gitea submitted review {} has no author", review.id))?;
                 if !review.body.trim().is_empty() {
                     let document = comment_document(
                         &body,
                         Comment {
                             id: review.id,
                             body: review.body,
-                            user: review.user,
+                            user,
                             html_url: review.html_url,
                             created_at: review.submitted_at,
                             updated_at: review.updated_at,

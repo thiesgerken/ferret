@@ -701,3 +701,67 @@ async fn renamed_repositories_get_new_sources_without_migrating_manual_exclusion
     );
     assert_ne!(stored[0].id, document.id);
 }
+
+#[sqlx::test(migrations = false)]
+async fn team_review_requests_are_ignored_but_submitted_reviews_require_an_author(pool: PgPool) {
+    let files = tempfile::tempdir().unwrap();
+    let (url, data) = serve(files.path()).await;
+    {
+        let mut data = data.lock();
+        add_repository(&mut data, repository(1, "acme/notes", &url, true));
+        data.lists.insert(
+            "repos/acme/notes/issues:pulls".to_owned(),
+            vec![discussion(12, 2, "Review discussion", true)],
+        );
+        data.lists
+            .insert("repos/acme/notes/issues/2/comments".to_owned(), vec![]);
+        data.lists.insert(
+            "repos/acme/notes/pulls/2/reviews".to_owned(),
+            vec![
+                json!({"id": 30, "body": "", "user": null, "team": {"id": 7, "name": "reviewers"},
+                "state": "REQUEST_REVIEW", "html_url": "https://git.example/review/30",
+                "submitted_at": CREATED, "updated_at": CREATED}),
+                json!({"id": 31, "body": "Cobalt submitted review.", "user": {"login": "reviewer"},
+                "state": "COMMENT", "html_url": "https://git.example/review/31",
+                "submitted_at": CREATED, "updated_at": CREATED}),
+            ],
+        );
+        data.lists.insert(
+            "repos/acme/notes/pulls/2/reviews/31/comments".to_owned(),
+            vec![],
+        );
+    }
+    let server = start_server(pool).await;
+    let connection = Connection::create(&server, &url, json!({})).await;
+    let result = connection.run().await;
+    assert_eq!(result["status"], "SUCCEEDED", "{result}");
+    let stored = documents(&server).await;
+    assert_eq!(
+        stored
+            .iter()
+            .map(|document| document.external_id.as_str())
+            .collect::<Vec<_>>(),
+        ["body:12", "review:31"],
+    );
+    assert_eq!(stored[1].authors, ["reviewer"]);
+    {
+        let mut data = data.lock();
+        data.lists
+            .get_mut("repos/acme/notes/pulls/2/reviews")
+            .unwrap()[1]["user"] = Value::Null;
+    }
+    let result = connection.run().await;
+    assert_eq!(result["status"], "FAILED", "{result}");
+    let retained = documents(&server).await;
+    assert_eq!(
+        retained
+            .iter()
+            .map(|document| document.id)
+            .collect::<Vec<_>>(),
+        stored
+            .iter()
+            .map(|document| document.id)
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(retained[1].authors, ["reviewer"]);
+}
