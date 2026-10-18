@@ -1,7 +1,7 @@
 //! git: one document per file of a repository. The first run is a full sync, later runs index
 //! the diff since the last run's commit.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -37,28 +37,28 @@ const URL_SEGMENT: &AsciiSet = &CONTROLS
 #[schemars(title = "git")]
 pub struct GitConfig {
     /// The repository to clone, e.g. `https://github.com/owner/notes.git`.
-    remote: String,
+    pub(super) remote: String,
     /// A token for a private repository over HTTPS, e.g. a GitHub fine-grained token that may read
     /// the repository's contents.
     #[serde(default)]
     #[schemars(extend("writeOnly" = true))]
-    token: Option<String>,
+    pub(super) token: Option<String>,
     /// The branch to index. The repository's default branch when left out.
     #[serde(default)]
-    branch: Option<String>,
+    pub(super) branch: Option<String>,
     /// Globs of files to index, e.g. `**/*.md`. Everything when left out.
     #[serde(default)]
-    include: Vec<String>,
+    pub(super) include: Vec<String>,
     /// Globs of files to skip, e.g. `.obsidian/**`.
     #[serde(default)]
-    exclude: Vec<String>,
+    pub(super) exclude: Vec<String>,
     /// Globs of Markdown files. Everything else is plain text.
     #[serde(default = "markdown_by_default")]
-    markdown: Vec<String>,
+    pub(super) markdown: Vec<String>,
     /// Deep link to a file, with `{path}` and `{commit}`, e.g.
     /// `https://github.com/owner/notes/blob/{commit}/{path}`.
     #[serde(default)]
-    url_template: Option<String>,
+    pub(super) url_template: Option<String>,
 }
 
 impl GitConfig {
@@ -78,7 +78,7 @@ impl GitConfig {
     }
 }
 
-fn markdown_by_default() -> Vec<String> {
+pub(super) fn markdown_by_default() -> Vec<String> {
     vec!["**/*.md".to_owned()]
 }
 
@@ -93,19 +93,10 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     .await?;
     run.log
         .line(format!("cloned {} at {}", config.remote, checkout.head));
-    let indexer = Indexer {
-        run,
-        config: &config,
-        include: glob_set(&config.include)?,
-        exclude: glob_set(&config.exclude)?,
-        markdown: glob_set(&config.markdown)?,
-        modes: checkout.modes().await?,
-        history: checkout.history().await?,
-        checkout: &checkout,
-    };
+    let indexer = Indexer::new(run, &run.source, &config, &checkout).await?;
 
     let indexing = config.indexing();
-    let stats = match changes(run, &checkout, &indexing).await? {
+    let stats = match changes(run, &run.state, &checkout, &indexing).await? {
         Ok(changes) => indexer.apply(changes).await?,
         Err(reason) => {
             run.log.line(format!("full sync: {reason}"));
@@ -122,13 +113,73 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     })
 }
 
+/// Participates in a caller-owned sync without deleting anything before that caller commits.
+pub(super) async fn sync_files(
+    run: &Run,
+    source: &str,
+    state: &Value,
+    config: &GitConfig,
+    sync: uuid::Uuid,
+) -> Result<Outcome, PluginError> {
+    let checkout = Checkout::clone(
+        &config.remote,
+        config.branch.as_deref(),
+        config.token.as_deref(),
+        &run.options.git_protocols,
+    )
+    .await?;
+    run.log
+        .line(format!("cloned {} at {}", config.remote, checkout.head));
+    let indexer = Indexer::new(run, source, config, &checkout).await?;
+    let indexing = config.indexing();
+    let changed = match changes(run, state, &checkout, &indexing).await? {
+        Ok(changes) => Some(
+            changes
+                .into_iter()
+                .filter_map(|change| match change {
+                    Change::Changed(path) => Some(path),
+                    Change::Deleted(_) => None,
+                })
+                .collect::<HashSet<_>>(),
+        ),
+        Err(reason) => {
+            run.log.line(format!("full sync: {reason}"));
+            None
+        }
+    };
+    let mut stats = RunStats::default();
+    let mut unchanged = Vec::new();
+    for path in indexer.paths() {
+        if changed.as_ref().is_some_and(|paths| !paths.contains(path)) {
+            unchanged.push(path);
+            if unchanged.len() == 1000 {
+                stats.unchanged += run.api.sync_seen(sync, source, &unchanged).await?.seen;
+                unchanged.clear();
+            }
+        } else if let Some(document) = indexer.document(path).await? {
+            match run.api.put_document(&document).await? {
+                PutResponse::Unchanged { .. } => stats.unchanged += 1,
+                PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+                PutResponse::Excluded => {}
+            }
+        }
+    }
+    if !unchanged.is_empty() {
+        stats.unchanged += run.api.sync_seen(sync, source, &unchanged).await?.seen;
+    }
+    Ok(Outcome {
+        state: json!({ "commit": checkout.head, "indexing": indexing }),
+        stats,
+    })
+}
+
 /// The changes since the commit the last run indexed, or why this run has to be a full sync.
 async fn changes(
     run: &Run,
+    state: &Value,
     checkout: &Checkout,
     indexing: &Value,
 ) -> Result<Result<Vec<Change>, String>, PluginError> {
-    let state = &run.state;
     let Some(cursor) = state.get("commit").and_then(Value::as_str) else {
         return Ok(Err("no earlier run".to_owned()));
     };
@@ -149,6 +200,7 @@ async fn changes(
 /// What a run needs to turn files of the checkout into documents.
 struct Indexer<'a> {
     run: &'a Run,
+    source: &'a str,
     config: &'a GitConfig,
     include: GlobSet,
     exclude: GlobSet,
@@ -158,18 +210,44 @@ struct Indexer<'a> {
     history: HashMap<String, FileHistory>,
 }
 
-impl Indexer<'_> {
+impl<'a> Indexer<'a> {
+    async fn new(
+        run: &'a Run,
+        source: &'a str,
+        config: &'a GitConfig,
+        checkout: &'a Checkout,
+    ) -> Result<Self, PluginError> {
+        Ok(Self {
+            run,
+            source,
+            config,
+            include: glob_set(&config.include)?,
+            exclude: glob_set(&config.exclude)?,
+            markdown: glob_set(&config.markdown)?,
+            modes: checkout.modes().await?,
+            history: checkout.history().await?,
+            checkout,
+        })
+    }
+
+    fn paths(&self) -> Vec<&str> {
+        let mut paths: Vec<_> = self
+            .modes
+            .keys()
+            .map(String::as_str)
+            .filter(|path| self.selected(path))
+            .collect();
+        paths.sort_unstable();
+        paths
+    }
+
     /// Puts every file inside a sync, whose commit deletes the documents of files that are gone.
     async fn full_sync(&self) -> Result<RunStats, PluginError> {
         let run = self.run;
         let sync = run.api.start_sync(&run.source).await?.sync_id;
         let mut stats = RunStats::default();
-        let mut paths: Vec<_> = self.modes.keys().map(String::as_str).collect();
-        paths.sort_unstable();
-        for path in paths {
-            if self.selected(path) {
-                self.put(path, &mut stats).await?;
-            }
+        for path in self.paths() {
+            self.put(path, &mut stats).await?;
         }
         stats.deleted = run.api.commit_sync(sync).await?.deleted;
         Ok(stats)
@@ -247,7 +325,7 @@ impl Indexer<'_> {
             ContentType::Plain
         };
         Ok(Some(DocumentPut {
-            source: run.source.clone(),
+            source: self.source.to_owned(),
             external_id: path.to_owned(),
             content_type,
             title: Some(title(path, &text, content_type)),
@@ -323,7 +401,7 @@ fn file_url(template: &str, path: &str, commit: &str) -> String {
         .replace("{commit}", commit)
 }
 
-fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
+pub(super) fn glob_set(globs: &[String]) -> Result<GlobSet, PluginError> {
     let mut set = GlobSetBuilder::new();
     for glob in globs {
         set.add(Glob::new(glob)?);

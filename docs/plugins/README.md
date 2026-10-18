@@ -1,6 +1,6 @@
 # Plugin implementation contract
 
-For configuring built-ins use [git](git.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
+For configuring built-ins use [git](git.md), [Gitea](gitea.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
 
 A plugin is code in a worker, not code dynamically loaded into the server. Registration advertises a name and JSON Schema; the server stores schemas for validation/UI forms. Workers claim only names they advertised. Third-party workers can implement the same protocol without linking the built-in Rust binary, but the PSK is a trusted cross-user credential.
 

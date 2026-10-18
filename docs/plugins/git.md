@@ -2,6 +2,8 @@
 
 Use `git` for text files in a repository, including an Obsidian vault. The worker needs Git, network access to the remote, and read-only repository access. Public HTTPS repositories need no token. For a private repository use a fine-grained token restricted to reading that repository's contents; the plugin sends it as HTTP Basic authentication with username `x-access-token`.
 
+For automatic discovery of a Gitea account's repositories and open issue/PR discussions, use [Gitea](gitea.md).
+
 ## Set up
 
 In **Connections**, create plugin `git`, source `notes/git`, choose a name/icon, and schedule `0 * * * *`. Enter:

@@ -43,5 +43,6 @@ async-imap.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 ferret-plugins = { path = "../ferret-plugins" }
 futures-util.workspace = true
+parking_lot.workspace = true
 tempfile.workspace = true
 yrs.workspace = true

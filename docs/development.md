@@ -103,6 +103,8 @@ helm lint charts/ferret --set ingress.hostname=ferret.example.com
 
 [.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; TEI-specific tests use their checked fake service where configured. See actual test setup before assuming an external account/GPU is required.
 
+The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
+
 ## Migrations and sqlx metadata
 
 Install a matching sqlx CLI (`cargo install sqlx-cli --version 0.9.0`). Create a new migration rather than editing an applied one:
