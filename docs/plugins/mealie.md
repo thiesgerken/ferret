@@ -22,7 +22,7 @@ The required token is marked `writeOnly` in the configuration schema. Ferret enc
 
 ## Indexed content and identity
 
-One recipe becomes one Markdown document at `<root>/recipes`, with its UUID as `external_id`. Slug and title changes keep document identity. Hits open `{public_url}/g/{groupSlug}/r/{slug}` in Mealie, not the original recipe website or an individual comment. Path segments are URL-encoded. No creator attribution is invented from owner IDs.
+One recipe becomes one Markdown document at `<root>/recipes`, with its UUID as `external_id`. Slug and title changes keep document identity. Hits open `{public_url}/g/{groupSlug}/r/{slug}/` in Mealie, not the original recipe website or an individual comment. Path segments are URL-encoded; the trailing slash is required by Mealie's static frontend. No creator attribution is invented from owner IDs.
 
 The searchable body contains supplied description, ordered ingredient display text and section titles, ordered instruction titles/summaries/text, attached recipe notes, comments labelled with available author and timestamps, categories, tags, tools, servings/yield, times and nutrition. Authored Markdown is preserved. Comments are sorted by creation timestamp and UUID; categories, tags and tools by name. Referenced recipes stay references: the plugin does not recursively copy them or fetch their contents.
 
@@ -47,4 +47,4 @@ This uses standard Ferret eventual consistency: a failed run retains previously 
 
 Errors/logs omit origin response bodies, JSON decoder diagnostics and credentials. Restrict worker egress for untrusted connections. Indexed recipe and comment text follows normal Ferret search, chunking and configured embedding behavior.
 
-Source: [plugin](../../crates/ferret-plugins/src/plugins/mealie.rs), [real-server behavioral tests](../../crates/ferret-server/tests/mealie_plugin.rs). Mealie v3.29.0 is the schema baseline; this is not a claim of compatibility with all historical releases.
+Source: [plugin](../../crates/ferret-plugins/src/plugins/mealie.rs), [real-server behavioral tests](../../crates/ferret-server/tests/mealie_plugin.rs). Checked against an isolated real Mealie **v3.29.0** container: registered-worker ingestion and keyword search for ingredients/instructions/notes/comments, resolving origin links, unchanged no-op, note/comment edits, UUID-preserving rename with updated deep link, and deletion/read-back. The stable image digest was `sha256:78eb28b8776d0bad40c5e605c72b3f4f5976793e491558c7dcbdfc04c835d4bc`. This is not a claim of compatibility with all historical releases.

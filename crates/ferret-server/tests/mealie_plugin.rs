@@ -256,7 +256,7 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
     assert_eq!(original.content_type, ContentType::Markdown);
     assert_eq!(
         original.url.as_deref(),
-        Some("https://recipes.example.test/kitchen/g/family%20&%20friends/r/recipe-1")
+        Some("https://recipes.example.test/kitchen/g/family%20&%20friends/r/recipe-1/")
     );
     assert!(original.authors.is_empty());
     assert_eq!(
@@ -320,7 +320,7 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
     assert_eq!(
         renamed.url.as_deref(),
         Some(
-            "https://recipes.example.test/kitchen/g/family%20&%20friends/r/renamed%20%2F%20soup%3F%23"
+            "https://recipes.example.test/kitchen/g/family%20&%20friends/r/renamed%20%2F%20soup%3F%23/"
         )
     );
     assert_eq!(

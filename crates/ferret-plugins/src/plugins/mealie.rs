@@ -24,7 +24,8 @@ pub struct MealieConfig {
     /// Instance root people open. Defaults to `url`.
     #[serde(default)]
     public_url: Option<String>,
-    /// Mealie user API token. The plugin only reads, but the token has its owner's capabilities.
+    /// Copies all accessible recipes in the token user's group, across households.
+    /// The plugin only reads, but this Mealie API token has its owner's capabilities.
     #[schemars(extend("writeOnly" = true))]
     token: String,
 }
@@ -297,7 +298,9 @@ fn recipe_url(base: &str, group: &str, slug: &str) -> String {
         .push("g")
         .push(group)
         .push("r")
-        .push(slug);
+        .push(slug)
+        // Mealie's static frontend serves recipe routes only with their trailing slash.
+        .push("");
     url.into()
 }
 
