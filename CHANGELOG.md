@@ -2,11 +2,9 @@
 
 ## Unreleased
 
-### Breaking changes
+### Features
 
 - Origin document creation and modification timestamps are independently nullable across REST, MCP, GraphQL and the Rust client. Ingest requests still require both keys; use explicit null for unknown dates. Consumers must handle nullable dates without substitutes.
-
-### Features
 
 - Add the built-in Home Assistant plugin for searchable inventory and faithful loaded automation/script definitions, with hourly full reconciliation, named recognized relationships and no runtime telemetry.
 
