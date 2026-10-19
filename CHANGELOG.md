@@ -1,19 +1,38 @@
 # CHANGELOG
 
-## Unreleased
 
-### Features
+## v0.26.0 (2026-10-19)
 
-- Origin document creation and modification timestamps are independently nullable across REST, MCP, GraphQL and the Rust client. Ingest requests still require both keys; use explicit null for unknown dates. Consumers must handle nullable dates without substitutes.
 
-- Add the built-in Home Assistant plugin for searchable inventory and faithful loaded automation/script definitions, with hourly full reconciliation, named recognized relationships and no runtime telemetry.
+### ✨ Features
 
-### Fixes
 
-- Preserve stale recognized Home Assistant configuration targets as explicitly unresolved relationships without failing successful inventory syncs.
-- Normalize Home Assistant's zero registry-date sentinel to null, including typed metadata, and consume owned WebSocket/definition JSON without full-tree cloning.
-- Accept Home Assistant's explicit null-as-empty trigger/action/script sequence syntax without rewriting the loaded definition; retain strict missing-definition and invalid-shape failure behavior.
+- ✨Merge pull request #173 from thiesgerken/feat/homeassistant-indexing
+  ([`b2a6815`](https://github.com/thiesgerken/ferret/commit/b2a68151f98f0090bd7e399df95f90cb27eaa489))
 
+- ✨ feat(homeassistant): index inventory and configured behavior with nullable origin dates
+  ([`b2a6815`](https://github.com/thiesgerken/ferret/commit/b2a68151f98f0090bd7e399df95f90cb27eaa489))
+
+- ✨ feat(homeassistant): index inventory and configured behavior with nullable origin dates
+  ([`a28873b`](https://github.com/thiesgerken/ferret/commit/a28873b06e84558692f62c5480d8da8890aa4863))
+
+### Other
+
+
+- ✅ test(homeassistant): require exact behavior document search hits
+  ([`76c1429`](https://github.com/thiesgerken/ferret/commit/76c1429294163b6d63550108cadcdf7590ba5598))
+
+- 📝 docs(changelog): classify nullable origin dates as a feature
+  ([`31b9785`](https://github.com/thiesgerken/ferret/commit/31b9785d9f7377387309eb7b2fef74e98aaad952))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): preserve valid null definition sequences
+  ([`9d7a37e`](https://github.com/thiesgerken/ferret/commit/9d7a37e4f34357eadbc62563c9b3b2d41ea7e791))
+
+- 🐛 fix(homeassistant): preserve stale targets and unknown registry dates
+  ([`5d46172`](https://github.com/thiesgerken/ferret/commit/5d46172148864657bcde209868e14dec86571160))
 
 ## v0.25.0 (2026-10-19)
 
