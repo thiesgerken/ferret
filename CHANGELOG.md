@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.23.1 (2026-10-19)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.14.0
+  ([`f1db1bc`](https://github.com/thiesgerken/ferret/commit/f1db1bc26aff7f36c7434ca07a878d86c12267d5))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
 ## v0.23.0 (2026-10-18)
 
 
