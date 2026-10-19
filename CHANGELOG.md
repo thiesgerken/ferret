@@ -12,6 +12,7 @@
 
 - Preserve stale recognized Home Assistant configuration targets as explicitly unresolved relationships without failing successful inventory syncs.
 - Normalize Home Assistant's zero registry-date sentinel to null, including typed metadata, and consume owned WebSocket/definition JSON without full-tree cloning.
+- Accept Home Assistant's explicit null-as-empty trigger/action/script sequence syntax without rewriting the loaded definition; retain strict missing-definition and invalid-shape failure behavior.
 
 
 ## v0.24.1 (2026-10-19)

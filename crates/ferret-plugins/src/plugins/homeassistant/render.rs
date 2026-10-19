@@ -126,12 +126,11 @@ pub fn documents(
                     device.name(),
                     device.id
                 )?;
-                let included: Vec<_> = snapshot
+                let has_included_entity = snapshot
                     .entities
                     .values()
-                    .filter(|e| e.eligible() && e.device_id() == Some(&device.id))
-                    .collect();
-                if included.is_empty() {
+                    .any(|e| e.eligible() && e.device_id() == Some(&device.id));
+                if !has_included_entity {
                     text.push_str("No entities included under indexing rules.\n");
                 }
                 count += 1;

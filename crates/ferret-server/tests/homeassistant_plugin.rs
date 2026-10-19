@@ -656,3 +656,110 @@ async fn migrated_unknown_registry_dates_are_null_and_do_not_match_epoch_filters
         10
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn null_empty_sequences_are_ingested_faithfully_and_reruns_are_unchanged(pool: PgPool) {
+    let origin = origin();
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    for (trigger_key, action_key) in [("triggers", "actions"), ("trigger", "action")] {
+        for (triggers, actions) in [
+            (Value::Null, json!([{"delay": 1}])),
+            (json!([]), Value::Null),
+            (Value::Null, Value::Null),
+        ] {
+            let automation = json!({(trigger_key): triggers, (action_key): actions});
+            let script = json!({"sequence": null});
+            {
+                let mut o = origin.lock();
+                o.definitions
+                    .insert("automation.evening_reading".into(), automation.clone());
+                o.definitions
+                    .insert("script.reading_setup".into(), script.clone());
+            }
+            plugins::run("homeassistant", &run).await.unwrap();
+            let docs = documents(&server, &pool).await;
+            for (suffix, definition) in [("/automations", &automation), ("/scripts", &script)] {
+                let document = docs.iter().find(|d| d.source.ends_with(suffix)).unwrap();
+                let rendered = document
+                    .text
+                    .split("```json\n")
+                    .nth(1)
+                    .unwrap()
+                    .split("\n```")
+                    .next()
+                    .unwrap();
+                assert_eq!(
+                    serde_json::from_str::<Value>(rendered).unwrap(),
+                    *definition
+                );
+                assert!(
+                    !finds(&server, document.title.as_deref().unwrap())
+                        .await
+                        .is_empty()
+                );
+            }
+            assert_eq!(
+                plugins::run("homeassistant", &run)
+                    .await
+                    .unwrap()
+                    .stats
+                    .unchanged,
+                10
+            );
+        }
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn invalid_required_definition_shapes_still_fail_without_sweeping(pool: PgPool) {
+    let origin = origin();
+    let original_definitions = origin.lock().definitions.clone();
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    plugins::run("homeassistant", &run).await.unwrap();
+    for (entity_id, invalid) in [
+        ("automation.evening_reading", Value::Null),
+        ("automation.evening_reading", json!([])),
+        (
+            "automation.evening_reading",
+            json!("invalid top-level definition"),
+        ),
+        ("automation.evening_reading", json!({"triggers": null})),
+        ("automation.evening_reading", json!({"actions": null})),
+        ("automation.evening_reading", json!({"trigger": null})),
+        ("automation.evening_reading", json!({"action": null})),
+        (
+            "automation.evening_reading",
+            json!({"triggers": false, "actions": null}),
+        ),
+        (
+            "automation.evening_reading",
+            json!({"triggers": null, "actions": 1}),
+        ),
+        (
+            "automation.evening_reading",
+            json!({"trigger": "invalid", "action": null}),
+        ),
+        (
+            "automation.evening_reading",
+            json!({"trigger": null, "action": false}),
+        ),
+        ("script.reading_setup", Value::Null),
+        ("script.reading_setup", json!({})),
+        ("script.reading_setup", json!({"sequence": "invalid"})),
+    ] {
+        {
+            let mut o = origin.lock();
+            o.definitions = original_definitions.clone();
+            o.definitions.insert(entity_id.into(), invalid.clone());
+        }
+        assert!(
+            plugins::run("homeassistant", &run).await.is_err(),
+            "{entity_id}: {invalid}"
+        );
+        assert_eq!(documents(&server, &pool).await.len(), 10);
+    }
+}

@@ -317,7 +317,8 @@ impl Snapshot {
                     None
                 }
             });
-            let sequence_shape = |value: &Value| value.is_array() || value.is_object();
+            let sequence_shape =
+                |value: &Value| value.is_null() || value.is_array() || value.is_object();
             if !actions.is_some_and(sequence_shape)
                 || (entity.domain() == "automation"
                     && !config
