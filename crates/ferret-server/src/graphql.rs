@@ -57,6 +57,7 @@ pub struct Context {
     pool: PgPool,
     embedding: Arc<Embedding>,
     config_key: Arc<ConfigKey>,
+    statistics: Arc<crate::statistics::Statistics>,
 }
 
 impl juniper::Context for Context {}
@@ -70,13 +71,29 @@ impl Query {
         &context.user
     }
 
-    /// Current signed-in-user content by writer, independent of ingest-feed filters.
-    /// Storage is an attribution estimate in bytes, excluding the shared embedding cache.
-    async fn writer_statistics(context: &Context) -> FieldResult<WriterStatistics> {
-        let statistics = writer_stats::load(&context.pool, context.user.id)
+    /// The signed-in user's homepage totals, cached for 60 seconds.
+    async fn index_summary(context: &Context) -> FieldResult<IndexSummary> {
+        let totals = context
+            .statistics
+            .totals(&context.pool, context.user.id)
             .await
             .map_err(internal)?;
-        Ok(WriterStatistics::from(statistics))
+        Ok(IndexSummary {
+            documents: count(totals.documents),
+            chunks: count(totals.chunks),
+            sources: count(totals.sources),
+        })
+    }
+
+    /// Signed-in-user content by writer, cached for five seconds independently of ingest-feed filters.
+    /// Storage is an attribution estimate in bytes, excluding the shared embedding cache.
+    async fn writer_statistics(context: &Context) -> FieldResult<WriterStatistics> {
+        let statistics = context
+            .statistics
+            .writers(&context.pool, context.user.id)
+            .await
+            .map_err(internal)?;
+        Ok(WriterStatistics::from(statistics.as_ref()))
     }
 
     /// Every user. Admins only.
@@ -149,20 +166,26 @@ impl Query {
         require_admin(context)?;
         let statuses = context
             .embedding
-            .status(&context.pool)
+            .status(&context.pool, &context.statistics)
             .await
             .map_err(internal)?;
         Ok(statuses.into_iter().map(ModelStatus::from).collect())
     }
 
     /// Every embedding model that has embedded, configured or not, the configured ones first.
-    /// Admins only.
+    /// Cached for five seconds. Admins only.
     async fn stored_embedding_models(context: &Context) -> FieldResult<Vec<StoredEmbeddingModel>> {
         require_admin(context)?;
-        let models = model_registry::list(&context.pool, &context.embedding)
+        let models = context
+            .statistics
+            .global(&context.pool, &context.embedding)
             .await
             .map_err(internal)?;
-        Ok(models.into_iter().map(StoredEmbeddingModel::from).collect())
+        Ok(models
+            .stored
+            .iter()
+            .map(StoredEmbeddingModel::from)
+            .collect())
     }
 
     /// The signed-in user's API keys, newest first.
@@ -257,8 +280,7 @@ impl Query {
                 id: model.id().to_owned(),
                 configured_default: model.id() == default,
                 min_similarity: model.config.min_similarity,
-                backlog: OnceCell::new(),
-                rate: OnceCell::new(),
+                progress: OnceCell::new(),
             })
             .collect()
     }
@@ -765,8 +787,8 @@ struct WriterModelStorage {
     index_bytes: f64,
 }
 
-impl From<writer_stats::Storage> for WriterStorage {
-    fn from(storage: writer_stats::Storage) -> Self {
+impl From<&writer_stats::Storage> for WriterStorage {
+    fn from(storage: &writer_stats::Storage) -> Self {
         Self {
             total: storage.total(),
             documents: storage.documents,
@@ -777,26 +799,26 @@ impl From<writer_stats::Storage> for WriterStorage {
     }
 }
 
-impl From<writer_stats::Statistics> for WriterStatistics {
-    fn from(statistics: writer_stats::Statistics) -> Self {
+impl From<&writer_stats::Statistics> for WriterStatistics {
+    fn from(statistics: &writer_stats::Statistics) -> Self {
         Self {
             documents: count(statistics.documents),
             chunks: count(statistics.chunks),
-            storage: statistics.storage.into(),
+            storage: (&statistics.storage).into(),
             rows: statistics
                 .rows
-                .into_iter()
+                .iter()
                 .map(|row| WriterStatisticsRow {
-                    writer: row.writer.map(Writer::from),
-                    sources: row.sources.into_iter().collect(),
+                    writer: row.writer.clone().map(Writer::from),
+                    sources: row.sources.iter().cloned().collect(),
                     documents: count(row.documents),
                     chunks: count(row.chunks),
-                    storage: row.storage.into(),
+                    storage: (&row.storage).into(),
                     models: row
                         .models
-                        .into_values()
+                        .values()
                         .map(|model| WriterModelStorage {
-                            model: model.model,
+                            model: model.model.clone(),
                             embedded: count(model.embedded),
                             row_bytes: model.row_bytes,
                             index_bytes: model.index_bytes,
@@ -1040,13 +1062,20 @@ fn search_facet_counts(counts: Vec<ferret_api::FacetCount>) -> Vec<FacetCount> {
         .collect()
 }
 
+#[derive(GraphQLObject)]
+struct IndexSummary {
+    documents: i32,
+    chunks: i32,
+    /// Distinct source-facet writers, including at most one unknown writer.
+    sources: i32,
+}
+
 struct EmbeddingModel {
     id: String,
     configured_default: bool,
     min_similarity: f64,
-    // Each worked out once per request, however many fields need it: the Activity page polls.
-    backlog: OnceCell<(i64, i64)>,
-    rate: OnceCell<f64>,
+    // Pin coverage fields to one snapshot even if a request spans cache expiry.
+    progress: OnceCell<Arc<crate::statistics::Progress>>,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -1067,21 +1096,15 @@ impl EmbeddingModel {
         self.min_similarity
     }
 
-    /// How many of the user's chunks the model has embedded. Counted only when asked for, the
-    /// search page lists the models without it.
+    /// How many of the user's chunks the model has embedded, in a five-second progress snapshot.
+    /// Loaded only when progress is requested; the search page lists models without it.
     async fn embedded(&self, context: &Context) -> FieldResult<i32> {
-        embeddings::embedded_chunks(&context.pool, context.user.id, &self.id)
-            .await
-            .map(count)
-            .map_err(internal)
+        Ok(count(self.progress(context).await?.embedded))
     }
 
-    /// How many chunks the user has.
+    /// Total user chunks in the same five-second snapshot as embedded, pending and failed.
     async fn chunks(&self, context: &Context) -> FieldResult<i32> {
-        embeddings::chunks(&context.pool, context.user.id)
-            .await
-            .map(count)
-            .map_err(internal)
+        Ok(count(self.progress(context).await?.chunks()))
     }
 
     /// The user's chunks still waiting for the embed pump.
@@ -1126,19 +1149,28 @@ impl EmbeddingModel {
 }
 
 impl EmbeddingModel {
-    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
-        self.backlog
-            .get_or_try_init(|| embeddings::user_backlog(&context.pool, context.user.id, &self.id))
+    async fn progress(&self, context: &Context) -> FieldResult<&crate::statistics::Progress> {
+        self.progress
+            .get_or_try_init(|| {
+                context
+                    .statistics
+                    .progress(&context.pool, context.user.id, &self.id)
+            })
             .await
-            .copied()
+            .map(Arc::as_ref)
             .map_err(internal)
     }
 
+    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
+        let progress = self.progress(context).await?;
+        Ok((progress.pending, progress.failed))
+    }
+
     async fn rate(&self, context: &Context) -> FieldResult<f64> {
-        self.rate
-            .get_or_try_init(|| embeddings::rate_per_minute(&context.pool, &self.id))
+        context
+            .statistics
+            .rate(&context.pool, &self.id)
             .await
-            .copied()
             .map_err(internal)
     }
 
@@ -1544,7 +1576,10 @@ impl Mutation {
     async fn delete_embedding_model(context: &Context, id: String) -> FieldResult<String> {
         require_admin(context)?;
         match model_registry::delete(&context.pool, &context.embedding, &id).await {
-            Ok(()) => Ok(id),
+            Ok(()) => {
+                context.statistics.invalidate_model_statistics().await;
+                Ok(id)
+            }
             Err(DeleteError::NotStored) => Err(invalid_input(format!(
                 "no embedding model {id:?} has stored embeddings"
             ))),
@@ -1728,7 +1763,7 @@ fn search_error(error: SearchError) -> FieldError {
 }
 
 /// Database failures are logged, the client only learns that something went wrong.
-fn internal(error: sqlx::Error) -> FieldError {
+fn internal(error: impl std::fmt::Display) -> FieldError {
     tracing::error!(%error, "database error");
     FieldError::new("internal error", graphql_value!(null))
 }
@@ -1773,6 +1808,7 @@ pub async fn handle(
         pool: state.pool.clone(),
         embedding: state.embedding.clone(),
         config_key: state.config_key.clone(),
+        statistics: state.statistics.clone(),
     };
     let response = request.execute(&state.schema, &context).await;
     let status = if response.is_ok() {
@@ -1857,10 +1893,10 @@ struct StoredEmbeddingModel {
     row_bytes_estimate: f64,
 }
 
-impl From<model_registry::StoredModel> for StoredEmbeddingModel {
-    fn from(model: model_registry::StoredModel) -> Self {
+impl From<&model_registry::StoredModel> for StoredEmbeddingModel {
+    fn from(model: &model_registry::StoredModel) -> Self {
         Self {
-            id: model.id,
+            id: model.id.clone(),
             dimension: model.dimension,
             first_seen: model.first_seen,
             configured: model.configured,
@@ -1983,9 +2019,9 @@ impl From<embeddings::ModelStatus> for ModelStatus {
             query_api: ModelEndpoint::from(status.query_api),
             backlog: status
                 .backlog
-                .into_iter()
+                .iter()
                 .map(|backlog| SourceBacklog {
-                    source: backlog.source,
+                    source: backlog.source.clone(),
                     pending: count(backlog.pending),
                     failed: count(backlog.failed),
                 })

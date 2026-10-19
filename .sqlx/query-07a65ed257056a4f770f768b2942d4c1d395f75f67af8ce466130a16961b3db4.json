@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(e.chunk_id) as \"embedded!\",\n                              count(*) filter (where e.chunk_id is null and f.chunk_id is null) as \"pending!\",\n                              count(*) filter (where e.chunk_id is null and f.chunk_id is not null) as \"failed!\"\n                       from chunks c\n                       left join chunk_embeddings e on e.chunk_id = c.id and e.model = $2 and e.user_id = $1\n                       left join embedding_failures f on f.chunk_id = c.id and f.model = $2\n                       where c.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "embedded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "07a65ed257056a4f770f768b2942d4c1d395f75f67af8ce466130a16961b3db4"
+}

@@ -181,6 +181,12 @@ across all users, the exact size of its HNSW index and an estimated size of its 
 vector size: the table is shared, so this is not exact). Models that are no longer configured are
 marked as such.
 
+Stored counts and sizes share a five-second snapshot on each server replica with Admin's model
+progress. The confirmation's displayed embedding count is a snapshot, not a deletion limit:
+the mutation checks the live registry/configuration and removes all of that model's data in its
+transaction. A successful deletion invalidates stored-model and writer-statistics snapshots on
+the answering replica; other replicas expire theirs within five seconds.
+
 Only those can be deleted. Deleting a configured model is rejected: remove it from YAML and restart
 first, so no pump embeds for it and no personal default points at it (startup resets those). After
 a confirmation that names the model and its embedding count, one transaction removes its chunk
@@ -203,6 +209,18 @@ backlog per source and its endpoints: whether each answered at all, and its last
 time. Both come from the answering server process's own requests. ETA is a recent-throughput
 estimate, absent without progress, not an SLA. A completed plugin run does not mean backfill is
 done.
+
+Database progress, per-source backlog and rate snapshots are shared for five seconds per server
+replica; user progress is scoped by user and model. Concurrent requests for the same scope share
+one refresh. Each user's embedded/pending/failed counts partition one SQL snapshot; their sum is
+the coverage denominator, without a separate chunk-count query. Admin's stored counts and
+source backlogs share one repeatable-read snapshot, and their sum provides its denominator.
+Thus coverage totals refresh with progress after five seconds, while homepage totals remain
+independently cached for 60 seconds. Activity's complete writer-statistics snapshot is also
+shared for five seconds, including its global allocation denominators. Endpoint reachability and
+last errors are read live, not frozen in these database snapshots. Failed refreshes return errors
+(shared for five seconds), not zero counts or stale success. These are cached exact aggregates,
+not write-time running counters.
 
 **Test** on a model in Admin embeds a short text through each of its endpoints, with the document
 prefix for chunks and the query prefix for queries, checks the answer like any other and shows the

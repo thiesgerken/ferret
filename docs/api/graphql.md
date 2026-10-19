@@ -40,6 +40,17 @@ curl --fail-with-body -sS "$FERRET_URL/graphql" \
 
 Search and REST share retrieval logic. GraphQL adds UI concerns such as judgments and relative ranges (`DAY`, `WEEK`, `MONTH`, `YEAR`) in place of an explicit `from`; inspect the canonical enum before constructing other inputs. `document(id:)` returns full text and thread neighbors for the viewer. `explore(input:)` browses documents without query terms.
 
+`indexSummary { documents chunks sources }` returns the signed-in user's homepage totals without
+loading Explore's document page or other facets. Its snapshot lasts 60 seconds. `sources` preserves
+the homepage's writer meaning: distinct writer IDs from the unfiltered exact-source facets, plus
+at most one Unknown writer. It is not a count of source paths or document-writer groups.
+Connection coverage and the most recently modified keyed document determine each source's writer
+just as in Explore. `embeddingModels.chunks` instead uses the same five-second progress snapshot
+as that model's `embedded`, `pending` and `failed` counts; their sum is its denominator. The
+snapshot is pinned for all coverage fields in one request. Admin's stored-model counts and
+source backlogs likewise share one five-second database snapshot. Coverage remains coherent
+across ingest, embedding and deletion even while the homepage retains its older minute-long total.
+
 Activity query:
 
 ```graphql
@@ -55,9 +66,10 @@ query Activity($before: String) {
 
 Pass the last row's cursor for the next older page. Limits are 1–200, default 50. `writer` filters by key/connection id; `allUsers:true` requires admin. Do not confuse this cursor with REST search's numeric offset.
 
-`writerStatistics` always returns the signed-in user's current whole index, including for admins,
-independently of `activity(writer: ..., allUsers: ...)`. `writer: null` is the explicit Unknown
-writer group. Counts are exact; storage fields are estimated bytes:
+`writerStatistics` always describes the signed-in user's whole index, including for admins,
+independently of `activity(writer: ..., allUsers: ...)`. Its coherent complete snapshot is shared
+for five seconds per user and server replica. `writer: null` is the explicit Unknown writer group.
+Counts are exact at snapshot time; storage fields are estimated bytes:
 
 ```graphql
 {

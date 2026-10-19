@@ -244,11 +244,11 @@ type EmbeddingModel {
   "The cosine similarity below which search drops the model's semantic candidates."
   minSimilarity: Float!
   """
-    How many of the user's chunks the model has embedded. Counted only when asked for, the
-    search page lists the models without it.
+    How many of the user's chunks the model has embedded, in a five-second progress snapshot.
+    Loaded only when progress is requested; the search page lists models without it.
   """
   embedded: Int!
-  "How many chunks the user has."
+  "Total user chunks in the same five-second snapshot as embedded, pending and failed."
   chunks: Int!
   "The user's chunks still waiting for the embed pump."
   pending: Int!
@@ -394,6 +394,13 @@ type HitChunk {
   endOffset: Int!
   "The chunk's text, cut into parts that match the query and parts that don't."
   parts: [TextPart!]!
+}
+
+type IndexSummary {
+  documents: Int!
+  chunks: Int!
+  "Distinct source-facet writers, including at most one unknown writer."
+  sources: Int!
 }
 
 type Ingest {
@@ -546,8 +553,10 @@ type PluginType {
 type Query {
   "The signed-in user."
   me: User!
+  "The signed-in user's homepage totals, cached for 60 seconds."
+  indexSummary: IndexSummary!
   """
-    Current signed-in-user content by writer, independent of ingest-feed filters.
+    Signed-in-user content by writer, cached for five seconds independently of ingest-feed filters.
     Storage is an attribution estimate in bytes, excluding the shared embedding cache.
   """
   writerStatistics: WriterStatistics!
@@ -566,7 +575,7 @@ type Query {
   embeddingStatus: [ModelStatus!]!
   """
     Every embedding model that has embedded, configured or not, the configured ones first.
-    Admins only.
+    Cached for five seconds. Admins only.
   """
   storedEmbeddingModels: [StoredEmbeddingModel!]!
   "The signed-in user's API keys, newest first."

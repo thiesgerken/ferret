@@ -73,10 +73,12 @@ details work with keyboard, pointer and touch.
 
 The migration backfills row estimates once. Database triggers maintain them when stored content
 changes; generated chunk text-byte counts track text/title changes. Seen-time/API-key-only
-updates reuse document size estimates, but attribution is resolved afresh. Every visible-tab
-five-second Activity refresh reads current numeric sizes and counts in one repeatable-read
-snapshot. It does not rescan/detoast full document/chunk content or vectors for sizing. This is
-still an aggregate over current rows, not a constant-time counter or a cached ingestion total.
+updates reuse document size estimates, but attribution is resolved afresh on snapshot refresh.
+Visible Activity tabs poll every five seconds. The server shares each user's complete
+repeatable-read snapshot for five seconds, including the global counts used for allocation, so
+concurrent tabs do not each rescan the content tables. A refresh reads numeric sizes and counts,
+not full document/chunk content or vectors for sizing. This is still an aggregate over current
+rows, not a constant-time counter or a cached ingestion total.
 
 These are attribution estimates, **not exact physical disk usage or bytes reclaimed by deletion**.
 Row estimates precede final TOAST compression/page placement and do not account for heap free

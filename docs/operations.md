@@ -6,6 +6,23 @@ Operate the index, origins and model-serving infrastructure as separate failure 
 
 `GET /healthz` on server port 8080 executes `select 1`: 200 means database reachable, 503 means not. It is unauthenticated but need not be exposed by the reverse proxy. It does not test model inference, worker availability or origin credentials. The Helm server liveness/startup probes use TCP; readiness uses this database check, avoiding pointless server restarts during a database outage.
 
+Readiness has its own pool with at most one connection per server replica, separate from the
+application pool. Acquisition has a 250 ms deadline; the complete acquire/query check has a
+750 ms deadline, below Helm's one-second readiness timeout. A saturated application pool does
+not consume this capacity. Database outages, exhausted database-wide connections or a query
+that misses its deadline still return 503. Budget one additional database connection per replica;
+graceful server shutdown closes the readiness pool.
+
+Homepage document/chunk/source totals use 60-second database snapshots. Embedding progress,
+including its chunk denominator, backlog, rate, stored-model statistics and Activity's complete
+writer-statistics snapshot use five seconds. Coverage denominators come from the same database
+snapshot as their embedded/pending/failed counts, not the homepage snapshot. Snapshots are shared
+within a server replica, deduplicate concurrent refreshes of the same scope and retain at most
+128 scopes per cache.
+Different users have separate scopes; endpoint health remains live. Refresh errors are returned
+as errors and shared for five seconds, never converted to zeros or served as stale success.
+Cold/expired refreshes still execute real aggregates and can be slow on a CPU-starved database.
+
 ```sh
 # Local direct server, not the static frontend proxy route:
 curl --fail-with-body http://127.0.0.1:8380/healthz
@@ -58,6 +75,12 @@ embedding rows, and adds stored numeric size estimates plus write-time triggers.
 row updates, index maintenance, temporary disk/WAL growth and migration locks when scheduling an
 upgrade of a large index. Subsequent Activity polls read numeric sizes rather than sizing full
 content again. No manual backfill command or re-ingestion is needed.
+
+The statistics-index migration builds `chunks(user_id)` and
+`chunk_embeddings(user_id, model)` during startup. Normal transactional index creation can block
+writes and adds disk/WAL work; allow an upgrade window for a large corpus. It requires no
+re-ingestion or manual backfill. These indexes help selective user counts, not broad all-user
+backlog scans; short-lived shared snapshots reduce how often those scans execute.
 
 ```sh
 helm upgrade ferret ./charts/ferret -n ferret -f deployment-values.yaml

@@ -12,17 +12,12 @@ const QUERY: &str = "{ writerStatistics {
     rows { writer { id name kind } sources documents chunks
            storage { documents chunks embeddings indexes total }
            models { model embedded rowBytes indexBytes } }
-} explore(input: {}) { total } embeddingModels { chunks } }";
+} }";
 
 async fn statistics(server: &TestServer, cookie: &str) -> Value {
     let body = server.graphql(cookie, QUERY, json!({})).await;
     assert_eq!(body["errors"], Value::Null, "{body}");
     let result = &body["data"]["writerStatistics"];
-    assert_eq!(result["documents"], body["data"]["explore"]["total"]);
-    assert_eq!(
-        result["chunks"],
-        body["data"]["embeddingModels"][0]["chunks"]
-    );
     let rows = result["rows"].as_array().unwrap();
     for field in ["documents", "chunks"] {
         assert_eq!(
@@ -116,6 +111,7 @@ async fn counts_current_documents_once_and_tracks_attribution_updates_and_deleti
         .execute(&pool)
         .await
         .unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let before = statistics(&server, &cookie).await;
     assert_eq!(before["documents"], 6);
     assert_eq!(before["chunks"], 5);
@@ -147,6 +143,7 @@ async fn counts_current_documents_once_and_tracks_attribution_updates_and_deleti
         let renamed = server.graphql(&cookie, "mutation ($id: ID!, $name: String!) { updateApiKey(id: $id, name: $name, icon: \"key-round\") { id } }", json!({"id": id["id"], "name": format!("Key {index}")})).await;
         assert_eq!(renamed["errors"], Value::Null, "{renamed}");
     }
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let moved = statistics(&server, &cookie).await;
     assert_eq!(moved["rows"].as_array().unwrap().len(), 4);
     assert_eq!(moved["documents"], before["documents"]);
@@ -175,6 +172,7 @@ async fn counts_current_documents_once_and_tracks_attribution_updates_and_deleti
     let mut changed = original.clone();
     changed.text = "A substantially longer new body. ".repeat(250);
     api.put_document(&changed).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let updated = statistics(&server, &cookie).await;
     assert!(updated["chunks"].as_i64().unwrap() > before["chunks"].as_i64().unwrap());
     assert!(
@@ -182,6 +180,7 @@ async fn counts_current_documents_once_and_tracks_attribution_updates_and_deleti
             > before["storage"]["documents"].as_f64().unwrap()
     );
     api.delete_document("inbox", "a").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let deleted = statistics(&server, &cookie).await;
     assert_eq!(deleted["documents"], 5);
     assert_eq!(deleted["chunks"], 4);
@@ -201,6 +200,7 @@ async fn counts_current_documents_once_and_tracks_attribution_updates_and_deleti
         json!("Stored metadata ".repeat(100)),
     );
     api.put_document(&metadata_only).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let metadata_updated = statistics(&server, &cookie).await;
     assert_eq!(metadata_updated["chunks"], deleted["chunks"]);
     assert!(
@@ -239,6 +239,7 @@ async fn all_models_and_shared_indexes_are_allocated_without_cross_user_content_
         from chunks c cross join embedding_models m where m.id in ('retired', 'other')").execute(&pool).await.unwrap();
     sqlx::query("create index chunk_embeddings_hnsw_retired on chunk_embeddings using hnsw ((embedding::halfvec(3)) halfvec_cosine_ops) where model = 'retired'").execute(&pool).await.unwrap();
     sqlx::query("create index chunk_embeddings_hnsw_other on chunk_embeddings using hnsw ((embedding::halfvec(3)) halfvec_cosine_ops) where model = 'other'").execute(&pool).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let after = statistics(&server, &cookie).await;
     assert_eq!(after["documents"], before["documents"]);
     assert_eq!(after["chunks"], before["chunks"]);
@@ -276,6 +277,7 @@ async fn all_models_and_shared_indexes_are_allocated_without_cross_user_content_
         "shared/query cache contributes no writer bytes"
     );
     api.delete_document("inbox", "a").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let deleted = statistics(&server, &cookie).await;
     assert_eq!(deleted["documents"], 0);
     assert_eq!(deleted["storage"]["total"], 0.0);
