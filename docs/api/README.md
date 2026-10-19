@@ -13,6 +13,8 @@ Choose the surface by caller, not by which credential is easiest to copy.
 
 The REST reference owns machine endpoint contracts. [Ingestion](../ingestion.md) owns safe producer workflows; [auth](../auth.md) owns permissions and trust boundaries. Shared wire types live in [ferret-api](../../crates/ferret-api/src/lib.rs). The [GraphQL schema](../../frontend/schema.graphql) is canonical for the UI API.
 
+The independent [WhatsApp archive HTTP API](whatsapp-archive.md) is a separate read-only service with its own mounted bearer Secret, not another ferret public endpoint. Its guide also specifies ferret's live-run-only archive-binding operation.
+
 ## Conventions
 
 REST uses JSON, snake_case fields, RFC 3339 timestamps and UUID document/sync ids. GraphQL uses camelCase and uppercase enum values. Both scope document access to the authenticated user. A source root includes descendants by whole path segments, not arbitrary prefix matches.

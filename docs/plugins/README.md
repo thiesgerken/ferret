@@ -2,6 +2,8 @@
 
 For configuring built-ins use [git](git.md), [Gitea](gitea.md), [Home Assistant](homeassistant.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
 
+The [WhatsApp archive](whatsapp.md) plugin additionally uses an independent read-only archive API container.
+
 A plugin is code in a worker, not code dynamically loaded into the server. Registration advertises a name and JSON Schema; the server stores schemas for validation/UI forms. Workers claim only names they advertised. Third-party workers can implement the same protocol without linking the built-in Rust binary, but the PSK is a trusted cross-user credential.
 
 ## Built-in Rust interface
@@ -13,6 +15,8 @@ A plugin is code in a worker, not code dynamically loaded into the server. Regis
 - a run log and operator-fixed options (currently Git transport allowlist).
 
 `Outcome` returns JSON state and `RunStats { put, unchanged, deleted }`. The server saves state only on successful finish. Returning an error does not roll back earlier puts or deletes. After a failed/lost run, the next claim supplies `{}` instead of the stored cursor: those partial writes may no longer match it, so the plugin must fully reconcile. A subsequent successful run restores cursor reuse. Never use a new cursor until all origin pages and required writes have completed.
+
+The WhatsApp connection's permanent archive binding is separate from that disposable cursor. Its live run token can atomically compare-or-initialize only its own binding before ingestion; ordinary ingest API keys cannot bind or replace archives. See the [binding contract](../api/whatsapp-archive.md#ferrets-separate-archive-binding-operation).
 
 ## A complete minimal plugin
 

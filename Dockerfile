@@ -1,4 +1,4 @@
-# Two images from one file: `--target server` (the default, last stage) and `--target plugins`.
+# Targets: server (default), plugins, whatsapp-archive.
 # Each target builds only its own binary, so plugin dependencies never slow down server builds.
 FROM rust:1.99.0-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS builder
 WORKDIR /build
@@ -10,6 +10,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --release --locked -p ferret-plugins \
     && cp target/release/ferret-plugins /ferret-plugins
+
+FROM builder AS build-whatsapp-archive
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --locked -p ferret-whatsapp-archive \
+    && cp target/release/ferret-whatsapp-archive /ferret-whatsapp-archive
 
 FROM builder AS build-server
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -30,6 +36,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 COPY --from=build-plugins /ferret-plugins /usr/local/bin/ferret-plugins
 USER nobody
 CMD ["ferret-plugins"]
+
+FROM runtime AS whatsapp-archive
+COPY --from=build-whatsapp-archive /ferret-whatsapp-archive /usr/local/bin/ferret-whatsapp-archive
+USER nobody
+EXPOSE 8080
+CMD ["ferret-whatsapp-archive"]
 
 FROM runtime AS server
 COPY --from=build-server /ferret /usr/local/bin/ferret

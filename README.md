@@ -145,6 +145,7 @@ Start at the [documentation index](docs/README.md), or go directly to:
 - Plugin setup: [git](docs/plugins/git.md), [Gitea](docs/plugins/gitea.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md),
   [Vikunja](docs/plugins/vikunja.md), [Karakeep](docs/plugins/karakeep.md), [Mealie](docs/plugins/mealie.md), [Moneta](docs/plugins/moneta.md), [Home Assistant](docs/plugins/homeassistant.md).
+- [WhatsApp archive](docs/plugins/whatsapp.md): read-only archive API container and scheduled chat ingestion.
 - [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
 - [API guide](docs/api/README.md): REST and GraphQL contracts and credential choices.
 - [Architecture](docs/architecture.md): components, data flows and subsystem references.

@@ -10,6 +10,7 @@ async-imap.workspace = true
 base64.workspace = true
 chrono = { workspace = true, features = ["std"] }
 ferret-api.workspace = true
+ferret-whatsapp-archive = { path = "../ferret-whatsapp-archive", default-features = false }
 futures-util.workspace = true
 globset.workspace = true
 lol_html.workspace = true

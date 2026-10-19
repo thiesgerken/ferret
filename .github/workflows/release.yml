@@ -60,6 +60,9 @@ jobs:
           - image: ferret-plugins
             context: .
             target: plugins
+          - image: ferret-whatsapp-archive
+            context: .
+            target: whatsapp-archive
           - image: ferret-frontend
             context: frontend
             target: ""
@@ -125,6 +128,7 @@ jobs:
           \`\`\`
           docker pull ghcr.io/${owner}/ferret:${version}
           docker pull ghcr.io/${owner}/ferret-plugins:${version}
+          docker pull ghcr.io/${owner}/ferret-whatsapp-archive:${version}
           docker pull ghcr.io/${owner}/ferret-frontend:${version}
           \`\`\`
 

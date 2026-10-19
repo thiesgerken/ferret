@@ -141,6 +141,10 @@ All three operations require `ingest:write`. JSON request types reject unknown f
 
 Start validates a complete authorized sweep root. Seen's exact source must be the root or a descendant; unknown external ids are ignored and not counted. Commit sweeps all root/descendant documents not put/seen since start and closes the sync. A repeated seen/commit after closure returns 409. Missing syncs return 404. Sync access is user/root-bound rather than exclusive to the creating key. Puts do not take a sync-id parameter. The [ingester workflow](../ingestion.md) explains why enumeration failure must never reach commit.
 
+## Archive identity: `PUT /api/run/archive-binding`
+
+Only a live WhatsApp plugin run token may compare-or-initialize its own connection's permanent archive identity. Ordinary API keys cannot call it. Request: `{"store_id":"<32 lowercase hexadecimal characters>"}`; success: 204; mismatch: 409. The binding survives disposable cursor resets and cannot be replaced through this operation. See the [full contract](whatsapp-archive.md#ferrets-separate-archive-binding-operation).
+
 ## Users: `GET /api/users`
 
 Requires `admin:read` (or `admin:write`) and an owner who is currently an admin. Returns a JSON array of `{id, username, display_name, is_admin, enabled}` for every user. No pagination and no password hashes. This is the only current public REST admin endpoint; connection/user/key mutations are GraphQL.
