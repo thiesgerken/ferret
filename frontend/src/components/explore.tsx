@@ -293,8 +293,8 @@ function DocumentTable({
             </td>
             <td className={cell("type")}>{t(`contentType.${document.contentType}`)}</td>
             <td className={cell("authors")}>{document.authors.join(", ")}</td>
-            <td className={cell("created")}>{format.dateTime(new Date(document.createdAt), UTC_DATE)}</td>
-            <td className={cell("modified")}>{format.dateTime(new Date(document.modifiedAt), UTC_DATE)}</td>
+            <td className={cell("created")}>{document.createdAt ? format.dateTime(new Date(document.createdAt), UTC_DATE) : ""}</td>
+            <td className={cell("modified")}>{document.modifiedAt ? format.dateTime(new Date(document.modifiedAt), UTC_DATE) : ""}</td>
           </tr>
         ))}
       </tbody>

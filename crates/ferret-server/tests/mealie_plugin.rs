@@ -243,8 +243,8 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
             url: None,
             thread: None,
             authors: vec![],
-            created_at: common::day(1),
-            modified_at: common::day(1),
+            created_at: Some(common::day(1)),
+            modified_at: Some(common::day(1)),
             meta: Default::default(),
         })
         .await
@@ -261,13 +261,15 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
     assert!(original.authors.is_empty());
     assert_eq!(
         original.created_at,
-        CREATED.parse::<chrono::DateTime<chrono::Utc>>().unwrap()
+        Some(CREATED.parse::<chrono::DateTime<chrono::Utc>>().unwrap())
     );
     assert_eq!(
         original.modified_at,
-        COMMENT_UPDATED
-            .parse::<chrono::DateTime<chrono::Utc>>()
-            .unwrap()
+        Some(
+            COMMENT_UPDATED
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap()
+        )
     );
     assert!(original.text.contains("**Kneadsentinel**"));
     assert!(original.text.contains("Author: Chef Sentinel"));
@@ -325,9 +327,11 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
     );
     assert_eq!(
         renamed.modified_at,
-        "2026-06-07T12:00:00Z"
-            .parse::<chrono::DateTime<chrono::Utc>>()
-            .unwrap()
+        Some(
+            "2026-06-07T12:00:00Z"
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap()
+        )
     );
     assert_eq!(
         find(&server, "Editedtagssentinel").await[0].modified_at,

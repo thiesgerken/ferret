@@ -121,8 +121,8 @@ pub struct SearchHit {
     /// The connection or API key that put the document into ferret.
     writer: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
     /// The thread (mail conversation, chat) the document belongs to.
     thread: Option<String>,
     /// More documents of the same thread that matched, folded into this hit.
@@ -154,8 +154,8 @@ pub struct FullDocument {
     /// The connection or API key that put the document into ferret.
     writer: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
     thread: Option<String>,
     /// The whole text.
     text: String,
@@ -340,7 +340,7 @@ async fn list_sources(
     // The key of the most recently modified document that has one, see `Writers::of_source`.
     let rows = sqlx::query!(
         r#"select source, count(*) as "documents!",
-                  (array_agg(api_key_id order by modified_at desc)
+                  (array_agg(api_key_id order by modified_at desc nulls last)
                        filter (where api_key_id is not null))[1] as api_key_id
            from documents
            where user_id = $1

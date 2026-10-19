@@ -51,8 +51,8 @@ pub struct ExploredDocument {
     pub content_type: String,
     pub title: Option<String>,
     pub authors: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub modified_at: Option<DateTime<Utc>>,
     api_key_id: Option<Uuid>,
     /// Resolved from `api_key_id` and the source once the query ran.
     #[sqlx(skip)]
@@ -153,7 +153,7 @@ pub async fn explore(
     // The id breaks ties, so pages don't overlap or skip rows.
     documents
         .push(format!(
-            " order by {column} {direction}, d.id {direction} offset "
+            " order by {column} {direction} nulls last, d.id {direction} offset "
         ))
         .push_bind(page.offset)
         .push(" limit ")
@@ -162,7 +162,7 @@ pub async fn explore(
     // The key of the most recently modified document that has one, see `Writers::of_source`.
     let mut by_source = QueryBuilder::new(
         "select d.source as value, count(*),
-                (array_agg(d.api_key_id order by d.modified_at desc)
+                (array_agg(d.api_key_id order by d.modified_at desc nulls last)
                      filter (where d.api_key_id is not null))[1] as api_key_id
          from documents d",
     );
@@ -175,7 +175,7 @@ pub async fn explore(
     by_selected_source.push_bind(filter.sources.clone()).push(
         "::text[]) root cross join lateral (
                  select count(*),
-                        (array_agg(d.api_key_id order by d.modified_at desc)
+                        (array_agg(d.api_key_id order by d.modified_at desc nulls last)
                              filter (where d.api_key_id is not null))[1] as api_key_id
                  from documents d",
     );
@@ -216,7 +216,7 @@ pub async fn explore(
          from documents d",
     );
     push_filters(&mut by_month, user_id, filter, Some(Facet::Month));
-    by_month.push(" group by 1 order by 1 desc");
+    by_month.push(" and d.created_at is not null group by 1 order by 1 desc");
 
     // One after another on one connection, so a page view never holds more than one of the pool's.
     let mut connection = pool.acquire().await?;

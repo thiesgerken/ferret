@@ -159,7 +159,7 @@ impl Statistics {
                 let writers = Writers::load(&mut tx, user).await?;
                 let sources = sqlx::query!(
                     r#"select source, count(*) as "documents!",
-                              (array_agg(api_key_id order by modified_at desc)
+                              (array_agg(api_key_id order by modified_at desc nulls last)
                                    filter (where api_key_id is not null))[1] as api_key_id
                        from documents where user_id = $1 group by source"#,
                     user,

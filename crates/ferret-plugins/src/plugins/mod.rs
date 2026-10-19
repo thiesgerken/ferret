@@ -12,6 +12,7 @@ pub mod affine;
 pub mod carapace;
 pub mod git;
 pub mod gitea;
+pub mod homeassistant;
 pub mod imap;
 pub mod karakeep;
 pub mod mealie;
@@ -44,6 +45,13 @@ pub fn registrations() -> Vec<PluginRegistration> {
             name: gitea::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(gitea::GiteaConfig))
                 .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: homeassistant::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(
+                homeassistant::HomeAssistantConfig
+            ))
+            .expect("a schema serializes"),
         },
         PluginRegistration {
             name: imap::NAME.to_owned(),
@@ -144,6 +152,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
         carapace::NAME => carapace::run(run).await,
         git::NAME => git::run(run).await,
         gitea::NAME => gitea::run(run).await,
+        homeassistant::NAME => homeassistant::run(run).await,
         imap::NAME => imap::run(run).await,
         karakeep::NAME => karakeep::run(run).await,
         mealie::NAME => mealie::run(run).await,

@@ -2,6 +2,7 @@
 const PLUGIN_ICONS: Record<string, string> = {
   affine: "notebook-pen",
   git: "git-branch",
+  homeassistant: "house",
   carapace: "brain",
   paperless: "file-text",
   imap: "mail",

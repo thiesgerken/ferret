@@ -381,8 +381,8 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
         url: Some(url.clone()),
         thread: None,
         authors: Vec::new(),
-        created_at: session.created_at,
-        modified_at: session.created_at,
+        created_at: Some(session.created_at),
+        modified_at: Some(session.created_at),
         meta,
     }];
     let mut seen = HashSet::new();
@@ -408,8 +408,8 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
             url: Some(url.clone()),
             thread: None,
             authors: Vec::new(),
-            created_at: session.created_at,
-            modified_at: session.created_at,
+            created_at: Some(session.created_at),
+            modified_at: Some(session.created_at),
             meta: fact_meta(fact, &session.session_id),
         });
     }
@@ -437,8 +437,8 @@ fn file_document(
         url: Some(target.url("/knowledge", "path", path)),
         thread: None,
         authors: vec![history.author.clone()],
-        created_at: history.created_at,
-        modified_at: history.modified_at,
+        created_at: Some(history.created_at),
+        modified_at: Some(history.modified_at),
         meta: Map::new(),
     }
 }
@@ -473,8 +473,8 @@ fn digest_document(digest: &Digest, target: &Target) -> DocumentPut {
         url: Some(target.url("/memory/timeline", "period", &digest.period_key)),
         thread: None,
         authors: Vec::new(),
-        created_at: digest.created_at,
-        modified_at: digest.created_at,
+        created_at: Some(digest.created_at),
+        modified_at: Some(digest.created_at),
         meta,
     }
 }

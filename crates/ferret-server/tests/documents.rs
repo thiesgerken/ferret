@@ -90,7 +90,7 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
     note.url = Some("obsidian://open?vault=main&file=plan".to_owned());
     note.thread = Some("planning".to_owned());
     note.meta = json!({"tags": ["work"]}).as_object().unwrap().clone();
-    note.modified_at = day(2);
+    note.modified_at = Some(day(2));
 
     let id = api.put_document(&note).await.unwrap().id().unwrap();
     let stored = api.document(id).await.unwrap();

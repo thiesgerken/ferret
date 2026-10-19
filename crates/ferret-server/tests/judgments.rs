@@ -240,7 +240,7 @@ async fn relative_ranges_are_judged_as_presets(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let api = server.admin_api().await;
     let mut recent = document("notes", "a", "A recent invoice.");
-    recent.created_at = chrono::Utc::now();
+    recent.created_at = Some(chrono::Utc::now());
     let id = api
         .put_document(&recent)
         .await

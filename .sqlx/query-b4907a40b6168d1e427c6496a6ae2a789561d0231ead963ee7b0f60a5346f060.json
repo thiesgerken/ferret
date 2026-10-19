@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, title from documents\n         where user_id = $1 and source = $2 and thread = $3 and (created_at, id) > ($4, $5)\n         order by created_at, id limit 1",
+  "query": "select id, title from documents\n         where user_id = $1 and source = $2 and thread = $3\n           and (($4::timestamptz is not null and created_at is null)\n             or created_at > $4 or (created_at is not distinct from $4 and id > $5))\n         order by created_at nulls last, id limit 1",
   "describe": {
     "columns": [
       {
@@ -40,5 +40,5 @@
       true
     ]
   },
-  "hash": "e1a9db4ca0aefff3eee67eaa4cf6915891c6fd09180af9aff6574247328ef22b"
+  "hash": "b4907a40b6168d1e427c6496a6ae2a789561d0231ead963ee7b0f60a5346f060"
 }

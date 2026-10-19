@@ -286,8 +286,8 @@ async fn from_and_to_filter_on_created_at(pool: PgPool) {
     let api = server.admin_api().await;
     for created in [1, 10, 20] {
         let mut note = document("notes", &format!("day {created}"), "dated note");
-        note.created_at = day(created);
-        note.modified_at = day(28);
+        note.created_at = Some(day(created));
+        note.modified_at = Some(day(28));
         api.put_document(&note).await.unwrap();
     }
 

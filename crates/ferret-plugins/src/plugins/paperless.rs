@@ -241,11 +241,13 @@ fn to_document(
         authors: correspondent.into_iter().collect(),
         // Paperless keeps only the date. Noon UTC keeps that date in every time zone from UTC-11
         // to UTC+11.
-        created_at: document
-            .created
-            .and_time(NaiveTime::from_hms_opt(12, 0, 0).expect("noon exists"))
-            .and_utc(),
-        modified_at: document.modified,
+        created_at: Some(
+            document
+                .created
+                .and_time(NaiveTime::from_hms_opt(12, 0, 0).expect("noon exists"))
+                .and_utc(),
+        ),
+        modified_at: Some(document.modified),
         meta,
     }
 }
@@ -396,11 +398,11 @@ mod tests {
         );
         assert_eq!(insurance.authors, ["Allianz"]);
         assert_eq!(
-            insurance.created_at.to_rfc3339(),
+            insurance.created_at.unwrap().to_rfc3339(),
             "2025-01-14T12:00:00+00:00"
         );
         assert_eq!(
-            insurance.modified_at.to_rfc3339(),
+            insurance.modified_at.unwrap().to_rfc3339(),
             "2025-01-16T07:41:07.518236+00:00"
         );
         assert_eq!(

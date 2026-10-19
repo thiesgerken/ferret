@@ -31,6 +31,8 @@ For example, MCP `tools/call` parameters are:
 
 Then call `get_document` with the returned `document_id`, or use the hit's `url` with the origin's own tools. `external_id` is not the UUID expected by `get_document`. `list_sources` takes no filters. `search` defaults to hybrid and ten hits, accepts limits 1 through 100, collapses threads, and returns `next_cursor` for subsequent pages. Pass the same search arguments with that cursor; it is not a snapshot of a changing index.
 
+Search hits and full-document responses carry independently nullable `created_at` and `modified_at` origin dates. Null means unknown, not the ingestion date. Unfiltered search includes undated documents; explicit creation-date bounds exclude unknown creation dates.
+
 Authorization is checked on every request and tool. A key only sees its user's documents within its allowed source roots. Hybrid search can return keyword-only hits with `semantic_unavailable`; semantic-only search fails when embeddings cannot serve the query. The tools are read-only. There is no MCP ingest tool.
 
 ## Diagnose before changing credentials

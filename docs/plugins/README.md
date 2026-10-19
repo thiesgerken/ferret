@@ -1,6 +1,6 @@
 # Plugin implementation contract
 
-For configuring built-ins use [git](git.md), [Gitea](gitea.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
+For configuring built-ins use [git](git.md), [Gitea](gitea.md), [Home Assistant](homeassistant.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
 
 A plugin is code in a worker, not code dynamically loaded into the server. Registration advertises a name and JSON Schema; the server stores schemas for validation/UI forms. Workers claim only names they advertised. Third-party workers can implement the same protocol without linking the built-in Rust binary, but the PSK is a trusted cross-user credential.
 
@@ -53,8 +53,8 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         url: config.url,
         thread: None,
         authors: Vec::new(),
-        created_at: config.created_at,
-        modified_at: config.modified_at,
+        created_at: Some(config.created_at),
+        modified_at: Some(config.modified_at),
         meta: Default::default(),
     };
     let mut stats = RunStats::default();
@@ -120,6 +120,8 @@ The server retains the tail of run logs (64 Ki characters). A worker should reco
 ## Safe origin synchronization
 
 Use stable `(source, external_id)` identity and explicit content type. Respect exclusions (`PutResponse::Excluded` is not an error). Enumerate the full owned root before committing a sweep; mark unchanged ids seen. An incremental cursor may instead apply explicit origin deletions, provided missed history triggers a full sync. Failure to enumerate is never evidence of an empty origin.
+
+Use independent nullable origin timestamps when dates are unknown; never use the run clock, state-change time or the other origin date as a substitute. Composite documents may have a known creation time but no reliable modification time covering their definitions and membership. Their full serialized content, not a modified-since shortcut, still detects changes.
 
 Allowlist transports where origins can point at worker resources. A plugin worker has origin credentials and network access; an arbitrary URL fetcher can reach internal services unless the operator constrains egress. Avoid logging tokens even on error, including HTTP bodies that might echo secrets. The run's config/token are intentionally omitted from its Debug output.
 

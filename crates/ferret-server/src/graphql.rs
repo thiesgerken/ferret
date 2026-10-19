@@ -695,8 +695,8 @@ struct ExploredDocument {
     content_type: ContentType,
     title: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
 }
 
 /// How many documents each facet value has. A facet's counts apply every filter except its own,
@@ -1200,8 +1200,8 @@ struct Hit {
     url: Option<String>,
     thread: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
     /// The connection or API key that put the document, null for one from before writers were
     /// recorded.
     writer: Option<Writer>,
@@ -1284,8 +1284,8 @@ struct Document {
     url: Option<String>,
     thread: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
     /// The document before this one in its thread, null at its start or without a thread.
     previous_in_thread: Option<ThreadNeighbor>,
     /// The document after this one in its thread, null at its end or without a thread.

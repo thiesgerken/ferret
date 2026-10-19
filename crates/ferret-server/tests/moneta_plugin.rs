@@ -186,8 +186,8 @@ async fn expenses_preserve_financial_semantics_dates_and_identity_and_reconcile_
         url: None,
         thread: None,
         authors: vec![],
-        created_at: common::day(1),
-        modified_at: common::day(1),
+        created_at: Some(common::day(1)),
+        modified_at: Some(common::day(1)),
         meta: Default::default(),
     };
     run.api.put_document(&sibling).await.unwrap();
@@ -204,11 +204,11 @@ async fn expenses_preserve_financial_semantics_dates_and_identity_and_reconcile_
     assert!(original.authors.is_empty());
     assert_eq!(
         original.created_at,
-        VALUE_DATE.parse::<chrono::DateTime<chrono::Utc>>().unwrap()
+        Some(VALUE_DATE.parse::<chrono::DateTime<chrono::Utc>>().unwrap())
     );
     assert_eq!(
         original.modified_at,
-        UPDATED.parse::<chrono::DateTime<chrono::Utc>>().unwrap()
+        Some(UPDATED.parse::<chrono::DateTime<chrono::Utc>>().unwrap())
     );
     assert_eq!(original.meta["expense"]["createdAt"], CREATED);
     assert_eq!(original.meta["expense"]["updatedAt"], UPDATED);
@@ -292,9 +292,11 @@ async fn expenses_preserve_financial_semantics_dates_and_identity_and_reconcile_
     assert_eq!(edited.id, original.id);
     assert_eq!(
         edited.modified_at,
-        "2026-05-06T12:00:00Z"
-            .parse::<chrono::DateTime<chrono::Utc>>()
-            .unwrap()
+        Some(
+            "2026-05-06T12:00:00Z"
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap()
+        )
     );
     assert_eq!(
         find(&server, "Renamedcategorysentinel").await[0].id,

@@ -20,7 +20,7 @@ All fields except `public_url` are required. `url` must reach the instance direc
 
 ## Mapping and reconciliation
 
-One live workspace doc becomes one Markdown document at the connection source, identified by AFFiNE doc id. Title prefers the rendered page title, then workspace metadata. Origin links use `/workspace/<workspace-id>/<doc-id>`. No threads or authors are assigned. Creation uses workspace metadata when present, otherwise the observed update time; modification uses AFFiNE's merged update timestamp.
+One live workspace doc becomes one Markdown document at the connection source, identified by AFFiNE doc id. Title prefers the rendered page title, then workspace metadata. Origin links use `/workspace/<workspace-id>/<doc-id>`. No threads or authors are assigned. Creation uses workspace metadata when present and otherwise stays null; modification independently uses AFFiNE's merged update timestamp. The update time is not a substitute creation date.
 
 Every run reads the workspace root's document list, excludes trash, marks live ids seen, fetches changed content and commits a sweep. A ten-minute overlap catches merge lag around the saved update cursor. Docs restored from trash are fetched again. Changing instance/workspace addresses refetches all docs. Removing/trashing a doc removes the indexed copy on successful reconciliation.
 

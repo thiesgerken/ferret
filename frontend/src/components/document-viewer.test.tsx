@@ -16,6 +16,10 @@ async function renderViewer(
   hit: { start: number; end: number } | null,
   operations: Operation[] = [],
   url = "obsidian://open?file=note.md",
+  dates: { createdAt: string | null; modifiedAt: string | null } = {
+    createdAt: "2026-01-01T12:00:00Z",
+    modifiedAt: "2026-01-02T12:00:00Z",
+  },
 ) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const client = createGraphqlClient(async (_url, init) => {
@@ -40,8 +44,7 @@ async function renderViewer(
           text,
           url,
           authors: ["thies"],
-          createdAt: "2026-01-01T12:00:00Z",
-          modifiedAt: "2026-01-02T12:00:00Z",
+          ...dates,
           previousInThread: null,
           nextInThread: { __typename: "ThreadNeighbor", id: "e", title: null },
         },
@@ -117,6 +120,17 @@ test("email shows its headers above the body", async () => {
 
   assert.match(view.container.querySelector("dl")?.textContent ?? "", /FromthiesSubjectA noteDate/);
   assert.equal(view.container.querySelector("#hit"), null);
+  await view.unmount();
+});
+
+test("undated email omits unknown origin dates instead of formatting substitute dates", async () => {
+  const view = await renderViewer("EMAIL", "Undated cobalt correspondence", null, [], "https://example.test", {
+    createdAt: null,
+    modifiedAt: null,
+  });
+  assert.doesNotMatch(view.container.querySelector("header")?.textContent ?? "", /modified|1970|Jan 1|Jan 2/i);
+  assert.deepEqual([...view.container.querySelectorAll("dt")].map((element) => element.textContent), ["From", "Subject"]);
+  assert.match(view.container.textContent ?? "", /Undated cobalt correspondence/);
   await view.unmount();
 });
 

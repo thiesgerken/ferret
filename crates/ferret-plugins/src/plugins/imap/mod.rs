@@ -312,7 +312,7 @@ struct Thread {
 
 struct ThreadMail {
     id: String,
-    written: DateTime<Utc>,
+    written: Option<DateTime<Utc>>,
     text: String,
 }
 
@@ -354,7 +354,11 @@ impl Threads {
             .mails
             .iter()
             .filter(|earlier| {
-                earlier.id != document.external_id && earlier.written < document.created_at
+                earlier.id != document.external_id
+                    && earlier
+                        .written
+                        .zip(document.created_at)
+                        .is_some_and(|(earlier, current)| earlier < current)
             })
             .map(|earlier| earlier.text.as_str())
             .collect();

@@ -371,8 +371,8 @@ fn to_document(expense: Expense, links: &str, source: &str) -> Result<DocumentPu
         url: Some(format!("{links}/expenses?expense={}", expense.id)),
         thread: None,
         authors: Vec::new(),
-        created_at,
-        modified_at: expense.updated_at,
+        created_at: Some(created_at),
+        modified_at: Some(expense.updated_at),
         meta,
     })
 }

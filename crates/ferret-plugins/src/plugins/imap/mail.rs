@@ -73,8 +73,8 @@ pub fn document(
         }),
         thread: Some(thread(&message).unwrap_or_else(|| id.to_owned())),
         authors: message.from().into_iter().flat_map(names).collect(),
-        created_at,
-        modified_at: created_at,
+        created_at: Some(created_at),
+        modified_at: Some(created_at),
         meta,
     })
 }
@@ -174,7 +174,7 @@ mod tests {
         );
         assert_eq!(original.authors, ["Alice Example"]);
         assert_eq!(
-            original.created_at.to_rfc3339(),
+            original.created_at.unwrap().to_rfc3339(),
             "2025-01-13T08:12:00+00:00"
         );
         assert_eq!(original.modified_at, original.created_at);

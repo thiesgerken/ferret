@@ -510,7 +510,7 @@ async fn the_total_is_a_lower_bound_only_while_more_chunks_could_pass_the_cut_of
     let mut extra = document("other", "extra", "My automobile. excludedword");
     extra.content_type = ferret_api::ContentType::Markdown;
     extra.authors = vec!["other".to_owned()];
-    extra.created_at = common::day(2);
+    extra.created_at = Some(common::day(2));
     api.put_document(&extra).await.unwrap();
     server.wait_for_embeddings(101).await;
     let response = api.search(&query("vehicle")).await.unwrap();

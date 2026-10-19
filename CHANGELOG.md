@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Unreleased
+
+### Features
+
+- Origin document creation and modification timestamps are independently nullable across REST, MCP, GraphQL and the Rust client. Ingest requests still require both keys; use explicit null for unknown dates. Consumers must handle nullable dates without substitutes.
+
+- Add the built-in Home Assistant plugin for searchable inventory and faithful loaded automation/script definitions, with hourly full reconciliation, named recognized relationships and no runtime telemetry.
+
+### Fixes
+
+- Preserve stale recognized Home Assistant configuration targets as explicitly unresolved relationships without failing successful inventory syncs.
+- Normalize Home Assistant's zero registry-date sentinel to null, including typed metadata, and consume owned WebSocket/definition JSON without full-tree cloning.
+- Accept Home Assistant's explicit null-as-empty trigger/action/script sequence syntax without rewriting the loaded definition; retain strict missing-definition and invalid-shape failure behavior.
+
 
 ## v0.25.0 (2026-10-19)
 

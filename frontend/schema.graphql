@@ -225,8 +225,8 @@ type Document {
   url: String
   thread: String
   authors: [String!]!
-  createdAt: DateTime!
-  modifiedAt: DateTime!
+  createdAt: DateTime
+  modifiedAt: DateTime
   "The document before this one in its thread, null at its start or without a thread."
   previousInThread: ThreadNeighbor
   "The document after this one in its thread, null at its end or without a thread."
@@ -327,8 +327,8 @@ type ExploredDocument {
   contentType: ContentType!
   title: String
   authors: [String!]!
-  createdAt: DateTime!
-  modifiedAt: DateTime!
+  createdAt: DateTime
+  modifiedAt: DateTime
 }
 
 type FacetCount {
@@ -360,8 +360,8 @@ type Hit {
   url: String
   thread: String
   authors: [String!]!
-  createdAt: DateTime!
-  modifiedAt: DateTime!
+  createdAt: DateTime
+  modifiedAt: DateTime
   """
     The connection or API key that put the document, null for one from before writers were
     recorded.

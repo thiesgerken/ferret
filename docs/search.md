@@ -8,6 +8,8 @@ Enter a query on the home page. **Keyword** and **Semantic** are independent tog
 
 Source and author facets narrow results. A source includes descendants; several selected sources/authors are alternatives within that filter, while different filter kinds combine. Time filters use document **creation** time, not modification or ingestion time. The UI also offers Explore for browsing without a query. A copied search URL preserves query/filter choices. The API additionally accepts content types and explicit timestamps.
 
+Unknown origin creation and modification dates stay null in REST, GraphQL and MCP. Undated documents participate in keyword, semantic and hybrid search without date filters. An explicit creation-date bound excludes unknown creation dates; it never filters on ingestion/seen time. The UI omits missing dates; Explore leaves their date cells empty, sorts unknown dates last in either direction, and does not invent a month facet for them. Thread listings and viewer neighbors place unknown creation dates after dated documents, ordered by document id.
+
 Click the hit title to open the local viewer at its best passage. **Open in origin**, the external-link icon, opens its `url` when the UI considers that URL safe. A stored unsafe scheme is not turned into a clickable origin. With no URL, the local viewer is the origin. The viewer renders Markdown/plain/email text, metadata and previous/next thread navigation; it is not an original-file/PDF archive. Snippets are previews, not the full document.
 
 ## Query syntax

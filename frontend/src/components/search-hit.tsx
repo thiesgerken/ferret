@@ -47,7 +47,7 @@ export function HitItem({
   const originUrl = linkableUrl(hit.url);
   const meta = [
     hit.authors.join(", "),
-    format.dateTime(new Date(hit.createdAt), { day: "numeric", month: "short", year: "numeric" }),
+    hit.createdAt ? format.dateTime(new Date(hit.createdAt), { day: "numeric", month: "short", year: "numeric" }) : null,
   ].filter(Boolean);
 
   return (

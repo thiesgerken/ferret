@@ -297,8 +297,10 @@ pub async fn thread_neighbors(
     let previous = sqlx::query_as!(
         ThreadNeighbor,
         "select id, title from documents
-         where user_id = $1 and source = $2 and thread = $3 and (created_at, id) < ($4, $5)
-         order by created_at desc, id desc limit 1",
+         where user_id = $1 and source = $2 and thread = $3
+           and (($4::timestamptz is null and created_at is not null)
+             or created_at < $4 or (created_at is not distinct from $4 and id < $5))
+         order by created_at desc nulls first, id desc limit 1",
         user_id,
         document.source,
         thread,
@@ -310,8 +312,10 @@ pub async fn thread_neighbors(
     let next = sqlx::query_as!(
         ThreadNeighbor,
         "select id, title from documents
-         where user_id = $1 and source = $2 and thread = $3 and (created_at, id) > ($4, $5)
-         order by created_at, id limit 1",
+         where user_id = $1 and source = $2 and thread = $3
+           and (($4::timestamptz is not null and created_at is null)
+             or created_at > $4 or (created_at is not distinct from $4 and id > $5))
+         order by created_at nulls last, id limit 1",
         user_id,
         document.source,
         thread,
@@ -333,8 +337,8 @@ struct DocumentRow {
     url: Option<String>,
     thread: Option<String>,
     authors: Vec<String>,
-    created_at: DateTime<Utc>,
-    modified_at: DateTime<Utc>,
+    created_at: Option<DateTime<Utc>>,
+    modified_at: Option<DateTime<Utc>>,
     api_key_id: Option<Uuid>,
     meta: Jsonb<serde_json::Map<String, serde_json::Value>>,
 }

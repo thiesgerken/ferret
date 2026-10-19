@@ -13,7 +13,7 @@ async fn ingest(api: &Client) -> Vec<Uuid> {
     for (external_id, created) in [("reply-2", 12), ("start", 10), ("reply-1", 11)] {
         let mut mail = document("mail/personal", external_id, "About the invoice for March.");
         mail.thread = Some("invoices".to_owned());
-        mail.created_at = day(created);
+        mail.created_at = Some(day(created));
         thread.push((
             created,
             api.put_document(&mail).await.unwrap().id().unwrap(),

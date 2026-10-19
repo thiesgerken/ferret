@@ -45,4 +45,5 @@ rmcp = { workspace = true, features = ["client", "transport-streamable-http-clie
 ferret-plugins = { path = "../ferret-plugins" }
 futures-util.workspace = true
 tempfile.workspace = true
+tokio-tungstenite.workspace = true
 yrs.workspace = true

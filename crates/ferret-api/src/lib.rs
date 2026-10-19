@@ -60,8 +60,12 @@ pub struct DocumentPut {
     /// Groups documents into a sequence, e.g. a chat channel or a mail thread.
     pub thread: Option<String>,
     pub authors: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+    /// Origin creation time, null when unknown independently of modification time.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub created_at: Option<DateTime<Utc>>,
+    /// Origin modification time, null when no reliable time covers this representation.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub modified_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub meta: Map<String, Value>,
 }
@@ -106,8 +110,8 @@ pub struct Document {
     pub url: Option<String>,
     pub thread: Option<String>,
     pub authors: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub modified_at: Option<DateTime<Utc>>,
     pub meta: Map<String, Value>,
     /// The connection or API key that put it, `None` for one from before writers were recorded.
     pub writer: Option<Writer>,
@@ -242,8 +246,8 @@ pub struct Hit {
     pub url: Option<String>,
     pub thread: Option<String>,
     pub authors: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub modified_at: Option<DateTime<Utc>>,
     /// The best BM25 score among the document's chunks in the keyword half's candidates, `None`
     /// when none of them is.
     pub keyword_score: Option<f32>,
