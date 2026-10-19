@@ -25,7 +25,8 @@ pub struct Device {
     pub connections: BTreeSet<(String, String)>,
     pub identifiers: BTreeSet<(String, String)>,
     pub labels: BTreeSet<String>,
-    pub created_at: f64,
+    #[serde(deserialize_with = "registry_date")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl Device {
@@ -44,7 +45,8 @@ pub struct Area {
     pub aliases: BTreeSet<String>,
     pub floor_id: Option<String>,
     pub labels: BTreeSet<String>,
-    pub created_at: f64,
+    #[serde(deserialize_with = "registry_date")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -81,7 +83,8 @@ pub struct RegistryEntity {
     pub hidden_by: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub entity_category: Option<String>,
-    pub created_at: f64,
+    #[serde(deserialize_with = "registry_date")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -144,11 +147,8 @@ impl Entity {
             |r| format!("registry:{}", r.id),
         )
     }
-    pub fn created_at(&self) -> Result<Option<DateTime<Utc>>, PluginError> {
-        self.registry
-            .as_ref()
-            .map(|r| timestamp(r.created_at))
-            .transpose()
+    pub fn created_at(&self) -> Option<DateTime<Utc>> {
+        self.registry.as_ref().and_then(|r| r.created_at)
     }
 }
 
@@ -164,14 +164,25 @@ pub struct Snapshot {
     pub relations: BTreeMap<(String, String), Relations>,
 }
 
-pub fn timestamp(seconds: f64) -> Result<DateTime<Utc>, PluginError> {
+fn registry_date<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error> {
+    timestamp(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+pub fn timestamp(seconds: f64) -> Result<Option<DateTime<Utc>>, PluginError> {
     if !seconds.is_finite()
         || seconds < i64::MIN as f64 / 1000.0
         || seconds > i64::MAX as f64 / 1000.0
     {
         return Err("Home Assistant returned an invalid registry timestamp".into());
     }
+    // Older registry migrations use zero when the origin has no historical date.
+    if seconds == 0.0 {
+        return Ok(None);
+    }
     DateTime::from_timestamp_millis((seconds * 1000.0).round() as i64)
+        .map(Some)
         .ok_or_else(|| "Home Assistant returned an out-of-range registry timestamp".into())
 }
 
@@ -282,15 +293,16 @@ impl Snapshot {
             .values()
             .filter(|e| e.eligible() && e.dedicated())
         {
-            let result: Value = session
+            let mut result: Value = session
                 .command(
                     &format!("{}/config", entity.domain()),
                     json!({"entity_id": entity.entity_id}),
                 )
                 .await?;
             let config = result
-                .get("config")
+                .get_mut("config")
                 .filter(|v| v.is_object())
+                .map(Value::take)
                 .ok_or("Home Assistant omitted a required automation/script definition")?;
             let required = if entity.domain() == "script" {
                 "sequence"
@@ -320,7 +332,7 @@ impl Snapshot {
             }
             snapshot
                 .definitions
-                .insert(entity.entity_id.clone(), config.clone());
+                .insert(entity.entity_id.clone(), config);
         }
         let queries: Vec<_> = snapshot
             .devices
@@ -347,7 +359,6 @@ impl Snapshot {
                     json!({"item_type": kind, "item_id": id, "include_disabled_entities": true}),
                 )
                 .await?;
-            snapshot.validate_relations(&relations)?;
             snapshot.relations.insert((kind, id), relations);
         }
         Ok(snapshot)
@@ -363,7 +374,6 @@ impl Snapshot {
     fn validate(&self) -> Result<(), PluginError> {
         for device in self.devices.values() {
             self.validate_labels(&device.labels)?;
-            timestamp(device.created_at)?;
             self.device_area(&device.id)?;
             for id in [&device.parent_device_id, &device.via_device_id]
                 .into_iter()
@@ -376,7 +386,6 @@ impl Snapshot {
         }
         for area in self.areas.values() {
             self.validate_labels(&area.labels)?;
-            timestamp(area.created_at)?;
             if area
                 .floor_id
                 .as_ref()
@@ -395,7 +404,6 @@ impl Snapshot {
             }
             if let Some(registry) = &entity.registry {
                 self.validate_labels(&registry.labels)?;
-                timestamp(registry.created_at)?;
                 if registry
                     .device_id
                     .as_ref()
@@ -407,28 +415,6 @@ impl Snapshot {
                 }
             }
             self.entity_area(entity)?;
-        }
-        Ok(())
-    }
-
-    fn validate_relations(&self, relations: &Relations) -> Result<(), PluginError> {
-        for (kind, ids) in relations {
-            for id in ids {
-                let resolved = match kind.as_str() {
-                    "device" => self.devices.contains_key(id),
-                    "area" => self.areas.contains_key(id),
-                    "floor" => self.floors.contains_key(id),
-                    "label" => self.labels.contains_key(id),
-                    "entity" | "automation" | "script" => self.entities.contains_key(id),
-                    _ => true,
-                };
-                if !resolved {
-                    return Err(
-                        "Home Assistant returned an unresolved recognized resource reference"
-                            .into(),
-                    );
-                }
-            }
         }
         Ok(())
     }

@@ -99,23 +99,24 @@ impl Session {
     ) -> Result<T, PluginError> {
         let id = self.next_id;
         self.next_id += 1;
-        let mut request = fields
-            .as_object()
-            .ok_or("Invalid Home Assistant command fields")?
-            .clone();
+        let Value::Object(mut request) = fields else {
+            return Err("Invalid Home Assistant command fields".into());
+        };
         request.insert("id".into(), id.into());
         request.insert("type".into(), kind.into());
         tokio::time::timeout(DEADLINE, async {
             self.send(Value::Object(request)).await?;
-            let response = self.receive().await?;
-            if response["type"] != "result" || response["id"].as_u64() != Some(id) {
+            let Value::Object(mut response) = self.receive().await? else {
+                return Err::<T, PluginError>("Home Assistant returned an unexpected command result".into());
+            };
+            if response.get("type").and_then(Value::as_str) != Some("result") || response.get("id").and_then(Value::as_u64) != Some(id) {
                 return Err::<T, PluginError>("Home Assistant returned an unexpected command result".into());
             }
-            if response["success"] != true {
+            if response.get("success").and_then(Value::as_bool) != Some(true) {
                 // Origin error bodies may contain definitions or credentials.
                 return Err(format!("Home Assistant command {kind} failed; check administrator access and origin consistency").into());
             }
-            serde_json::from_value(response.get("result").ok_or("Home Assistant omitted a command result")?.clone())
+            serde_json::from_value(response.remove("result").ok_or("Home Assistant omitted a command result")?)
                 .map_err(|_| format!("Home Assistant command {kind} returned malformed or incomplete data").into())
         }).await.map_err(|_| format!("Home Assistant command {kind} timed out"))?
     }

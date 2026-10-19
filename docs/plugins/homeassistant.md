@@ -55,6 +55,8 @@ Automation definitions include descriptions, triggers, conditions, actions and c
 
 Home Assistant's recognized relationships provide concise named resources in both directions: related automations/scripts on device/area documents and related devices/entities/areas on behavior documents. They are not exhaustive dependency analysis; dynamic templates can prevent target resolution. Full definitions are not duplicated into each device.
 
+Recognized references may legitimately name deleted or unavailable inventory resources. Their exact IDs remain in definitions and relationship metadata and are marked “unresolved in current inventory” in rendered relationship sections, without invented names or documents. This does not turn a stale saved target into a failed sync. Missing required inventory listings, entity details, definitions, transport responses or inconsistent registry placement references still fail the run.
+
 No current values, on/off state, execution traces/histories, last-triggered/running values, state-change timestamps, arbitrary runtime attributes, camera data or scene definitions are indexed. Scene entities can still appear in ordinary eligible inventory.
 
 ## Synchronization and dates
@@ -63,6 +65,6 @@ Each run uses one short-lived authenticated WebSocket. It enumerates registries,
 
 Registry-less entities missing from a complete runtime enumeration are swept, even if temporarily unloaded. Registered entities remain based on registry membership. There is no grace period or guessed rename matching. Separate registry reads are not an atomic snapshot: detected inconsistency fails; undetected concurrent changes converge next run.
 
-Creation dates use reliable origin registry dates when available and otherwise stay null. Composite modification dates remain null because registry dates do not cover every represented definition, relation or membership change. No run clock or runtime state-change date is substituted. Every run fully reconciles serialized content, so unchanged reruns remain unchanged and label/floor/entity/definition edits update affected representations without a parent modified-since shortcut.
+Creation dates use reliable origin registry dates when available and otherwise stay null. Home Assistant's zero/Unix-epoch registry-migration sentinel means unknown, so it becomes null in document dates and typed metadata rather than a real 1970 date. Real registry dates remain intact. Composite modification dates remain null because registry dates do not cover every represented definition, relation or membership change. No run clock or runtime state-change date is substituted. Every run fully reconciles serialized content, so unchanged reruns remain unchanged and label/floor/entity/definition edits update affected representations without a parent modified-since shortcut.
 
 Search is bounded retrieval, not a complete inventory export. Read the full device/area document and verify the actual origin before controlling hardware. See [search](../search.md), [connections](../connections.md) and the [design rationale](../conception/homeassistant.md).

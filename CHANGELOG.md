@@ -10,6 +10,11 @@
 
 - Add the built-in Home Assistant plugin for searchable inventory and faithful loaded automation/script definitions, with hourly full reconciliation, named recognized relationships and no runtime telemetry.
 
+### Fixes
+
+- Preserve stale recognized Home Assistant configuration targets as explicitly unresolved relationships without failing successful inventory syncs.
+- Normalize Home Assistant's zero registry-date sentinel to null, including typed metadata, and consume owned WebSocket/definition JSON without full-tree cloning.
+
 
 ## v0.24.1 (2026-10-19)
 

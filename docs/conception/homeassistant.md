@@ -26,11 +26,15 @@ Inventory exclusions are not global redaction. Explicit references to filtered e
 
 `search/related` supplies recognized relation sets. Device/area documents name related automations/scripts; behavior documents name related devices/entities/areas. Inverse recognized edges supplement inventory-direction results without claiming complete dependency analysis. Dynamic templates can hide relations. Definitions are not copied into every device. Do not broaden to scene definitions, histories, traces or last-triggered/running state. [H8]
 
+HA intentionally retains recognized references to resources absent from current inventory, for example a saved automation targeting a deleted entity. Preserve such exact IDs as unresolved relationships, not invented named inventory or fatal registry corruption. Required registry/detail reads and registry placement references remain strictly validated.
+
 ## Honest nullable dates
 
 The original required-date API could not represent registry-less entities honestly. Creation and modification origin dates must independently allow null through ingest/read/search, storage, chunks/embeddings, MCP, GraphQL and frontend presentation. Unknown dates are not the epoch, ingestion time, seen time or runtime last-changed time. Explicit creation-date bounds exclude unknowns; undated documents still participate in unfiltered keyword/semantic/hybrid search. [F2][F3][F4]
 
 Use reliable registry creation dates where available. Composite modification time remains unknown where no origin timestamp covers represented configuration, membership and relations. Full deterministic puts still detect changes, including known/unknown transitions and unchanged null-date reruns. Update denormalized chunk/embedding dates without discarding unchanged embedding inputs. Thread listing/navigation puts undated documents last, ordered by id; Explore sorts unknown dates last and omits unknown month facets. [F2][F4]
+
+Home Assistant registry migrations use zero/Unix epoch when no historical date exists. Normalize that origin sentinel to null for device/area/entity creation dates, including typed metadata, instead of exposing a fabricated date or matching an epoch-era creation filter.
 
 ## Synchronization and failure gate
 

@@ -513,3 +513,146 @@ async fn worker_connection_encrypts_admin_token_and_indexes_all_source_types(poo
         .map(|suffix| format!("homeassistant/home/{suffix}"))
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn stale_recognized_targets_remain_searchable_without_invented_inventory(pool: PgPool) {
+    let origin = origin();
+    {
+        let mut o = origin.lock();
+        o.definitions.get_mut("automation.evening_reading").unwrap()["actions"] = json!([{"action":"light.turn_on","target":{"entity_id":"light.deleted_fixture","device_id":"deleted-device","area_id":"deleted-area","floor_id":"deleted-floor","label_id":"deleted-label"}}]);
+        o.relations.insert(("automation".into(), "automation.evening_reading".into()),
+            json!({"entity":["light.deleted_fixture"],"device":["deleted-device"],"area":["deleted-area"],"floor":["deleted-floor"],"label":["deleted-label"],"automation":["automation.deleted_fixture"],"script":["script.deleted_fixture"]}));
+        for kind in ["device", "area"] {
+            let id = if kind == "device" { "parent" } else { "study" };
+            o.relations.insert((kind.into(), id.into()),
+                json!({"automation":["automation.deleted_fixture"],"script":["script.deleted_fixture"]}));
+        }
+    }
+    let url = serve(origin).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    assert_eq!(
+        plugins::run("homeassistant", &run).await.unwrap().stats.put,
+        10
+    );
+    let docs = documents(&server, &pool).await;
+    let automation = docs
+        .iter()
+        .find(|d| d.source.ends_with("/automations"))
+        .unwrap();
+    for id in [
+        "light.deleted_fixture",
+        "deleted-device",
+        "deleted-area",
+        "deleted-floor",
+        "deleted-label",
+        "automation.deleted_fixture",
+        "script.deleted_fixture",
+    ] {
+        assert!(
+            automation
+                .text
+                .contains(&format!("unresolved in current inventory ({id})")),
+            "{id}"
+        );
+    }
+    assert_eq!(
+        automation.meta["recognized_relations"]["entity"],
+        json!(["light.deleted_fixture"])
+    );
+    for id in ["parent", "study"] {
+        let inventory = docs.iter().find(|d| d.external_id == id).unwrap();
+        assert!(
+            inventory
+                .text
+                .contains("unresolved in current inventory (automation.deleted_fixture)")
+        );
+        assert!(
+            inventory
+                .text
+                .contains("unresolved in current inventory (script.deleted_fixture)")
+        );
+    }
+    assert!(!finds(&server, "light.deleted_fixture").await.is_empty());
+    assert_eq!(docs.len(), 10);
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .unchanged,
+        10
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn migrated_unknown_registry_dates_are_null_and_do_not_match_epoch_filters(pool: PgPool) {
+    let origin = origin();
+    {
+        let mut o = origin.lock();
+        o.devices[0]["created_at"] = json!(0.0);
+        o.areas[0]["created_at"] = json!(0.0);
+        o.entities[3]["created_at"] = json!(0.0);
+    }
+    let url = serve(origin).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    plugins::run("homeassistant", &run).await.unwrap();
+    let docs = documents(&server, &pool).await;
+    for external_id in ["parent", "study", "registry:helper-registry"] {
+        let doc = docs.iter().find(|d| d.external_id == external_id).unwrap();
+        assert!(
+            doc.created_at.is_none(),
+            "{external_id}: {:?}",
+            doc.created_at
+        );
+        assert!(doc.modified_at.is_none());
+        let metadata_date = match external_id {
+            "parent" => &doc.meta["device"]["created_at"],
+            "study" => &doc.meta["area"]["created_at"],
+            _ => &doc.meta["entity"]["registry"]["created_at"],
+        };
+        assert_eq!(metadata_date, &Value::Null);
+        let hits = run
+            .api
+            .search(&SearchQuery {
+                q: doc.title.clone().unwrap(),
+                sources: vec![doc.source.clone()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(
+            hits.hits
+                .iter()
+                .any(|hit| hit.document_id == doc.id && hit.created_at.is_none())
+        );
+        let filtered = run
+            .api
+            .search(&SearchQuery {
+                q: doc.title.clone().unwrap(),
+                sources: vec![doc.source.clone()],
+                from: Some("1969-01-01T00:00:00Z".parse().unwrap()),
+                to: Some("1971-01-01T00:00:00Z".parse().unwrap()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(filtered.hits.is_empty(), "{external_id}");
+    }
+    assert!(
+        docs.iter()
+            .find(|d| d.external_id == "child")
+            .unwrap()
+            .created_at
+            .is_some()
+    );
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .unchanged,
+        10
+    );
+}

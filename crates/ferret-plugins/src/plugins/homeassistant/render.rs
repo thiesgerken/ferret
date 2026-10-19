@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{
     PluginError,
-    inventory::{Area, Device, Entity, Relations, Snapshot, timestamp},
+    inventory::{Area, Device, Entity, Relations, Snapshot},
 };
 
 pub fn documents(
@@ -106,7 +106,7 @@ pub fn documents(
         behavior_links(&mut text, snapshot, &related);
         let effective = snapshot.device_area(&device.id)?;
         documents.push(document(format!("{source}/devices"), &device.id, device.name(), text,
-            links.join(&format!("config/devices/device/{}", device.id))?.into(), Some(timestamp(device.created_at)?),
+            links.join(&format!("config/devices/device/{}", device.id))?.into(), device.created_at,
             json!({"kind":"device", "device":device, "placement":placement_meta(snapshot, effective),
                 "entities": attached, "related_behavior":related})));
     }
@@ -152,7 +152,7 @@ pub fn documents(
         let related = related_behavior(snapshot, "area", &area.area_id);
         behavior_links(&mut text, snapshot, &related);
         documents.push(document(format!("{source}/areas"), &area.area_id, &area.name, text,
-            links.join(&format!("config/areas/area/{}", area.area_id))?.into(), Some(timestamp(area.created_at)?),
+            links.join(&format!("config/areas/area/{}", area.area_id))?.into(), area.created_at,
             json!({"kind":"area", "area":area, "floor":area.floor_id.as_ref().map(|id| &snapshot.floors[id]), "related_behavior":related})));
     }
     for entity in snapshot.entities.values().filter(|e| e.eligible()) {
@@ -193,7 +193,7 @@ pub fn documents(
             // No entity permalink is exposed for ordinary runtime-only entities.
             links.clone()
         };
-        documents.push(document(format!("{source}/{suffix}"), &entity.external_id(), entity.name(), text, url.into(), entity.created_at()?,
+        documents.push(document(format!("{source}/{suffix}"), &entity.external_id(), entity.name(), text, url.into(), entity.created_at(),
             json!({"kind":kind, "entity":entity, "placement":placement_meta(snapshot, snapshot.entity_area(entity)?),
                 "recognized_relations":snapshot.relations.get(&(entity.domain().to_owned(), entity.entity_id.clone()))})));
     }
@@ -221,7 +221,10 @@ fn document(
         created_at,
         // Registries do not timestamp every definition, membership or recognized relation change.
         modified_at: None,
-        meta: meta.as_object().expect("object metadata").clone(),
+        meta: match meta {
+            Value::Object(meta) => meta,
+            _ => unreachable!("document metadata is an object"),
+        },
     }
 }
 
@@ -385,7 +388,7 @@ fn related_behavior(snapshot: &Snapshot, kind: &str, id: &str) -> BTreeSet<Strin
             ids.insert(entity.clone());
         }
     }
-    ids.retain(|id| snapshot.entities[id].eligible());
+    ids.retain(|id| snapshot.entities.get(id).is_none_or(Entity::eligible));
     ids
 }
 
@@ -395,7 +398,11 @@ fn behavior_links(text: &mut String, snapshot: &Snapshot, ids: &BTreeSet<String>
         text.push_str("\nNo included automations or scripts recognized.\n");
     }
     for id in ids {
-        writeln!(text, "- {} ({id})", snapshot.entities[id].name()).expect("string writes succeed");
+        match snapshot.entities.get(id) {
+            Some(entity) => writeln!(text, "- {} ({id})", entity.name()),
+            None => writeln!(text, "- unresolved in current inventory ({id})"),
+        }
+        .expect("string writes succeed");
     }
 }
 
@@ -404,15 +411,21 @@ fn named_relations(text: &mut String, snapshot: &Snapshot, relations: &Relations
     for (kind, ids) in relations {
         for id in ids {
             let name = match kind.as_str() {
-                "device" => Some(snapshot.devices[id].name()),
-                "area" => Some(snapshot.areas[id].name.as_str()),
-                "floor" => Some(snapshot.floors[id].name.as_str()),
-                "label" => Some(snapshot.labels[id].name.as_str()),
-                "entity" | "automation" | "script" => Some(snapshot.entities[id].name()),
+                "device" => snapshot.devices.get(id).map(Device::name),
+                "area" => snapshot.areas.get(id).map(|area| area.name.as_str()),
+                "floor" => snapshot.floors.get(id).map(|floor| floor.name.as_str()),
+                "label" => snapshot.labels.get(id).map(|label| label.name.as_str()),
+                "entity" | "automation" | "script" => snapshot.entities.get(id).map(Entity::name),
                 _ => None,
             };
             if let Some(name) = name {
                 writeln!(text, "- {kind}: {name} ({id})").expect("string writes succeed");
+            } else if matches!(
+                kind.as_str(),
+                "device" | "area" | "floor" | "label" | "entity" | "automation" | "script"
+            ) {
+                writeln!(text, "- {kind}: unresolved in current inventory ({id})")
+                    .expect("string writes succeed");
             }
         }
     }
