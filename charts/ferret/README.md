@@ -85,7 +85,7 @@ embedding:
   change, and vectors of another model would end up in this one's index.
 - A cloud endpoint receives every chunk and every search query.
 
-More setups (TEI, LiteLLM, a cloud API) in [embeddings.md](../../docs/embeddings.md).
+More setups (TEI, llama.cpp, LiteLLM, a cloud API) in [embeddings.md](../../docs/embeddings.md).
 
 ### The bundled TEI
 
