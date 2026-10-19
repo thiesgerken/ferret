@@ -27,11 +27,11 @@ async fn ingest(api: &Client) {
     paperless.authors = vec!["Allianz".to_owned()];
     let mut mail = document("mail/personal", "invoice-b", "Your invoice is attached.");
     mail.authors = vec!["Stadtwerke".to_owned(), "billing".to_owned()];
-    mail.created_at = day(10);
+    mail.created_at = Some(day(10));
     mail.content_type = ContentType::Email;
     mail.thread = Some("invoices".to_owned());
     let mut notes = document("notes", "invoice-c", "Pay the invoice before Friday.");
-    notes.created_at = day(20);
+    notes.created_at = Some(day(20));
     notes.title = Some("Friday".to_owned());
     notes.url = Some("https://notes.example.test/invoice-c".to_owned());
     for document in [paperless, mail, notes] {

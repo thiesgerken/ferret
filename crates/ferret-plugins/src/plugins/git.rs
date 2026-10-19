@@ -337,8 +337,8 @@ impl<'a> Indexer<'a> {
             text,
             thread: None,
             authors: vec![file_history.author.clone()],
-            created_at: file_history.created_at,
-            modified_at: file_history.modified_at,
+            created_at: Some(file_history.created_at),
+            modified_at: Some(file_history.modified_at),
             meta: Default::default(),
         }))
     }

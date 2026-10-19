@@ -238,3 +238,34 @@ async fn mcp_search_shares_only_its_effective_source_scope_with_other_transports
     assert_eq!(denied["total"], 0);
     assert_eq!(denied["hits"], json!([]));
 }
+
+#[sqlx::test(migrations = false)]
+async fn origin_dates_are_independently_nullable_in_agent_search_and_reads(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let key = server.create_api_key(&["SEARCH_READ"], None).await;
+    let client = connect(&server, &key).await;
+    let mut note = document("notes", "undated", "Cobalt nullable origin dates.");
+    for (created, modified) in [
+        (None, Some(common::day(2))),
+        (Some(common::day(1)), None),
+        (None, None),
+    ] {
+        note.created_at = created;
+        note.modified_at = modified;
+        let id = api.put_document(&note).await.unwrap().id().unwrap();
+        let search = structured(
+            call(
+                &client,
+                "search",
+                json!({"query":"Cobalt", "mode":"keyword"}),
+            )
+            .await,
+        );
+        let read = structured(call(&client, "get_document", json!({"id":id})).await);
+        for value in [&search["hits"][0], &read] {
+            assert_eq!(value["created_at"], json!(created));
+            assert_eq!(value["modified_at"], json!(modified));
+        }
+    }
+}

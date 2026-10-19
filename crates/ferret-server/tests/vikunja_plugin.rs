@@ -257,8 +257,8 @@ async fn tasks_include_archived_history_and_complete_discussions_and_reconcile_c
         json!([{"id": 7, "name": "invoice.pdf"}])
     );
     assert_eq!(original.meta["start_date"], Value::Null);
-    assert_eq!(original.created_at, common::day(1));
-    assert_eq!(original.modified_at, common::day(3));
+    assert_eq!(original.created_at, Some(common::day(1)));
+    assert_eq!(original.modified_at, Some(common::day(3)));
     let archived = find(&server, "Archivedsentinel").await.remove(0);
     assert_eq!(archived.meta["project_archived"], true);
     assert_eq!(archived.meta["done"], true);
@@ -274,7 +274,7 @@ async fn tasks_include_archived_history_and_complete_discussions_and_reconcile_c
     assert_eq!(edited.stats.put, 1);
     let edit = find(&server, "Editeddiscussion").await.remove(0);
     assert_eq!(edit.id, original.id);
-    assert_eq!(edit.modified_at, common::day(4));
+    assert_eq!(edit.modified_at, Some(common::day(4)));
     assert!(find(&server, "Discussion53").await.is_empty());
 
     // Comment deletion, a task move and a project rename must not depend on task.updated either.
@@ -294,7 +294,7 @@ async fn tasks_include_archived_history_and_complete_discussions_and_reconcile_c
     assert_eq!(moved.id, original.id);
     assert_eq!(moved.meta["project_id"], 2);
     assert_eq!(moved.meta["project"], "Historicalprojects");
-    assert_eq!(moved.modified_at, common::day(5));
+    assert_eq!(moved.modified_at, Some(common::day(5)));
 
     run.config["public_url"] = json!("https://other.example.test");
     plugins::run("vikunja", &run).await.unwrap();

@@ -407,8 +407,8 @@ async fn readable_text_and_annotations_cover_all_types_and_reconcile_without_tim
     assert_eq!(original.meta["bookmark_type"], "asset");
     assert_eq!(original.meta["asset_type"], "pdf");
     assert_eq!(original.meta["file_name"], "archive.pdf");
-    assert_eq!(original.created_at, common::day(1));
-    assert_eq!(original.modified_at, common::day(3));
+    assert_eq!(original.created_at, Some(common::day(1)));
+    assert_eq!(original.modified_at, Some(common::day(3)));
     let link = find(&server, "Linksentinel").await.remove(0);
     assert_eq!(link.authors, ["Alice"]);
     assert!(link.text.contains("🦦cobalt"));

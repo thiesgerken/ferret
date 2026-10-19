@@ -414,8 +414,8 @@ impl Gitea {
             url: Some(discussion.html_url.clone()),
             thread: Some(thread),
             authors: vec![discussion.user.login.clone()],
-            created_at: discussion.created_at,
-            modified_at: discussion.updated_at,
+            created_at: Some(discussion.created_at),
+            modified_at: Some(discussion.updated_at),
             meta,
         };
         put(run, &body, stats).await?;
@@ -497,8 +497,8 @@ fn comment_document(body: &DocumentPut, comment: Comment, kind: &str) -> Documen
         url: Some(comment.html_url),
         thread: body.thread.clone(),
         authors: vec![comment.user.login],
-        created_at: comment.created_at,
-        modified_at: comment.updated_at,
+        created_at: Some(comment.created_at),
+        modified_at: Some(comment.updated_at),
         meta: body.meta.clone(),
     }
 }

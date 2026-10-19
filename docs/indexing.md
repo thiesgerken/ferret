@@ -8,6 +8,8 @@ Documents are unique by `(user_id, source, external_id)` and have a Ferret UUID.
 
 A put hashes the serialized complete document with SHA-256. An identical hash updates `seen_at` and the API-key writer but does not rechunk. Any changed field, including metadata/timestamps, produces an updated document. The existing UUID stays stable. This is a complete upsert, not a patch or an origin-version conflict check. See [HTTP ingestion](ingestion.md).
 
+Origin creation and modification dates are independently nullable. Unknown dates are not ingestion timestamps and never use epoch sentinels. `chunks.ts` and `chunk_embeddings.ts` preserve the document's nullable creation date, including on reused chunks/embeddings when a put changes known to unknown or unknown to known. A date-only change updates these denormalized fields without recomputing unchanged embedding inputs. Identical complete puts containing null dates remain unchanged.
+
 ## Chunk construction
 
 Markdown splitting respects headings/paragraph structure; plain text and email split by paragraph/line and smaller semantic units as needed. Chunks aim for 1000 to 2000 characters, with a maximum of 2000 Unicode scalar values, not tokens or UTF-8 bytes. Short documents can have shorter chunks; empty/whitespace-only text has none. Each chunk stores character start/end offsets into the original text so the viewer can highlight the right passage.

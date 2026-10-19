@@ -101,7 +101,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
         {/* A flex line: inline, the source's icon would set its baseline and lift it above the text. */}
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           <SourceName source={document.source} writer={document.writer} roots={roots} />
-          <span>{t("viewer.modified", { date: new Date(document.modifiedAt) })}</span>
+          {document.modifiedAt && <span>{t("viewer.modified", { date: new Date(document.modifiedAt) })}</span>}
         </p>
         {originUrl && (
           <a href={originUrl} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
@@ -133,8 +133,10 @@ function DocumentBody({ document, range }: { document: ViewedDocument; range: Hi
             <dd>{document.authors.join(", ")}</dd>
             <dt className="text-muted-foreground">{t("subject")}</dt>
             <dd>{document.title}</dd>
-            <dt className="text-muted-foreground">{t("date")}</dt>
-            <dd>{format.dateTime(new Date(document.createdAt), { dateStyle: "medium", timeStyle: "short" })}</dd>
+            {document.createdAt && <>
+              <dt className="text-muted-foreground">{t("date")}</dt>
+              <dd>{format.dateTime(new Date(document.createdAt), { dateStyle: "medium", timeStyle: "short" })}</dd>
+            </>}
           </dl>
           <PlainBody text={document.text} range={range} />
         </div>

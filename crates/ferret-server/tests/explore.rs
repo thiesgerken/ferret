@@ -55,7 +55,7 @@ async fn ingest(api: &Client) {
         let mut put = document(source, external_id, "Some text.");
         put.content_type = content_type;
         put.authors = vec![author.to_owned()];
-        put.created_at = Utc.with_ymd_and_hms(year, month, day, 12, 0, 0).unwrap();
+        put.created_at = Some(Utc.with_ymd_and_hms(year, month, day, 12, 0, 0).unwrap());
         api.put_document(&put).await.unwrap();
     }
 }

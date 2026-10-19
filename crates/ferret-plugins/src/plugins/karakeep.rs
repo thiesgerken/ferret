@@ -294,8 +294,8 @@ fn to_document(
         url: Some(url.into()),
         thread: None,
         authors,
-        created_at: bookmark.created_at,
-        modified_at,
+        created_at: Some(bookmark.created_at),
+        modified_at: Some(modified_at),
         meta,
     })
 }

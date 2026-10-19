@@ -40,6 +40,8 @@ curl --fail-with-body -sS "$FERRET_URL/graphql" \
 
 Search and REST share retrieval logic. GraphQL adds UI concerns such as judgments and relative ranges (`DAY`, `WEEK`, `MONTH`, `YEAR`) in place of an explicit `from`; inspect the canonical enum before constructing other inputs. `document(id:)` returns full text and thread neighbors for the viewer. `explore(input:)` browses documents without query terms.
 
+`Document`, `Hit` and `ExploredDocument` expose independently nullable `createdAt` and `modifiedAt` origin dates. Consumers must check each before formatting. Date filters exclude unknown creation dates. Explore's date ordering puts unknowns last, its month facets include only known creation dates, and thread neighbors follow the thread listing's dated-first ordering.
+
 Search's `documentsInScope` is informational metadata cached for 60 seconds per signed-in user and
 effective source roots; other filters do not narrow it. The same scoped cache serves REST/MCP
 search execution after API-key source restrictions have been applied. Hits, matching totals and

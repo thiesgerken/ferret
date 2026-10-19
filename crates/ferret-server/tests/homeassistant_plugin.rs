@@ -1,0 +1,515 @@
+mod common;
+
+use common::{TestServer, start_server};
+use ferret_api::{Document, SearchQuery};
+use ferret_plugins::{
+    plugins::{self, Log, PluginOptions, Run},
+    worker::Worker,
+};
+use futures_util::{SinkExt, StreamExt};
+use parking_lot::Mutex;
+use serde_json::{Value, json};
+use sqlx::PgPool;
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use tokio::net::TcpListener;
+use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+const TOKEN: &str = "homeassistant-test-secret-never-log";
+
+struct Origin {
+    devices: Vec<Value>,
+    areas: Vec<Value>,
+    floors: Vec<Value>,
+    labels: Vec<Value>,
+    entities: Vec<Value>,
+    runtime: Vec<Value>,
+    definitions: BTreeMap<String, Value>,
+    relations: BTreeMap<(String, String), Value>,
+    failure: Option<&'static str>,
+}
+type SharedOrigin = Arc<Mutex<Origin>>;
+
+fn device(
+    id: &str,
+    name: &str,
+    area: Option<&str>,
+    parent: Option<&str>,
+    hub: Option<&str>,
+) -> Value {
+    json!({"id":id,"name":name,"name_by_user":null,"area_id":area,"parent_device_id":parent,"via_device_id":hub,
+        "identifiers":[["fixture",id]],"connections":[],"labels":[],"created_at":1735689600.0})
+}
+fn entity(id: &str, entity_id: &str, device: Option<&str>, area: Option<&str>) -> Value {
+    json!({"id":id,"entity_id":entity_id,"device_id":device,"area_id":area,"name":id,"original_name":null,
+        "platform":"fixture","labels":[],"aliases":[],"device_class":null,"original_device_class":null,
+        "hidden_by":null,"disabled_by":null,"entity_category":null,"created_at":1735689600.0})
+}
+fn runtime(id: &str, name: &str) -> Value {
+    json!({"entity_id":id,"state":"off","last_changed":"2026-01-01T00:00:00Z","attributes":{
+        "friendly_name":name,"unit_of_measurement":"widgets","secret_runtime":"Neverindexlivesecret","battery_level":12}})
+}
+fn origin() -> SharedOrigin {
+    let mut parent = device("parent", "Readingstation", Some("study"), None, Some("hub"));
+    parent["manufacturer"] = json!("Example Works");
+    parent["model"] = json!("Cobaltmodel42");
+    parent["model_id"] = json!("COBALT42");
+    parent["serial_number"] = json!("COBALTSERIAL731");
+    parent["connections"] = json!([["mac", "02:00:00:12:34:56"]]);
+    parent["labels"] = json!(["reading"]);
+    let mut entities = vec![
+        entity("lamp-registry", "light.reading_lamp", Some("parent"), None),
+        entity(
+            "override-registry",
+            "sensor.room_override",
+            Some("parent"),
+            Some("hall"),
+        ),
+        entity(
+            "child-registry",
+            "switch.child_channel",
+            Some("child"),
+            None,
+        ),
+        entity(
+            "helper-registry",
+            "input_boolean.helper",
+            None,
+            Some("study"),
+        ),
+        entity(
+            "hidden-registry",
+            "switch.hidden_fixture",
+            Some("parent"),
+            None,
+        ),
+        entity(
+            "disabled-registry",
+            "switch.disabled_fixture",
+            Some("parent"),
+            None,
+        ),
+        entity(
+            "diagnostic-registry",
+            "sensor.diagnostic_fixture",
+            Some("empty"),
+            None,
+        ),
+        entity(
+            "config-registry",
+            "switch.configuration_fixture",
+            Some("parent"),
+            None,
+        ),
+        entity(
+            "automation-registry",
+            "automation.evening_reading",
+            None,
+            None,
+        ),
+        entity("script-registry", "script.reading_setup", None, None),
+    ];
+    entities[0]["aliases"] = json!(["Booklampalias", null]);
+    entities[4]["hidden_by"] = json!("user");
+    entities[5]["disabled_by"] = json!("user");
+    entities[6]["entity_category"] = json!("diagnostic");
+    entities[7]["entity_category"] = json!("config");
+    let runtime = vec![
+        runtime("sensor.yaml_inventory", "YAMLinventorysentinel"),
+        runtime("automation.evening_reading", "Eveningbehavior"),
+        runtime("script.reading_setup", "Readingscript"),
+    ];
+    let definitions = BTreeMap::from([
+        (
+            "automation.evening_reading".into(),
+            json!({"alias":"Eveningbehavior","description":"Eveningdescription","triggers":[{"trigger":"numeric_state","entity_id":"sensor.room_override","above":17}],"conditions":[],"actions":[{"action":"switch.turn_on","target":{"entity_id":["switch.hidden_fixture","switch.disabled_fixture"]}},{"action":"script.reading_setup"}],"variables":{"target":"{{ 'light.' ~ room }}","payload":"Faithfulpayloadsentinel"}}),
+        ),
+        (
+            "script.reading_setup".into(),
+            json!({"alias":"Readingscript","fields":{"greeting":{"description":"Scriptinputsentinel"}},"sequence":[{"action":"light.turn_on","target":{"entity_id":"light.reading_lamp"}},{"choose":[{"conditions":"{{ greeting is defined }}","sequence":[{"delay":1}]}]}]}),
+        ),
+    ]);
+    let relations = BTreeMap::from([
+        (
+            ("device".into(), "parent".into()),
+            json!({"automation":["automation.evening_reading"],"script":["script.reading_setup"]}),
+        ),
+        (
+            ("area".into(), "study".into()),
+            json!({"automation":["automation.evening_reading"],"script":["script.reading_setup"]}),
+        ),
+        (
+            ("automation".into(), "automation.evening_reading".into()),
+            json!({"device":["parent"],"entity":["light.reading_lamp","switch.hidden_fixture"],"area":["study"],"script":["script.reading_setup"]}),
+        ),
+        (
+            ("script".into(), "script.reading_setup".into()),
+            json!({"device":["parent"],"entity":["light.reading_lamp"],"area":["study"]}),
+        ),
+    ]);
+    Arc::new(Mutex::new(Origin {
+        devices: vec![
+            parent,
+            device("child", "Logicalchannel", None, Some("parent"), None),
+            device("hub", "Remotehub", Some("hall"), None, None),
+            device("empty", "Filteredonlydevice", None, None, None),
+        ],
+        areas: vec![
+            json!({"area_id":"study","name":"Studyroom","aliases":["Booknookalias"],"floor_id":"upstairs","labels":["reading"],"created_at":1735689600.0}),
+            json!({"area_id":"hall","name":"Hallroom","aliases":[],"floor_id":null,"labels":[],"created_at":1735689600.0}),
+        ],
+        floors: vec![
+            json!({"floor_id":"upstairs","name":"Upperfloor","aliases":["Atticalias"],"level":1}),
+        ],
+        labels: vec![
+            json!({"label_id":"reading","name":"Readinglabel","description":"Quietreadingdescription"}),
+        ],
+        entities,
+        runtime,
+        definitions,
+        relations,
+        failure: None,
+    }))
+}
+async fn serve(origin: SharedOrigin) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let origin = origin.clone();
+            tokio::spawn(async move {
+                let mut ws = accept_async(stream).await.unwrap();
+                ws.send(Message::Text(
+                    json!({"type":"auth_required","ha_version":"2026.10.2"})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+                let auth: Value =
+                    serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap())
+                        .unwrap();
+                assert_eq!(auth["access_token"], TOKEN);
+                if origin.lock().failure == Some("auth") {
+                    let _ = ws
+                        .send(Message::Text(
+                            json!({"type":"auth_invalid","message":TOKEN})
+                                .to_string()
+                                .into(),
+                        ))
+                        .await;
+                    return;
+                }
+                ws.send(Message::Text(json!({"type":"auth_ok"}).to_string().into()))
+                    .await
+                    .unwrap();
+                while let Some(Ok(message)) = ws.next().await {
+                    if message.is_close() {
+                        return;
+                    }
+                    let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                    let kind = request["type"].as_str().unwrap();
+                    let result = {
+                        let origin = origin.lock();
+                        if origin.failure == Some(kind) {
+                            None
+                        } else {
+                            Some(match kind {
+                                "config/device_registry/list" => json!(origin.devices),
+                                "config/area_registry/list" => json!(origin.areas),
+                                "config/floor_registry/list" => json!(origin.floors),
+                                "config/label_registry/list" => json!(origin.labels),
+                                "config/entity_registry/list" => json!(origin.entities),
+                                "config/entity_registry/get_entries" => request["entity_ids"]
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|id| {
+                                        (
+                                            id.as_str().unwrap().to_owned(),
+                                            origin
+                                                .entities
+                                                .iter()
+                                                .find(|e| e["entity_id"] == *id)
+                                                .cloned()
+                                                .unwrap_or(Value::Null),
+                                        )
+                                    })
+                                    .collect::<serde_json::Map<_, _>>()
+                                    .into(),
+                                "get_states" => json!(origin.runtime),
+                                "automation/config" | "script/config" => {
+                                    json!({"config":origin.definitions.get(request["entity_id"].as_str().unwrap())})
+                                }
+                                "search/related" => origin
+                                    .relations
+                                    .get(&(
+                                        request["item_type"].as_str().unwrap().into(),
+                                        request["item_id"].as_str().unwrap().into(),
+                                    ))
+                                    .cloned()
+                                    .unwrap_or(json!({})),
+                                _ => panic!("unexpected command {kind}"),
+                            })
+                        }
+                    };
+                    let Some(result) = result else {
+                        return;
+                    };
+                    if ws.send(Message::Text(json!({"id":request["id"],"type":"result","success":true,"result":result}).to_string().into())).await.is_err() { return; }
+                }
+            });
+        }
+    });
+    url
+}
+async fn run(server: &TestServer, url: &str) -> Run {
+    Run {
+        api: server.admin_api().await,
+        source: "homeassistant/home".into(),
+        config: json!({"url":url,"public_url":"https://ha.example.test","token":TOKEN}),
+        state: json!({}),
+        log: Log::default(),
+        options: PluginOptions::default(),
+    }
+}
+async fn documents(server: &TestServer, pool: &PgPool) -> Vec<Document> {
+    let api = server.admin_api().await;
+    let ids: Vec<uuid::Uuid> =
+        sqlx::query_scalar("select id from documents order by source, external_id")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    let mut result = Vec::new();
+    for id in ids {
+        result.push(api.document(id).await.unwrap());
+    }
+    result
+}
+async fn finds(server: &TestServer, q: &str) -> Vec<ferret_api::Hit> {
+    server
+        .admin_api()
+        .await
+        .search(&SearchQuery {
+            q: q.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .hits
+}
+
+#[sqlx::test(migrations = false)]
+async fn inventory_behavior_relationships_and_reconciliation_are_searchable(pool: PgPool) {
+    let origin = origin();
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    let first = plugins::run("homeassistant", &run).await.unwrap();
+    assert_eq!(first.stats.put, 10);
+    let docs = documents(&server, &pool).await;
+    let parent = docs.iter().find(|d| d.external_id == "parent").unwrap();
+    assert!(parent.text.contains("Exact entity ID: light.reading_lamp"));
+    assert!(
+        parent.text.contains("Booklampalias") && parent.text.contains("Quietreadingdescription")
+    );
+    assert!(parent.text.contains("switch.configuration_fixture"));
+    assert!(
+        !parent.text.contains("switch.hidden_fixture")
+            && !parent.text.contains("switch.disabled_fixture")
+    );
+    assert!(
+        parent.text.contains("Related behavior")
+            && parent.text.contains("automation.evening_reading")
+    );
+    let child = docs.iter().find(|d| d.external_id == "child").unwrap();
+    assert!(
+        child.text.contains("Studyroom")
+            && child.text.contains("Parent serial number: COBALTSERIAL731")
+    );
+    assert!(!child.text.contains("Hallroom"));
+    let area = docs.iter().find(|d| d.external_id == "study").unwrap();
+    assert!(!area.text.contains("sensor.room_override"));
+    assert!(
+        docs.iter()
+            .find(|d| d.external_id == "empty")
+            .unwrap()
+            .text
+            .contains("No entities included under indexing rules")
+    );
+    let yaml = docs
+        .iter()
+        .find(|d| d.external_id == "runtime:sensor.yaml_inventory")
+        .unwrap();
+    assert!(yaml.created_at.is_none() && yaml.modified_at.is_none());
+    assert_eq!(yaml.url.as_deref(), Some("https://ha.example.test/"));
+    for doc in &docs {
+        assert!(!doc.text.contains("Neverindexlivesecret") && !doc.text.contains("last_changed"));
+        assert!(doc.thread.is_none());
+    }
+    let automation = docs
+        .iter()
+        .find(|d| d.source.ends_with("/automations"))
+        .unwrap();
+    assert_eq!(
+        automation.url.as_deref(),
+        Some("https://ha.example.test/config/automation/show/automation.evening_reading")
+    );
+    for text in [
+        "Faithfulpayloadsentinel",
+        "{{ 'light.' ~ room }}",
+        "switch.hidden_fixture",
+        "switch.disabled_fixture",
+        "17",
+        "Studyroom",
+        "Readingstation",
+    ] {
+        assert!(automation.text.contains(text), "{text}");
+    }
+    assert!(
+        docs.iter()
+            .find(|d| d.source.ends_with("/scripts"))
+            .unwrap()
+            .text
+            .contains("Scriptinputsentinel")
+    );
+    for q in [
+        "COBALTSERIAL731",
+        "Cobaltmodel42",
+        "light.reading_lamp",
+        "Booknookalias",
+        "Atticalias",
+    ] {
+        assert!(!finds(&server, q).await.is_empty(), "{q}");
+    }
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .unchanged,
+        10
+    );
+    let helper_id = docs
+        .iter()
+        .find(|d| d.external_id == "registry:helper-registry")
+        .unwrap()
+        .id;
+    {
+        let mut o = origin.lock();
+        o.entities[3]["entity_id"] = json!("input_boolean.renamed_helper");
+        o.labels[0]["description"] = json!("Editedlabeldescription");
+        o.floors[0]["name"] = json!("Editedfloorname");
+        o.definitions.get_mut("script.reading_setup").unwrap()["description"] =
+            json!("Editedscriptdefinition");
+    }
+    plugins::run("homeassistant", &run).await.unwrap();
+    let renamed = run.api.document(helper_id).await.unwrap();
+    assert!(renamed.text.contains("input_boolean.renamed_helper"));
+    assert_eq!(
+        renamed.url.as_deref(),
+        Some("https://ha.example.test/config/entities?domain=input_boolean")
+    );
+    assert!(
+        run.api
+            .document(parent.id)
+            .await
+            .unwrap()
+            .text
+            .contains("Editedfloorname")
+    );
+    {
+        let mut o = origin.lock();
+        o.entities[3]["device_id"] = json!("parent");
+        o.runtime
+            .retain(|e| e["entity_id"] != "sensor.yaml_inventory");
+    }
+    let changed = plugins::run("homeassistant", &run).await.unwrap();
+    assert_eq!(changed.stats.deleted, 2);
+    assert!(finds(&server, "YAMLinventorysentinel").await.is_empty());
+    assert!(
+        run.api
+            .document(parent.id)
+            .await
+            .unwrap()
+            .text
+            .contains("input_boolean.renamed_helper")
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn failed_required_reads_never_sweep_previous_inventory(pool: PgPool) {
+    let origin = origin();
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    plugins::run("homeassistant", &run).await.unwrap();
+    for failure in [
+        "auth",
+        "config/entity_registry/get_entries",
+        "get_states",
+        "automation/config",
+        "script/config",
+        "search/related",
+    ] {
+        origin.lock().failure = Some(failure);
+        let error = plugins::run("homeassistant", &run)
+            .await
+            .err()
+            .expect("required read must fail")
+            .to_string();
+        assert!(!error.contains(TOKEN));
+        assert_eq!(documents(&server, &pool).await.len(), 10);
+    }
+    origin.lock().failure = None;
+    origin.lock().definitions.remove("script.reading_setup");
+    assert!(plugins::run("homeassistant", &run).await.is_err());
+    assert_eq!(documents(&server, &pool).await.len(), 10);
+    origin.lock().entities[0]["area_id"] = json!("missing-area");
+    assert!(plugins::run("homeassistant", &run).await.is_err());
+    assert_eq!(documents(&server, &pool).await.len(), 10);
+}
+
+#[sqlx::test(migrations = false)]
+async fn worker_connection_encrypts_admin_token_and_indexes_all_source_types(pool: PgPool) {
+    let url = serve(origin()).await;
+    let server = start_server(pool.clone()).await;
+    let worker = Worker {
+        internal: server.internal(),
+        public_url: server.public_url(),
+        name: "ha-test-worker".into(),
+        options: PluginOptions::default(),
+    };
+    let id = worker.register().await;
+    let cookie = server.sign_in().await;
+    let created=server.graphql(&cookie,"mutation ($input: NewConnection!) { createConnection(input:$input) { id config } }",json!({"input":{"name":"Home Assistant","icon":"house","plugin":"homeassistant","source":"homeassistant/home","config":json!({"url":url,"token":TOKEN}).to_string(),"schedule":"0 * * * *"}})).await;
+    assert_eq!(created["errors"], Value::Null, "{created}");
+    assert!(!created.to_string().contains(TOKEN));
+    let stored: (Value, Vec<u8>) = sqlx::query_as("select config,credentials from connections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(stored.0.get("token").is_none() && !stored.1.is_empty());
+    assert!(
+        !stored
+            .1
+            .windows(TOKEN.len())
+            .any(|window| window == TOKEN.as_bytes())
+    );
+    assert!(worker.work_once(id, Duration::ZERO).await.unwrap());
+    let sources: Vec<String> =
+        sqlx::query_scalar("select distinct source from documents order by source")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        sources,
+        [
+            "areas",
+            "automations",
+            "devices",
+            "scripts",
+            "standalone-entities"
+        ]
+        .map(|suffix| format!("homeassistant/home/{suffix}"))
+    );
+}

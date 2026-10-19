@@ -110,7 +110,7 @@ create table chunk_embeddings (
     user_id       uuid not null,
     source        text not null,
     content_type  text not null,
-    ts            timestamptz not null,
+    ts            timestamptz,                  -- nullable origin creation date
     embedding     halfvec not null,             -- no fixed dimension, models differ
     primary key (chunk_id, model)
 );

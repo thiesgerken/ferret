@@ -189,8 +189,8 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             url: Some(links.url(&doc.id)),
             thread: None,
             authors: Vec::new(),
-            created_at: doc.created_at.unwrap_or(updated_at),
-            modified_at: updated_at,
+            created_at: doc.created_at,
+            modified_at: Some(updated_at),
             meta: Map::new(),
         };
         match run.api.put_document(&put).await? {

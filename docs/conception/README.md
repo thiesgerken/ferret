@@ -67,8 +67,8 @@ create table documents (
     url           text,                    -- deep link to the origin, null = ferret's viewer is the origin
     thread        text,                    -- groups documents into a sequence: chat channel, email thread
     authors       text[] not null,
-    created_at    timestamptz not null,
-    modified_at   timestamptz not null,
+    created_at    timestamptz,            -- unknown origin date stays null
+    modified_at   timestamptz,            -- independently unknown
     meta          jsonb not null,
     text          text not null,
     content_hash  bytea not null,
@@ -84,7 +84,7 @@ create table chunks (
     user_id       uuid not null,
     source        text not null,
     content_type  text not null,
-    ts            timestamptz not null,    -- the document's created_at
+    ts            timestamptz,             -- the document's nullable created_at
     title         text,                    -- the document's, searched and embedded with the text
     ordinal       int not null,
     start_offset  int not null,            -- into the rendered document text
@@ -180,7 +180,7 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
   spaces and control characters and inner tabs or line breaks ignored, as browsers read it): a
   `400`. A denylist rather than an allowlist, because origins use custom schemes (`obsidian:`,
   `mid:`, `zotero:`). The UI applies the same rule before rendering any `url` as a link.
-- `title` and `thread` are optional too, `meta` defaults to `{}`. Everything else is required.
+- `title` and `thread` are optional too, `meta` defaults to `{}`. Creation and modification timestamp keys are required but independently nullable for unknown origin dates. Everything else is required.
 - Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
   default. `source` must be a well-formed path, `external_id` must not be empty.
 

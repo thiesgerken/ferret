@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select source, count(*) as \"documents!\",\n                  (array_agg(api_key_id order by modified_at desc)\n                       filter (where api_key_id is not null))[1] as api_key_id\n           from documents\n           where user_id = $1\n             and ($2::text[] is null or exists (\n                  select 1 from unnest($2::text[]) root where source_covers(root, source)))\n           group by source\n           order by 2 desc, 1",
+  "query": "select source, count(*) as \"documents!\",\n                              (array_agg(api_key_id order by modified_at desc nulls last)\n                                   filter (where api_key_id is not null))[1] as api_key_id\n                       from documents where user_id = $1 group by source",
   "describe": {
     "columns": [
       {
@@ -29,8 +29,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "TextArray"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -39,5 +38,5 @@
       null
     ]
   },
-  "hash": "0f22fd77f97562b01b4fa859047f11a63efa1cfedc30a51a7dbbcba4a6753e43"
+  "hash": "c9376139da89b85b4f905ded6fdd3ea7def86ff50bbf010c1a368671aa2ec1f7"
 }

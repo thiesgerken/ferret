@@ -53,7 +53,7 @@ curl --fail-with-body -sS -G "$FERRET_URL/api/search" \
 
 Response fields:
 
-- `hits`: best-first documents with `document_id`, source/external id, content type, nullable title/url/thread, authors, timestamps, nullable writer, keyword_score/similarity, collapsed count and best `chunk`.
+- `hits`: best-first documents with `document_id`, source/external id, content type, nullable title/url/thread, authors, independently nullable origin `created_at`/`modified_at`, nullable writer, keyword_score/similarity, collapsed count and best `chunk`.
 - `chunk`: `start_offset`, `end_offset` in Unicode scalar values and `parts`, each `{text, highlight}`. Highlighted parts are data, not HTML. Join all parts for the matched passage.
 - `writer`: nullable `{kind: "connection"|"api_key", id, name, icon}`.
 - `total`, `total_is_lower_bound`, `documents_in_scope`, `has_more`, `facets`, `took_ms`, `semantic_unavailable` and selected `model`.
@@ -76,11 +76,11 @@ curl --fail-with-body -sS "$FERRET_URL/api/documents/$DOCUMENT_ID" \
   -H "Authorization: Bearer $FERRET_KEY"
 ```
 
-Returns the full stored document: `id`, `source`, `external_id`, `content_type`, nullable `title`, `text`, nullable `url` and `thread`, `authors`, `created_at`, `modified_at`, `meta` and nullable `writer`.
+Returns the full stored document: `id`, `source`, `external_id`, `content_type`, nullable `title`, `text`, nullable `url` and `thread`, `authors`, independently nullable origin `created_at` and `modified_at`, `meta` and nullable `writer`. Unknown dates are JSON `null`, never observation time or epoch substitutes.
 
 ## Read a thread: `GET /api/documents?source=&thread=`
 
-Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
+Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id, with unknown creation dates last (id breaks ties among them). Viewer previous/next navigation follows the same ordering. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
 
 ```sh
 curl --fail-with-body -sS -G "$FERRET_URL/api/documents" \
@@ -102,7 +102,7 @@ Requires `ingest:write`. Send a complete JSON object:
 | `url` | optional/null origin string; javascript/data/vbscript schemes rejected |
 | `thread` | optional/null string, local to exact source |
 | `authors` | required array of strings |
-| `created_at`, `modified_at` | required RFC 3339 timestamps |
+| `created_at`, `modified_at` | required keys; each independently an RFC 3339 string or `null` for an unknown origin date |
 | `meta` | object, defaults to `{}` |
 
 Unknown fields are rejected. A put replaces stored fields at the same `(user,source,external_id)`, not a patch. See the complete runnable [ingestion example](../ingestion.md).

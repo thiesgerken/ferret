@@ -318,8 +318,8 @@ pub fn document(source: &str, external_id: &str, text: &str) -> DocumentPut {
         url: None,
         thread: None,
         authors: vec!["someone".to_owned()],
-        created_at: day(1),
-        modified_at: day(1),
+        created_at: Some(day(1)),
+        modified_at: Some(day(1)),
         meta: Default::default(),
     }
 }
