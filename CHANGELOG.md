@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.24.0 (2026-10-19)
+
+
+### Other
+
+
+- Merge pull request #171 from thiesgerken/feat/mealie-plugin
+  ([`0559059`](https://github.com/thiesgerken/ferret/commit/05590596e8f814c5b40e7d5c646eb7a2276e7d72))
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index group-wide Mealie recipes
+  ([`0559059`](https://github.com/thiesgerken/ferret/commit/05590596e8f814c5b40e7d5c646eb7a2276e7d72))
+
+- ✨ feat(plugins): index group-wide Mealie recipes
+  ([`f554a05`](https://github.com/thiesgerken/ferret/commit/f554a05d8159ff07828998feb165ba2626eb5330))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(mealie): resolve recipe links and disclose group-wide copy
+  ([`42ba610`](https://github.com/thiesgerken/ferret/commit/42ba610c6bac81319ba242c28e7db32c90158e75))
+
 ## v0.23.3 (2026-10-19)
 
 
