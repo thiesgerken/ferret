@@ -25,7 +25,11 @@ Use your provider's IMAP hostname; `imap.example.com` is a placeholder.
 
 One message becomes one email document at the connection source. Message-ID is its stable identity, so copies across folders deduplicate and moves are invisible. The parser provides an identity for messages without a usable Message-ID. Subject, sender, date and recipient metadata come from the parsed mail. References/In-Reply-To connect messages into threads. Quoted earlier messages and common reply boilerplate are stripped so the same passage does not dominate every result. Attachments are not separately ingested as documents.
 
+HTML bodies take precedence over plain-text alternatives. `style`, `script` and `template` elements and their contents are removed before conversion to text, regardless of their attributes. Forwards (`Fwd:`, `Fw:`, `WG:`) keep forwarded message content, but not those non-content elements.
+
 Each run lists all eligible messages, marks known identities seen, fetches new UIDs and commits a sweep. Folder cursors include UIDVALIDITY; a changed UIDVALIDITY refetches that folder. Settings that change message rendering trigger refetches. Moving the last eligible copy to an excluded folder removes the document on a successful sweep. Mail content is treated as immutable under an already-indexed identity; this is not an arbitrary in-place mailbox-edit detector.
+
+After upgrading to the HTML non-content cleanup, the next sync refetches every message in eligible folders once to replace previously indexed CSS or other non-content text. This uses the existing rendering-rule cursor invalidation; no manual reset or database migration is needed. Allow for a full mailbox download and reprocessing on that run. Later successful syncs return to incremental fetching.
 
 ## Verify and diagnose
 

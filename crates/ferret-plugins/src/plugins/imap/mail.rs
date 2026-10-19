@@ -245,6 +245,50 @@ mod tests {
     }
 
     #[test]
+    fn html_non_content_is_removed_even_from_forwards() {
+        for subject in ["Invoice", "Fwd: Invoice", "Fw: Invoice", "WG: Invoice"] {
+            let raw = format!(
+                "From: sender@example.com\r\n\
+                 Subject: {subject}\r\n\
+                 MIME-Version: 1.0\r\n\
+                 Content-Type: text/html; charset=utf-8\r\n\r\n\
+                 <html><head>\
+                 <style type=\"text/css\" media=\"screen\">body {{ margin: 0; }}</style>\
+                 </head><body>\
+                 <p>Your invoice.</p>\
+                 <style type=\"text/css\">td {{ padding: 4px; }}</style>\
+                 <STYLE media=\"print\">p {{ color: red; }}</STYLE>\
+                 <script type=\"text/javascript\">alert('not mail content');</script>\
+                 <template id=\"receipt\"><div>Unrendered receipt.</div>\
+                 <style type=\"text/css\">div {{ display: none; }}</style></template>\
+                 <blockquote type=\"cite\"><p>Forwarded content.</p></blockquote>\
+                 <p>Amount: 84.20 EUR.</p>\
+                 </body></html>"
+            );
+            let mail = document(
+                raw.as_bytes(),
+                "html-invoice@example.com",
+                DateTime::UNIX_EPOCH,
+                "mail/test",
+                None,
+            )
+            .unwrap();
+            let expected = if subject == "Invoice" {
+                "Your invoice. Amount: 84.20 EUR."
+            } else {
+                "Your invoice. Forwarded content. Amount: 84.20 EUR."
+            };
+
+            assert_eq!(
+                mail.text.split_whitespace().collect::<Vec<_>>().join(" "),
+                expected,
+                "{subject}: {:?}",
+                mail.text
+            );
+        }
+    }
+
+    #[test]
     fn a_forward_keeps_the_forwarded_mail() {
         let forward = fixture("08-forward");
 

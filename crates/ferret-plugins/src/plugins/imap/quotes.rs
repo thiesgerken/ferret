@@ -20,13 +20,18 @@ const MIN_RUN: usize = 3;
 const BLOCKS: &str = "address, blockquote, div, dl, dt, dd, h1, h2, h3, h4, h5, h6, hr, li, ol, p, pre, \
                       table, tr, ul";
 
-/// The text of an HTML body, without the quote containers that mail clients wrap replies in
-/// unless `keep_quotes`.
+/// The visible text of an HTML body, without the quote containers that mail clients wrap replies
+/// in unless `keep_quotes`. Non-content elements are removed even when keeping forwarded content.
 pub fn html_text(html: &str, keep_quotes: bool) -> String {
     let mut settings = RewriteStrSettings::new()
         // Ambiguous markup (e.g. stray tags inside `<select>`) is common in mail and harmless for
         // these selectors.
         .with_strict(false)
+        // mail-parser only suppresses bare style/script tags, not tags with attributes.
+        .append_element_content_handler(element!("style, script, template", |element| {
+            element.remove();
+            Ok(())
+        }))
         .append_element_content_handler(element!(BLOCKS, |element| {
             element.before("<br>", ContentType::Html);
             element.after("<br>", ContentType::Html);
