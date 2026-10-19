@@ -24,8 +24,8 @@ const DEFAULT_PORT: u16 = 993;
 const SEEN_BATCH: usize = 1000;
 /// Mails are fetched this many at a time: they come with their attachments.
 const FETCH_BATCH: usize = 50;
-/// How quotes are stripped, part of the indexing settings: a new rule re-strips every mail.
-const QUOTES: &str = "containers, markers, runs of 3 lines of earlier mails in the thread";
+/// Rendering rules, part of the indexing settings: a new rule refetches every mail.
+const QUOTES: &str = "containers, markers, runs of 3 lines of earlier mails in the thread; remove style, script, template";
 
 /// Indexes the mails of an IMAP mailbox.
 #[derive(Deserialize, JsonSchema)]
