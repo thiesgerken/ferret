@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.25.0 (2026-10-19)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #174 from thiesgerken/fix/header-user-github
+  ([`07caf87`](https://github.com/thiesgerken/ferret/commit/07caf870f2e2c3d22fc413767a935f562aeb2139))
+
+- ✨ feat(ui): organize account menu and show version info
+  ([`07caf87`](https://github.com/thiesgerken/ferret/commit/07caf870f2e2c3d22fc413767a935f562aeb2139))
+
+- ✨ feat(ui): organize account menu and show version info
+  ([`5a5a78d`](https://github.com/thiesgerken/ferret/commit/5a5a78d2a92d729468710bd6d27469edfde65cef))
+
 ## v0.24.1 (2026-10-19)
 
 
