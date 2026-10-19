@@ -40,7 +40,16 @@
     }
   },
   "app": {
-    "menu": "App menu",
+    "menu": "Account menu",
+    "groups": {
+      "discover": "Discover",
+      "manage": "Manage"
+    },
+    "version": {
+      "frontend": "Frontend: {version}",
+      "server": "Server: {version}",
+      "mismatch": "Frontend and server versions differ. Reload the page; if the warning persists, check that both deployments use the same release."
+    },
     "signedInAs": "Signed in as {name}",
     "signOut": "Sign out",
     "failed": "Something went wrong: {message}"
