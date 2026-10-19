@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.23.2 (2026-10-19)
+
+
+### Other
+
+
+- Merge pull request #168 from thiesgerken/fix/imap-html-non-content
+  ([`64bf7ff`](https://github.com/thiesgerken/ferret/commit/64bf7ffb2ba2908caa11546fd9922a9bd68ac855))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(imap): strip HTML non-content before indexing
+  ([`64bf7ff`](https://github.com/thiesgerken/ferret/commit/64bf7ffb2ba2908caa11546fd9922a9bd68ac855))
+
+- 🐛 fix(imap): strip HTML non-content before indexing
+  ([`1df3d91`](https://github.com/thiesgerken/ferret/commit/1df3d91cc352baeb5742f9ba6c51d3a27c9eae6a))
+
 ## v0.23.1 (2026-10-19)
 
 
