@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.23.3 (2026-10-19)
+
+
+### Other
+
+
+- Merge pull request #170 from thiesgerken/perf/167-shared-statistics
+  ([`0d63982`](https://github.com/thiesgerken/ferret/commit/0d63982b0cee85f91912fdbd915763a1e01d8a53))
+
+- Merge pull request #169 from thiesgerken/docs/llama-cpp-endpoint
+  ([`f06b93a`](https://github.com/thiesgerken/ferret/commit/f06b93a8d15463a0e48a7eb2c234b84ba601c0af))
+
+  📝 docs(embeddings): llama.cpp as an endpoint, and checking servers agree
+
+- 📝 docs(embeddings): llama.cpp as an endpoint, and checking servers agree
+  ([`792fe03`](https://github.com/thiesgerken/ferret/commit/792fe035dc7cd7ef539cba73eb65494aab87a595))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Rb9qF1yxAv3fNUpxRXCieL
+
+### ⚡ Performance
+
+
+- ⚡ perf(server): cache statistics and isolate readiness
+  ([`0d63982`](https://github.com/thiesgerken/ferret/commit/0d63982b0cee85f91912fdbd915763a1e01d8a53))
+
+- ⚡ Cache index statistics and isolate database readiness
+  ([`5e2c716`](https://github.com/thiesgerken/ferret/commit/5e2c716dae5fd26de6762a9762f9e3671b72db1e))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): keep cached coverage snapshots coherent
+  ([`0ee0e79`](https://github.com/thiesgerken/ferret/commit/0ee0e7979410e722a0113f501971d1f79c6365d4))
+
 ## v0.23.2 (2026-10-19)
 
 
