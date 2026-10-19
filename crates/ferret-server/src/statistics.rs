@@ -117,13 +117,22 @@ pub struct Progress {
     pub failed: i64,
 }
 
+impl Progress {
+    pub fn chunks(&self) -> i64 {
+        self.embedded + self.pending + self.failed
+    }
+}
+
+pub struct GlobalProgress {
+    pub stored: Vec<StoredModel>,
+    pub backlogs: HashMap<String, Arc<Vec<embeddings::SourceBacklog>>>,
+}
+
 pub struct Statistics {
     totals: Cache<Uuid, Totals>,
     progress: Cache<(Uuid, String), Progress>,
     rates: Cache<String, f64>,
-    backlog: Cache<String, Vec<embeddings::SourceBacklog>>,
-    global_chunks: Cache<(), i64>,
-    stored: Cache<(), Vec<StoredModel>>,
+    global: Cache<(), GlobalProgress>,
     writers: Cache<Uuid, writer_stats::Statistics>,
 }
 
@@ -133,39 +142,71 @@ impl Statistics {
             totals: Cache::new(TOTALS_TTL),
             progress: Cache::new(PROGRESS_TTL),
             rates: Cache::new(PROGRESS_TTL),
-            backlog: Cache::new(PROGRESS_TTL),
-            global_chunks: Cache::new(TOTALS_TTL),
-            stored: Cache::new(PROGRESS_TTL),
+            global: Cache::new(PROGRESS_TTL),
             writers: Cache::new(PROGRESS_TTL),
         }
     }
 
     pub async fn totals(&self, pool: &PgPool, user: Uuid) -> CachedResult<Totals> {
-        self.totals.get(user, || async {
-            let mut tx = pool.begin().await?;
-            sqlx::query("set transaction isolation level repeatable read, read only").execute(&mut *tx).await?;
-            let writers = Writers::load(&mut tx, user).await?;
-            let sources = sqlx::query!(r#"select source, count(*) as "documents!",
-                (array_agg(api_key_id order by modified_at desc) filter (where api_key_id is not null))[1] as api_key_id
-                from documents where user_id = $1 group by source"#, user).fetch_all(&mut *tx).await?;
-            let chunks = sqlx::query_scalar!(r#"select count(*) as "count!" from chunks where user_id = $1"#, user).fetch_one(&mut *tx).await?;
-            tx.commit().await?;
-            let documents = sources.iter().map(|source| source.documents).sum();
-            let sources = sources.iter().map(|source| writers.of_source(&source.source, source.api_key_id).map(|writer| writer.id)).collect::<HashSet<_>>().len() as i64;
-            Ok(Totals { documents, chunks, sources })
-        }).await
+        self.totals
+            .get(user, || async {
+                let mut tx = pool.begin().await?;
+                sqlx::query!("set transaction isolation level repeatable read, read only")
+                    .execute(&mut *tx)
+                    .await?;
+                let writers = Writers::load(&mut tx, user).await?;
+                let sources = sqlx::query!(
+                    r#"select source, count(*) as "documents!",
+                              (array_agg(api_key_id order by modified_at desc)
+                                   filter (where api_key_id is not null))[1] as api_key_id
+                       from documents where user_id = $1 group by source"#,
+                    user,
+                )
+                .fetch_all(&mut *tx)
+                .await?;
+                let chunks = sqlx::query_scalar!(
+                    r#"select count(*) as "count!" from chunks where user_id = $1"#,
+                    user,
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                let documents = sources.iter().map(|source| source.documents).sum();
+                let sources = sources
+                    .iter()
+                    .map(|source| {
+                        writers
+                            .of_source(&source.source, source.api_key_id)
+                            .map(|writer| writer.id)
+                    })
+                    .collect::<HashSet<_>>()
+                    .len() as i64;
+                Ok(Totals {
+                    documents,
+                    chunks,
+                    sources,
+                })
+            })
+            .await
     }
 
     pub async fn progress(&self, pool: &PgPool, user: Uuid, model: &str) -> CachedResult<Progress> {
         self.progress
             .get((user, model.to_owned()), || async {
-                let (pending, failed) = embeddings::user_backlog(pool, user, model).await?;
-                let embedded = embeddings::embedded_chunks(pool, user, model).await?;
-                Ok(Progress {
-                    embedded,
-                    pending,
-                    failed,
-                })
+                sqlx::query_as!(
+                    Progress,
+                    r#"select count(e.chunk_id) as "embedded!",
+                              count(*) filter (where e.chunk_id is null and f.chunk_id is null) as "pending!",
+                              count(*) filter (where e.chunk_id is null and f.chunk_id is not null) as "failed!"
+                       from chunks c
+                       left join chunk_embeddings e on e.chunk_id = c.id and e.model = $2 and e.user_id = $1
+                       left join embedding_failures f on f.chunk_id = c.id and f.model = $2
+                       where c.user_id = $1"#,
+                    user,
+                    model,
+                )
+                .fetch_one(pool)
+                .await
             })
             .await
     }
@@ -179,34 +220,26 @@ impl Statistics {
             .map(|rate| *rate)
     }
 
-    pub async fn backlog(
-        &self,
-        pool: &PgPool,
-        model: &str,
-    ) -> CachedResult<Vec<embeddings::SourceBacklog>> {
-        self.backlog
-            .get(model.to_owned(), || embeddings::source_backlog(pool, model))
-            .await
-    }
-
-    pub async fn global_chunks(&self, pool: &PgPool) -> Result<i64, Arc<sqlx::Error>> {
-        self.global_chunks
-            .get((), || async {
-                sqlx::query_scalar!(r#"select count(*) as "count!" from chunks"#)
-                    .fetch_one(pool)
-                    .await
-            })
-            .await
-            .map(|count| *count)
-    }
-
-    pub async fn stored(
+    pub async fn global(
         &self,
         pool: &PgPool,
         embedding: &Embedding,
-    ) -> CachedResult<Vec<StoredModel>> {
-        self.stored
-            .get((), || model_registry::list(pool, embedding))
+    ) -> CachedResult<GlobalProgress> {
+        self.global
+            .get((), || async {
+                let mut tx = pool.begin().await?;
+                sqlx::query!("set transaction isolation level repeatable read, read only")
+                    .execute(&mut *tx)
+                    .await?;
+                let stored = model_registry::list(&mut tx, embedding).await?;
+                let mut backlogs = HashMap::new();
+                for model in embedding.models() {
+                    let backlog = embeddings::source_backlog(&mut tx, model.id()).await?;
+                    backlogs.insert(model.id().to_owned(), Arc::new(backlog));
+                }
+                tx.commit().await?;
+                Ok(GlobalProgress { stored, backlogs })
+            })
             .await
     }
 
@@ -220,9 +253,9 @@ impl Statistics {
             .await
     }
 
-    pub async fn invalidate_stored(&self) {
+    pub async fn invalidate_model_statistics(&self) {
         // Wait out an older refresh before invalidating, so it cannot publish deleted state.
-        let slot = self.stored.slots.lock().get(&()).cloned();
+        let slot = self.global.slots.lock().get(&()).cloned();
         if let Some(slot) = slot {
             *slot.value.lock().await = None;
         }

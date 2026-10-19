@@ -14,7 +14,6 @@ use std::{
 use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, postgres::PgListener};
 use tokio::{sync::watch, task::JoinSet};
-use uuid::Uuid;
 
 use crate::{
     StartupError,
@@ -157,21 +156,6 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     })
 }
 
-/// How many of `user_id`'s chunks `model` has embedded.
-pub async fn embedded_chunks(
-    pool: &PgPool,
-    user_id: Uuid,
-    model: &str,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar!(
-        r#"select count(*) as "count!" from chunk_embeddings where user_id = $1 and model = $2"#,
-        user_id,
-        model,
-    )
-    .fetch_one(pool)
-    .await
-}
-
 /// The minutes the pump's rate is averaged over.
 const RATE_WINDOW_MINUTES: i32 = 10;
 
@@ -195,29 +179,10 @@ pub fn eta_seconds(pending: i64, rate_per_minute: f64) -> Option<i64> {
         .then(|| (pending as f64 / rate_per_minute * 60.0).ceil() as i64)
 }
 
-/// `user_id`'s chunks still waiting for `model`, and those its endpoint rejected.
-pub async fn user_backlog(
-    pool: &PgPool,
-    user_id: Uuid,
+pub async fn source_backlog(
+    db: &mut PgConnection,
     model: &str,
-) -> Result<(i64, i64), sqlx::Error> {
-    let backlog = sqlx::query!(
-        r#"select count(*) filter (where f.chunk_id is null) as "pending!",
-                  count(f.chunk_id) as "failed!"
-           from chunks c
-           left join embedding_failures f on f.chunk_id = c.id and f.model = $2
-           where c.user_id = $1
-             and not exists (select 1 from chunk_embeddings e
-                             where e.chunk_id = c.id and e.model = $2)"#,
-        user_id,
-        model,
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok((backlog.pending, backlog.failed))
-}
-
-pub async fn source_backlog(pool: &PgPool, model: &str) -> Result<Vec<SourceBacklog>, sqlx::Error> {
+) -> Result<Vec<SourceBacklog>, sqlx::Error> {
     sqlx::query_as!(
         SourceBacklog,
         r#"select c.source,
@@ -231,7 +196,7 @@ pub async fn source_backlog(pool: &PgPool, model: &str) -> Result<Vec<SourceBack
            order by c.source"#,
         model,
     )
-    .fetch_all(pool)
+    .fetch_all(db)
     .await
 }
 
@@ -355,19 +320,28 @@ impl Embedding {
         pool: &PgPool,
         statistics: &crate::statistics::Statistics,
     ) -> Result<Vec<ModelStatus>, Arc<sqlx::Error>> {
-        let stored = statistics.stored(pool, self).await?;
-        let chunks = statistics.global_chunks(pool).await?;
+        let global = statistics.global(pool, self).await?;
         let mut statuses = Vec::new();
         for (index, model) in self.models.iter().enumerate() {
             let id = model.id();
-            let backlog = statistics.backlog(pool, id).await?;
+            let backlog = global
+                .backlogs
+                .get(id)
+                .expect("configured model has a backlog")
+                .clone();
             let rate_per_minute = statistics.rate(pool, id).await?;
             let pending = backlog.iter().map(|source| source.pending).sum();
-            let embedded = stored
+            let embedded = global
+                .stored
                 .iter()
                 .find(|stored| stored.id == id)
                 .expect("configured model is registered")
                 .embedded;
+            let chunks = embedded
+                + backlog
+                    .iter()
+                    .map(|source| source.pending + source.failed)
+                    .sum::<i64>();
             statuses.push(ModelStatus {
                 id: id.to_owned(),
                 embedding_api: EndpointStatus::of(&model.embedding_api),

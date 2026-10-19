@@ -14,6 +14,7 @@ use juniper::{
     RootNode, graphql_object, graphql_value, http,
 };
 use sqlx::PgPool;
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::{
@@ -177,10 +178,14 @@ impl Query {
         require_admin(context)?;
         let models = context
             .statistics
-            .stored(&context.pool, &context.embedding)
+            .global(&context.pool, &context.embedding)
             .await
             .map_err(internal)?;
-        Ok(models.iter().map(StoredEmbeddingModel::from).collect())
+        Ok(models
+            .stored
+            .iter()
+            .map(StoredEmbeddingModel::from)
+            .collect())
     }
 
     /// The signed-in user's API keys, newest first.
@@ -275,6 +280,7 @@ impl Query {
                 id: model.id().to_owned(),
                 configured_default: model.id() == default,
                 min_similarity: model.config.min_similarity,
+                progress: OnceCell::new(),
             })
             .collect()
     }
@@ -1068,6 +1074,8 @@ struct EmbeddingModel {
     id: String,
     configured_default: bool,
     min_similarity: f64,
+    // Pin coverage fields to one snapshot even if a request spans cache expiry.
+    progress: OnceCell<Arc<crate::statistics::Progress>>,
 }
 
 /// A configured embedding model and how much of the signed-in user's data it covers. A model
@@ -1088,25 +1096,15 @@ impl EmbeddingModel {
         self.min_similarity
     }
 
-    /// How many of the user's chunks the model has embedded. Counted only when asked for, the
-    /// search page lists the models without it.
+    /// How many of the user's chunks the model has embedded, in a five-second progress snapshot.
+    /// Loaded only when progress is requested; the search page lists models without it.
     async fn embedded(&self, context: &Context) -> FieldResult<i32> {
-        context
-            .statistics
-            .progress(&context.pool, context.user.id, &self.id)
-            .await
-            .map(|progress| count(progress.embedded))
-            .map_err(internal)
+        Ok(count(self.progress(context).await?.embedded))
     }
 
-    /// How many chunks the user has.
+    /// Total user chunks in the same five-second snapshot as embedded, pending and failed.
     async fn chunks(&self, context: &Context) -> FieldResult<i32> {
-        context
-            .statistics
-            .totals(&context.pool, context.user.id)
-            .await
-            .map(|totals| count(totals.chunks))
-            .map_err(internal)
+        Ok(count(self.progress(context).await?.chunks()))
     }
 
     /// The user's chunks still waiting for the embed pump.
@@ -1151,13 +1149,21 @@ impl EmbeddingModel {
 }
 
 impl EmbeddingModel {
-    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
-        context
-            .statistics
-            .progress(&context.pool, context.user.id, &self.id)
+    async fn progress(&self, context: &Context) -> FieldResult<&crate::statistics::Progress> {
+        self.progress
+            .get_or_try_init(|| {
+                context
+                    .statistics
+                    .progress(&context.pool, context.user.id, &self.id)
+            })
             .await
-            .map(|progress| (progress.pending, progress.failed))
+            .map(Arc::as_ref)
             .map_err(internal)
+    }
+
+    async fn backlog(&self, context: &Context) -> FieldResult<(i64, i64)> {
+        let progress = self.progress(context).await?;
+        Ok((progress.pending, progress.failed))
     }
 
     async fn rate(&self, context: &Context) -> FieldResult<f64> {
@@ -1571,7 +1577,7 @@ impl Mutation {
         require_admin(context)?;
         match model_registry::delete(&context.pool, &context.embedding, &id).await {
             Ok(()) => {
-                context.statistics.invalidate_stored().await;
+                context.statistics.invalidate_model_statistics().await;
                 Ok(id)
             }
             Err(DeleteError::NotStored) => Err(invalid_input(format!(

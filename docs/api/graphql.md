@@ -45,8 +45,11 @@ loading Explore's document page or other facets. Its snapshot lasts 60 seconds. 
 the homepage's writer meaning: distinct writer IDs from the unfiltered exact-source facets, plus
 at most one Unknown writer. It is not a count of source paths or document-writer groups.
 Connection coverage and the most recently modified keyed document determine each source's writer
-just as in Explore. Every `embeddingModels.chunks` field reuses this same user chunk total.
-Different snapshot lifetimes mean chunk totals can briefly lag five-second embedding progress.
+just as in Explore. `embeddingModels.chunks` instead uses the same five-second progress snapshot
+as that model's `embedded`, `pending` and `failed` counts; their sum is its denominator. The
+snapshot is pinned for all coverage fields in one request. Admin's stored-model counts and
+source backlogs likewise share one five-second database snapshot. Coverage remains coherent
+across ingest, embedding and deletion even while the homepage retains its older minute-long total.
 
 Activity query:
 

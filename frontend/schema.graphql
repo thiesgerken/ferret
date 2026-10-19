@@ -244,11 +244,11 @@ type EmbeddingModel {
   "The cosine similarity below which search drops the model's semantic candidates."
   minSimilarity: Float!
   """
-    How many of the user's chunks the model has embedded. Counted only when asked for, the
-    search page lists the models without it.
+    How many of the user's chunks the model has embedded, in a five-second progress snapshot.
+    Loaded only when progress is requested; the search page lists models without it.
   """
   embedded: Int!
-  "How many chunks the user has."
+  "Total user chunks in the same five-second snapshot as embedded, pending and failed."
   chunks: Int!
   "The user's chunks still waiting for the embed pump."
   pending: Int!

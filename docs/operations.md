@@ -13,10 +13,12 @@ not consume this capacity. Database outages, exhausted database-wide connections
 that misses its deadline still return 503. Budget one additional database connection per replica;
 graceful server shutdown closes the readiness pool.
 
-Homepage document/chunk/source totals and embedding chunk totals use 60-second database
-snapshots. Embedding progress, backlog, rate, stored-model statistics and Activity's complete
-writer-statistics snapshot use five seconds. Snapshots are shared within a server replica,
-deduplicate concurrent refreshes of the same scope and retain at most 128 scopes per cache.
+Homepage document/chunk/source totals use 60-second database snapshots. Embedding progress,
+including its chunk denominator, backlog, rate, stored-model statistics and Activity's complete
+writer-statistics snapshot use five seconds. Coverage denominators come from the same database
+snapshot as their embedded/pending/failed counts, not the homepage snapshot. Snapshots are shared
+within a server replica, deduplicate concurrent refreshes of the same scope and retain at most
+128 scopes per cache.
 Different users have separate scopes; endpoint health remains live. Refresh errors are returned
 as errors and shared for five seconds, never converted to zeros or served as stale success.
 Cold/expired refreshes still execute real aggregates and can be slow on a CPU-starved database.

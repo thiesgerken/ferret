@@ -50,6 +50,24 @@ async fn homepage_preserves_source_facet_writers_and_user_isolation(pool: PgPool
     let user = server.graphql(&admin, "mutation { createUser(input: {username: \"bob\", password: \"a long user password\", isAdmin: false}) { id } }", json!({})).await;
     assert_eq!(user["errors"], Value::Null, "{user}");
     let bob = session_cookie(&server.login("bob", "a long user password").await);
+    let mut registry_lock = pool.begin().await.unwrap();
+    sqlx::query("lock table embedding_models in access exclusive mode")
+        .execute(&mut *registry_lock)
+        .await
+        .unwrap();
+    let progress = tokio::time::timeout(
+        Duration::from_secs(2),
+        server.graphql(
+            &bob,
+            "{ embeddingModels { chunks pending embedded failed } }",
+            json!({}),
+        ),
+    )
+    .await
+    .expect("user progress must not load global model statistics");
+    assert_eq!(progress["errors"], Value::Null, "{progress}");
+    assert_eq!(progress["data"]["embeddingModels"][0]["chunks"], 0);
+    registry_lock.rollback().await.unwrap();
     let empty = server.graphql(&bob, "{ indexSummary { documents chunks sources } embeddingModels { chunks pending embedded failed } writerStatistics { documents chunks } }", json!({})).await;
     assert_eq!(empty["errors"], Value::Null, "{empty}");
     assert_eq!(
@@ -170,4 +188,95 @@ async fn readiness_uses_isolated_bounded_capacity_and_closes_on_shutdown(pool: P
     application.close().await;
     server.abort();
     let _ = server.await;
+}
+
+#[sqlx::test(migrations = false)]
+async fn coverage_snapshots_remain_coherent_after_ingest_embedding_and_deletion(pool: PgPool) {
+    let alpha = common::fake_endpoint::FakeEndpoint::start().await;
+    let beta = common::fake_endpoint::FakeEndpoint::start().await;
+    beta.break_down();
+    let server = common::start_server_with(
+        pool.clone(),
+        alpha.clone(),
+        ferret_server::config::EmbeddingConfig {
+            default: "alpha".to_owned(),
+            models: vec![common::model("alpha", &alpha), common::model("beta", &beta)],
+        },
+    )
+    .await;
+    let cookie = server.sign_in().await;
+    let api = server.admin_api().await;
+    let query = "{ indexSummary { chunks } embeddingModels { id embedded pending failed chunks } embeddingStatus { id embedded chunks backlog { pending failed } } storedEmbeddingModels { id embedded } }";
+    api.put_document(&document("notes", "a", "First passage."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(1).await;
+    let initial = server.graphql(&cookie, query, json!({})).await;
+    assert_coverage(&initial, 1);
+
+    api.put_document(&document("notes", "b", "Second passage."))
+        .await
+        .unwrap();
+    server.wait_for_embeddings(2).await;
+    sqlx::query(
+        "insert into embedding_failures (chunk_id, model, error, at)
+        select c.id, 'beta', 'rejected', now() from chunks c
+        join documents d on d.id = c.document_id where d.external_id = 'a'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    let ingested = server.graphql(&cookie, query, json!({})).await;
+    assert_coverage(&ingested, 2);
+    assert_eq!(ingested["data"]["embeddingModels"][0]["embedded"], 2);
+    assert_eq!(ingested["data"]["embeddingModels"][1]["pending"], 1);
+    assert_eq!(ingested["data"]["embeddingModels"][1]["failed"], 1);
+
+    api.delete_document("notes", "a").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    let deleted = server.graphql(&cookie, query, json!({})).await;
+    assert_coverage(&deleted, 1);
+    assert_eq!(deleted["data"]["embeddingModels"][0]["embedded"], 1);
+    assert_eq!(deleted["data"]["embeddingModels"][1]["pending"], 1);
+    assert_eq!(deleted["data"]["embeddingModels"][1]["failed"], 0);
+
+    api.delete_document("notes", "b").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(5100)).await;
+    let empty = server.graphql(&cookie, query, json!({})).await;
+    assert_coverage(&empty, 0);
+}
+
+fn assert_coverage(response: &Value, chunks: i64) {
+    assert_eq!(response["errors"], Value::Null, "{response}");
+    let data = &response["data"];
+    assert_eq!(
+        data["indexSummary"]["chunks"], 1,
+        "homepage keeps its 60-second snapshot"
+    );
+    for model in data["embeddingModels"].as_array().unwrap() {
+        let embedded = model["embedded"].as_i64().unwrap();
+        let pending = model["pending"].as_i64().unwrap();
+        let failed = model["failed"].as_i64().unwrap();
+        assert_eq!(model["chunks"], chunks);
+        assert_eq!(embedded + pending + failed, chunks);
+    }
+    for model in data["embeddingStatus"].as_array().unwrap() {
+        let embedded = model["embedded"].as_i64().unwrap();
+        let backlog: i64 = model["backlog"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|source| source["pending"].as_i64().unwrap() + source["failed"].as_i64().unwrap())
+            .sum();
+        assert_eq!(model["chunks"], chunks);
+        assert_eq!(embedded + backlog, chunks);
+        let stored = data["storedEmbeddingModels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|stored| stored["id"] == model["id"])
+            .unwrap();
+        assert_eq!(stored["embedded"], embedded);
+    }
 }

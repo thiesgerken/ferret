@@ -96,17 +96,20 @@ pub struct StoredModel {
 }
 
 /// Every registered model, the configured ones first.
-pub async fn list(pool: &PgPool, embedding: &Embedding) -> Result<Vec<StoredModel>, sqlx::Error> {
+pub async fn list(
+    db: &mut PgConnection,
+    embedding: &Embedding,
+) -> Result<Vec<StoredModel>, sqlx::Error> {
     let embedded: HashMap<String, i64> =
         sqlx::query!(r#"select model, count(*) as "count!" from chunk_embeddings group by model"#)
-            .fetch_all(pool)
+            .fetch_all(&mut *db)
             .await?
             .into_iter()
             .map(|row| (row.model, row.count))
             .collect();
     let registered =
         sqlx::query!("select id, dimension, first_seen from embedding_models order by id")
-            .fetch_all(pool)
+            .fetch_all(&mut *db)
             .await?;
     let mut models = Vec::new();
     for stored in registered {
@@ -114,7 +117,7 @@ pub async fn list(pool: &PgPool, embedding: &Embedding) -> Result<Vec<StoredMode
             "select pg_relation_size(to_regclass($1))",
             index_name(&stored.id)
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *db)
         .await?;
         let embedded = embedded.get(&stored.id).copied().unwrap_or(0);
         models.push(StoredModel {
