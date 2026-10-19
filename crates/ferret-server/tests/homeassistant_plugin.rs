@@ -26,6 +26,7 @@ struct Origin {
     definitions: BTreeMap<String, Value>,
     relations: BTreeMap<(String, String), Value>,
     failure: Option<&'static str>,
+    command_error: Option<(&'static str, String)>,
 }
 type SharedOrigin = Arc<Mutex<Origin>>;
 
@@ -168,6 +169,7 @@ fn origin() -> SharedOrigin {
         definitions,
         relations,
         failure: None,
+        command_error: None,
     }))
 }
 async fn serve(origin: SharedOrigin) -> String {
@@ -208,6 +210,38 @@ async fn serve(origin: SharedOrigin) -> String {
                     }
                     let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
                     let kind = request["type"].as_str().unwrap();
+                    let command_error = {
+                        let origin = origin.lock();
+                        origin
+                            .command_error
+                            .as_ref()
+                            .filter(|(command, _)| *command == kind)
+                            .map(|(_, code)| code.clone())
+                            .or_else(|| {
+                                let behavior = match kind {
+                                    "automation/config" | "script/config" => {
+                                        request["entity_id"].as_str()
+                                    }
+                                    "search/related"
+                                        if matches!(
+                                            request["item_type"].as_str(),
+                                            Some("automation" | "script")
+                                        ) =>
+                                    {
+                                        request["item_id"].as_str()
+                                    }
+                                    _ => None,
+                                };
+                                behavior
+                                    .filter(|id| !origin.definitions.contains_key(*id))
+                                    .map(|_| "not_found".to_owned())
+                            })
+                    };
+                    if let Some(code) = command_error {
+                        if ws.send(Message::Text(json!({"id":request["id"],"type":"result","success":false,
+                            "error":{"code":code,"message":format!("{TOKEN}: private origin failure")}}).to_string().into())).await.is_err() { return; }
+                        continue;
+                    }
                     let result = {
                         let origin = origin.lock();
                         if origin.failure == Some(kind) {
@@ -762,5 +796,185 @@ async fn invalid_required_definition_shapes_still_fail_without_sweeping(pool: Pg
             "{entity_id}: {invalid}"
         );
         assert_eq!(documents(&server, &pool).await.len(), 10);
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn restored_behavior_placeholders_do_not_require_loaded_definitions(pool: PgPool) {
+    let origin = origin();
+    {
+        let mut o = origin.lock();
+        for (registry_id, entity_id) in [
+            ("restored-automation", "automation.restored_fixture"),
+            ("restored-script", "script.restored_fixture"),
+            ("absent-runtime", "automation.unloaded_fixture"),
+            ("ordinary-restored", "sensor.restored_fixture"),
+        ] {
+            let device_id = (registry_id == "ordinary-restored").then_some("parent");
+            o.entities
+                .push(entity(registry_id, entity_id, device_id, None));
+            if registry_id != "absent-runtime" {
+                let mut state = runtime(entity_id, registry_id);
+                state["state"] = json!("unavailable");
+                state["attributes"]["restored"] = json!(true);
+                o.runtime.push(state);
+            }
+        }
+        // An unavailable state alone is not evidence that a real loaded object is absent.
+        o.runtime
+            .iter_mut()
+            .find(|state| state["entity_id"] == "script.reading_setup")
+            .unwrap()["state"] = json!("unavailable");
+        for (id, definition) in [
+            (
+                "automation.yaml_loaded",
+                json!({"triggers": null, "actions": null}),
+            ),
+            ("script.yaml_loaded", json!({"sequence": null})),
+        ] {
+            o.runtime.push(runtime(id, id));
+            o.definitions.insert(id.into(), definition);
+        }
+        o.relations.insert(("device".into(), "parent".into()),
+            json!({"automation":["automation.evening_reading","automation.restored_fixture"],"script":["script.restored_fixture"]}));
+        o.relations
+            .get_mut(&("automation".into(), "automation.evening_reading".into()))
+            .unwrap()["entity"] = json!(["script.restored_fixture"]);
+    }
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    assert_eq!(
+        plugins::run("homeassistant", &run).await.unwrap().stats.put,
+        12
+    );
+    let docs = documents(&server, &pool).await;
+    let behavior_ids: Vec<_> = docs
+        .iter()
+        .filter(|doc| doc.source.ends_with("/automations") || doc.source.ends_with("/scripts"))
+        .map(|doc| doc.external_id.as_str())
+        .collect();
+    assert_eq!(
+        behavior_ids,
+        [
+            "registry:automation-registry",
+            "runtime:automation.yaml_loaded",
+            "registry:script-registry",
+            "runtime:script.yaml_loaded"
+        ]
+    );
+    for document in docs
+        .iter()
+        .filter(|doc| behavior_ids.contains(&doc.external_id.as_str()))
+    {
+        assert!(
+            finds(&server, document.title.as_deref().unwrap())
+                .await
+                .iter()
+                .any(|hit| hit.document_id == document.id)
+        );
+    }
+    let parent = docs.iter().find(|doc| doc.external_id == "parent").unwrap();
+    assert!(
+        parent
+            .text
+            .contains("Exact entity ID: sensor.restored_fixture")
+    );
+    assert!(parent.text.contains(
+        "restored-automation (automation.restored_fixture); configured definition not loaded"
+    ));
+    let automation = docs
+        .iter()
+        .find(|doc| doc.external_id == "registry:automation-registry")
+        .unwrap();
+    assert!(
+        automation
+            .text
+            .contains("restored-script (script.restored_fixture)")
+    );
+    assert!(
+        automation
+            .text
+            .contains("Configured definition not loaded.")
+    );
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .unchanged,
+        12
+    );
+    {
+        let mut o = origin.lock();
+        for id in ["automation.evening_reading", "script.reading_setup"] {
+            o.definitions.remove(id);
+            let state = o
+                .runtime
+                .iter_mut()
+                .find(|state| state["entity_id"] == id)
+                .unwrap();
+            state["state"] = json!("unavailable");
+            state["attributes"]["restored"] = json!(true);
+        }
+    }
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .deleted,
+        2
+    );
+    let current = documents(&server, &pool).await;
+    assert!(!current.iter().any(|doc| matches!(
+        doc.external_id.as_str(),
+        "registry:automation-registry" | "registry:script-registry"
+    )));
+    assert!(
+        current
+            .iter()
+            .any(|doc| doc.external_id == "runtime:automation.yaml_loaded")
+    );
+    assert_eq!(
+        plugins::run("homeassistant", &run)
+            .await
+            .unwrap()
+            .stats
+            .unchanged,
+        10
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn loaded_definition_errors_preserve_inventory_and_report_only_safe_context(pool: PgPool) {
+    let origin = origin();
+    let url = serve(origin.clone()).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    plugins::run("homeassistant", &run).await.unwrap();
+    for (command, entity_id) in [
+        ("automation/config", "automation.evening_reading"),
+        ("script/config", "script.reading_setup"),
+    ] {
+        for (origin_code, safe_code) in [
+            ("unauthorized", "unauthorized"),
+            ("not_found", "not_found"),
+            ("unknown_command", "unknown_command"),
+            (TOKEN, "unrecognized_error"),
+        ] {
+            origin.lock().command_error = Some((command, origin_code.to_owned()));
+            let error = plugins::run("homeassistant", &run)
+                .await
+                .err()
+                .expect("loaded definition error must fail")
+                .to_string();
+            assert_eq!(
+                error,
+                format!("Home Assistant command {command} for {entity_id} failed ({safe_code})")
+            );
+            assert!(!error.contains(TOKEN) && !error.contains("private origin failure"));
+            assert_eq!(documents(&server, &pool).await.len(), 10);
+        }
     }
 }

@@ -105,6 +105,9 @@ pub struct DescriptiveAttributes {
     pub friendly_name: Option<String>,
     pub device_class: Option<String>,
     pub unit_of_measurement: Option<String>,
+    // Registry placeholders have runtime states but no loaded behavior definition.
+    #[serde(default, skip_serializing)]
+    pub restored: bool,
 }
 
 #[derive(Serialize)]
@@ -112,6 +115,8 @@ pub struct Entity {
     pub entity_id: String,
     pub registry: Option<RegistryEntity>,
     pub descriptive: DescriptiveAttributes,
+    #[serde(skip_serializing)]
+    pub loaded: bool,
 }
 
 impl Entity {
@@ -130,6 +135,9 @@ impl Entity {
     }
     pub fn dedicated(&self) -> bool {
         matches!(self.domain(), "automation" | "script")
+    }
+    pub fn loaded_behavior(&self) -> bool {
+        self.dedicated() && self.loaded
     }
     pub fn device_id(&self) -> Option<&str> {
         self.registry.as_ref().and_then(|r| r.device_id.as_deref())
@@ -259,6 +267,7 @@ impl Snapshot {
                         entity_id: (*id).clone(),
                         registry: Some(registry),
                         descriptive: DescriptiveAttributes::default(),
+                        loaded: false,
                     },
                 );
             }
@@ -266,6 +275,7 @@ impl Snapshot {
         let runtime: Vec<RuntimeEntity> = session.command("get_states", json!({})).await?;
         for (id, runtime) in index(runtime, |e| &e.entity_id)? {
             if let Some(entity) = entities.get_mut(&id) {
+                entity.loaded = !runtime.attributes.restored;
                 entity.descriptive = runtime.attributes;
             } else {
                 entities.insert(
@@ -273,6 +283,7 @@ impl Snapshot {
                     Entity {
                         entity_id: id,
                         registry: None,
+                        loaded: !runtime.attributes.restored,
                         descriptive: runtime.attributes,
                     },
                 );
@@ -291,7 +302,7 @@ impl Snapshot {
         for entity in snapshot
             .entities
             .values()
-            .filter(|e| e.eligible() && e.dedicated())
+            .filter(|e| e.eligible() && e.loaded_behavior())
         {
             let mut result: Value = session
                 .command(
@@ -349,7 +360,7 @@ impl Snapshot {
                 snapshot
                     .entities
                     .values()
-                    .filter(|e| e.eligible() && e.dedicated())
+                    .filter(|e| e.eligible() && e.loaded_behavior())
                     .map(|e| (e.domain().to_owned(), e.entity_id.clone())),
             )
             .collect();
