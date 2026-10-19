@@ -121,7 +121,7 @@ impl ArchiveServer {
             task,
         }
     }
-    async fn sql(&self, sql: &str) {
+    async fn sql(&self, sql: &'static str) {
         sqlx::raw_sql(sql)
             .execute(&mut *self.db.lock().await)
             .await
@@ -210,6 +210,14 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     pool: PgPool,
 ) {
     let archive = ArchiveServer::new().await;
+    std::fs::write(
+        archive._dir.path().join("SESSION_REVOKED"),
+        "synthetic logout",
+    )
+    .unwrap();
+    archive
+        .sql("UPDATE retrieval_state SET last_sync_at=1")
+        .await;
     archive
         .message(ALICE, "received", 100, "Receivedsentinel", false)
         .await;
@@ -244,6 +252,12 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     let server = start_server(pool.clone()).await;
     let (worker, wid, id) = setup(&server, archive.config(&[], &[])).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let log: String =
+        sqlx::query_scalar("select log from plugin_runs order by started_at desc limit 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(log.contains("logged_out") && log.contains("Some(1)"));
     let docs = documents(&server).await;
     assert_eq!(docs.len(), 3);
     let alice: Vec<_> = docs
@@ -398,7 +412,12 @@ async fn concurrent_wal_pages_replay_backfill_and_failed_pages_never_authorize_s
         .unwrap();
     archive.mode.store(3, Ordering::SeqCst);
     due(&server, &id).await;
-    assert_eq!(execute(&worker, wid, &pool).await.0, "failed");
+    let failed = execute(&worker, wid, &pool).await;
+    assert_eq!(failed.0, "failed");
+    assert!(
+        failed.2["unchanged"].as_u64().unwrap() > 1,
+        "completed first-page segments must be put before requesting the failing page"
+    );
     let after = documents(&server).await;
     assert!(
         before

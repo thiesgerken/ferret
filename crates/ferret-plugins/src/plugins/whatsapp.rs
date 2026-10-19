@@ -196,12 +196,19 @@ impl ArchiveClient {
         }
     }
 
-    async fn messages(&self, store: &str, chat: &str) -> Result<Vec<Message>, PluginError> {
-        let mut messages = Vec::new();
+    async fn ingest_chat(
+        &self,
+        run: &Run,
+        store: &str,
+        chat: &Chat,
+        source: &str,
+        stats: &mut RunStats,
+    ) -> Result<(), PluginError> {
+        let mut segments = Segments::new(source, chat)?;
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
-            let mut params = vec![("store_id", store.to_owned()), ("chat", chat.to_owned())];
+            let mut params = vec![("store_id", store.to_owned()), ("chat", chat.jid.clone())];
             if let Some(key) = after {
                 params.extend([
                     ("after_ts", key.ts.to_string()),
@@ -217,10 +224,17 @@ impl ArchiveClient {
                     return Err("WhatsApp message traversal is incomplete or unordered".into());
                 }
                 last = Some(key);
-                messages.push(message);
+                if let Some(document) = segments.push(&message)? {
+                    put(run, &document, stats).await?;
+                }
             }
             match page.next {
-                None => return Ok(messages),
+                None => {
+                    if let Some(document) = segments.current {
+                        put(run, &document, stats).await?;
+                    }
+                    return Ok(());
+                }
                 Some(key) if last == Some((key.ts, key.rowid)) && last != previous => {
                     after = Some(key)
                 }
@@ -461,15 +475,17 @@ async fn rebuild(
         let sync = run.api.start_sync(&source).await?.sync_id;
         syncs.insert(source.clone(), sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
-            let messages = client.messages(store, jid).await?;
-            for document in documents(&source, chat, &messages)? {
-                match run.api.put_document(&document).await? {
-                    PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
-                    PutResponse::Unchanged { .. } => stats.unchanged += 1,
-                    PutResponse::Excluded => {}
-                }
-            }
+            client.ingest_chat(run, store, chat, &source, stats).await?;
         }
+    }
+    Ok(())
+}
+
+async fn put(run: &Run, document: &DocumentPut, stats: &mut RunStats) -> Result<(), PluginError> {
+    match run.api.put_document(document).await? {
+        PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
+        PutResponse::Unchanged { .. } => stats.unchanged += 1,
+        PutResponse::Excluded => {}
     }
     Ok(())
 }
@@ -507,10 +523,10 @@ fn message_text(message: &Message) -> Result<(String, String), PluginError> {
     {
         writeln!(text, "{body}")?;
     }
-    if let Some(caption) = &message.media_caption {
-        if Some(caption.as_str()) != message.text.as_deref() {
-            writeln!(text, "Caption: {caption}")?;
-        }
+    if let Some(caption) = &message.media_caption
+        && Some(caption.as_str()) != message.text.as_deref()
+    {
+        writeln!(text, "Caption: {caption}")?;
     }
     if let Some(kind) = &message.media_type {
         writeln!(text, "Attachment type: {kind}")?;
@@ -527,55 +543,79 @@ fn message_text(message: &Message) -> Result<(String, String), PluginError> {
     Ok((text, sender))
 }
 
-fn documents(
-    source: &str,
-    chat: &Chat,
-    messages: &[Message],
-) -> Result<Vec<DocumentPut>, PluginError> {
-    let name: String = chat
-        .name
-        .as_deref()
-        .unwrap_or(&chat.jid)
-        .chars()
-        .take(256)
-        .collect();
-    let header = format!("WhatsApp chat: {name}\nChat ID: {}\n\n", chat.jid);
-    let header_chars = header.chars().count();
-    if header_chars >= SEGMENT_CHARS {
-        return Err("WhatsApp chat ID is too long".into());
+struct Segments<'a> {
+    source: &'a str,
+    chat: &'a Chat,
+    name: String,
+    header: String,
+    header_chars: usize,
+    current: Option<DocumentPut>,
+    previous_ts: Option<i64>,
+    current_chars: usize,
+}
+
+impl<'a> Segments<'a> {
+    fn new(source: &'a str, chat: &'a Chat) -> Result<Self, PluginError> {
+        let name: String = chat
+            .name
+            .as_deref()
+            .unwrap_or(&chat.jid)
+            .chars()
+            .take(256)
+            .collect();
+        let header = format!("WhatsApp chat: {name}\nChat ID: {}\n\n", chat.jid);
+        let header_chars = header.chars().count();
+        if header_chars >= SEGMENT_CHARS {
+            return Err("WhatsApp chat ID is too long".into());
+        }
+        Ok(Self {
+            source,
+            chat,
+            name,
+            header,
+            header_chars,
+            current: None,
+            previous_ts: None,
+            current_chars: 0,
+        })
     }
-    let mut documents: Vec<DocumentPut> = Vec::new();
-    let mut previous_ts: Option<i64> = None;
-    let mut current_chars = 0;
-    for message in messages {
+
+    fn push(&mut self, message: &Message) -> Result<Option<DocumentPut>, PluginError> {
         let (rendered, sender) = message_text(message)?;
         let message_chars = rendered.chars().count();
-        let pause = previous_ts.is_some_and(|ts| message.ts.saturating_sub(ts) >= PAUSE_SECONDS);
-        if documents.is_empty() || pause || current_chars + message_chars > SEGMENT_CHARS {
-            let external_id = digest_id(&message.msg_id);
-            documents.push(DocumentPut {
-                source: source.to_owned(),
-                external_id,
+        let pause = self
+            .previous_ts
+            .is_some_and(|ts| message.ts.saturating_sub(ts) >= PAUSE_SECONDS);
+        let mut completed = None;
+        if self.current.is_none() || pause || self.current_chars + message_chars > SEGMENT_CHARS {
+            completed = self.current.take();
+            self.current = Some(DocumentPut {
+                source: self.source.to_owned(),
+                external_id: digest_id(&message.msg_id),
                 content_type: ContentType::Plain,
-                title: Some(format!("{name} · {}", timestamp(message.ts)?.to_rfc3339())),
-                text: header.clone(),
+                title: Some(format!(
+                    "{} · {}",
+                    self.name,
+                    timestamp(message.ts)?.to_rfc3339()
+                )),
+                text: self.header.clone(),
                 url: None,
-                thread: Some(chat.jid.clone()),
+                thread: Some(self.chat.jid.clone()),
                 authors: Vec::new(),
                 created_at: Some(timestamp(message.ts)?),
                 modified_at: None,
-                meta: json!({"chat_id": chat.jid, "chat_kind": chat.kind,
+                meta: json!({"chat_id": self.chat.jid, "chat_kind": self.chat.kind,
                     "first_message_id": message.msg_id, "first_message_rowid": message.rowid})
                 .as_object()
                 .expect("object")
                 .clone(),
             });
-            current_chars = header_chars;
+            self.current_chars = self.header_chars;
         }
         // One oversized message stays intact; the server's ordinary chunker handles its size.
-        let doc = documents.last_mut().expect("segment");
+        let doc = self.current.as_mut().expect("segment");
         doc.text.push_str(&rendered);
-        current_chars += message_chars;
+        self.current_chars += message_chars;
         if !doc.authors.contains(&sender) {
             doc.authors.push(sender);
         }
@@ -583,8 +623,23 @@ fn documents(
             "last_message_at".to_owned(),
             json!(timestamp(message.ts)?.to_rfc3339()),
         );
-        previous_ts = Some(message.ts);
+        self.previous_ts = Some(message.ts);
+        Ok(completed)
     }
+}
+
+#[cfg(test)]
+fn documents(
+    source: &str,
+    chat: &Chat,
+    messages: &[Message],
+) -> Result<Vec<DocumentPut>, PluginError> {
+    let mut segments = Segments::new(source, chat)?;
+    let mut documents = Vec::new();
+    for message in messages {
+        documents.extend(segments.push(message)?);
+    }
+    documents.extend(segments.current);
     Ok(documents)
 }
 
