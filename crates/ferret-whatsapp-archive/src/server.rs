@@ -34,10 +34,12 @@ impl From<sqlx::Error> for Error {
     }
 }
 
-#[derive(Clone)]
 struct Service {
     path: PathBuf,
     token_hash: [u8; 32],
+    // An idle reader keeps WAL sidecars available when the collector closes. It holds no
+    // transaction/snapshot; request reads still reopen the path to detect store replacement.
+    _keepalive: std::sync::Mutex<SqliteConnection>,
 }
 
 /// The secret file contains a single 64-character hexadecimal encoding of 32 random bytes.
@@ -54,17 +56,19 @@ pub async fn router(
     path: impl AsRef<Path>,
     secret: &str,
 ) -> Result<Router, Box<dyn std::error::Error + Send + Sync>> {
-    let state = Arc::new(Service {
-        path: path.as_ref().to_owned(),
-        token_hash: credential(secret)?,
-    });
-    let mut db = state
-        .connect()
+    let path = path.as_ref().to_owned();
+    let token_hash = credential(secret)?;
+    let mut db = connect_file(&path)
         .await
         .map_err(|_| "cannot open wacli archive read-only")?;
     metadata(&mut db).await.map_err(
-        |_| "archive requires wacli v0.22.0 schema 32 or c45422b schema 33 writable migrations",
+        |_| "cannot read supported wacli archive: verify schema 32/33 writable migrations and readable WAL/SHM sidecars",
     )?;
+    let state = Arc::new(Service {
+        path,
+        token_hash,
+        _keepalive: std::sync::Mutex::new(db),
+    });
     Ok(Router::new()
         .route("/v1/archive", get(archive))
         .route("/v1/chats", get(chats))
@@ -102,14 +106,18 @@ impl Service {
     async fn connect(&self) -> Result<SqliteConnection, Error> {
         // Reopen per request: replacement of the mounted database must not leave us serving
         // a pool's old inode. Never use immutable=1 while a collector can write WAL pages.
-        let options = SqliteConnectOptions::new()
-            .filename(&self.path)
-            .read_only(true)
-            .create_if_missing(false)
-            .busy_timeout(Duration::from_secs(5))
-            .pragma("query_only", "ON");
-        Ok(SqliteConnection::connect_with(&options).await?)
+        connect_file(&self.path).await
     }
+}
+
+async fn connect_file(path: &Path) -> Result<SqliteConnection, Error> {
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        .read_only(true)
+        .create_if_missing(false)
+        .busy_timeout(Duration::from_secs(5))
+        .pragma("query_only", "ON");
+    Ok(SqliteConnection::connect_with(&options).await?)
 }
 
 async fn metadata(db: &mut SqliteConnection) -> Result<Archive, Error> {

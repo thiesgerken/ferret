@@ -66,6 +66,8 @@ Response: `{"messages":[...],"next":{"ts":1760000000,"rowid":123}}`, with `next:
 
 No raw full-row serialization, media keys/hashes, direct/local paths, session credentials, call/status content or binary media are returned. Names are the chat/message names stored in the archive, not live contact lookups. Each page has a short read-only transaction. Native revision changes do not invalidate continuation: replay covers rows inserted or changed behind the keyset.
 
+The process keeps one additional idle read-only SQLite handle to preserve existing WAL sidecars across a clean collector exit. It holds no transaction or snapshot and is never used for request reads. On a read-only mount, startup after SQLite already removed sidecars requires the collector to reopen the archive writable first; no immutable/write/copy fallback is used. See the [cold-start prerequisite](../plugins/whatsapp.md#prerequisites-and-archive-api).
+
 ## `GET /v1/changes?store_id=<id>&after=<sequence>&through=<sequence>`
 
 Reads native references with `after < sequence <= through`, ascending, up to 500 per page:

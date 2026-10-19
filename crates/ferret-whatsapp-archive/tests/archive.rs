@@ -294,3 +294,39 @@ async fn keysets_survive_wal_writes_and_journal_distinguishes_expiry_replacement
     assert_eq!(chats.chats.len(), 1);
     task.abort();
 }
+
+#[tokio::test]
+async fn idle_reader_preserves_wal_after_clean_collector_exit_without_holding_a_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wacli.db");
+    let mut db = database(&path).await;
+    let (url, task) = serve(&path).await;
+    sqlx::query("INSERT INTO messages(chat_jid,msg_id,ts,from_me,text) VALUES('1@s.whatsapp.net','after-open',1,0,'Current state')")
+        .execute(&mut db).await.unwrap();
+    let http = reqwest::Client::new();
+    let first: Archive = http
+        .get(format!("{url}/v1/archive"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(first.high, 1);
+    db.close().await.unwrap();
+    assert!(path.with_file_name("wacli.db-wal").exists());
+    assert!(path.with_file_name("wacli.db-shm").exists());
+    let after: Archive = http
+        .get(format!("{url}/v1/archive"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after.high, 1);
+    assert_eq!(after.store_id, first.store_id);
+    task.abort();
+}

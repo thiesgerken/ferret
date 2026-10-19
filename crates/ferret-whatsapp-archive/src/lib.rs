@@ -14,6 +14,7 @@ pub struct Archive {
     pub store_id: String,
     pub schema_version: i64,
     pub revision: i64,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub last_sync_at: Option<i64>,
     /// The archive does not contain authoritative live collector/login state.
     pub collector_status: String,
@@ -26,12 +27,14 @@ pub struct Archive {
 pub struct Chat {
     pub jid: String,
     pub kind: String,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatsPage {
     pub chats: Vec<Chat>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub next: Option<String>,
 }
 
@@ -40,16 +43,25 @@ pub struct ChatsPage {
 pub struct Message {
     pub rowid: i64,
     pub msg_id: String,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub sender_jid: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub sender_name: Option<String>,
     pub ts: i64,
     pub from_me: bool,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub text: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub display_text: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub media_type: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub media_caption: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub filename: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub mime_type: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub file_length: Option<i64>,
     pub edited: bool,
 }
@@ -63,6 +75,7 @@ pub struct MessageKey {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MessagesPage {
     pub messages: Vec<Message>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub next: Option<MessageKey>,
 }
 
@@ -74,7 +87,9 @@ pub struct Change {
     pub operation: String,
     pub chat_jid: String,
     pub msg_id: String,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub new_chat_jid: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub new_msg_id: Option<String>,
     pub reason: String,
     pub message_ts: i64,
@@ -91,4 +106,16 @@ pub struct ChangesPage {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorBody {
     pub code: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_nullable_fields_are_not_an_empty_page() {
+        assert!(serde_json::from_str::<MessagesPage>(r#"{"messages":[]}"#).is_err());
+        assert!(serde_json::from_str::<ChatsPage>(r#"{"chats":[]}"#).is_err());
+        assert!(serde_json::from_str::<Chat>(r#"{"jid":"1@s.whatsapp.net","kind":"dm"}"#).is_err());
+    }
 }

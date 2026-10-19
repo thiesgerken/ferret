@@ -1,5 +1,6 @@
 -- Native offline wacli v0.22.0 archive, created with doctor without --connect.
 -- sqlite3 .schema --nosys plus native migration/retrieval/change state rows.
+-- FTS shadow tables are omitted because CREATE VIRTUAL TABLE recreates them.
 -- Release archive SHA256: da3f528e0c65b743d451b360b9dea14d784fb209a2e9f8b8b9c00498d8f619fe.
 CREATE TABLE schema_migrations (
 			version INTEGER PRIMARY KEY,
@@ -217,11 +218,6 @@ CREATE VIRTUAL TABLE messages_fts USING fts5(
 				display_text
 			)
 /* messages_fts(text,media_caption,filename,chat_name,sender_name,display_text) */;
-CREATE TABLE 'messages_fts_data'(id INTEGER PRIMARY KEY, block BLOB);
-CREATE TABLE 'messages_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;
-CREATE TABLE 'messages_fts_content'(id INTEGER PRIMARY KEY, c0, c1, c2, c3, c4, c5);
-CREATE TABLE 'messages_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB);
-CREATE TABLE 'messages_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID;
 CREATE INDEX idx_groups_linked_parent_jid ON groups(linked_parent_jid);
 CREATE TABLE app_state_recovery_intents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
