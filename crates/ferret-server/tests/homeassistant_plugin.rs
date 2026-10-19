@@ -695,9 +695,10 @@ async fn null_empty_sequences_are_ingested_faithfully_and_reruns_are_unchanged(p
                     *definition
                 );
                 assert!(
-                    !finds(&server, document.title.as_deref().unwrap())
+                    finds(&server, document.title.as_deref().unwrap())
                         .await
-                        .is_empty()
+                        .iter()
+                        .any(|hit| hit.document_id == document.id)
                 );
             }
             assert_eq!(
