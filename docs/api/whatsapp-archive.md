@@ -12,7 +12,7 @@ Errors have an allowlisted JSON code, never raw SQLite, message or credential de
 |---|---|---|
 | 401 | `unauthorized` | Missing/invalid bearer secret |
 | 400 | `invalid_query` | Missing, unknown or malformed query fields |
-| 400 | `invalid_checkpoint` | Negative, reversed or future sequence range |
+| 400 | `invalid_checkpoint` | Reversed or future sequence range |
 | 409 | `store_replaced` | Requested archive identity differs from current SQLite store |
 | 410 | `checkpoint_expired` | Replay position is below the effective retention floor |
 | 503 | `unsupported_schema` | Unsupported migration/version/identity contract |
