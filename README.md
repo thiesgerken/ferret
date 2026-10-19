@@ -43,7 +43,7 @@ where that source's own tools take over, instead of guessing which tool's search
   the file in your git forge or Obsidian vault, the carapace session. ferret keeps a copy to search
   it, never to become the place you read it.
 - 🔌 **Plugins for your systems, a REST API for everything else.** git repos, Gitea accounts,
-  Paperless, carapace, IMAP mailboxes, AFFiNE workspaces, Vikunja tasks, Karakeep bookmarks and Moneta expenses sync on a schedule.
+  Paperless, carapace, IMAP mailboxes, AFFiNE workspaces, Vikunja tasks, Karakeep bookmarks, Mealie recipes and Moneta expenses sync on a schedule.
   Anything else sends documents with a plain HTTP `PUT`.
 - 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
   recipe and the note about your home bar in the same query, and the agent knows where to dig
@@ -109,6 +109,7 @@ respective sources.
 | AFFiNE | the docs of a workspace | the doc in AFFiNE |
 | Vikunja | tasks and complete comment discussions, including archived projects | the task in Vikunja |
 | Karakeep | saved text and annotations, including uploaded PDFs/images | the bookmark in Karakeep |
+| Mealie | group-wide recipes with attached notes and comments, across households | the recipe in Mealie |
 | Moneta | every visible expense, including income, transfers and labelled templates | the expense editor in Moneta |
 
 Everything else goes through the [ingest API](docs/conception/README.md#ingest-api): a `PUT` per
@@ -142,7 +143,7 @@ Start at the [documentation index](docs/README.md), or go directly to:
 - [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
 - Plugin setup: [git](docs/plugins/git.md), [Gitea](docs/plugins/gitea.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md),
-  [Vikunja](docs/plugins/vikunja.md), [Karakeep](docs/plugins/karakeep.md), [Moneta](docs/plugins/moneta.md).
+  [Vikunja](docs/plugins/vikunja.md), [Karakeep](docs/plugins/karakeep.md), [Mealie](docs/plugins/mealie.md), [Moneta](docs/plugins/moneta.md).
 - [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
 - [API guide](docs/api/README.md): REST and GraphQL contracts and credential choices.
 - [Architecture](docs/architecture.md): components, data flows and subsystem references.
