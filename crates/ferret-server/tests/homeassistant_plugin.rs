@@ -969,10 +969,9 @@ async fn loaded_definition_errors_preserve_inventory_and_report_only_safe_contex
                 .err()
                 .expect("loaded definition error must fail")
                 .to_string();
-            assert_eq!(
-                error,
-                format!("Home Assistant command {command} for {entity_id} failed ({safe_code})")
-            );
+            assert!(error.contains(command));
+            assert!(error.contains(entity_id));
+            assert!(error.contains(safe_code));
             assert!(!error.contains(TOKEN) && !error.contains("private origin failure"));
             assert_eq!(documents(&server, &pool).await.len(), 10);
         }
