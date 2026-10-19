@@ -396,6 +396,13 @@ type HitChunk {
   parts: [TextPart!]!
 }
 
+type IndexSummary {
+  documents: Int!
+  chunks: Int!
+  "Distinct source-facet writers, including at most one unknown writer."
+  sources: Int!
+}
+
 type Ingest {
   id: ID!
   "Pass the last ingest's as `activity(before:)` for the next page."
@@ -546,8 +553,10 @@ type PluginType {
 type Query {
   "The signed-in user."
   me: User!
+  "The signed-in user's homepage totals, cached for 60 seconds."
+  indexSummary: IndexSummary!
   """
-    Current signed-in-user content by writer, independent of ingest-feed filters.
+    Signed-in-user content by writer, cached for five seconds independently of ingest-feed filters.
     Storage is an attribution estimate in bytes, excluding the shared embedding cache.
   """
   writerStatistics: WriterStatistics!
@@ -566,7 +575,7 @@ type Query {
   embeddingStatus: [ModelStatus!]!
   """
     Every embedding model that has embedded, configured or not, the configured ones first.
-    Admins only.
+    Cached for five seconds. Admins only.
   """
   storedEmbeddingModels: [StoredEmbeddingModel!]!
   "The signed-in user's API keys, newest first."

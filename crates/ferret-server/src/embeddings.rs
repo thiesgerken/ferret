@@ -157,9 +157,6 @@ pub async fn prepare(pool: &PgPool, config: EmbeddingConfig) -> Result<Embedding
     })
 }
 
-// ponytail: exact counts, and neither table has an index on user_id, so both scan the whole
-// table. Fine for a household's data. An index on (user_id, model) or cached counts if Settings
-// gets slow.
 /// How many of `user_id`'s chunks `model` has embedded.
 pub async fn embedded_chunks(
     pool: &PgPool,
@@ -220,12 +217,21 @@ pub async fn user_backlog(
     Ok((backlog.pending, backlog.failed))
 }
 
-pub async fn chunks(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar!(
-        r#"select count(*) as "count!" from chunks where user_id = $1"#,
-        user_id
+pub async fn source_backlog(pool: &PgPool, model: &str) -> Result<Vec<SourceBacklog>, sqlx::Error> {
+    sqlx::query_as!(
+        SourceBacklog,
+        r#"select c.source,
+                  count(*) filter (where f.chunk_id is null) as "pending!",
+                  count(f.chunk_id) as "failed!"
+           from chunks c
+           left join embedding_failures f on f.chunk_id = c.id and f.model = $1
+           where not exists (select 1 from chunk_embeddings e
+                             where e.chunk_id = c.id and e.model = $1)
+           group by c.source
+           order by c.source"#,
+        model,
     )
-    .fetch_one(pool)
+    .fetch_all(pool)
     .await
 }
 
@@ -276,7 +282,7 @@ pub struct ModelStatus {
     pub embedding_api: EndpointStatus,
     pub query_api: EndpointStatus,
     /// Chunks still to embed per source, across users. Sources without any are left out.
-    pub backlog: Vec<SourceBacklog>,
+    pub backlog: Arc<Vec<SourceBacklog>>,
     /// Chunks with an embedding for this model, across users.
     pub embedded: i64,
     /// Every user's chunks.
@@ -343,40 +349,25 @@ impl Embedding {
         self.models.iter().find(|model| model.id() == id)
     }
 
-    /// Every configured model's backlog, the default first.
-    // ponytail: the backlog counts every chunk on each call, fine for a personal index. Keep
-    // running counts if the Admin page gets slow.
-    pub async fn status(&self, pool: &PgPool) -> Result<Vec<ModelStatus>, sqlx::Error> {
+    /// Every configured model's cached database progress, with live endpoint health.
+    pub(crate) async fn status(
+        &self,
+        pool: &PgPool,
+        statistics: &crate::statistics::Statistics,
+    ) -> Result<Vec<ModelStatus>, Arc<sqlx::Error>> {
+        let stored = statistics.stored(pool, self).await?;
+        let chunks = statistics.global_chunks(pool).await?;
         let mut statuses = Vec::new();
         for (index, model) in self.models.iter().enumerate() {
             let id = model.id();
-            // Pending as the pump sees it: no embedding and no recorded failure.
-            let backlog = sqlx::query_as!(
-                SourceBacklog,
-                r#"select c.source,
-                          count(*) filter (where f.chunk_id is null) as "pending!",
-                          count(f.chunk_id) as "failed!"
-                   from chunks c
-                   left join embedding_failures f on f.chunk_id = c.id and f.model = $1
-                   where not exists (select 1 from chunk_embeddings e
-                                     where e.chunk_id = c.id and e.model = $1)
-                   group by c.source
-                   order by c.source"#,
-                id,
-            )
-            .fetch_all(pool)
-            .await?;
-            let rate_per_minute = rate_per_minute(pool, id).await?;
+            let backlog = statistics.backlog(pool, id).await?;
+            let rate_per_minute = statistics.rate(pool, id).await?;
             let pending = backlog.iter().map(|source| source.pending).sum();
-            let embedded = sqlx::query_scalar!(
-                r#"select count(*) as "count!" from chunk_embeddings where model = $1"#,
-                id
-            )
-            .fetch_one(pool)
-            .await?;
-            let chunks = sqlx::query_scalar!(r#"select count(*) as "count!" from chunks"#)
-                .fetch_one(pool)
-                .await?;
+            let embedded = stored
+                .iter()
+                .find(|stored| stored.id == id)
+                .expect("configured model is registered")
+                .embedded;
             statuses.push(ModelStatus {
                 id: id.to_owned(),
                 embedding_api: EndpointStatus::of(&model.embedding_api),

@@ -96,8 +96,6 @@ pub struct StoredModel {
 }
 
 /// Every registered model, the configured ones first.
-// ponytail: counts every embedding on each call, fine for a personal index. Keep running counts
-// if the Admin page gets slow.
 pub async fn list(pool: &PgPool, embedding: &Embedding) -> Result<Vec<StoredModel>, sqlx::Error> {
     let embedded: HashMap<String, i64> =
         sqlx::query!(r#"select model, count(*) as "count!" from chunk_embeddings group by model"#)

@@ -74,11 +74,12 @@ async fn serve() -> Result<(), StartupError> {
         axum::serve(public, ferret_server::router(state.clone()))
             .with_graceful_shutdown(until_stopped())
             .into_future(),
-        axum::serve(internal, ferret_server::internal_router(state))
+        axum::serve(internal, ferret_server::internal_router(state.clone()))
             .with_graceful_shutdown(until_stopped())
             .into_future(),
     )?;
     wakeups.abort();
+    state.close_readiness().await;
     Ok(())
 }
 

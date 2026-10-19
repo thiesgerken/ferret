@@ -35,6 +35,7 @@ mod runs;
 mod search;
 mod search_query;
 mod sources;
+mod statistics;
 mod syncs;
 mod users;
 mod writer_stats;
@@ -60,6 +61,8 @@ pub async fn migrate(pool: &PgPool) -> Result<(), MigrateError> {
 #[derive(Clone)]
 pub struct AppState {
     pool: PgPool,
+    readiness_pool: PgPool,
+    statistics: Arc<statistics::Statistics>,
     session_key: Arc<SessionKey>,
     worker_secret: Arc<WorkerSecret>,
     config_key: Arc<ConfigKey>,
@@ -78,6 +81,12 @@ impl AppState {
         config_key: ConfigKey,
     ) -> Self {
         Self {
+            // A readiness check must not queue behind application work or embedding batches.
+            readiness_pool: sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .acquire_timeout(Duration::from_millis(250))
+                .connect_lazy_with((*pool.connect_options()).clone()),
+            statistics: Arc::new(statistics::Statistics::new()),
             pool,
             session_key: Arc::new(session_key),
             worker_secret: Arc::new(worker_secret),
@@ -86,6 +95,10 @@ impl AppState {
             schema: Arc::new(graphql::schema()),
             embedding,
         }
+    }
+
+    pub async fn close_readiness(&self) {
+        self.readiness_pool.close().await;
     }
 }
 
@@ -158,10 +171,15 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn health(State(state): State<AppState>) -> StatusCode {
-    match sqlx::query("select 1").execute(&state.pool).await {
-        Ok(_) => StatusCode::OK,
-        Err(error) => {
-            tracing::warn!(%error, "health check cannot reach the database");
+    match tokio::time::timeout(
+        Duration::from_millis(750),
+        sqlx::query("select 1").execute(&state.readiness_pool),
+    )
+    .await
+    {
+        Ok(Ok(_)) => StatusCode::OK,
+        result => {
+            tracing::warn!(?result, "health check cannot reach the database");
             StatusCode::SERVICE_UNAVAILABLE
         }
     }

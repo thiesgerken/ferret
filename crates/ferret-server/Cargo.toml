@@ -22,6 +22,7 @@ getrandom.workspace = true
 jsonschema.workspace = true
 jsonwebtoken.workspace = true
 juniper.workspace = true
+parking_lot.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rmcp = { workspace = true, features = ["macros", "server", "transport-streamable-http-server"] }
 rust-stemmers.workspace = true
@@ -43,6 +44,5 @@ async-imap.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 ferret-plugins = { path = "../ferret-plugins" }
 futures-util.workspace = true
-parking_lot.workspace = true
 tempfile.workspace = true
 yrs.workspace = true

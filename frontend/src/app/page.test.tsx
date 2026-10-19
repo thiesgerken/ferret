@@ -9,25 +9,12 @@ import SearchPage from "./page";
 const client = createGraphqlClient(async () =>
   Response.json({
     data: {
-      explore: {
-        __typename: "Exploration",
-        total: 18945,
-        facets: {
-          __typename: "Facets",
-          // Two connections and documents without a known writer: three sources.
-          sources: [
-            ["carapace/files", "c1"],
-            ["carapace/facts", "c1"],
-            ["demo/notes", null],
-            ["ferret", "c2"],
-          ].map(([value, writer]) => ({
-            __typename: "SourceCount",
-            value,
-            writer: writer && { __typename: "Writer", id: writer },
-          })),
-        },
+      indexSummary: {
+        __typename: "IndexSummary",
+        documents: 18945,
+        chunks: 52113,
+        sources: 3,
       },
-      embeddingModels: [{ __typename: "EmbeddingModel", chunks: 52113 }],
     },
   }),
 );

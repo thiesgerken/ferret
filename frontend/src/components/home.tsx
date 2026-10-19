@@ -6,23 +6,12 @@ import { BrandMark } from "@/components/brand-mark";
 import { SearchField } from "@/components/search-field";
 import { graphql } from "@/gql";
 
-// Explore without filters counts what the user can read, and its source facet names each
-// source's writer (a connection or an API key). Every model counts the same chunks.
 const IndexSummaryQuery = graphql(`
   query IndexSummary {
-    explore(input: { limit: 1 }) {
-      total
-      facets {
-        sources {
-          value
-          writer {
-            id
-          }
-        }
-      }
-    }
-    embeddingModels {
+    indexSummary {
+      documents
       chunks
+      sources
     }
   }
 `);
@@ -43,9 +32,6 @@ function IndexSummary() {
   const t = useTranslations("home");
   const [{ data }] = useQuery({ query: IndexSummaryQuery });
   if (!data) return <p className="mt-5 h-4" />;
-  const documents = data.explore.total;
-  // Sources without a known writer (from before keys were recorded) count as one more.
-  const sources = new Set(data.explore.facets.sources.map((source) => source.writer?.id ?? null)).size;
-  const chunks = data.embeddingModels[0].chunks;
+  const { documents, sources, chunks } = data.indexSummary;
   return <p className="mt-5 h-4 text-xs text-muted-foreground tabular-nums">{t("summary", { documents, sources, chunks })}</p>;
 }

@@ -212,6 +212,21 @@ async fn deleting_a_model_that_isnt_configured_removes_exactly_its_data(pool: Pg
         .await
         .unwrap();
 
+    let before = server
+        .graphql(
+            &cookie,
+            &format!("{{ {STORED} writerStatistics {{ rows {{ models {{ model }} }} }} }}"),
+            json!({}),
+        )
+        .await;
+    assert!(
+        before["data"]["storedEmbeddingModels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|model| model["id"] == "beta")
+    );
+
     let response = server
         .graphql(
             &cookie,
@@ -240,6 +255,15 @@ async fn deleting_a_model_that_isnt_configured_removes_exactly_its_data(pool: Pg
         .await
         .unwrap();
     assert_eq!(chunks_after, chunks);
+    let after = server
+        .graphql(
+            &cookie,
+            &format!("{{ {STORED} writerStatistics {{ rows {{ models {{ model }} }} }} }}"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(after["errors"], Value::Null, "{after}");
+    assert!(!after["data"].to_string().contains("beta"), "{after}");
 }
 
 /// A replica still configured for a deleted model (a rolling deploy) can't leave rows behind.
