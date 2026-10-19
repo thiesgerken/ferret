@@ -452,10 +452,16 @@ async fn semantic_candidates_below_the_models_min_similarity_are_dropped(pool: P
     api.put_document(&document("notes", "car", "My car broke down."))
         .await
         .unwrap();
-    api.put_document(&document("notes", "weather", "Lovely weather today."))
-        .await
-        .unwrap();
-    server.wait_for_embeddings(2).await;
+    for index in 0..100 {
+        let mut weather = document(
+            "notes",
+            &format!("weather-{index}"),
+            "Lovely weather today.",
+        );
+        weather.title = None;
+        api.put_document(&weather).await.unwrap();
+    }
+    server.wait_for_embeddings(101).await;
 
     let response = api.search(&query("vehicle")).await.unwrap();
 
@@ -491,14 +497,77 @@ async fn the_total_is_a_lower_bound_only_while_more_chunks_could_pass_the_cut_of
         "all of the scope's chunks came back"
     );
 
-    // One more than the vector half's candidates.
-    for index in 3..101 {
+    for index in 3..100 {
         api.put_document(&document("notes", &format!("car-{index}"), "My car."))
             .await
             .unwrap();
     }
-    server.wait_for_embeddings(101).await;
+    server.wait_for_embeddings(100).await;
+    let exact_limit = api.search(&query("vehicle")).await.unwrap();
+    assert_eq!(exact_limit.total, 100);
+    assert!(!exact_limit.total_is_lower_bound);
 
+    let mut extra = document("other", "extra", "My automobile. excludedword");
+    extra.content_type = ferret_api::ContentType::Markdown;
+    extra.authors = vec!["other".to_owned()];
+    extra.created_at = common::day(2);
+    api.put_document(&extra).await.unwrap();
+    server.wait_for_embeddings(101).await;
     let response = api.search(&query("vehicle")).await.unwrap();
     assert!(response.total_is_lower_bound, "{}", response.total);
+
+    let restricted_key = server
+        .create_api_key(&["SEARCH_READ"], Some(&["notes"]))
+        .await;
+    let restricted = server
+        .api_with_key(&restricted_key)
+        .search(&SearchQuery {
+            mode: SearchMode::Semantic,
+            ..query("vehicle")
+        })
+        .await
+        .unwrap();
+    assert_eq!(restricted.total, 100);
+    assert!(!restricted.total_is_lower_bound);
+    for filtered in [
+        SearchQuery {
+            sources: vec!["notes".to_owned()],
+            ..query("vehicle")
+        },
+        SearchQuery {
+            authors: vec!["someone".to_owned()],
+            ..query("vehicle")
+        },
+        SearchQuery {
+            content_types: vec![ferret_api::ContentType::Plain],
+            ..query("vehicle")
+        },
+        SearchQuery {
+            to: Some(common::day(2)),
+            ..query("vehicle")
+        },
+        query("vehicle -excludedword"),
+        query("\"My car\""),
+    ] {
+        let response = api
+            .search(&SearchQuery {
+                mode: SearchMode::Semantic,
+                ..filtered
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.total, 100);
+        assert!(!response.total_is_lower_bound);
+    }
+    let empty = api
+        .search(&SearchQuery {
+            sources: vec!["missing".to_owned()],
+            mode: SearchMode::Semantic,
+            ..query("vehicle")
+        })
+        .await
+        .unwrap();
+    assert_eq!(empty.total, 0);
+    assert_eq!(empty.documents_in_scope, 0);
+    assert!(!empty.total_is_lower_bound);
 }

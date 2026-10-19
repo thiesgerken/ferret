@@ -455,7 +455,7 @@ impl Hybrid<'_> {
                 .push_bind(self.max_distance())
                 .push(") and (select count(*) from nearest) < (select count(*) ");
             push_embeddings_in_scope(sql, self.model, filters);
-            sql.push("))");
+            sql.push(" offset (select count(*) from nearest) limit 1))");
         }
         sql.push(")");
     }
