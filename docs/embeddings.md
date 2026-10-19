@@ -52,11 +52,37 @@ serves the OpenAI route at `/v1/embeddings`, so `url: http://tei:80/v1` with the
 model id as `model`. Its `--max-batch-tokens` caps the input length, which must stay at 2202
 tokens or more (200 title characters, two newlines and a chunk of up to 2000 characters): TEI
 truncates longer inputs by default, which would embed only a chunk's beginning. The chart's
-`bundledTei` deploys one such TEI for one model.
+`bundledTei` deploys one such TEI for one model. TEI runs nearly every embedding model on Hugging
+Face, which makes it the default, but not the fastest choice for every model.
+
+**llama.cpp directly.** For a model published as a GGUF (Qwen3-Embedding ships official ones),
+[llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server` serves the same
+`/v1/embeddings` route and can be much faster. Measured for Qwen3-Embedding-0.6B with f16 weights
+on both, with batches of 32 chunks:
+
+| Hardware | TEI 1.9.4 | llama.cpp b11723 |
+|---|---|---|
+| Apple M5 Max (Metal) | ~1,000 tokens/s | ~3,600 to 4,100 tokens/s |
+| 5-core x86 node (CPU) | 78 tokens/s, 269 ms per query | 224 tokens/s, 156 ms per query |
+
+On the x86 node llama.cpp also needed 1 to 2 GiB of memory against TEI's 2.6 GiB. The model
+decides the server flags, e.g. for Qwen3-Embedding:
+
+```sh
+llama-server -m Qwen3-Embedding-0.6B-f16.gguf --embedding --pooling last \
+  --ctx-size 8192 --parallel 2 --batch-size 4096 --ubatch-size 4096 --host 0.0.0.0 --port 8080
+```
+
+- `--pooling` must match the model: `last` for Qwen3-Embedding, often `cls` or `mean` for others.
+- An embedding input must fit into one micro-batch, so `--ubatch-size` and each slot's context
+  (`--ctx-size` / `--parallel`) need at least 2202 tokens, like TEI's `--max-batch-tokens`.
+- Every slot reserves KV cache for its whole context, about 0.1 MiB per token for
+  Qwen3-Embedding-0.6B. A large `--ctx-size` copied from a workstation gets a small container
+  OOM-killed.
 
 **A self-hosted proxy.** [LiteLLM](https://docs.litellm.ai/docs/embedding/supported_embedding) in
-front of several TEIs (a CPU TEI in the cluster, a laptop's GPU for a backfill) balances and fails
-over between them under one model name. Ferret only sees the proxy: `url:
+front of several servers (a CPU server in the cluster, a laptop's GPU for a backfill) balances and
+fails over between them under one model name. Ferret only sees the proxy: `url:
 http://litellm:4000/v1`, `model` as the proxy names it, and the proxy's key in `token_env`.
 
 **A cloud API.** Any OpenAI-compatible embeddings API works the same way, e.g. OpenAI's
@@ -69,6 +95,12 @@ rate within the API's limits.
 - **A model name always means the same weights.** Ferret checks every answer's shape, not which
   model computed it: vectors from other weights would land in this model's index unnoticed and
   rank nonsense. Swapping the model behind a name needs a new `id` in ferret.
+- **Different servers behind one name agree.** The same weights in another server (TEI and
+  llama.cpp, CPU and GPU, f32 and f16) give close but not bit-identical vectors, and a quantized
+  GGUF (e.g. Q8_0) is not the same weights. Before mixing servers for one model, embed the same
+  inputs through both: real chunks and queries with the model's prefix should reach a cosine
+  similarity of at least 0.9999 each, and rank a handful of chunks the same. TEI and llama.cpp
+  with the f16 weights of Qwen3-Embedding-0.6B reach 0.99997.
 - **A cloud endpoint receives every chunk and every search query.** Every model embeds every
   chunk of every source, so a cloud endpoint for any model sees all of them, mail and chats
   included. When a source must not leave, every model needs a self-hosted endpoint.
