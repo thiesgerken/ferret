@@ -396,7 +396,7 @@ async fn reconcile(
         ));
         affected
     };
-    let mut syncs = BTreeMap::new();
+    let mut syncs = Vec::new();
     rebuild(
         run,
         client,
@@ -434,7 +434,7 @@ async fn reconcile(
     client
         .changes(&start.store_id, beginning, beginning)
         .await?;
-    for sync in syncs.values().copied().chain(root_sync) {
+    for sync in syncs.iter().copied().chain(root_sync) {
         client
             .changes(&start.store_id, beginning, beginning)
             .await?;
@@ -467,13 +467,13 @@ async fn rebuild(
     store: &str,
     chats: &BTreeMap<String, Chat>,
     affected: &BTreeSet<String>,
-    syncs: &mut BTreeMap<String, Uuid>,
+    syncs: &mut Vec<Uuid>,
     stats: &mut RunStats,
 ) -> Result<(), PluginError> {
     for jid in affected {
         let source = source(&run.source, jid);
         let sync = run.api.start_sync(&source).await?.sync_id;
-        syncs.insert(source.clone(), sync);
+        syncs.push(sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
             client.ingest_chat(run, store, chat, &source, stats).await?;
         }
