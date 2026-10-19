@@ -218,6 +218,7 @@ impl Ferret {
         let found = search::find(
             &self.state.pool,
             &self.state.embedding,
+            &self.state.statistics,
             caller.user_id,
             caller.sources(),
             &request,
@@ -325,7 +326,7 @@ fn caller(parts: &Parts) -> ApiCaller {
         .clone()
 }
 
-fn internal(error: sqlx::Error) -> String {
+fn internal(error: impl std::fmt::Display) -> String {
     tracing::error!(%error, "database error");
     "internal error".to_owned()
 }

@@ -165,3 +165,76 @@ async fn mcp_needs_a_key_with_search_read(pool: PgPool) {
     assert_eq!(anonymous.status(), 401);
     assert_eq!(without_scope.status(), 403);
 }
+
+#[sqlx::test(migrations = false)]
+async fn mcp_search_shares_only_its_effective_source_scope_with_other_transports(pool: PgPool) {
+    let server = start_server(pool).await;
+    let key = notes_and_mail(&server).await;
+    let api = server.admin_api().await;
+    let broad = api
+        .search(&ferret_api::SearchQuery {
+            q: "car".to_owned(),
+            mode: ferret_api::SearchMode::Keyword,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(broad.documents_in_scope, 3);
+    let client = connect(&server, &key).await;
+    let first = structured(
+        call(
+            &client,
+            "search",
+            json!({"query": "car", "mode": "keyword", "sources": ["notes"]}),
+        )
+        .await,
+    );
+    assert_eq!(first["total"], 2);
+
+    api.put_document(&document("notes/work", "new", "Another car."))
+        .await
+        .unwrap();
+    let fresh = structured(
+        call(
+            &client,
+            "search",
+            json!({"query": "car", "mode": "keyword"}),
+        )
+        .await,
+    );
+    assert_eq!(fresh["total"], 3);
+    let restricted = server
+        .api_with_key(&key)
+        .search(&ferret_api::SearchQuery {
+            q: "car".to_owned(),
+            mode: ferret_api::SearchMode::Keyword,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(restricted.documents_in_scope, 2);
+    assert_eq!(restricted.total, 3);
+    assert!(
+        restricted
+            .hits
+            .iter()
+            .all(|hit| hit.source == "notes" || hit.source.starts_with("notes/"))
+    );
+    let cookie = server.sign_in().await;
+    let graph = server.graphql(&cookie,
+        "{ search(input: {q: \"car\", mode: KEYWORD, sources: [\"notes\"]}) { total documentsInScope } }",
+        json!({})).await;
+    assert_eq!(graph["errors"], Value::Null, "{graph}");
+    assert_eq!(graph["data"]["search"]["documentsInScope"], 2);
+    assert_eq!(graph["data"]["search"]["total"], 3);
+    let denied = structured(
+        call(
+            &client,
+            "search",
+            json!({"query": "car", "mode": "keyword", "sources": ["mail"]}),
+        )
+        .await,
+    );
+    assert_eq!(denied["total"], 0);
+    assert_eq!(denied["hits"], json!([]));
+}

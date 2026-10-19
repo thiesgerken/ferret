@@ -33,9 +33,20 @@ Results contain one hit per document. By default, hits in the same `(source, thr
 
 ## Counts, pages and failure behavior
 
-`total` is after matching/cutoff/collapse, not just the current page. `documents_in_scope` counts readable documents in the selected sources before other filters. `total_is_lower_bound` warns when bounded candidates may hide additional matches; HNSW approximation means even a false flag is not an exhaustive-corpus guarantee. Facets apply all filters except their own so alternative choices remain visible. Author facets include the twenty most frequent values plus selected values.
+`total` is after matching/cutoff/collapse, not just the current page. `documents_in_scope` is an
+informational count of readable documents in the selected sources before other filters, cached
+for 60 seconds per user and effective source scope on each server replica. API-key source
+restrictions narrow that scope before cache lookup; root order and duplicates do not create
+different snapshots. It can lag ingestion/deletion and temporarily differ from fresh matching
+totals. Hits, matching totals and facets are not cached by this metadata cache.
 
-REST pages use `k` (default 10, range 1–100) and `offset`; subsequent requests should retain query/filter/model/mode/collapse choices. Each request has a consistent database snapshot for its hits/counts/facets, but successive pages are not a persistent snapshot across ingestion.
+`total_is_lower_bound` warns when bounded candidates may hide additional matches; HNSW
+approximation means even a false flag is not an exhaustive-corpus guarantee. The semantic check
+looks only far enough into the eligible scope to establish whether more than the retrieved
+nearest candidates exist. Facets apply all filters except their own so alternative choices remain
+visible. Author facets include the twenty most frequent values plus selected values.
+
+REST pages use `k` (default 10, range 1–100) and `offset`; subsequent requests should retain query/filter/model/mode/collapse choices. Each request has a consistent database snapshot for its hits, matching totals and facets; the informational scope count may be older. Successive pages are not a persistent snapshot across ingestion.
 
 Hybrid returns keyword-only results with `semantic_unavailable` if query embedding is unavailable. Semantic-only returns service unavailable; keyword makes no query-embedding request. An unknown model is invalid, even for keyword requests. A successful semantic query may still return few results while the model's document backlog is pending. Inspect [embedding progress](embeddings.md) rather than treating every empty result as an ingestion failure.
 

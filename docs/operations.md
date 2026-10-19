@@ -23,6 +23,13 @@ Different users have separate scopes; endpoint health remains live. Refresh erro
 as errors and shared for five seconds, never converted to zeros or served as stale success.
 Cold/expired refreshes still execute real aggregates and can be slow on a CPU-starved database.
 
+Search's informational `documents_in_scope`/`documentsInScope` also uses a shared 60-second cache,
+keyed by user and effective source roots after API-key restrictions. Concurrent refreshes share
+one load; equivalent root order/duplicates reuse the same entry. This runs a narrow document
+count, not the homepage summary. Only that metadata can be stale: search hits, matching totals
+and facets remain uncached and fresh. The semantic lower-bound flag uses a bounded existence
+check instead of counting every in-scope embedding.
+
 ```sh
 # Local direct server, not the static frontend proxy route:
 curl --fail-with-body http://127.0.0.1:8380/healthz

@@ -4,6 +4,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
+    sync::Arc,
     time::Instant,
 };
 
@@ -25,6 +26,7 @@ use crate::{
     highlight::highlight,
     search_query::{self, ParsedQuery},
     sources,
+    statistics::Statistics,
     writers::Writers,
 };
 
@@ -51,6 +53,7 @@ pub async fn handle(
     let response = find(
         &state.pool,
         &state.embedding,
+        &state.statistics,
         caller.user_id,
         caller.sources(),
         &query,
@@ -64,12 +67,12 @@ pub enum SearchError {
     Invalid(String),
     /// A semantic search without its embedding model.
     Unavailable(String),
-    Database(sqlx::Error),
+    Database(Arc<sqlx::Error>),
 }
 
 impl From<sqlx::Error> for SearchError {
     fn from(error: sqlx::Error) -> Self {
-        Self::Database(error)
+        Self::Database(Arc::new(error))
     }
 }
 
@@ -78,7 +81,7 @@ impl From<SearchError> for ApiError {
         match error {
             SearchError::Invalid(message) => ApiError::bad_request(&message),
             SearchError::Unavailable(message) => ApiError::service_unavailable(&message),
-            SearchError::Database(error) => error.into(),
+            SearchError::Database(error) => ApiError::database(error),
         }
     }
 }
@@ -144,6 +147,7 @@ pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
 pub async fn find(
     pool: &PgPool,
     embedding: &Embedding,
+    statistics: &Statistics,
     user_id: Uuid,
     allowed: Option<&[String]>,
     request: &SearchQuery,
@@ -167,16 +171,10 @@ pub async fn find(
             model: model.id().to_owned(),
         });
     }
-    let documents_in_scope = sqlx::query_scalar!(
-        r#"select count(*) as "count!" from documents d
-           where d.user_id = $1
-           and ($2::text[] is null
-                or exists (select 1 from unnest($2::text[]) root where source_covers(root, d.source)))"#,
-        user_id,
-        roots.as_deref() as Option<&[String]>,
-    )
-    .fetch_one(pool)
-    .await?;
+    let documents_in_scope = statistics
+        .documents_in_scope(pool, user_id, roots.as_deref())
+        .await
+        .map_err(SearchError::Database)?;
 
     let filters = Filters {
         user_id,
@@ -453,7 +451,7 @@ impl Hybrid<'_> {
             // return them slightly out of order, `false` means no sign of more, not a guarantee.
             sql.push(" or (not exists (select 1 from nearest where distance > ")
                 .push_bind(self.max_distance())
-                .push(") and (select count(*) from nearest) < (select count(*) ");
+                .push(") and exists (select 1 ");
             push_embeddings_in_scope(sql, self.model, filters);
             sql.push(" offset (select count(*) from nearest) limit 1))");
         }

@@ -130,6 +130,7 @@ pub struct GlobalProgress {
 
 pub struct Statistics {
     totals: Cache<Uuid, Totals>,
+    document_scopes: Cache<(Uuid, Option<Vec<String>>), i64>,
     progress: Cache<(Uuid, String), Progress>,
     rates: Cache<String, f64>,
     global: Cache<(), GlobalProgress>,
@@ -140,6 +141,7 @@ impl Statistics {
     pub fn new() -> Self {
         Self {
             totals: Cache::new(TOTALS_TTL),
+            document_scopes: Cache::new(TOTALS_TTL),
             progress: Cache::new(PROGRESS_TTL),
             rates: Cache::new(PROGRESS_TTL),
             global: Cache::new(PROGRESS_TTL),
@@ -188,6 +190,35 @@ impl Statistics {
                 })
             })
             .await
+    }
+
+    pub async fn documents_in_scope(
+        &self,
+        pool: &PgPool,
+        user: Uuid,
+        roots: Option<&[String]>,
+    ) -> Result<i64, Arc<sqlx::Error>> {
+        let normalized = roots.map(|roots| {
+            let mut roots = roots.to_vec();
+            roots.sort_unstable();
+            roots.dedup();
+            roots
+        });
+        self.document_scopes
+            .get((user, normalized), || async {
+                sqlx::query_scalar!(
+                    r#"select count(*) as "count!" from documents d
+                       where d.user_id = $1
+                       and ($2::text[] is null
+                            or exists (select 1 from unnest($2::text[]) root where source_covers(root, d.source)))"#,
+                    user,
+                    roots,
+                )
+                .fetch_one(pool)
+                .await
+            })
+            .await
+            .map(|count| *count)
     }
 
     pub async fn progress(&self, pool: &PgPool, user: Uuid, model: &str) -> CachedResult<Progress> {

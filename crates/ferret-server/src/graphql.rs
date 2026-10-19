@@ -202,6 +202,7 @@ impl Query {
         let response = search::find(
             &context.pool,
             &context.embedding,
+            &context.statistics,
             context.user.id,
             None,
             &request,
@@ -1025,8 +1026,8 @@ struct SearchResult {
     /// True when `total` is a minimum: the keyword half filled its candidates, or all of the vector
     /// half's nearest chunks passed the model's similarity cut-off while the scope holds more.
     total_is_lower_bound: bool,
-    /// Documents the user may read in the selected sources (all sources when none are selected).
-    /// The other filters don't narrow it.
+    /// Informational readable-document count in the selected sources, cached for 60 seconds.
+    /// Other filters don't narrow it; hits and matching totals remain fresh.
     documents_in_scope: i32,
     /// Whether the ranking has hits beyond this page.
     has_more: bool,

@@ -40,6 +40,12 @@ curl --fail-with-body -sS "$FERRET_URL/graphql" \
 
 Search and REST share retrieval logic. GraphQL adds UI concerns such as judgments and relative ranges (`DAY`, `WEEK`, `MONTH`, `YEAR`) in place of an explicit `from`; inspect the canonical enum before constructing other inputs. `document(id:)` returns full text and thread neighbors for the viewer. `explore(input:)` browses documents without query terms.
 
+Search's `documentsInScope` is informational metadata cached for 60 seconds per signed-in user and
+effective source roots; other filters do not narrow it. The same scoped cache serves REST/MCP
+search execution after API-key source restrictions have been applied. Hits, matching totals and
+facets still use current data, so the scope count may lag ingestion/deletion. This cache does not
+invoke the homepage's source/writer summary to count documents.
+
 `indexSummary { documents chunks sources }` returns the signed-in user's homepage totals without
 loading Explore's document page or other facets. Its snapshot lasts 60 seconds. `sources` preserves
 the homepage's writer meaning: distinct writer IDs from the unfiltered exact-source facets, plus

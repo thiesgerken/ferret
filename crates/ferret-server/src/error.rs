@@ -58,6 +58,14 @@ impl ApiError {
             message: message.to_owned(),
         }
     }
+
+    pub fn database(error: impl std::fmt::Display) -> Self {
+        tracing::error!(%error, "database error");
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "internal error".to_owned(),
+        }
+    }
 }
 
 /// axum answers malformed requests in plain text: bodies, content types (400, 415 or 422), query
@@ -85,11 +93,7 @@ impl From<axum_extra::extract::QueryRejection> for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        tracing::error!(%error, "database error");
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "internal error".to_owned(),
-        }
+        Self::database(error)
     }
 }
 

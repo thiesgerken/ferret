@@ -638,8 +638,8 @@ type SearchResult {
   """
   totalIsLowerBound: Boolean!
   """
-    Documents the user may read in the selected sources (all sources when none are selected).
-    The other filters don't narrow it.
+    Informational readable-document count in the selected sources, cached for 60 seconds.
+    Other filters don't narrow it; hits and matching totals remain fresh.
   """
   documentsInScope: Int!
   "Whether the ranking has hits beyond this page."

@@ -59,6 +59,12 @@ Response fields:
 - `total`, `total_is_lower_bound`, `documents_in_scope`, `has_more`, `facets`, `took_ms`, `semantic_unavailable` and selected `model`.
 - `facets.sources`: `{value,count,writer}`; `facets.authors`: `{value,count}`; `facets.are_lower_bounds` indicates candidate-bounded counts.
 
+`documents_in_scope` is informational source-scope metadata, cached for 60 seconds per user and
+effective source roots after narrowing to the key's allowed sources. Query words, exclusions,
+time, authors and content types do not narrow this count. Root permutations/duplicates share a
+snapshot. Hits, matching `total` and facets remain fresh, so this count can temporarily lag
+ingestion/deletion or be lower than the current matching total.
+
 For the seeded message, a hit's external id is `harz-trip/4` and its parts join to `And a Brocken hike on Saturday if the weather holds?`. Ids, timings, scores and broader hybrid rankings vary. See [search](../search.md) for ranking/candidate/count semantics. Follow pages with the same arguments and an increased offset; `has_more=false` ends this ranking, not a full document export.
 
 ## Read a document: `GET /api/documents/{id}`
