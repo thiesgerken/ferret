@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.24.1 (2026-10-19)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`1b72be0`](https://github.com/thiesgerken/ferret/commit/1b72be0f4158a10ea55dacc648d0094cde44a626))
+
 ## v0.24.0 (2026-10-19)
 
 
@@ -24,6 +33,15 @@
 
 - 🐛 fix(mealie): resolve recipe links and disclose group-wide copy
   ([`42ba610`](https://github.com/thiesgerken/ferret/commit/42ba610c6bac81319ba242c28e7db32c90158e75))
+
+### ⚡ Performance
+
+
+- ⚡ perf(search): share scoped informational document counts
+  ([`ec1276f`](https://github.com/thiesgerken/ferret/commit/ec1276f8a600fdd9c3b0029ea476ebd07a4ff49a))
+
+- ⚡ perf(search): bound semantic lower-bound scope checks
+  ([`92ccbba`](https://github.com/thiesgerken/ferret/commit/92ccbbaefafc03b84190706c835e935b9ad5ce1b))
 
 ## v0.23.3 (2026-10-19)
 
