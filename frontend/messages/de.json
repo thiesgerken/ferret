@@ -40,7 +40,16 @@
     }
   },
   "app": {
-    "menu": "App-Menü",
+    "menu": "Kontomenü",
+    "groups": {
+      "discover": "Entdecken",
+      "manage": "Verwalten"
+    },
+    "version": {
+      "frontend": "Frontend: {version}",
+      "server": "Server: {version}",
+      "mismatch": "Frontend und Server haben unterschiedliche Versionen. Lade die Seite neu. Bleibt die Warnung bestehen, prüfe, ob beide Deployments denselben Release verwenden."
+    },
     "signedInAs": "Angemeldet als {name}",
     "signOut": "Abmelden",
     "failed": "Etwas ist schiefgelaufen: {message}"

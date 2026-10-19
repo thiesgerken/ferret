@@ -3,6 +3,18 @@
 Web UI for ferret: Next.js (App Router, static export) with React, Tailwind CSS 4, Lucide icons and
 `next-themes`, copied from carapace's frontend. Talks GraphQL to the server through urql.
 
+The circular avatar in the top-right corner shows the first letter of the user's display name
+(or username when no display name is set). It opens an account menu grouped into Discover
+(Search and Explore) and Manage (Activity, Connections, Settings and, for admins, Admin).
+Below the navigation, a row contains the `thiesgerken/ferret` repository link with the version
+on its right. The repository link opens in a new tab. The account group at the bottom shows
+the signed-in user's name and sign-out action.
+
+The menu footer displays the running server's version. Hover over it to see both frontend and
+server versions; a warning appears when they differ. The frontend version is bundled from
+`package.json`, and the authenticated GraphQL `version` query reports the server's Cargo package
+version. The release pipeline updates both version sources together.
+
 ## Development
 
 ```bash

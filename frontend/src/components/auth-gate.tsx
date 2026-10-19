@@ -10,6 +10,7 @@ import { SESSION_ENDED_EVENT } from "@/lib/graphql";
 
 const MeQuery = graphql(`
   query Me {
+    version
     me {
       ...AppMenuUser
     }
@@ -43,7 +44,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return (
     <>
       <header className="fixed top-0 right-0 p-4">
-        <AppMenu user={data.me} />
+        <AppMenu user={data.me} serverVersion={data.version} />
       </header>
       {children}
     </>

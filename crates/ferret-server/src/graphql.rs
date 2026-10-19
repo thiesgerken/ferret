@@ -71,6 +71,11 @@ impl Query {
         &context.user
     }
 
+    /// The running server's package version.
+    fn version() -> &'static str {
+        env!("CARGO_PKG_VERSION")
+    }
+
     /// The signed-in user's homepage totals, cached for 60 seconds.
     async fn index_summary(context: &Context) -> FieldResult<IndexSummary> {
         let totals = context

@@ -4,6 +4,10 @@
 
 The canonical generated [frontend/schema.graphql](../../frontend/schema.graphql) describes every field/input/enum; [graphql.rs](../../crates/ferret-server/src/graphql.rs) implements resolvers and authorization. This guide intentionally does not duplicate the whole schema. GraphQL uses camelCase and uppercase enum values (`KEYWORD`, `SEARCH_READ`), unlike REST's lowercase snake_case.
 
+The authenticated `version` query returns the running server's Cargo package version as a non-null
+string. The UI requests it alongside `me` to display its version and detect a frontend/server
+version mismatch.
+
 ## Authenticate in a shell
 
 Login requires username/password and returns 204 plus a Secure HttpOnly session cookie. For a local plain-HTTP smoke, explicitly forward the cookie as the seed script does. Keep temporary header/key files private and remove them afterward:
