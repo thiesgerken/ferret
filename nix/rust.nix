@@ -90,6 +90,7 @@ in
       // services
       // {
         cargoArtifacts = testArtifacts;
+        doInstallCargoArtifacts = false;
         cargoExtraArgs = "--workspace --locked";
         RUST_TEST_THREADS = "6";
       }

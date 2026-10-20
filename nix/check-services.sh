@@ -1,4 +1,4 @@
-set -euo pipefail
+# This is sourced by stdenv; its optional hook variables require stdenv's shell options.
 
 check_state=$(mktemp -d)
 export PGHOST="$check_state/socket"
@@ -69,6 +69,23 @@ service imap-login {
 namespace inbox {
   inbox = yes
   separator = /
+  # IMAP fixtures APPEND to standard folders without creating them first.
+  mailbox Drafts {
+    auto = subscribe
+    special_use = \\Drafts
+  }
+  mailbox Junk {
+    auto = subscribe
+    special_use = \\Junk
+  }
+  mailbox Sent {
+    auto = subscribe
+    special_use = \\Sent
+  }
+  mailbox Trash {
+    auto = subscribe
+    special_use = \\Trash
+  }
   mailbox Papierkorb {
     special_use = \\Trash
   }
