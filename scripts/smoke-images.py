@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise locally loaded images in an isolated, disposable Compose project."""
 
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -12,6 +13,17 @@ import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+class FontPreloads(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.hrefs = set()
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "link" and attributes.get("as") == "font":
+            self.hrefs.add(attributes["href"])
 
 
 def run(*args, **kwargs):
@@ -124,6 +136,13 @@ def main():
             response = request(frontend + "/")
             assert "no-store" in response.headers["Cache-Control"]
             html = response.read().decode()
+            fonts = FontPreloads()
+            fonts.feed(html)
+            assert len(fonts.hrefs) == 3, fonts.hrefs
+            for font in fonts.hrefs:
+                assert font.startswith("/_next/static/"), font
+                response = request(frontend + font)
+                assert response.read(4) == b"wOF2", font
             asset = re.search(r'(/_next/static/[^" ]+\.js)', html)
             assert asset, "No static JavaScript asset in frontend export"
             response = request(frontend + asset.group(1))
