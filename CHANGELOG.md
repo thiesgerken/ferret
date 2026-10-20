@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased
+
+### Fixes
+
+- Distinguish Home Assistant's restored registry placeholders from loaded automation/script definitions before requesting configuration. Preserve loaded off/unavailable behavior and ordinary inventory; reconcile previously indexed unloaded definitions without masking genuine read failures.
+- Include safe Home Assistant command error categories and requested behavior context without exposing raw origin messages or credentials.
+
 
 ## v0.26.0 (2026-10-19)
 

@@ -155,6 +155,9 @@ pub fn documents(
             json!({"kind":"area", "area":area, "floor":area.floor_id.as_ref().map(|id| &snapshot.floors[id]), "related_behavior":related})));
     }
     for entity in snapshot.entities.values().filter(|e| e.eligible()) {
+        if entity.dedicated() && !entity.loaded_behavior() {
+            continue;
+        }
         if !entity.dedicated() && entity.device_id().is_some() {
             continue;
         }
@@ -398,6 +401,11 @@ fn behavior_links(text: &mut String, snapshot: &Snapshot, ids: &BTreeSet<String>
     }
     for id in ids {
         match snapshot.entities.get(id) {
+            Some(entity) if entity.dedicated() && !entity.loaded_behavior() => writeln!(
+                text,
+                "- {} ({id}); configured definition not loaded",
+                entity.name()
+            ),
             Some(entity) => writeln!(text, "- {} ({id})", entity.name()),
             None => writeln!(text, "- unresolved in current inventory ({id})"),
         }
@@ -419,6 +427,13 @@ fn named_relations(text: &mut String, snapshot: &Snapshot, relations: &Relations
             };
             if let Some(name) = name {
                 writeln!(text, "- {kind}: {name} ({id})").expect("string writes succeed");
+                if snapshot
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.dedicated() && !entity.loaded_behavior())
+                {
+                    text.push_str("  Configured definition not loaded.\n");
+                }
             } else if matches!(
                 kind.as_str(),
                 "device" | "area" | "floor" | "label" | "entity" | "automation" | "script"
