@@ -24,6 +24,7 @@ pub struct VikunjaConfig {
     url: String,
     /// The frontend address people open. Uses Vikunja's configured frontend URL when omitted.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// A token from Settings > API Tokens with projects:read_all, tasks:read_all and
     /// tasks_comments:read_all permissions. The user's project access limits what is indexed.

@@ -23,6 +23,8 @@ In Connections select `homeassistant`, a dedicated root such as `homeassistant/h
 - The transport uses normal TLS certificate verification, no redirect following and finite connection/authentication/command deadlines. There is no insecure certificate switch or new polling setting.
 - The protocol baseline is Home Assistant Core **2026.10.2**. The plugin needs device/entity/area/floor/label registries, batched extended entity reads, runtime entity enumeration, loaded `automation/config` and `script/config`, and `search/related`. It does not scrape files or fetch blueprint URLs.
 
+Changing, adding or removing the browser-only `public_url` preserves the stored token. Changing the worker-facing `url` requires re-entering it, even alongside a browser-link change.
+
 ## Documents and identity
 
 For root `homeassistant/home`:
@@ -41,11 +43,11 @@ Device links open `/config/devices/device/<device-id>` and area links open `/con
 
 ## Indexed inventory
 
-Deterministic Markdown keeps exact entity IDs near device and placement context. It includes user/original names, aliases, scoped label names/descriptions, origin registry IDs, integration/platform, domain, descriptive device class/category/static unit, and supplied hardware identity (serial/model/model ID/manufacturer, MAC connections, hardware/firmware versions). Typed metadata retains relationships and allowlisted origin facts, not raw registry options/capability dumps.
+Deterministic Markdown keeps exact entity IDs near device and placement context. It includes user/original names, distinct aliases, scoped label names/descriptions, origin registry IDs, integration/platform, domain, descriptive device class/category/static unit, and supplied hardware identity (serial/model/model ID/manufacturer, MAC connections, hardware/firmware versions). Equal registry/runtime device classes appear once; distinct classes and runtime-only classes remain searchable. Blank optional fields and aliases repeating an already rendered name are omitted. Typed metadata retains relationships and allowlisted origin facts, not raw registry options/capability dumps.
 
-Entity area overrides device area. An unassigned child device may inherit its logical parent's area; a connected-through hub's area is **not** inherited. Floor and area aliases remain searchable. Explicit assignments and effective placement retain provenance. Unknown placement is unknown, regardless of names. Parent hardware facts are explicitly attributed to the parent; child devices do not acquire fabricated hardware identity. Device registry entries can represent services rather than physical hardware.
+Entity area overrides device area. An unassigned child device may inherit its logical parent's area; a connected-through hub's area is **not** inherited. Known area/floor names, exact IDs, aliases, labels and floor levels remain searchable near each entity. Markdown distinguishes direct assignment from inherited placement without repeating the same explicit/effective area. Missing areas/floors are omitted from Markdown, not inferred from names; typed metadata retains nulls and assignment provenance. Parent hardware facts are explicitly attributed to the parent; child devices do not acquire fabricated hardware identity. Device registry entries can represent services rather than physical hardware.
 
-Hidden, registry-disabled and diagnostic-category entities are excluded from device inventories, standalone documents, area directories and dedicated automation/script eligibility. Configuration-category entities remain unless hidden/disabled. Device and area documents remain even if nothing passes these rules, stating that no entities are included under indexing rules, not that the origin has none. A runtime `off` automation is still included. Registry-less YAML entities have no registry flags or assigned placement to infer.
+Hidden, registry-disabled and diagnostic-category entities are excluded from device inventories, standalone documents, area directories and dedicated automation/script eligibility. Configuration-category entities remain unless hidden/disabled. Device and area documents retain their actual facts even if nothing passes these rules, without empty inventory/directory sections or claims that the origin has no entities. A runtime `off` automation is still included. Registry-less YAML entities have no registry flags or assigned placement to infer; their Markdown contains known descriptive facts rather than missing-registry notices.
 
 This is an inventory filter, not secrecy/redaction: explicit references to excluded entities remain in faithful definitions and recognized behavior relationships.
 
@@ -59,7 +61,7 @@ Registry names/IDs remain available for inventory and truthful relationship nami
 
 Home Assistant accepts explicit YAML nulls as empty lists for automation triggers/actions (including singular `trigger`/`action` spelling) and script `sequence`. These nested nulls are preserved faithfully rather than rewritten to `[]`. The required keys must still be present; an absent/null/non-object top-level configuration or invalid scalar sequence shape fails the run.
 
-Home Assistant's recognized relationships provide concise named resources in both directions: related automations/scripts on device/area documents and related devices/entities/areas on behavior documents. They are not exhaustive dependency analysis; dynamic templates can prevent target resolution. Full definitions are not duplicated into each device.
+Home Assistant's recognized relationships provide concise named resources in both directions: related automations/scripts on device/area documents and related devices/entities/areas on behavior documents. Sections and their nonexhaustiveness caveat appear only when recognized resources are actually rendered, not for empty results or unsupported resource kinds. These are not exhaustive dependency analysis; dynamic templates can prevent target resolution. Full definitions are not duplicated into each device.
 
 Recognized references may legitimately name deleted or unavailable inventory resources. Their exact IDs remain in definitions and relationship metadata and are marked “unresolved in current inventory” in rendered relationship sections, without invented names or documents. This does not turn a stale saved target into a failed sync. Missing required inventory listings, entity details, definitions, transport responses or inconsistent registry placement references still fail the run.
 
@@ -72,6 +74,8 @@ Each run uses one short-lived authenticated WebSocket. It enumerates registries,
 Registry-less entities missing from a complete runtime enumeration are swept, even if temporarily unloaded. Registered ordinary inventory remains based on registry membership; dedicated automation/script documents additionally require loaded runtime behavior. There is no grace period or guessed rename matching. Separate registry reads are not an atomic snapshot: detected inconsistency fails; undetected concurrent changes converge next run.
 
 Creation dates use reliable origin registry dates when available and otherwise stay null. Home Assistant's zero/Unix-epoch registry-migration sentinel means unknown, so it becomes null in document dates and typed metadata rather than a real 1970 date. Real registry dates remain intact. Composite modification dates remain null because registry dates do not cover every represented definition, relation or membership change. No run clock or runtime state-change date is substituted. Every run fully reconciles serialized content, so unchanged reruns remain unchanged and label/floor/entity/definition edits update affected representations without a parent modified-since shortcut.
+
+Markdown representation changes replace the affected indexed text on the next successful sync. They require no manual migration and do not change document identities, typed metadata or origin dates.
 
 Command failures report a fixed safe Home Assistant error category such as `unauthorized`, `not_found` or `unknown_command`, plus a validated requested behavior entity ID where applicable. Unknown categories become `unrecognized_error`; raw origin error messages, definitions and credentials are never included. A command category identifies the origin response, not proof of a credential problem.
 

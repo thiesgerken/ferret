@@ -45,19 +45,24 @@ pub struct GitConfig {
     pub(super) token: Option<String>,
     /// The branch to index. The repository's default branch when left out.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     pub(super) branch: Option<String>,
     /// Globs of files to index, e.g. `**/*.md`. Everything when left out.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     pub(super) include: Vec<String>,
     /// Globs of files to skip, e.g. `.obsidian/**`.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     pub(super) exclude: Vec<String>,
     /// Globs of Markdown files. Everything else is plain text.
     #[serde(default = "markdown_by_default")]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     pub(super) markdown: Vec<String>,
     /// Deep link to a file, with `{path}` and `{commit}`, e.g.
     /// `https://github.com/owner/notes/blob/{commit}/{path}`.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     pub(super) url_template: Option<String>,
 }
 

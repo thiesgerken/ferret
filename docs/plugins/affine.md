@@ -18,6 +18,8 @@ Copy the workspace id from `/workspace/<id>/…` in the AFFiNE UI. Create plugin
 
 All fields except `public_url` are required. `url` must reach the instance directly from the worker, without an interactive authentication proxy. `public_url` defaults to `url` and controls origin links. The account must have its password sign-in available.
 
+Changing, adding or removing the browser-only `public_url` preserves the stored password. Changing `url`, `email` or `workspace_id` requires re-entering it; the workspace id selects authenticated resources rather than only display links.
+
 ## Mapping and reconciliation
 
 One live workspace doc becomes one Markdown document at the connection source, identified by AFFiNE doc id. Title prefers the rendered page title, then workspace metadata. Origin links use `/workspace/<workspace-id>/<doc-id>`. No threads or authors are assigned. Creation uses workspace metadata when present and otherwise stays null; modification independently uses AFFiNE's merged update timestamp. The update time is not a substitute creation date.

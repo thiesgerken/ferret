@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.27.0 (2026-10-20)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #179 from thiesgerken/feat/spread-connection-minutes
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`2838e09`](https://github.com/thiesgerken/ferret/commit/2838e0994034971dfc52b42354e5b63dfad31654))
+
+## v0.26.3 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #177 from thiesgerken/fix/homeassistant-document-noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+- 🐛 fix(homeassistant): omit blank original device names
+  ([`1a9669e`](https://github.com/thiesgerken/ferret/commit/1a9669e236e3ada52201af9991f40c39fa7074a2))
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`35c28f9`](https://github.com/thiesgerken/ferret/commit/35c28f9c45a01f6dfebf735277b6fec8de5d5262))
+
+## v0.26.2 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #178 from thiesgerken/fix/safe-connection-settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+### 🔧 Configuration
+
+
+- 🔧 fix(connections): preserve credentials for safe settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+- 🔧 fix(connections): preserve credentials for explicitly safe settings
+  ([`e812c06`](https://github.com/thiesgerken/ferret/commit/e812c06f1da7f409cf646ffc104c673c65e55a63))
+
 ## v0.26.1 (2026-10-20)
 
 

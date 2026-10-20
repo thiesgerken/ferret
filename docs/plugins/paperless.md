@@ -16,6 +16,8 @@ Create a connection with plugin `paperless`, source `documents/paperless`, a nam
 
 `url` is the instance as reached **from the worker**, not from your browser. It must reach the API directly, not an interactive login proxy. `public_url` is optional and defaults to `url`; use it when browser-facing and internal addresses differ. `token` is required and write-only.
 
+Changing, adding or removing the browser-only `public_url` preserves the stored token. Changing the worker-facing `url` requires re-entering it, even alongside a browser-link change.
+
 Open Activity after creation, inspect the document count and run outcome, then search the title or a distinctive OCR phrase in keyword mode. Open the hit's origin and confirm it reaches `/documents/<id>/details` on your public instance.
 
 ## Mapping and reconciliation

@@ -21,6 +21,8 @@ Use your provider's IMAP hostname; `imap.example.com` is a placeholder.
 
 `server`, `username`, `password` are required. Port defaults to 993, TLS defaults to true. This is implicit TLS, not a STARTTLS configuration. Disabling TLS sends the password in cleartext and is suitable only for a test server next to the worker. `exclude_folders` defaults to Trash/Spam/Junk/Drafts; providing a list replaces that default. Server folders marked trash, junk or drafts are always excluded. `url_template` is optional: omit it to use Ferret's viewer. A `mid:` origin requires an operating-system mail handler that understands it; Ferret cannot install that handler for you.
 
+Changing `url_template` or `exclude_folders`, including adding/removing either field, preserves the stored password. Changing `server` (including its port), `tls` or `username` requires entering the password again, even when changing a safe setting in the same edit. Link changes refetch existing mails; folder exclusions sweep messages no longer selected and removing an exclusion can index them again.
+
 ## Identity, threads and content
 
 One message becomes one email document at the connection source. Message-ID is its stable identity, so copies across folders deduplicate and moves are invisible. The parser provides an identity for messages without a usable Message-ID. Subject, sender, date and recipient metadata come from the parsed mail. References/In-Reply-To connect messages into threads. Quoted earlier messages and common reply boilerplate are stripped so the same passage does not dominate every result. Attachments are not separately ingested as documents.

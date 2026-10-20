@@ -44,6 +44,7 @@ pub struct AffineConfig {
     /// The address people open AFFiNE at, which hits link to, e.g. `https://affine.example.com`.
     /// `url` when left out.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// The workspace to index: the id in its address, `/workspace/<id>/…`.
     workspace_id: String,

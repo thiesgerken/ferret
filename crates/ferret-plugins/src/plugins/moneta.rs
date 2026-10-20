@@ -47,6 +47,7 @@ pub struct MonetaConfig {
     url: String,
     /// Instance root people open. Defaults to `url`; base paths are preserved.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// A Moneta API key with read access. Its owner's normal visibility applies.
     #[schemars(extend("writeOnly" = true))]

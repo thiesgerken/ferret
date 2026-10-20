@@ -270,9 +270,9 @@
       },
       "configuration": "Konfiguration",
       "configurationHint": "Was das Plugin <plugin>{plugin}</plugin> braucht, um den Ursprung zu erreichen.",
-      "secretsHint": "Änderst du sie (nicht den Zeitplan), musst du jedes gespeicherte Geheimnis neu eingeben, damit eine Änderung sie nicht woandershin schicken kann.",
+      "secretsHint": "Indexierungs- und Anzeigeeinstellungen können gespeicherte Geheimnisse behalten. Änderst du den Ursprung oder andere geschützte Einstellungen, musst du jedes gespeicherte Geheimnis neu eingeben, damit eine Änderung sie nicht woandershin schicken kann.",
       "noConfiguration": "Dieses Plugin braucht keine Konfiguration.",
-      "keepSecret": "Leer lassen, um das gespeicherte zu behalten, außer die Konfiguration ändert sich",
+      "keepSecret": "Leer lassen, um gespeicherte Zugangsdaten zu behalten, außer bei geschützten Änderungen",
       "onePerLine": "Eins pro Zeile."
     }
   },

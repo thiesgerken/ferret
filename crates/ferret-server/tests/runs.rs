@@ -23,6 +23,7 @@ fn fake_plugin() -> PluginRegistration {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
+                "label": {"type": "string", "x-ferret-preserve-credentials": true},
                 "secret": {"type": "string", "writeOnly": true, "minLength": 8},
             },
             "required": ["path"],
@@ -532,6 +533,8 @@ async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_a
     assert!(error.contains("enter them again"), "{error}");
 
     let unchanged = update_config(&server, &id, json!({"path": "/data"})).await;
+    let safe_change =
+        update_config(&server, &id, json!({"path": "/data", "label": "display"})).await;
     let entered = update_config(
         &server,
         &id,
@@ -541,6 +544,10 @@ async fn credentials_sealed_under_another_key_fail_the_run_and_must_be_entered_a
 
     assert_eq!(
         unchanged["errors"][0]["message"],
+        "the stored credentials can't be decrypted with FERRET_CONFIG_KEY: enter secret"
+    );
+    assert_eq!(
+        safe_change["errors"][0]["message"],
         "the stored credentials can't be decrypted with FERRET_CONFIG_KEY: enter secret"
     );
     assert_eq!(entered["errors"], Value::Null, "{entered}");

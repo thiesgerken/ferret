@@ -43,6 +43,7 @@ pub struct PaperlessConfig {
     /// The address people open Paperless at, which hits link to, e.g.
     /// `https://paperless.example.com`. `url` when left out.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// An API token of the Paperless user whose documents to index (Paperless: My Profile → API
     /// Auth Token).

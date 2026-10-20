@@ -21,7 +21,7 @@ No write, asset-download, tag-management or administrator scopes are needed. Tag
 
 `url` is the instance root reachable by the worker, **not** `/api/v1`. `public_url` is the optional browser-facing root and defaults to `url`. HTTP(S) instance paths are preserved; embedded credentials, query strings and fragments are rejected. Redirects are not followed, so point the worker directly at Karakeep rather than an interactive login proxy.
 
-`token` is a top-level write-only field. Ferret encrypts it separately from visible connection configuration and provides it only to a claimed worker run. Re-enter it when changing non-secret configuration; schedule-only changes preserve it. See [connections](../connections.md) for setup, **Run now** and exclusions.
+`token` is a top-level write-only field. Ferret encrypts it separately from visible connection configuration and provides it only to a claimed worker run. Changing, adding or removing the browser-only `public_url` preserves it. Changing the worker-facing `url` requires re-entry, even alongside a browser-link change. See [connections](../connections.md) for setup, **Run now** and exclusions.
 
 ## What is indexed
 

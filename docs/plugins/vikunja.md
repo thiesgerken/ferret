@@ -24,7 +24,7 @@ Create a connection with plugin `vikunja`, source `tasks/vikunja`, a name/icon a
 
 `url` is the instance root as the worker reaches it, without `/api/v2`. A deployment under a URL path can include that path. HTTP and HTTPS are supported; embedded credentials, query strings and fragments are not. Redirects are not followed: use an address that reaches Vikunja directly rather than an interactive login proxy.
 
-`public_url` is optional. When omitted, links use Vikunja's configured `/api/v2/info.frontend_url`, not the worker's internal address. The token is write-only and encrypted separately from visible connection configuration. Re-enter it when changing non-secret configuration, as described in [connections](../connections.md).
+`public_url` is optional. When omitted, links use Vikunja's configured `/api/v2/info.frontend_url`, not the worker's internal address. The token is write-only and encrypted separately from visible connection configuration. Changing, adding or removing the browser-only `public_url` preserves it. Changing the worker-facing `url` requires re-entry, even alongside a browser-link change. See [connections](../connections.md).
 
 ## What is indexed
 

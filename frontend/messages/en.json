@@ -270,9 +270,9 @@
       },
       "configuration": "Configuration",
       "configurationHint": "What the <plugin>{plugin}</plugin> plugin needs to reach the origin.",
-      "secretsHint": "Changing it (not the schedule) needs every stored secret entered again, so an edit can't send them somewhere new.",
+      "secretsHint": "Indexing and display settings can keep stored secrets. Changing the origin or other protected settings requires re-entering every stored secret, so an edit can't send them somewhere new.",
       "noConfiguration": "This plugin needs no configuration.",
-      "keepSecret": "Leave empty to keep the stored one, unless the configuration changes",
+      "keepSecret": "Leave empty to keep stored credentials unless protected settings change",
       "onePerLine": "One per line."
     }
   },

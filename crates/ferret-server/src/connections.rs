@@ -212,11 +212,10 @@ pub async fn create(
 /// Changes name, icon, config, schedule and whether the connection runs. A new schedule takes
 /// effect from now.
 ///
-/// Stored credentials survive only an update that leaves the rest of the config as it is
-/// (schedule and enabled may change). Any other change needs every stored credential entered
-/// again: otherwise whoever holds a session could point a connection elsewhere, say at their own
-/// git server, and its next run would send the stored token there. A credential set to `null`
-/// is removed.
+/// Stored credentials survive changes only to fields the schema explicitly marks safe. Other
+/// config changes need every stored credential entered again: otherwise a session could point a
+/// connection at its own server and have the next run send the stored token there. A credential
+/// set to `null` is removed.
 pub async fn update(
     pool: &PgPool,
     config_key: &ConfigKey,
@@ -247,7 +246,7 @@ pub async fn update(
         owner,
         &schema,
         sealed.as_deref(),
-        config == current.config,
+        credentials_reusable(&schema, &current.config, &config),
         entered,
     )?;
     validate_config(
@@ -412,22 +411,39 @@ fn seal(config_key: &ConfigKey, credentials: &Map<String, Value>, owner: Owner) 
     (!credentials.is_empty()).then(|| config_key.seal(credentials, owner))
 }
 
-/// The credentials an update stores: the `entered` ones, on top of the stored ones while the
-/// config stays the same. Fails when a credential has to be entered again but wasn't: after a
-/// config change, or when the stored ones can't be opened (the database was restored without
-/// its key). `null` removes a credential.
+/// Only explicitly opted-in, non-secret top-level properties may change while reusing secrets.
+/// Comparing both sets of keys also protects additions and removals of unknown/future fields.
+fn credentials_reusable(schema: &Value, current: &Value, next: &Value) -> bool {
+    let (Some(current), Some(next)) = (current.as_object(), next.as_object()) else {
+        return false;
+    };
+    current
+        .keys()
+        .chain(next.keys().filter(|name| !current.contains_key(*name)))
+        .all(|name| {
+            let property = &schema["properties"][name];
+            current.get(name) == next.get(name)
+                || (property["x-ferret-preserve-credentials"] == true
+                    && property["writeOnly"] != true)
+        })
+}
+
+/// The entered credentials, on top of stored ones when only opted-in settings change. Fails
+/// when a credential has to be entered again but wasn't: after a protected config change, or
+/// when stored credentials can't be opened (the database was restored without its key).
+/// `null` removes a credential.
 fn updated_credentials(
     config_key: &ConfigKey,
     owner: Owner,
     schema: &Value,
     sealed: Option<&[u8]>,
-    config_unchanged: bool,
+    reuse_stored: bool,
     entered: Map<String, Value>,
 ) -> Result<Map<String, Value>, ConnectionError> {
     let mut credentials = Map::new();
     if let Some(sealed) = sealed {
         let (required, reason): (Vec<String>, _) = match config_key.open(sealed, owner) {
-            Ok(stored) if config_unchanged => {
+            Ok(stored) if reuse_stored => {
                 credentials = stored;
                 (Vec::new(), "")
             }
@@ -514,5 +530,49 @@ pub async fn check_api_key_may_write(
             "the source {source:?} belongs to the connection on {root:?}: API keys can't write there"
         ))),
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::credentials_reusable;
+
+    #[test]
+    fn only_explicit_non_secret_opt_ins_allow_credential_reuse() {
+        let schema = json!({"properties": {
+            "presentation": {"x-ferret-preserve-credentials": true},
+            "protected": {},
+            "false": {"x-ferret-preserve-credentials": false},
+            "string": {"x-ferret-preserve-credentials": "true"},
+            "number": {"x-ferret-preserve-credentials": 1},
+            "secret": {"writeOnly": true, "x-ferret-preserve-credentials": true},
+        }});
+        let current = json!({"protected": "origin"});
+        let safe = json!({"protected": "origin", "presentation": {"url": "mid:{id}"}});
+        assert!(credentials_reusable(&schema, &current, &current));
+        assert!(credentials_reusable(&schema, &current, &safe));
+        assert!(credentials_reusable(&schema, &safe, &current));
+        assert!(credentials_reusable(
+            &schema,
+            &safe,
+            &json!({"protected": "origin", "presentation": null})
+        ));
+        for name in [
+            "protected",
+            "unknown",
+            "false",
+            "string",
+            "number",
+            "secret",
+        ] {
+            let mut changed = current.clone();
+            changed[name] = json!("changed");
+            assert!(!credentials_reusable(&schema, &current, &changed), "{name}");
+            assert!(!credentials_reusable(&schema, &changed, &current), "{name}");
+            changed["presentation"] = json!("safe mixed with protected");
+            assert!(!credentials_reusable(&schema, &current, &changed), "{name}");
+        }
     }
 }

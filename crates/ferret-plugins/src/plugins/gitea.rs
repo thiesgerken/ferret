@@ -26,18 +26,23 @@ pub struct GiteaConfig {
     token: String,
     /// Repository globs matching `owner/repo`. Everything associated with the account when omitted.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     include_repos: Vec<String>,
     /// Repository globs to skip. Exclusions win over includes.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     exclude_repos: Vec<String>,
     /// Repository-relative file globs to index. All text files when omitted.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     include: Vec<String>,
     /// Repository-relative file globs to skip.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     exclude: Vec<String>,
     /// File globs rendered as Markdown; other selected files are plain text.
     #[serde(default = "git::markdown_by_default")]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     markdown: Vec<String>,
 }
 
