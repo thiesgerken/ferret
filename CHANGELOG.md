@@ -1,12 +1,26 @@
 # CHANGELOG
 
-## Unreleased
 
-### Fixes
+## v0.26.1 (2026-10-20)
 
-- Distinguish Home Assistant's restored registry placeholders from loaded automation/script definitions before requesting configuration. Preserve loaded off/unavailable behavior and ordinary inventory; reconcile previously indexed unloaded definitions without masking genuine read failures.
-- Include safe Home Assistant command error categories and requested behavior context without exposing raw origin messages or credentials.
 
+### Other
+
+
+- Merge pull request #176 from thiesgerken/fix/homeassistant-restored-behavior
+  ([`9b0def7`](https://github.com/thiesgerken/ferret/commit/9b0def79690aba819493e2598b65e1311b25a19f))
+
+- ✅ test(homeassistant): assert safe diagnostic content without prose coupling
+  ([`b5d7749`](https://github.com/thiesgerken/ferret/commit/b5d7749428c07dc698b3c59b82af11cdfd4e4a2a))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): distinguish restored placeholders from loaded behavior
+  ([`9b0def7`](https://github.com/thiesgerken/ferret/commit/9b0def79690aba819493e2598b65e1311b25a19f))
+
+- 🐛 fix(homeassistant): distinguish restored placeholders from loaded behavior
+  ([`09a3290`](https://github.com/thiesgerken/ferret/commit/09a3290c333157c4c7c3b3ee30bf42b91f879e04))
 
 ## v0.26.0 (2026-10-19)
 
