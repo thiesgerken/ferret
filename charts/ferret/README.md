@@ -17,6 +17,22 @@ owns health, troubleshooting, upgrades and backup/restore procedures.
 - A CNI that enforces NetworkPolicies (Cilium, Calico, …). With `networkPolicy.enabled` (the
   default) the chart restricts the server's internal port to the plugin workers. Without
   enforcement, the worker secret is all that guards it.
+- Linux x64 nodes for the published Ferret images. ARM Linux builds are a local Nix development
+  target, not a published release or chart deployment target.
+
+## Runtime security and images
+
+Server, workers and frontend use Nix-built runtime-only images. Their pods select x64 nodes,
+execute as UID/GID 65532, drop all capabilities, disable privilege escalation and service-account
+token mounting, and use the runtime-default seccomp profile. Roots are read-only; each pod mounts
+a disposable `emptyDir` at `/tmp`. Workers need enough temporary node storage to clone their Git
+repositories. nginx listens on container port 8080; the frontend Service remains port 80.
+
+These restrictions apply to Ferret, not automatically to the ordinary upstream ParadeDB/TEI
+images. No database volume or extension downgrade accompanies the image-build change. Preserve
+the existing PVC and follow the [upgrade/backup procedures](../../docs/operations.md) when changing
+database versions. The development Compose configuration's public secrets are never production
+defaults.
 
 ## Install
 

@@ -76,8 +76,8 @@ lint, and PR images and chart published as `:pr<N>`.
 
 ## Conventions
 
-- The Rust toolchain is pinned in `rust-toolchain.toml` and must match the builder image in the
-  `Dockerfile`.
+- The Rust toolchain is pinned in `rust-toolchain.toml`; Nix consumes it for tooling, checks and
+  runtime binaries. Nix is the single build/check definition.
 - Migrations are never edited after they are merged: the server refuses to start when an applied
   migration's checksum changed. Add a new one instead.
 - Migration versions are creation timestamps (`cargo sqlx migrate add --source

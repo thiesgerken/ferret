@@ -135,6 +135,13 @@ shows how to inspect a real git connection in Activity.
 The Compose stack is for local development and demos, not deployment. For a real installation
 follow the [Kubernetes walkthrough](docs/kubernetes.md) and [Helm chart](charts/ferret/README.md).
 
+Compose is the primary local environment. Linux x64 users pull published images without Nix;
+Apple Silicon developers build/load native ARM Linux images through Determinate Native Linux
+Builder and use the ARM Compose overlay. Releases publish x64 images only. One committed Nix
+flake/lockfile owns builds and checks; the optional native dev shell is documented in
+[development](docs/development.md). All three Ferret runtime images run non-root with read-only
+roots and explicit temporary storage in the maintained Compose/Helm configurations.
+
 ## Documentation
 
 Start at the [documentation index](docs/README.md), or go directly to:

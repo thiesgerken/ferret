@@ -6,7 +6,7 @@ services:
   plugins:
     environment:
       FERRET_GIT_PROTOCOLS: https:file
-      # The mounted repository belongs to the host user, not the worker's `nobody`, and git won't
+      # The mounted repository belongs to the host user, not the worker, and git won't
       # read a repository someone else owns unless it's marked safe in command-line config.
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: safe.directory

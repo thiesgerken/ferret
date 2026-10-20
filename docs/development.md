@@ -4,7 +4,7 @@ Use the [quickstart](quickstart.md) to try the app; this page covers changing it
 
 ## Prerequisites and repository map
 
-Install the Rust toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), a C/C++ build toolchain for native dependencies, Git, Docker Compose v2, curl and jq. Frontend development uses Node 24 and the pnpm version pinned in frontend/package.json (12.8.1 at this baseline). Use that package manager with the checked lockfile.
+Use the committed Nix flake/lockfile for builds and checks. It selects supported stable nixpkgs, consumes `rust-toolchain.toml`, and builds the pnpm version selected by `frontend/package.json`; Node 24 remains the frontend runtime. `nix develop` provides optional native tooling (including `aarch64-darwin` on Apple Silicon). Docker with Compose v2.24.4 or newer remains the primary environment, not the dev shell.
 
 | Path | Responsibility |
 | --- | --- |
@@ -21,22 +21,22 @@ Install the Rust toolchain pinned in [rust-toolchain.toml](../rust-toolchain.tom
 
 ## Full Compose development
 
+Follow the [quickstart](quickstart.md) for either x64 pulls without Nix or native ARM Linux builds/loads on Apple Silicon. On ARM, keep `COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml` set. Then:
+
 ```sh
-# Apple Silicon only:
-export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
-docker compose up -d --build
+docker compose up -d
 scripts/demo-seed.sh
 ```
 
-The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. First startup builds images and downloads weights. `tei` serves Qwen3 for queries and the embed pump; `tei-bge` (bge-m3) is scaled to 0 until `docker compose up -d --scale tei-bge=1 tei-bge`. This is development/demo configuration with public secrets, not a deployment recipe.
+The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. `tei` serves Qwen3 for queries and the embed pump; `tei-bge` remains scaled to zero until explicitly enabled. This configuration has public development secrets and is not a deployment recipe.
 
-Use `docker compose logs -f server plugins` and Activity for different layers of diagnostics. Rebuild the service you changed with `docker compose up -d --build server` (or plugins/frontend); frontend static output is baked into its image, not hot-reloaded from the checkout. Do not start a second project on occupied fixed ports or seed an existing personal index. Use isolated project names, host-port overrides and separate volumes when working alongside one.
+Use `docker compose logs -f server plugins` and Activity for different layers of diagnostics. There is no Dockerfile or Compose build path. Rebuild and load the changed Nix image, then `docker compose up -d --force-recreate server` (or plugins/frontend). On x64, set `FERRET_SERVER_IMAGE=ferret:local`, `FERRET_PLUGINS_IMAGE=ferret-plugins:local` and `FERRET_FRONTEND_IMAGE=ferret-frontend:local` when testing local builds. The ARM overlay already selects these names without pulling replacements. Static frontend output is baked into its image. Do not start a second project on occupied fixed ports or seed an existing personal index.
 
 Optional carapace demo:
 
 ```sh
 export CARAPACE_KNOWLEDGE_DIR=/absolute/path/to/knowledge-repository
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}:docker-compose.demo.yml" docker compose up -d
 scripts/demo-seed.sh
 ```
 
@@ -50,6 +50,8 @@ adjacent README covers prerequisites, commands, snapshot retention and productio
 This is separate from Explore and changes neither Ferret's schema nor its deployment.
 
 ## Host server and workers
+
+Enter the optional native shell with `nix develop` before the host commands below. Rust and pnpm versions come from the repository declarations; do not replace them with the older defaults of stable nixpkgs. The dev shell is native macOS on Apple Silicon. Packaged builds and integration checks remain Linux outputs.
 
 Start only the test/development database if port 8080/8081 will be used by the host server:
 
@@ -94,27 +96,37 @@ Production builds are static exports served by nginx; reverse-proxy routing repl
 
 ## Tests and checks
 
-Server tests start in-process servers against a real ParadeDB, not a mocked SQL interface. sqlx tests create an isolated database per test, so the configured test role needs database-creation permission. Use disposable test infrastructure, never an irreplaceable production database server.
+Nix owns formatting, Clippy, workspace tests, SQLx metadata/schema consistency, frontend lint/tests/codegen/production build/type checking, and Helm validation. CI runs the full set without path-based omissions, then explicitly builds every runtime package/image and executes the image smoke scenario.
 
 ```sh
-docker compose up -d paradedb
-docker compose up -d --scale dovecot=1 dovecot
-cargo test --workspace --locked
+# Native x64 Linux:
+nix flake check --print-build-logs
+nix build --no-link .#server .#plugins .#frontend .#server-image .#plugins-image .#frontend-image
 
-pnpm --dir frontend test
-pnpm --dir frontend lint
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-helm lint charts/ferret --set ingress.hostname=ferret.example.com
+# Apple Silicon through Determinate Native Linux Builder, never x86 execution:
+nix flake check --system aarch64-linux --print-build-logs
+nix build --no-link .#packages.aarch64-linux.server .#packages.aarch64-linux.plugins \
+  .#packages.aarch64-linux.frontend .#packages.aarch64-linux.server-image \
+  .#packages.aarch64-linux.plugins-image .#packages.aarch64-linux.frontend-image
 ```
 
-[.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; embedding tests use a fake OpenAI-compatible endpoint (`tests/common/fake_endpoint.rs`). See actual test setup before assuming an external account/GPU is required.
+The database-backed checks create an isolated PostgreSQL 18 cluster with stable nixpkgs' `pg_search` and `pgvector`, and a disposable Dovecot in the sandbox. They initialize writable temporary state, preload the extension, wait for readiness and clean up on success/failure. They override host database/mailbox defaults and require no existing developer data, external Docker services, origin account or publishing credential. The PostgreSQL major is explicit; extension/minor versions follow the stable lockfile, intentionally independently of Compose's ParadeDB image.
+
+After loading the three native Linux image archives as in the quickstart:
+
+```sh
+nix develop .#ci --command python scripts/smoke-images.py
+```
+
+This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
+
+For focused host iteration, `.cargo/config.toml` supplies non-forced development defaults for DATABASE_URL, FERRET_TEST_IMAP, offline SQL metadata and six test threads. Start `paradedb` and scale `dovecot` to one before `cargo test --workspace --locked`. These manual commands are conveniences, not a replacement CI pipeline. IMAP tests use per-test mailboxes, not personal accounts; embedding tests use protocol fixtures.
 
 The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
 
 ## Migrations and sqlx metadata
 
-Install a matching sqlx CLI (`cargo install sqlx-cli --version 0.9.0`). Create a new migration rather than editing an applied one:
+The native dev shell provides the matching sqlx CLI. Create a new migration rather than editing an applied one:
 
 ```sh
 cargo sqlx migrate add --source crates/ferret-server/migrations describe_change
@@ -136,3 +148,23 @@ pnpm --dir frontend codegen
 The schema command prints SDL without starting the server or needing runtime secrets/database. Commit the canonical schema with resolver/input changes. Client codegen reads [codegen.ts](../frontend/codegen.ts) and frontend operations; generated client files are not the canonical API contract.
 
 For behavior changes, update the appropriate maintained [topic/API/plugin guide](README.md), not just conception. [CI](../.github/workflows/ci.yml) defines the actual checks and PR preview image/chart publication; do not claim a check passed unless you ran it.
+
+## Native Linux Builder constraints
+
+Determinate Nix and a FlakeHub login are required; no FlakeHub project cache is configured. See the [builder prerequisites and known issues](https://docs.determinate.systems/troubleshooting/native-linux-builder/). The VM shares the host Nix store. Case-colliding outputs require a case-sensitive store, and `cp --no-preserve=mode` can fail on the shared filesystem. Do not reinstall Nix, reset its store, change global configuration or remove DHCP leases as an automatic repair. Report the exact failing derivation and obtain operator authorization for host changes. If concurrent guest-store initialization fails, retry the affected build with `--max-jobs 1`; do not switch to x86 or weaken the sandbox.
+
+## Dependency updates and publication
+
+Renovate updates Nix inputs/`flake.lock` as well as the existing Rust/frontend dependencies. pnpm uses official native upstream release archives, pinned by SHA-256 in `nix/pnpm-binaries.json` and asserted against `packageManager`; it is not rebuilt from pnpm's Rust workspace or replaced by stable nixpkgs' older pnpm. After changing that declaration or `frontend/pnpm-lock.yaml` (including on a Renovate PR), refresh the binary pins and fixed-output cache with the pinned tooling:
+
+```sh
+# On Apple Silicon:
+nix develop .#ci --command python scripts/update-nix-deps.py --system aarch64-linux
+# On native x64 Linux, use --system x86_64-linux instead.
+```
+
+The refresh command reads official GitHub release-asset digests when the pnpm version changes (public GitHub access is required), and Nix verifies the archive hashes and executable version. Commit the resulting binary pins and dependency hash with the dependency update, then run the full checks/builds/smoke above. A stale hash fails required checks; hosted Renovate cannot automatically repair this aggregate fetchPnpmDeps hash. Updates requiring this documented refresh are not auto-merged. Do not bypass hash checks or change the pnpm dependency-build allow/deny policy to make an update pass.
+
+GitHub Actions orchestrates verification, the standard nixpkgs binary cache and GitHub Actions artifact caching, smoke execution, release/version operations and Skopeo publication. Verification has no publishing credentials and untrusted PRs cannot write the trusted cache. Only x64 images are published. Docker-compatible archives from dockerTools are copied with Skopeo's OCI manifest conversion; they are not OCI-layout archives.
+
+PR publishing is a separate trusted `workflow_run` workflow. It validates the successful CI run and exact current PR head against GitHub, checks out `main` for tooling/scripts, and treats verified images/chart as data. Fork PRs do not publish. The first migration PR cannot activate this new publisher until it exists on the default branch; subsequent successful PR runs publish the existing mutable and SHA-specific image/chart tags. Release verification runs again against the version-bumped release tag before publication.

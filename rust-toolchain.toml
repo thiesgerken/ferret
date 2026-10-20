@@ -1,6 +1,5 @@
-# Kept in step with the builder image in the Dockerfile, so the compiler that gates the code in
-# CI is the one that builds the release binary, and a new stable clippy lint arrives as a
-# reviewable bump instead of a red main.
+# Nix consumes this selection for developer tooling, checks, and release binaries so compiler
+# and Clippy updates remain reviewable dependency changes.
 [toolchain]
 channel = "1.99.0"
 components = ["rustfmt", "clippy"]

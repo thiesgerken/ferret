@@ -1,0 +1,26 @@
+# Load the three aarch64-linux Nix archives before starting this stack.
+services:
+  server:
+    image: ferret:local
+    platform: linux/arm64
+    pull_policy: never
+  plugins:
+    image: ferret-plugins:local
+    platform: linux/arm64
+    pull_policy: never
+  frontend:
+    image: ferret-frontend:local
+    platform: linux/arm64
+    pull_policy: never
+  paradedb:
+    platform: linux/arm64
+  proxy:
+    platform: linux/arm64
+  dovecot:
+    platform: linux/arm64
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4@sha256:798cd7615e060a72ccbdf19aa0ada52289c6a0147490195bafaece6ce04d70f1
+    platform: linux/arm64
+  tei-bge:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4@sha256:798cd7615e060a72ccbdf19aa0ada52289c6a0147490195bafaece6ce04d70f1
+    platform: linux/arm64

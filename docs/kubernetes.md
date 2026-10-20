@@ -10,7 +10,7 @@ Choose a ReadWriteOnce StorageClass for the single-instance ParadeDB PVC and est
 
 Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint/egress isolation policy; add your cluster's controls as required. Never put private port 8081 behind the Gateway.
 
-Decide where embeddings come from before installing: every configured model needs an OpenAI-compatible endpoint the server pods can reach (a TEI, a proxy such as LiteLLM, or a cloud API), and the chart refuses to render without one. The chart's optional `bundledTei` deploys one CPU TEI for one model; it hard-codes an `amd64` node selector, so ARM-only clusters run a native ARM TEI themselves and name it as the endpoint. A TEI's first start downloads weights; plan its cache storage and memory as well as database capacity. See [embeddings](embeddings.md).
+Published Ferret images and their chart workloads support Linux x64 nodes only. ARM Linux outputs are for local Nix development, not ARM production releases. Decide where embeddings come from before installing: every configured model needs an OpenAI-compatible endpoint the server pods can reach, and the chart refuses to render without one. The optional `bundledTei` deploys one CPU TEI for one model on an x64 node. A TEI's first start downloads weights; plan cache storage and memory as well as database capacity. See [embeddings](embeddings.md).
 
 ## Choose secret management
 
@@ -84,6 +84,8 @@ kubectl -n ferret get secret ferret-runtime \
 ```
 
 Open your HTTPS hostname and sign in as admin. Create a limited ordinary user if appropriate and a first [connection](connections.md). Inspect Activity and search a known origin title. A ready server confirms database reachability, not model download or a successful origin sync.
+
+The Ferret containers run as UID/GID 65532, with read-only roots, dropped capabilities, no privilege escalation and runtime-default seccomp. Their only writable application state is an explicit `/tmp` `emptyDir`; worker Git clones use that temporary storage. Service-account tokens are not mounted. The frontend container listens on 8080 behind the unchanged port-80 frontend Service. Database and TEI security/storage remain separate infrastructure responsibilities.
 
 ## Embedding capacity and scaling
 

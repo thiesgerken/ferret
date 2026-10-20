@@ -4,22 +4,43 @@ This walkthrough uses the development Compose stack and disposable demo data. Do
 
 ## Prerequisites
 
-Install Git, Docker with Compose v2, Bash, curl, and jq. Run commands at the repository root. The stack builds Rust and the frontend and downloads embedding-model weights on first use; allow disk space, memory, network access to image registries and Hugging Face, and several minutes for startup. A healthy database alone does not mean the embedding model is ready.
+Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run commands at the repository root. Compose is the primary development/demo environment. Published Ferret images support Linux x64 only; x64 users do not need Nix. The supporting services use ordinary upstream images. Allow disk space, memory, registry/Hugging Face network access, and time for the first model download. A healthy database alone does not mean the embedding model is ready.
 
-On Apple Silicon select the native ARM TEI image in the same shell before starting:
+### x64: pull published images
 
 ```sh
-export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+docker compose pull
+docker compose up -d
 ```
 
-The default CPU TEI image is amd64. Emulating it is not the recommended local path. `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable, which is how an endpoint that is down looks.
+Set `FERRET_IMAGE_TAG` to a release version or PR tag to select matching server, worker and frontend images. These images contain runtime closures, not compilers or package managers.
+
+### Apple Silicon: build native ARM Linux images
+
+Install [Determinate Nix](https://docs.determinate.systems/) and sign up for a free FlakeHub account. `determinate-nixd auth login` authorizes the Native Linux Builder; `determinate-nixd status` reports the login. This managed ARM Linux build VM is separate from Docker Desktop's ARM Linux runtime VM. Do not enable x86 emulation or select `x86_64-linux` outputs on this path.
+
+```sh
+determinate-nixd status
+nix build --out-link result-server-image .#packages.aarch64-linux.server-image
+nix build --out-link result-plugins-image .#packages.aarch64-linux.plugins-image
+nix build --out-link result-frontend-image .#packages.aarch64-linux.frontend-image
+docker load --input result-server-image
+docker load --input result-plugins-image
+docker load --input result-frontend-image
+export COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml
+docker compose up -d
+```
+
+The ARM overlay selects the local `:local` Ferret images with `pull_policy: never` and explicitly selects `linux/arm64` for every service, including native TEI. A missing local image fails instead of pulling an x64 replacement. Keep `COMPOSE_FILE` set for subsequent commands on this page. See [development](development.md) for builder filesystem constraints and checks.
+
+`tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 
 ## Start and sign in
 
 Check that ports 3380, 8380 and 5439 are free. If you already run Ferret, use a separate checkout, Compose project, volumes and port overrides instead of seeding your existing index.
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 docker compose logs -f server tei
 ```

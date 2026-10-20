@@ -2,6 +2,14 @@
 
 Operate the index, origins and model-serving infrastructure as separate failure domains. Ferret exposes health and Activity but does not provide a database backup scheduler, HA database operator or universal repair endpoint.
 
+## Runtime images and writable state
+
+The server, worker and frontend images are built by Nix from runtime closures without a distribution base or build environment. Releases publish Linux x64 only. All three execute as UID/GID 65532 with a read-only root, dropped capabilities and no privilege escalation in Compose and Helm. Temporary state is explicitly writable at `/tmp`: Compose supplies a tmpfs, and Helm supplies a per-pod `emptyDir`. Workers clone repositories there; size node/container temporary storage for the repositories they process. It is disposable state, not a backup target.
+
+The worker closure includes Git and CA certificates for outbound HTTPS, and the server includes CA certificates for outbound API/TLS clients. The frontend runs nginx on container port 8080, while the chart's frontend Service remains port 80 and public routes do not change. Do not add writable root access or run as root to fix a missing temporary mount. The upstream database, TEI, proxy and test-mail images retain their own runtime requirements; the Ferret image restrictions do not claim those services are hardened identically.
+
+Compose remains development/demo configuration with public credentials. For x64 pull commands or native ARM Linux build/load steps, use the [quickstart](quickstart.md). Nix integration checks use a separate sandbox-local PostgreSQL/extensions stack and never migrate a developer volume. The Compose ParadeDB tag, PostgreSQL major, volume name and data path are unchanged by the image-build cutover. Do not replace an existing data directory with the test cluster's version or downgrade its extension because the test nixpkgs selects a different version.
+
 ## Health and logs
 
 `GET /healthz` on server port 8080 executes `select 1`: 200 means database reachable, 503 means not. It is unauthenticated but need not be exposed by the reverse proxy. It does not test model inference, worker availability or origin credentials. The Helm server liveness/startup probes use TCP; readiness uses this database check, avoiding pointless server restarts during a database outage.

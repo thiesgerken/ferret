@@ -19,6 +19,16 @@ spec:
         # Rolls the pods when the models change: the server reads them only at startup.
         checksum/config: {{ include "ferret.config" . | sha256sum }}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/arch: amd64
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -26,6 +36,11 @@ spec:
         - name: server
           image: {{ include "ferret.image" (dict "root" . "image" .Values.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - name: http
               containerPort: 8080
@@ -79,6 +94,8 @@ spec:
             - name: config
               mountPath: /etc/ferret
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           # Startup covers migrations and waiting for Postgres.
           startupProbe:
             tcpSocket:
@@ -100,6 +117,8 @@ spec:
         - name: config
           configMap:
             name: {{ .Release.Name }}-config
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

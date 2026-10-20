@@ -1,7 +1,12 @@
 # Development only. The deployment is the Helm chart.
 services:
   server:
-    build: .
+    image: ${FERRET_SERVER_IMAGE:-ghcr.io/thiesgerken/ferret:${FERRET_IMAGE_TAG:-latest}}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
     ports:
       # Host ports off the defaults (here and for ParadeDB), so ferret runs next to other
       # stacks that already hold 8080 and 5432.
@@ -22,9 +27,12 @@ services:
       - ./docker/ferret.yaml:/etc/ferret/config.yaml:ro
 
   plugins:
-    build:
-      context: .
-      target: plugins
+    image: ${FERRET_PLUGINS_IMAGE:-ghcr.io/thiesgerken/ferret-plugins:${FERRET_IMAGE_TAG:-latest}}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
     depends_on:
       - server
     environment:
@@ -33,7 +41,12 @@ services:
       FERRET_WORKER_SECRET: *worker-secret
 
   frontend:
-    build: ./frontend
+    image: ${FERRET_FRONTEND_IMAGE:-ghcr.io/thiesgerken/ferret-frontend:${FERRET_IMAGE_TAG:-latest}}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
 
   # The UI at http://127.0.0.1:3380, routed like the cluster's HTTPRoute (docker/traefik-dynamic.yml).
   proxy:
@@ -85,8 +98,7 @@ services:
   # The embedding models' endpoints (docker/ferret.yaml): tei computes Qwen3 for queries and the
   # embed pump.
   tei: &tei
-    # amd64 only. On Apple Silicon use the native build instead of emulation:
-    # TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+    # The ARM Compose overlay selects the native image and rejects x86 execution.
     image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d}
     restart: unless-stopped
     # The default batch budget (16k tokens) makes the warmup allocate attention for a 16k-token

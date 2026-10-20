@@ -16,6 +16,16 @@ spec:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "frontend") | nindent 8 }}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/arch: amd64
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -23,9 +33,17 @@ spec:
         - name: frontend
           image: {{ include "ferret.image" (dict "root" . "image" .Values.frontend.image) }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           {{- with .Values.frontend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -35,6 +53,9 @@ spec:
               path: /
               port: http
             periodSeconds: 30
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
