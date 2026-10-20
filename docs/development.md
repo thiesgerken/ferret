@@ -42,6 +42,34 @@ scripts/demo-seed.sh
 
 The overlay mounts that local Git repository into workers and explicitly permits file transport for the demonstration. Only committed/mirrored content is indexed. Keep this exception out of untrusted deployments.
 
+### Standalone embedding map prototype
+
+On the `prototype/embedding-atlas` branch, run Apple Embedding Atlas alongside the existing
+development stack. Install [uv](https://docs.astral.sh/uv/), then from that worktree:
+
+```sh
+FERRET_DATABASE_URL=postgres://ferret:ferret@127.0.0.1:5439/ferret \
+  uv run scripts/atlas-prototype.py --user admin --model qwen3-embedding-0.6b
+```
+
+Open <http://127.0.0.1:5055>. The launcher installs isolated Python dependencies, reads a
+single user's documents in a read-only transaction, and projects one normalized mean chunk
+vector per document using cosine UMAP. Only documents with every chunk embedded in the selected
+model are included. Startup reports coverage; the map is colored by source, with source,
+content-type and author filters and document text previews. Filters retain the same coordinates.
+Use `--model bge-m3` to inspect that model instead, or `--port` for another local port.
+
+This is a snapshot, not the Explore implementation: restart to refresh it. Documents removed
+from Ferret remain in an already running snapshot. Averaging can blur mixed-topic documents;
+island spacing is not a calibrated similarity measure. No embedding endpoint is called, and
+Ferret's ingestion, schema and frontend are unchanged.
+
+The server binds only to `127.0.0.1` and has no Ferret authentication. Do not expose or proxy it
+to a network. Full document text is copied into the git-ignored `.atlas-prototype/` directory
+with owner-only permissions and delivered to the local browser. Atlas can also cache derived
+data in the operating system's user cache directory. Stop with Ctrl+C; remove the snapshot
+directory and Atlas cache when the local copy is no longer needed.
+
 ## Host server and workers
 
 Start only the test/development database if port 8080/8081 will be used by the host server:
