@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.27.0 (2026-10-20)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #179 from thiesgerken/feat/spread-connection-minutes
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`2838e09`](https://github.com/thiesgerken/ferret/commit/2838e0994034971dfc52b42354e5b63dfad31654))
+
 ## v0.26.3 (2026-10-20)
 
 
