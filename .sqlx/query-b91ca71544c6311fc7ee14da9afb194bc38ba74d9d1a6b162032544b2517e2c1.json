@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from plugin_inventory\n         where connection_id = $1 and generation::text is distinct from $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b91ca71544c6311fc7ee14da9afb194bc38ba74d9d1a6b162032544b2517e2c1"
+}

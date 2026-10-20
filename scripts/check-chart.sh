@@ -21,6 +21,18 @@ if grep -q 'name: ferret-tei' <<<"$defaults"; then
   exit 1
 fi
 
+mounts=$(helm template ferret "$chart" -f charts/test-values/files-mounts.yaml --show-only templates/plugins.yaml)
+for expected in 'replicas: 2' 'automountServiceAccountToken: false' 'server: nas.example.com' 'mountPath: "/mnt/documents"' 'readOnly: true'; do
+  if [[ "$mounts" != *"$expected"* ]]; then
+    echo "worker mounts missing: $expected" >&2
+    exit 1
+  fi
+done
+if [[ "$mounts" == *'privileged: true'* ]]; then
+  echo "worker mounts require no privileged container" >&2
+  exit 1
+fi
+
 # Renders that must fail, each with the message it must give.
 refuse() {
   local expected=$1

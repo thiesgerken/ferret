@@ -1219,6 +1219,7 @@ dependencies = [
  "mail-parser",
  "percent-encoding",
  "reqwest",
+ "rustix",
  "rustls-platform-verifier",
  "schemars",
  "serde",

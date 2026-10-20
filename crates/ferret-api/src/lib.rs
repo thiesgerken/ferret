@@ -314,6 +314,27 @@ pub struct SyncCommitted {
     pub deleted: u64,
 }
 
+/// A metadata fingerprint staged by a plugin after its document operations succeeded.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InventoryEntry {
+    pub external_id: String,
+    pub fingerprint: String,
+    pub indexed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InventoryLookup {
+    pub generation: Uuid,
+    pub external_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InventoryStaged {
+    pub generation: Uuid,
+}
+
 /// A client for ferret's public REST API.
 pub struct Client {
     http: reqwest::Client,
@@ -500,6 +521,39 @@ impl Client {
         .error_for_status()?
         .json()
         .await
+    }
+
+    /// Reads at most 512 fingerprints from this connection's reusable successful generation.
+    /// Only live plugin run tokens may use the inventory API.
+    pub async fn inventory_lookup(
+        &self,
+        generation: Uuid,
+        external_ids: Vec<String>,
+    ) -> Result<Vec<InventoryEntry>, reqwest::Error> {
+        self.api(reqwest::Method::POST, "/api/inventory/lookup")
+            .json(&InventoryLookup {
+                generation,
+                external_ids,
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
+    /// Stages at most 512 fingerprints in the current run's generation.
+    pub async fn inventory_stage(
+        &self,
+        entries: &[InventoryEntry],
+    ) -> Result<InventoryStaged, reqwest::Error> {
+        self.api(reqwest::Method::PUT, "/api/inventory")
+            .json(entries)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
     }
 
     fn api(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
