@@ -42,47 +42,12 @@ scripts/demo-seed.sh
 
 The overlay mounts that local Git repository into workers and explicitly permits file transport for the demonstration. Only committed/mirrored content is indexed. Keep this exception out of untrusted deployments.
 
-### Standalone embedding map prototype
+### Standalone embedding maps
 
-On the `prototype/embedding-atlas` branch, run Apple Embedding Atlas alongside the existing
-development stack. Install [uv](https://docs.astral.sh/uv/), then from that worktree:
-
-```sh
-FERRET_DATABASE_URL=postgres://ferret:ferret@127.0.0.1:5439/ferret \
-  uv run scripts/atlas-prototype.py --user admin --model qwen3-embedding-0.6b
-```
-
-Open <http://127.0.0.1:5055>. The launcher installs isolated Python dependencies, reads a
-single user's documents in a read-only transaction, and projects one normalized mean chunk
-vector per document using cosine UMAP. Only documents with every chunk embedded in the selected
-model are included. Startup reports coverage; the map is colored by source, with source,
-content-type and author filters and document text previews. Filters retain the same coordinates.
-Use `--model bge-m3` to inspect that model instead, or `--port` for another local port.
-
-This is a snapshot, not the Explore implementation: restart to refresh it. Documents removed
-from Ferret remain in an already running snapshot. Averaging can blur mixed-topic documents;
-island spacing is not a calibrated similarity measure. No embedding endpoint is called, and
-Ferret's ingestion, schema and frontend are unchanged.
-
-The server binds only to `127.0.0.1` and has no Ferret authentication. Do not expose or proxy it
-to a network. Full document text is copied into the git-ignored `.atlas-prototype/` directory
-with owner-only permissions and delivered to the local browser. Atlas can also cache derived
-data in the operating system's user cache directory. Stop with Ctrl+C; remove the snapshot
-directory and Atlas cache when the local copy is no longer needed.
-
-To reopen an exported Parquet snapshot and its Atlas state without reconnecting to the database
-or recalculating the projection:
-
-```sh
-uvx --from embedding-atlas==0.26.0 embedding-atlas /path/to/documents.parquet \
-  --text text --x projection_x --y projection_y --disable-projection \
-  --state /path/to/state.json --host 127.0.0.1 --port 5056 --no-auto-port --duckdb server
-```
-
-Here `server` runs the snapshot's DuckDB queries in the local Atlas process, not on Ferret's
-Postgres. This avoids loading the entire document dataset into the browser for larger maps.
-The snapshot and state files contain private data and remain outside Git. A database tunnel
-is needed only during export, not while viewing the snapshot.
+The [Embedding Atlas scripts](../scripts/embedding-atlas/README.md) export one user's existing
+embeddings from local Postgres or Kubernetes and serve a private snapshot on localhost. The
+adjacent README covers prerequisites, commands, snapshot retention and production read load.
+This is separate from Explore and changes neither Ferret's schema nor its deployment.
 
 ## Host server and workers
 
