@@ -141,6 +141,7 @@ export function Connections() {
       {creating && (
         <CreateConnectionForm
           pluginTypes={data.pluginTypes}
+          connections={data.connections}
           onCreated={() => {
             setCreating(false);
             reload();

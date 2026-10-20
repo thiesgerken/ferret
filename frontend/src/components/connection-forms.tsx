@@ -7,6 +7,7 @@ import { graphql } from "@/gql";
 import type { ConnectionsQuery } from "@/gql/graphql";
 import { IconPicker } from "@/components/icon-picker";
 import { configFields, configFromForm, configInputName, type ConfigField } from "@/lib/config-schema";
+import { suggestedHourlySchedule } from "@/lib/connection-schedule";
 import { defaultPluginIcon } from "@/lib/default-icons";
 import { errorMessage } from "@/lib/graphql";
 import { cn, fieldClass } from "@/lib/utils";
@@ -42,24 +43,21 @@ export const primaryButtonClass =
   "inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50";
 const secondaryButtonClass = "rounded-lg px-4 py-2 text-sm hover:bg-accent";
 
-const SCHEDULE_PRESETS = [
-  { label: "quarterHourly", cron: "*/15 * * * *" },
-  { label: "hourly", cron: "0 * * * *" },
-  { label: "nightly", cron: "0 3 * * *" },
-] as const;
-
 export function CreateConnectionForm({
   pluginTypes,
+  connections,
   onCreated,
   onCancel,
 }: {
   pluginTypes: PluginType[];
+  connections: Pick<Connection, "schedule">[];
   onCreated: () => void;
   onCancel: () => void;
 }) {
   const t = useTranslations();
   const [{ fetching }, create] = useMutation(CreateConnectionMutation);
   const [plugin, setPlugin] = useState(pluginTypes[0].name);
+  const [initialSchedule] = useState(() => suggestedHourlySchedule(connections.map(({ schedule }) => schedule)));
   // Follows the plugin's default until the user picks one.
   const [pickedIcon, setPickedIcon] = useState<string | null>(null);
   const icon = pickedIcon ?? defaultPluginIcon(plugin);
@@ -114,7 +112,7 @@ export function CreateConnectionForm({
         </Field>
       </FormSection>
       <IdentitySection nameId="connection-name" icon={icon} onIconChange={setPickedIcon} />
-      <ScheduleSection id="connection-schedule" defaultValue="0 * * * *" />
+      <ScheduleSection id="connection-schedule" defaultValue={initialSchedule} hourlySchedule={initialSchedule} />
       {/* Keyed by plugin: another plugin's fields start from their own defaults. */}
       <ConfigSection key={plugin} plugin={plugin} idPrefix="config" fields={fields} schemaError={schemaError} />
       <FormFooter error={error}>
@@ -340,16 +338,29 @@ function IdentitySection({
   );
 }
 
-function ScheduleSection({ id, defaultValue }: { id: string; defaultValue: string }) {
+function ScheduleSection({
+  id,
+  defaultValue,
+  hourlySchedule = "0 * * * *",
+}: {
+  id: string;
+  defaultValue: string;
+  hourlySchedule?: string;
+}) {
   const t = useTranslations("connections.form");
   const [schedule, setSchedule] = useState(defaultValue);
+  const presets = [
+    { label: "quarterHourly", cron: "*/15 * * * *" },
+    { label: "hourly", cron: hourlySchedule },
+    { label: "nightly", cron: "0 3 * * *" },
+  ] as const;
   return (
     <FormSection title={t("schedule")} description={t("scheduleHint")}>
       <Field id={id} label={t("cron")} help={withCode(t("cronHelp"))}>
         <input id={id} name="schedule" required value={schedule} onChange={(event) => setSchedule(event.target.value)} className={cn(fieldClass, "font-mono")} />
       </Field>
       <div className="flex flex-wrap gap-1.5">
-        {SCHEDULE_PRESETS.map((preset) => (
+        {presets.map((preset) => (
           <button
             key={preset.cron}
             type="button"

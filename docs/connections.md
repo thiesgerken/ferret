@@ -16,6 +16,8 @@ Use the appropriate setup guide: [git](plugins/git.md), [Gitea](plugins/gitea.md
 
 Schedules are five-field cron expressions evaluated in UTC, for example `0 * * * *` hourly or `*/15 * * * *` every fifteen minutes. Creation makes the first run due now. Changing the schedule computes the next slot from the current time. **Run now** makes an enabled connection due; a worker must still claim it.
 
+When the creation form opens, the UI suggests an hourly schedule at the minute farthest from the nearest minute used by your other connections, including disabled ones. Distance wraps across the hour boundary. All matching minutes in lists, ranges and steps count, regardless of the schedule's hours or days. Ties choose the lowest minute; with no connections or every minute already occupied, the suggestion is `0 * * * *`. The **Hourly** preset restores that suggestion, but the cron field remains editable. Existing connections are not rescheduled, and the first run is still due immediately.
+
 ```mermaid
 stateDiagram-v2
     [*] --> Due: create / schedule / Run now
