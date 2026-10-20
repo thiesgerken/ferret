@@ -1195,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-api"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "chrono",
  "reqwest",
@@ -1207,7 +1207,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-plugins"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-imap",
  "base64 0.22.1",
@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-server"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "argon2",
  "async-imap",

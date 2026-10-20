@@ -1,11 +1,26 @@
 # CHANGELOG
 
-## Unreleased
 
-### Fixes
+## v0.26.3 (2026-10-20)
 
-- Reduce Home Assistant indexed Markdown noise by omitting absent placement fields, empty inventory/relationship sections and missing-registry notices, and deduplicating equal device classes and repeated names/aliases. Known location context, exact identities, typed metadata, origin dates and faithful definitions are preserved. Affected text updates on the next successful sync without a manual migration.
 
+### Other
+
+
+- Merge pull request #177 from thiesgerken/fix/homeassistant-document-noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+- 🐛 fix(homeassistant): omit blank original device names
+  ([`1a9669e`](https://github.com/thiesgerken/ferret/commit/1a9669e236e3ada52201af9991f40c39fa7074a2))
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`35c28f9`](https://github.com/thiesgerken/ferret/commit/35c28f9c45a01f6dfebf735277b6fec8de5d5262))
 
 ## v0.26.2 (2026-10-20)
 
