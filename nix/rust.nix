@@ -2,6 +2,7 @@
   pkgs,
   craneLib,
   tools,
+  postgres,
 }:
 let
   inherit (pkgs) lib;
@@ -45,10 +46,6 @@ let
     );
   server = package "ferret-server";
   plugins = package "ferret-plugins";
-  postgres = pkgs.postgresql_18.withPackages (ps: [
-    ps.pg_search
-    ps.pgvector
-  ]);
   services = {
     nativeBuildInputs = common.nativeBuildInputs ++ [
       postgres
@@ -99,6 +96,7 @@ in
           SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --locked
         '';
         doCheck = false;
+        doInstallCargoArtifacts = false;
         installPhaseCommand = "touch $out";
       }
     );

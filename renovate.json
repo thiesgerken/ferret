@@ -11,6 +11,17 @@
     "enabled": true,
     "automerge": false
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)nix/pg-search-binaries\\.json$/"],
+      "matchStrings": ["\"version\":\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "paradedb/paradedb",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group patch, pin, and digest updates into a single PR",
@@ -39,6 +50,12 @@
       "description": "pnpm and frontend lock updates require the documented Nix dependency-cache refresh before merge",
       "matchManagers": ["npm"],
       "matchFileNames": ["frontend/package.json"],
+      "automerge": false
+    },
+    {
+      "description": "pg_search release updates require the documented official binary hash refresh and full database checks",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["paradedb/paradedb"],
       "automerge": false
     }
   ],

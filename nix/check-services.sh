@@ -24,6 +24,8 @@ failureHooks+=(stop_check_services)
 initdb -D "$check_state/postgres" --no-locale --encoding=UTF8 --username=ferret --auth=trust
 pg_ctl -D "$check_state/postgres" -l "$check_state/postgres.log" -w start \
   -o "-k $PGHOST -h 127.0.0.1 -p $PGPORT -c shared_preload_libraries=pg_search -c max_connections=200"
+# pg_search requires vector; template1 also supplies it to SQLx-created test databases.
+psql --dbname=template1 --set ON_ERROR_STOP=1 --command='CREATE EXTENSION vector'
 createdb ferret
 
 cat > "$check_state/dovecot.conf" <<EOF

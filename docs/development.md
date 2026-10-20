@@ -4,7 +4,7 @@ Use the [quickstart](quickstart.md) to try the app; this page covers changing it
 
 ## Prerequisites and repository map
 
-Use the committed Nix flake/lockfile for builds and checks. It selects supported stable nixpkgs, consumes `rust-toolchain.toml`, and builds the pnpm version selected by `frontend/package.json`; Node 24 remains the frontend runtime. `nix develop` provides optional native tooling (including `aarch64-darwin` on Apple Silicon). Docker with Compose v2.24.4 or newer remains the primary environment, not the dev shell.
+Use the committed Nix flake/lockfile for builds and checks. It selects supported stable nixpkgs, consumes `rust-toolchain.toml`, and builds the pnpm version selected by `frontend/package.json`; Node 24 remains the frontend runtime. The sandbox database has the narrowly scoped package-input exception described below. `nix develop` provides optional native tooling (including `aarch64-darwin` on Apple Silicon). Docker with Compose v2.24.4 or newer remains the primary environment, not the dev shell.
 
 | Path | Responsibility |
 | --- | --- |
@@ -110,7 +110,13 @@ nix build --no-link .#packages.aarch64-linux.server .#packages.aarch64-linux.plu
   .#packages.aarch64-linux.plugins-image .#packages.aarch64-linux.frontend-image
 ```
 
-The database-backed checks create an isolated PostgreSQL 18 cluster with stable nixpkgs' `pg_search` and `pgvector`, and a disposable Dovecot in the sandbox. They initialize writable temporary state, preload the extension, wait for readiness and clean up on success/failure. They override host database/mailbox defaults and require no existing developer data, external Docker services, origin account or publishing credential. The PostgreSQL major is explicit; extension/minor versions follow the stable lockfile, intentionally independently of Compose's ParadeDB image.
+The database-backed checks create an isolated PostgreSQL 18 cluster with `pg_search` and `pgvector`, and a disposable Dovecot in the sandbox. They initialize writable temporary state, preload the extension, wait for readiness and clean up on success/failure. They override host database/mailbox defaults and require no existing developer data, external Docker services, origin account or publishing credential.
+
+PostgreSQL 18, `pgvector`, Dovecot and all application/image/developer tooling come from the stable nixpkgs lock. The narrowly scoped exception is `pg_search`: stable 0.23.0 lacks the required access method, while the checked newer nixpkgs 0.25.10 package still requires an explicit index `key_field` that the existing migrations do not supply. `nix/pg-search-binaries.json` pins official native PostgreSQL 18 release packages by SHA-256. Nix installs their extension library, SQL and license notices, and `autoPatchelfHook` resolves the declared stable GCC/OpenBLAS dependencies without ignoring missing libraries. This avoids reconstructing upstream's pgrx/dictionary release toolchain. No newer nixpkgs input or exact-Compose-version override is maintained; Compose's ordinary upstream image remains independent.
+
+The selected `pg_search` package declares `requires = 'vector'`. The isolated bootstrap therefore creates the real `vector` extension in `template1` before creating the check database; SQLx-created test databases inherit this prerequisite too. The unchanged migrations still create `pg_search` and run in full. This is a package dependency requirement, not a compatibility alias or a claim that the Nix test cluster is identical to the Compose image.
+
+Ferret requires the `paradedb` index access method with automatic key-field inference; `pdb.simple` with German/English stemmers and aliases; `pdb.ngram`; `pdb.literal`; query-side `pdb.alias`; `&&&`; `pdb.score`; and the `paradedb.planner_warnings=off` setting. Package version alone is not a compatibility proof: all existing migrations, SQLx metadata checks and database integration tests must pass unchanged.
 
 After loading the three native Linux image archives as in the quickstart:
 
@@ -164,6 +170,8 @@ nix develop .#ci --command python scripts/update-nix-deps.py --system aarch64-li
 ```
 
 The refresh command reads official GitHub release-asset digests when the pnpm version changes (public GitHub access is required), and Nix verifies the archive hashes and executable version. Commit the resulting binary pins and dependency hash with the dependency update, then run the full checks/builds/smoke above. A stale hash fails required checks; hosted Renovate cannot automatically repair this aggregate fetchPnpmDeps hash. Updates requiring this documented refresh are not auto-merged. Do not bypass hash checks or change the pnpm dependency-build allow/deny policy to make an update pass.
+
+Renovate proposes `pg_search` release-version updates in `nix/pg-search-binaries.json`, but these are not auto-merged. Refresh the official native-asset hashes with `nix develop .#ci --command python scripts/update-nix-deps.py --pg-search`, then run the complete Linux checks and image smoke. The exception is this extension package only; do not move unrelated packages off stable or modify existing migrations to accommodate an incompatible extension. PostgreSQL's major remains explicitly 18.
 
 GitHub Actions orchestrates verification, the standard nixpkgs binary cache and GitHub Actions artifact caching, smoke execution, release/version operations and Skopeo publication. Verification has no publishing credentials and untrusted PRs cannot write the trusted cache. Only x64 images are published. Docker-compatible archives from dockerTools are copied with Skopeo's OCI manifest conversion; they are not OCI-layout archives.
 

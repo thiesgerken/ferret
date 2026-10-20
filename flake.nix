@@ -41,6 +41,10 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
+          postgres = pkgs.postgresql_18.withPackages (ps: [
+            (import ./nix/pg-search.nix { inherit pkgs; })
+            ps.pgvector
+          ]);
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (crane.mkLib pkgs).overrideToolchain rust;
           tools = import ./nix/tools.nix {
@@ -50,7 +54,9 @@
               sqlx-src
               ;
           };
-          backend = import ./nix/rust.nix { inherit pkgs craneLib tools; };
+          backend = import ./nix/rust.nix {
+            inherit pkgs craneLib tools postgres;
+          };
           frontend = import ./nix/frontend.nix {
             inherit pkgs;
             inherit (tools) pnpm nodejs;

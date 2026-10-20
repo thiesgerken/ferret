@@ -1,0 +1,13 @@
+{
+  "version": "0.26.2",
+  "platforms": {
+    "aarch64-linux": {
+      "asset": "postgresql-18-pg-search_0.26.2-1PARADEDB-bookworm_arm64.deb",
+      "hash": "sha256-cGDk1yUnjZ/8RufqWdtfhsSMnQK9fsj4xVZE1a3Ps2I="
+    },
+    "x86_64-linux": {
+      "asset": "postgresql-18-pg-search_0.26.2-1PARADEDB-bookworm_amd64.deb",
+      "hash": "sha256-S0Kj/ENpZJF6Iui4yuyZwRYVFRZg7mHq0g/cN55Sc0Y="
+    }
+  }
+}
