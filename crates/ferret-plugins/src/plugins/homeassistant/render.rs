@@ -17,20 +17,13 @@ pub fn documents(
     let mut documents = Vec::new();
     for device in snapshot.devices.values() {
         let mut text = format!("# {}\n\nDevice registry ID: {}\n", device.name(), device.id);
-        if device
-            .name
-            .as_deref()
-            .is_some_and(|name| name != device.name())
-        {
-            writeln!(
-                text,
-                "Original device name: {}",
-                device.name.as_deref().expect("present name")
-            )?;
-        }
         fields(
             &mut text,
             &[
+                (
+                    "Original device name",
+                    device.name.as_deref().filter(|name| *name != device.name()),
+                ),
                 ("Device type", device.entry_type.as_deref()),
                 ("Manufacturer", device.manufacturer.as_deref()),
                 ("Model", device.model.as_deref()),

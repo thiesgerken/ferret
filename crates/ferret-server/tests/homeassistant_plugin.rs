@@ -477,6 +477,11 @@ async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_fille
         unplaced["hw_version"] = json!("");
         unplaced["sw_version"] = json!("   ");
         o.devices.push(unplaced);
+        for (id, original) in [("blank-original", ""), ("whitespace-original", "   ")] {
+            let mut named = device(id, original, None, None, None);
+            named["name_by_user"] = json!(id);
+            o.devices.push(named);
+        }
         for (id, entity_id, registry_class, runtime_class) in [
             (
                 "equal-registry",
@@ -528,10 +533,10 @@ async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_fille
     let run = run(&server, &url).await;
     assert_eq!(
         plugins::run("homeassistant", &run).await.unwrap().stats.put,
-        12
+        14
     );
     let docs = documents(&server, &pool).await;
-    assert_eq!(docs.len(), 12);
+    assert_eq!(docs.len(), 14);
     for doc in &docs {
         for filler in [
             "unknown",
@@ -544,10 +549,19 @@ async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_fille
             assert!(!doc.text.contains(filler), "{}: {filler}", doc.external_id);
         }
         assert!(
-            !doc.text.lines().any(|line| line.ends_with(": ")),
+            !doc.text
+                .lines()
+                .filter_map(|line| line.split_once(':'))
+                .any(|(_, value)| value.trim().is_empty()),
             "{}",
             doc.external_id
         );
+    }
+    for (id, original) in [("blank-original", ""), ("whitespace-original", "   ")] {
+        let doc = docs.iter().find(|doc| doc.external_id == id).unwrap();
+        assert!(doc.text.contains(id));
+        assert_eq!(doc.meta["device"]["name"], original);
+        assert_eq!(doc.meta["device"]["name_by_user"], id);
     }
     let unplaced = docs
         .iter()
@@ -590,6 +604,8 @@ async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_fille
     assert_eq!(unplaced.text.matches("Equaloriginalname").count(), 1);
     assert!(unplaced.meta["device"]["area_id"].is_null());
     assert!(unplaced.meta["placement"].is_null());
+    assert_eq!(unplaced.meta["device"]["name"], "Rangefindermodel");
+    assert_eq!(unplaced.meta["device"]["name_by_user"], "Rangefinder");
     let entities = unplaced.meta["entities"].as_array().unwrap();
     assert_eq!(entities.len(), 3);
     let equal = entities
@@ -685,7 +701,7 @@ async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_fille
             unchanged.stats.unchanged,
             unchanged.stats.deleted
         ),
-        (0, 12, 0)
+        (0, 14, 0)
     );
 }
 
