@@ -21,6 +21,7 @@ pub struct HomeAssistantConfig {
     url: String,
     /// Browser-facing HTTP(S) instance root. Uses `url` when omitted.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// Dedicated administrator account token. The plugin only reads, but the token can control
     /// the origin. Faithful automation/script definitions can contain private or secret content.

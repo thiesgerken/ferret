@@ -52,7 +52,7 @@ impl Session {
                 );
             }
             session
-                .send(json!({"type": "auth", "access_token": token}))
+                .send(&json!({"type": "auth", "access_token": token}))
                 .await?;
             if session.receive().await?["type"] != "auth_ok" {
                 return Err(
@@ -67,7 +67,7 @@ impl Session {
         Ok(session)
     }
 
-    async fn send(&mut self, value: Value) -> Result<(), PluginError> {
+    async fn send(&mut self, value: &Value) -> Result<(), PluginError> {
         self.socket
             .send(Message::Text(value.to_string().into()))
             .await
@@ -104,21 +104,68 @@ impl Session {
         };
         request.insert("id".into(), id.into());
         request.insert("type".into(), kind.into());
+        let request = Value::Object(request);
         tokio::time::timeout(DEADLINE, async {
-            self.send(Value::Object(request)).await?;
+            self.send(&request).await?;
             let Value::Object(mut response) = self.receive().await? else {
-                return Err::<T, PluginError>("Home Assistant returned an unexpected command result".into());
+                return Err::<T, PluginError>(
+                    "Home Assistant returned an unexpected command result".into(),
+                );
             };
-            if response.get("type").and_then(Value::as_str) != Some("result") || response.get("id").and_then(Value::as_u64) != Some(id) {
-                return Err::<T, PluginError>("Home Assistant returned an unexpected command result".into());
+            if response.get("type").and_then(Value::as_str) != Some("result")
+                || response.get("id").and_then(Value::as_u64) != Some(id)
+            {
+                return Err::<T, PluginError>(
+                    "Home Assistant returned an unexpected command result".into(),
+                );
             }
             if response.get("success").and_then(Value::as_bool) != Some(true) {
-                // Origin error bodies may contain definitions or credentials.
-                return Err(format!("Home Assistant command {kind} failed; check administrator access and origin consistency").into());
+                // Only fixed error categories and validated entity IDs are safe to expose.
+                let code = match response
+                    .get("error")
+                    .and_then(|error| error.get("code"))
+                    .and_then(Value::as_str)
+                {
+                    Some("unauthorized") => "unauthorized",
+                    Some("not_found") => "not_found",
+                    Some("unknown_command") => "unknown_command",
+                    Some("invalid_format") => "invalid_format",
+                    Some("unknown_error") => "unknown_error",
+                    _ => "unrecognized_error",
+                };
+                let entity = request
+                    .get("entity_id")
+                    .and_then(Value::as_str)
+                    .filter(|entity| {
+                        entity.split_once('.').is_some_and(|(domain, object)| {
+                            !domain.is_empty()
+                                && !object.is_empty()
+                                && domain
+                                    .bytes()
+                                    .chain(object.bytes())
+                                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                        })
+                    });
+                return Err(match entity {
+                    Some(entity) => {
+                        format!("Home Assistant command {kind} for {entity} failed ({code})")
+                    }
+                    None => format!("Home Assistant command {kind} failed ({code})"),
+                }
+                .into());
             }
-            serde_json::from_value(response.remove("result").ok_or("Home Assistant omitted a command result")?)
-                .map_err(|_| format!("Home Assistant command {kind} returned malformed or incomplete data").into())
-        }).await.map_err(|_| format!("Home Assistant command {kind} timed out"))?
+            serde_json::from_value(
+                response
+                    .remove("result")
+                    .ok_or("Home Assistant omitted a command result")?,
+            )
+            .map_err(|_| {
+                format!("Home Assistant command {kind} returned malformed or incomplete data")
+                    .into()
+            })
+        })
+        .await
+        .map_err(|_| format!("Home Assistant command {kind} timed out"))?
     }
 
     pub async fn close(mut self) -> Result<(), PluginError> {

@@ -1,6 +1,115 @@
 # CHANGELOG
 
 
+## v0.28.0 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #180 from thiesgerken/prototype/embedding-atlas
+  ([`8ed99b4`](https://github.com/thiesgerken/ferret/commit/8ed99b490353b513acf8a0dc6fa6b943db41149b))
+
+- Merge remote-tracking branch 'origin/main' into prototype/embedding-atlas
+  ([`e2b011a`](https://github.com/thiesgerken/ferret/commit/e2b011a10ad042b8ab13d1a4c8fa5c2ced33dbb2))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(dev): add standalone Embedding Atlas scripts
+  ([`8ed99b4`](https://github.com/thiesgerken/ferret/commit/8ed99b490353b513acf8a0dc6fa6b943db41149b))
+
+- 🔧 chore(dev): package standalone Atlas snapshot workflow
+  ([`1476995`](https://github.com/thiesgerken/ferret/commit/147699502759fefed18215d1348bf047f482acb7))
+
+## v0.27.0 (2026-10-20)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #179 from thiesgerken/feat/spread-connection-minutes
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`40f8990`](https://github.com/thiesgerken/ferret/commit/40f899041e602aef70884c1ff961961f0fbbffa6))
+
+- ✨ feat(frontend): spread new connection schedules across the hour
+  ([`2838e09`](https://github.com/thiesgerken/ferret/commit/2838e0994034971dfc52b42354e5b63dfad31654))
+
+## v0.26.3 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #177 from thiesgerken/fix/homeassistant-document-noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`2f2f63f`](https://github.com/thiesgerken/ferret/commit/2f2f63f7d7bddb032c54924632984e267762f4c6))
+
+- 🐛 fix(homeassistant): omit blank original device names
+  ([`1a9669e`](https://github.com/thiesgerken/ferret/commit/1a9669e236e3ada52201af9991f40c39fa7074a2))
+
+- 🐛 fix(homeassistant): remove inventory document noise
+  ([`35c28f9`](https://github.com/thiesgerken/ferret/commit/35c28f9c45a01f6dfebf735277b6fec8de5d5262))
+
+## v0.26.2 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #178 from thiesgerken/fix/safe-connection-settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+- 📝 docs(dev): document offline Atlas snapshot viewing
+  ([`f3086cd`](https://github.com/thiesgerken/ferret/commit/f3086cd38df4175c0fd638d243d694099a17220d))
+
+### 🔧 Configuration
+
+
+- 🔧 fix(connections): preserve credentials for safe settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+- 🔧 fix(connections): preserve credentials for explicitly safe settings
+  ([`e812c06`](https://github.com/thiesgerken/ferret/commit/e812c06f1da7f409cf646ffc104c673c65e55a63))
+
+### ✨ Features
+
+
+- ✨ feat(dev): prototype standalone embedding atlas
+  ([`085f48a`](https://github.com/thiesgerken/ferret/commit/085f48accf4349a860898132e0125d072569adef))
+
+  Read one user's existing model embeddings without database writes and visualize document centroids with cosine UMAP. Keep the snapshot viewer on localhost, outside Ferret's application.
+
+  Verified on 199 development documents: source-colored map, filtering to 53 Ferret documents, text cards and clearing filters. This establishes the standalone browsing path, not document-centroid semantic quality or production readiness.
+
+## v0.26.1 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #176 from thiesgerken/fix/homeassistant-restored-behavior
+  ([`9b0def7`](https://github.com/thiesgerken/ferret/commit/9b0def79690aba819493e2598b65e1311b25a19f))
+
+- ✅ test(homeassistant): assert safe diagnostic content without prose coupling
+  ([`b5d7749`](https://github.com/thiesgerken/ferret/commit/b5d7749428c07dc698b3c59b82af11cdfd4e4a2a))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(homeassistant): distinguish restored placeholders from loaded behavior
+  ([`9b0def7`](https://github.com/thiesgerken/ferret/commit/9b0def79690aba819493e2598b65e1311b25a19f))
+
+- 🐛 fix(homeassistant): distinguish restored placeholders from loaded behavior
+  ([`09a3290`](https://github.com/thiesgerken/ferret/commit/09a3290c333157c4c7c3b3ee30bf42b91f879e04))
+
 ## v0.26.0 (2026-10-19)
 
 

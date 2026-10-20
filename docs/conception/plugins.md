@@ -33,7 +33,7 @@ are the files plugin's job ([Roadmap](#roadmap)).
 
 | Config | Meaning |
 |---|---|
-| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` (or anything else but the schedule and whether the connection is enabled) needs it entered again, and so does a database restored without its `FERRET_CONFIG_KEY` |
+| `remote`, `branch`, `token` | repository to clone over HTTPS. `token` is write-only and sent as HTTP basic auth with the user `x-access-token`, which GitHub, GitLab and Gitea accept with a token as password. Changing `remote` needs it entered again, and so does a database restored without its `FERRET_CONFIG_KEY`. Branch, file filters, Markdown selection and browser-link templates explicitly preserve stored credentials |
 | `include`, `exclude` | globs, e.g. `**/*.md`, `.obsidian/**` |
 | `markdown` | globs of Markdown files, default `**/*.md`; everything else is `plain` |
 | `url_template` | deep link with `{path}` (percent-encoded per segment) and `{commit}`, e.g. `obsidian://open?vault=main&file={path}` or `https://git.example.com/notes/src/commit/{commit}/{path}` |

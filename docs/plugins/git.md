@@ -23,6 +23,8 @@ Replace owner/repository and branch. Add `token` only for a private HTTPS remote
 
 `url_template` substitutes the indexed commit and URL-encoded path segments. For GitLab use its `/-/blob/{commit}/{path}` URL; a vault URL must be meaningful on the user's device. Without a template, use Ferret's viewer. Ferret does not infer a forge from the remote.
 
+`branch`, `include`, `exclude`, `markdown` and `url_template` preserve an existing token when edited, added or removed: they select/render content from the same remote, and the worker does not send credentials to browser links. Changing `remote` requires re-entering the token, even alongside safe settings.
+
 ## Mapping and synchronization
 
 Each regular UTF-8 text file of at most 1 MiB becomes one document at the connection source. `external_id` is its repository-relative path; no threads are created. The first Markdown heading becomes the title, otherwise a readable file-name title is used for Markdown. Plain files keep their file name. Git history provides the first/last author dates and latest author name.

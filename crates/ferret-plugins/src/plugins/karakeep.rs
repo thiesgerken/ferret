@@ -20,6 +20,7 @@ pub struct KarakeepConfig {
     url: String,
     /// The browser-facing instance root. Uses url when omitted.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// An API key with bookmarks:read and highlights:read scopes, for the library's owner.
     #[schemars(extend("writeOnly" = true))]

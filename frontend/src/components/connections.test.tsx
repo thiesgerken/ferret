@@ -125,7 +125,6 @@ test("creates a connection with the config from the plugin's schema", async () =
   assert.equal(input.name, "ferret's code");
   assert.equal(input.icon, "git-branch", "the plugin's default icon");
   assert.equal(input.source, "code/ferret");
-  assert.equal(input.schedule, "0 * * * *");
   assert.deepEqual(JSON.parse(input.config), {
     remote: "https://example.test/ferret.git",
     exclude: ["target/**", "node_modules/**"],

@@ -31,12 +31,14 @@ pub struct CarapaceConfig {
     remote: String,
     /// The branch carapace pushes to. The repository's default branch when left out.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     branch: Option<String>,
     /// A token that may read the repository, for a private one.
     #[serde(default)]
     #[schemars(extend("writeOnly" = true))]
     token: Option<String>,
     /// carapace's web UI, e.g. `https://carapace.example.com`, which documents link back to.
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     carapace_url: String,
 }
 

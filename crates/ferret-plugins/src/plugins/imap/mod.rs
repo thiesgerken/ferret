@@ -45,10 +45,12 @@ pub struct ImapConfig {
     /// Folders not to index, by name. Folders the server marks as trash, junk or drafts are
     /// never indexed. A mail moved into an excluded folder counts as deleted.
     #[serde(default = "excluded_by_default")]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     exclude_folders: Vec<String>,
     /// Deep link to a mail, with `{message_id}`, e.g. `mid:{message_id}`. Without one, ferret's
     /// viewer is the origin.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     url_template: Option<String>,
 }
 
