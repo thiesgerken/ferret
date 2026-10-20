@@ -70,6 +70,20 @@ with owner-only permissions and delivered to the local browser. Atlas can also c
 data in the operating system's user cache directory. Stop with Ctrl+C; remove the snapshot
 directory and Atlas cache when the local copy is no longer needed.
 
+To reopen an exported Parquet snapshot and its Atlas state without reconnecting to the database
+or recalculating the projection:
+
+```sh
+uvx --from embedding-atlas==0.26.0 embedding-atlas /path/to/documents.parquet \
+  --text text --x projection_x --y projection_y --disable-projection \
+  --state /path/to/state.json --host 127.0.0.1 --port 5056 --no-auto-port --duckdb server
+```
+
+Here `server` runs the snapshot's DuckDB queries in the local Atlas process, not on Ferret's
+Postgres. This avoids loading the entire document dataset into the browser for larger maps.
+The snapshot and state files contain private data and remain outside Git. A database tunnel
+is needed only during export, not while viewing the snapshot.
+
 ## Host server and workers
 
 Start only the test/development database if port 8080/8081 will be used by the host server:
