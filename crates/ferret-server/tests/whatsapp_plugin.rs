@@ -540,6 +540,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
             .unwrap();
     let mut replacement = archive.config(&[], &[]);
     replacement["expected_store_id"] = json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    replacement.as_object_mut().unwrap().remove("token");
     update(&server, &id, replacement).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
     let roots_after: i64 =

@@ -35,13 +35,15 @@ pub struct WhatsAppConfig {
     #[schemars(extend("writeOnly" = true))]
     token: String,
     /// Required archive identity from authenticated `/v1/archive`, as 32 lowercase hex characters.
-    #[schemars(extend("pattern" = "^[0-9a-f]{32}$"))]
+    #[schemars(extend("pattern" = "^[0-9a-f]{32}$", "x-ferret-preserve-credentials" = true))]
     expected_store_id: String,
     /// Exact chat IDs from the archive inventory. Empty includes all direct/group chats.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     allow_chats: BTreeSet<String>,
     /// Exact chat IDs. Takes precedence over allow_chats; unknown IDs fail closed.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     block_chats: BTreeSet<String>,
 }
 
