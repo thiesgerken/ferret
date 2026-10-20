@@ -55,6 +55,9 @@ let
       installPhase = ''
         mkdir -p "$out"
         cp -R out/. "$out/"
+        for notice in public/fonts/LICENSE-*.txt; do
+          cmp "$notice" "$out/fonts/$(basename "$notice")"
+        done
       '';
     }
   );

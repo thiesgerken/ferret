@@ -143,6 +143,10 @@ def main():
                 assert font.startswith("/_next/static/"), font
                 response = request(frontend + font)
                 assert response.read(4) == b"wOF2", font
+            for family in ("Alegreya", "Geist", "GeistMono"):
+                notice = f"fonts/LICENSE-{family}.txt"
+                response = request(frontend + "/" + notice)
+                assert response.read() == (ROOT / "frontend/public" / notice).read_bytes(), notice
             asset = re.search(r'(/_next/static/[^" ]+\.js)', html)
             assert asset, "No static JavaScript asset in frontend export"
             response = request(frontend + asset.group(1))

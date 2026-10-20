@@ -43,7 +43,8 @@ repository's docker-compose.
 `next/font/local` bundles the checked Latin WOFF2 assets in `src/fonts`; builds and browsers do
 not fetch Google Fonts. Geist and Geist Mono retain variable weights 100–900, and the Alegreya
 wordmark retains weight 600. The existing CSS variables remain unchanged. Each font's upstream
-SIL Open Font License is retained beside its asset, from
+SIL Open Font License is shipped at `/fonts/LICENSE-<family>.txt` from `public/fonts`, so both
+the static export and frontend image retain the notices. The originals are from
 [google/fonts at 47d54ca](https://github.com/google/fonts/tree/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl).
 
 | Asset | Exact upstream resource | SHA-256 |
