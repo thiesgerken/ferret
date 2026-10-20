@@ -13,7 +13,7 @@ Choose the surface by caller, not by which credential is easiest to copy.
 
 The REST reference owns machine endpoint contracts. [Ingestion](../ingestion.md) owns safe producer workflows; [auth](../auth.md) owns permissions and trust boundaries. Shared wire types live in [ferret-api](../../crates/ferret-api/src/lib.rs). The [GraphQL schema](../../frontend/schema.graphql) is canonical for the UI API.
 
-The independent [WhatsApp archive HTTP API](whatsapp-archive.md) is a separate read-only service with its own mounted bearer Secret, not another ferret public endpoint. Its guide also specifies ferret's live-run-only archive-binding operation.
+The independent [WhatsApp archive HTTP API](whatsapp-archive.md) is a separate read-only service with its own mounted bearer Secret, not another ferret public endpoint. The plugin pins its archive through required ordinary connection configuration; no plugin-specific server API is involved.
 
 ## Conventions
 

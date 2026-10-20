@@ -39,18 +39,21 @@ Only `GET /healthz` is unauthenticated and returns no archive information. All i
 
 ## Connection configuration
 
-Create a connection with plugin `whatsapp`, a source such as `chat/personal`, and a normal schedule:
+First authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Create a connection with plugin `whatsapp`, a source such as `chat/personal`, a normal schedule, and that explicit archive identity:
 
 ```json
 {
   "url": "http://whatsapp-archive:8080",
   "token": "<64-character hexadecimal archive token>",
+  "expected_store_id": "0123456789abcdef0123456789abcdef",
   "allow_chats": [],
   "block_chats": []
 }
 ```
 
 `url` is the direct API root reached by workers; redirects are not followed. `token` is required, encrypted by ferret and write-only. As for other connections, changing configuration requires entering the credential again. Empty `allow_chats` includes every eligible direct/group chat. Both filters contain **exact chat IDs**, never names; `block_chats` wins.
+
+`expected_store_id` is required, nonsecret and exactly 32 lowercase hexadecimal characters. Replace the example with the authenticated archive's actual ID, not a guessed value or an ID copied from another connection. The plugin compares it before starting any sync or writing any document, and sends the same expected ID throughout enumeration, replay and pre-commit checks. It is stored only in ordinary connection configuration, so failed/lost runs and cursor/exclusion resets do not discard the pin. There is no automatic first-use adoption.
 
 Obtain IDs from authenticated `GET /v1/chats?store_id=<id>` after reading `GET /v1/archive`. Every configured ID must exist in the current inventory. Unknown, deleted or normalized IDs fail the run with an actionable filter error, rather than silently permitting a formerly blocked identity. wacli's LID-to-phone normalization removes the old chat identity, and its journal is not a permanent alias registry. Update affected filter IDs explicitly after inspecting the inventory. With no filter reference to the old identity, journal replay rebuilds both old and new namespaces and removes obsolete segments. A configuration change triggers full reconciliation; re-including a chat imports its retained history.
 
@@ -73,7 +76,7 @@ Before full enumeration, the plugin captures a journal position. After traversal
 
 The journal retains at most 30 days or 100,000 references. Expired checkpoints automatically restart full local reconciliation and report a **lost replay range** in Activity. A failed/lost run receives empty disposable state next time and safely reconciles again. A fully completed local reconciliation is authoritative: messages absent from this archive and obsolete segments may be removed even without the original WhatsApp deletion event. A partial/failed traversal cannot authorize sweeping or checkpoint advancement. None of this claims the archive contains complete WhatsApp history.
 
-On the first authenticated use, ferret atomically binds the connection to the archive's `store_id`, **before any ingestion write**. This binding survives failure of the first ingest, checkpoint expiry, configuration changes and exclusion resets. A replacement archive fails before ingestion or sweep and is never silently adopted. For intentional replacement, explicitly delete/recreate the connection: the existing deletion flow confirms the source root and removes its indexed documents. Consider retained history and exclusions before doing so. There is no expected-ID config knob or API-key-authorized rebinding operation.
+An archive whose authenticated `store_id` differs from `expected_store_id` fails before ingestion or sweep, even on an empty state or after a failed first run. For intentional replacement, inspect the new authenticated archive and explicitly edit `expected_store_id` through the ordinary connection configuration flow (re-enter the token as required for config edits). This authorizes a full authoritative reconciliation against the new archive and may remove content previously indexed under this source. Consider the retained history, source contents and exclusions before changing the pin. Archive identity is plugin configuration, not separate server-owned state.
 
 The archive remains ingestible when the collector is unavailable or logged out. API status is `logged_out` when wacli's fixed `SESSION_REVOKED` marker exists, otherwise `unknown`; absence does not imply a live connection. `last_sync_at` is the archive's actual last successful collector sync, nullable when none is known. Activity reports both values. Inspect that timestamp for stale collection; a successful ferret run does not mean fresh WhatsApp collection.
 

@@ -20,7 +20,7 @@ use ferret_api::{
     internal::{RunFinish, RunResult},
 };
 use ferret_plugins::{
-    plugins::{self, PluginOptions},
+    plugins::{self, Log, PluginOptions, Run},
     worker::Worker,
 };
 use serde_json::{Value, json};
@@ -38,6 +38,7 @@ struct ArchiveServer {
     db: Arc<Mutex<SqliteConnection>>,
     mode: Arc<AtomicU8>,
     url: String,
+    store_id: String,
     task: tokio::task::JoinHandle<()>,
 }
 impl Drop for ArchiveServer {
@@ -113,11 +114,21 @@ impl ArchiveServer {
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
+        let identity: ferret_whatsapp_archive::Archive = reqwest::Client::new()
+            .get(format!("{url}/v1/archive"))
+            .bearer_auth(TOKEN)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
         Self {
             _dir: dir,
             db,
             mode,
             url,
+            store_id: identity.store_id,
             task,
         }
     }
@@ -131,7 +142,7 @@ impl ArchiveServer {
         sqlx::query("INSERT INTO messages(chat_jid,msg_id,ts,from_me,text,sender_jid,sender_name) VALUES(?,?,?,?,?,'444@s.whatsapp.net','Sender')").bind(chat).bind(id).bind(ts).bind(from_me).bind(text).execute(&mut *self.db.lock().await).await.unwrap();
     }
     fn config(&self, allow: &[&str], block: &[&str]) -> Value {
-        json!({"url": self.url, "token": TOKEN, "allow_chats": allow, "block_chats": block})
+        json!({"url": self.url, "token": TOKEN, "expected_store_id": self.store_id, "allow_chats": allow, "block_chats": block})
     }
 }
 
@@ -460,24 +471,18 @@ async fn concurrent_wal_pages_replay_backfill_and_failed_pages_never_authorize_s
 }
 
 #[sqlx::test(migrations = false)]
-async fn first_failed_ingest_keeps_binding_and_replacement_cannot_adopt_or_sweep(pool: PgPool) {
+async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_replacement(
+    pool: PgPool,
+) {
     let archive = ArchiveServer::new().await;
     archive
         .message(ALICE, "m0", 100, "Contentsentinel", false)
         .await;
     let server = start_server(pool.clone()).await;
     let (worker, wid, id) = setup(&server, archive.config(&[], &[])).await;
-    // Ordinary ingest API keys cannot bind arbitrary connections.
-    let rejected = server
-        .admin_api()
-        .await
-        .bind_archive("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        .await
-        .unwrap_err();
-    assert_eq!(rejected.status(), Some(reqwest::StatusCode::FORBIDDEN));
     archive.mode.store(1, Ordering::SeqCst);
     assert_eq!(execute(&worker, wid, &pool).await.0, "failed");
-    let binding: String = sqlx::query_scalar("select archive_store_id from connections")
+    let pin: String = sqlx::query_scalar("select config ->> 'expected_store_id' from connections")
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -485,58 +490,173 @@ async fn first_failed_ingest_keeps_binding_and_replacement_cannot_adopt_or_sweep
         .fetch_one(&pool)
         .await
         .unwrap();
+    assert_eq!(pin, archive.store_id);
     assert_eq!(state, json!({}));
     archive.mode.store(0, Ordering::SeqCst);
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
     let before = documents(&server).await;
-    archive.sql("UPDATE retrieval_state SET store_id='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; DELETE FROM messages;").await;
-    due(&server, &id).await;
-    assert_eq!(execute(&worker, wid, &pool).await.0, "failed");
-    assert_eq!(documents(&server).await.len(), before.len());
-    let unchanged_binding: String = sqlx::query_scalar("select archive_store_id from connections")
+    let syncs_before: i64 = sqlx::query_scalar("select count(*) from syncs")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(binding, unchanged_binding);
-    // A token that finished its run cannot use the compare-or-initialize endpoint.
-    due(&server, &id).await;
+    archive.sql("UPDATE retrieval_state SET store_id='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; DELETE FROM messages;").await;
+    archive
+        .message(ALICE, "replacement", 200, "Replacementsentinel", false)
+        .await;
+    // Both the reusable cursor and the empty state after a failed run must retain the config pin.
+    for _ in 0..2 {
+        due(&server, &id).await;
+        let failed = execute(&worker, wid, &pool).await;
+        assert_eq!(failed.0, "failed");
+        assert!(failed.1.unwrap().contains("expected_store_id"));
+        let unchanged_syncs: i64 = sqlx::query_scalar("select count(*) from syncs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            unchanged_syncs, syncs_before,
+            "mismatch must fail before starting any sync"
+        );
+        assert_eq!(
+            documents(&server)
+                .await
+                .iter()
+                .map(|doc| doc.id)
+                .collect::<Vec<_>>(),
+            before.iter().map(|doc| doc.id).collect::<Vec<_>>()
+        );
+    }
+    let unchanged_pin: String =
+        sqlx::query_scalar("select config ->> 'expected_store_id' from connections")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged_pin, pin);
+    let roots_before: i64 =
+        sqlx::query_scalar("select count(*) from syncs where source='chat/archive'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let mut replacement = archive.config(&[], &[]);
+    replacement["expected_store_id"] = json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    update(&server, &id, replacement).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let roots_after: i64 =
+        sqlx::query_scalar("select count(*) from syncs where source='chat/archive'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(roots_after, roots_before + 1);
+    let reconciled = documents(&server).await;
+    assert_eq!(reconciled.len(), 1);
+    assert!(reconciled[0].text.contains("Replacementsentinel"));
+    assert!(!reconciled[0].text.contains("Contentsentinel"));
+    let saved: Value = sqlx::query_scalar("select state from connections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        saved["settings"]["expected_store_id"],
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn required_expected_identity_is_validated_before_any_ingestion(pool: PgPool) {
+    let archive = ArchiveServer::new().await;
+    archive
+        .message(ALICE, "m0", 100, "Contentsentinel", false)
+        .await;
+    let server = start_server(pool.clone()).await;
+    let mut mismatched = archive.config(&[], &[]);
+    mismatched["expected_store_id"] = json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let (worker, wid, id) = setup(&server, mismatched).await;
+    let failed = execute(&worker, wid, &pool).await;
+    assert_eq!(failed.0, "failed");
+    assert!(failed.1.unwrap().contains("expected_store_id"));
+    assert!(documents(&server).await.is_empty());
+    let syncs: i64 = sqlx::query_scalar("select count(*) from syncs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(syncs, 0);
+    update(&server, &id, archive.config(&[], &[])).await;
     let claimed = worker
         .internal
         .claim(wid, Duration::ZERO)
         .await
         .unwrap()
         .unwrap();
-    let token = claimed.token.clone();
+    let mut run = Run {
+        api: Client::new(server.public_url()).with_api_key(claimed.token),
+        source: claimed.source,
+        config: claimed.config,
+        state: claimed.state,
+        log: Log::default(),
+        options: PluginOptions::default(),
+    };
+    for invalid in [
+        None,
+        Some(""),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        Some("gggggggggggggggggggggggggggggggg"),
+    ] {
+        run.config = archive.config(&[], &[]);
+        match invalid {
+            Some(value) => run.config["expected_store_id"] = json!(value),
+            None => {
+                run.config
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("expected_store_id");
+            }
+        }
+        assert!(plugins::run("whatsapp", &run).await.is_err());
+        let syncs: i64 = sqlx::query_scalar("select count(*) from syncs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(syncs, 0, "invalid pin must not start ingestion");
+        assert!(documents(&server).await.is_empty());
+    }
     worker
         .internal
         .finish(
             claimed.run_id,
             &RunFinish {
                 result: RunResult::Failed {
-                    error: "intentional test failure".into(),
+                    error: "intentional invalid-config test".into(),
                 },
                 log_lines: vec![],
             },
         )
         .await
         .unwrap();
-    assert_eq!(
-        Client::new(server.public_url())
-            .with_api_key(token)
-            .bind_archive(&binding)
-            .await
-            .unwrap_err()
-            .status(),
-        Some(reqwest::StatusCode::UNAUTHORIZED)
-    );
-    // Registration advertises the required encrypted, write-only credential.
+    due(&server, &id).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
     let registration = plugins::registrations()
         .into_iter()
         .find(|plugin| plugin.name == "whatsapp")
         .unwrap();
     assert_eq!(
         registration.config_schema["properties"]["token"]["writeOnly"],
+        true
+    );
+    assert!(
+        registration.config_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("expected_store_id"))
+    );
+    assert_eq!(
+        registration.config_schema["properties"]["expected_store_id"]["pattern"],
+        "^[0-9a-f]{32}$"
+    );
+    assert_ne!(
+        registration.config_schema["properties"]["expected_store_id"]["writeOnly"],
         true
     );
 }

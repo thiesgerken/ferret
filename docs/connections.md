@@ -12,7 +12,7 @@ A user's connection roots cannot overlap. Creation also rejects documents alread
 
 Use the appropriate setup guide: [git](plugins/git.md), [Gitea](plugins/gitea.md), [Home Assistant](plugins/homeassistant.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md), [Karakeep](plugins/karakeep.md), [Mealie](plugins/mealie.md), [Moneta](plugins/moneta.md). Examples there are plugin configuration objects, not entire connection requests. In the UI enter their fields individually. A source is not an origin credential or remote folder.
 
-[WhatsApp archive](plugins/whatsapp.md) connections use a separate read-only API over a retained wacli archive. Their first authenticated archive identity is permanently bound before ingestion, independently of disposable run state. Intentional archive replacement requires explicit connection recreation.
+[WhatsApp archive](plugins/whatsapp.md) connections use a separate read-only API over a retained wacli archive. Their required `expected_store_id` configuration pins the authenticated archive identity before ingestion and survives disposable cursor resets. Explicitly editing that pin authorizes full reconciliation against a replacement archive and may remove previously indexed source content.
 
 ## Schedule and run lifecycle
 

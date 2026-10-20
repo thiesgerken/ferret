@@ -16,7 +16,7 @@ A plugin is code in a worker, not code dynamically loaded into the server. Regis
 
 `Outcome` returns JSON state and `RunStats { put, unchanged, deleted }`. The server saves state only on successful finish. Returning an error does not roll back earlier puts or deletes. After a failed/lost run, the next claim supplies `{}` instead of the stored cursor: those partial writes may no longer match it, so the plugin must fully reconcile. A subsequent successful run restores cursor reuse. Never use a new cursor until all origin pages and required writes have completed.
 
-The WhatsApp connection's permanent archive binding is separate from that disposable cursor. Its live run token can atomically compare-or-initialize only its own binding before ingestion; ordinary ingest API keys cannot bind or replace archives. See the [binding contract](../api/whatsapp-archive.md#ferrets-separate-archive-binding-operation).
+The WhatsApp plugin requires an explicit nonsecret `expected_store_id` in its ordinary connection configuration and checks it before ingestion. The pin survives disposable cursor resets through existing config storage; it needs no plugin-specific server state or API. See the [WhatsApp setup guide](whatsapp.md#connection-configuration).
 
 ## A complete minimal plugin
 

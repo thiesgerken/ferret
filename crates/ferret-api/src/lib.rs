@@ -314,13 +314,6 @@ pub struct SyncCommitted {
     pub deleted: u64,
 }
 
-/// `PUT /api/run/archive-binding`, authorized only by a live WhatsApp run token.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ArchiveBinding {
-    pub store_id: String,
-}
-
 /// A client for ferret's public REST API.
 pub struct Client {
     http: reqwest::Client,
@@ -507,18 +500,6 @@ impl Client {
         .error_for_status()?
         .json()
         .await
-    }
-
-    /// Permanently compares or initializes this run's connection archive identity.
-    pub async fn bind_archive(&self, store_id: &str) -> Result<(), reqwest::Error> {
-        self.api(reqwest::Method::PUT, "/api/run/archive-binding")
-            .json(&ArchiveBinding {
-                store_id: store_id.to_owned(),
-            })
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(())
     }
 
     fn api(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {

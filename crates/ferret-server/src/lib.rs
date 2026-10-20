@@ -159,10 +159,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/syncs", post(syncs::start))
         .route("/api/syncs/{id}/seen", post(syncs::seen))
         .route("/api/syncs/{id}/commit", post(syncs::commit))
-        .route(
-            "/api/run/archive-binding",
-            axum::routing::put(runs::bind_archive),
-        )
         .merge(
             Router::new()
                 .route_service("/mcp", mcp::service(state.clone()))

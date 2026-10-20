@@ -96,11 +96,3 @@ Operations are native `upsert`, `delete` and `identity_move`. New identity field
 Capture `through` from `/v1/archive.high` and hold it fixed throughout one drain. Repeat `after=next` while `has_more` is true. On the last page `next=through`, including when retained gaps yield no rows. Store identity, position bounds and effective retention floor are validated on **every** page. `after=through` is a useful empty-range retention/identity check. Store replacement (409) and expired replay (410) are distinct failures.
 
 For full reconciliation: capture a position **before** enumeration, finish all pages, capture/drain a fixed end boundary **after** enumeration, rebuild affected identities and validate retention before any destructive sweep. Never authorize deletion after an incomplete page sequence. Restart full reconciliation after 410; never adopt a different store after 409. There are no snapshot sessions, CLI revision-invalidating cursors, long-lived transactions, durable API state, broker or webhooks.
-
-## Ferret's separate archive-binding operation
-
-This is on the **ferret server**, not the archive API:
-
-`PUT /api/run/archive-binding` with `{"store_id":"<32 lowercase hex characters>"}` returns 204 when the connection is unbound or already bound to this ID, 409 for another ID, 403 for API keys/non-WhatsApp runs, and 401 for invalid/ended run tokens.
-
-Only the caller's currently live WhatsApp run token authorizes it. The server locks/rechecks the running row and connection in the same transaction as compare-or-initialize; the body cannot select another connection. Binding is persistent connection identity, not disposable working state. Recreate the connection for intentional replacement. Ordinary ingest API keys cannot initialize or mutate a binding.

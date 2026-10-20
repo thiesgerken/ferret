@@ -34,6 +34,9 @@ pub struct WhatsAppConfig {
     /// The archive API's 64-character hexadecimal bearer secret.
     #[schemars(extend("writeOnly" = true))]
     token: String,
+    /// Required archive identity from authenticated `/v1/archive`, as 32 lowercase hex characters.
+    #[schemars(extend("pattern" = "^[0-9a-f]{32}$"))]
+    expected_store_id: String,
     /// Exact chat IDs from the archive inventory. Empty includes all direct/group chats.
     #[serde(default)]
     allow_chats: BTreeSet<String>,
@@ -45,6 +48,7 @@ pub struct WhatsAppConfig {
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
 struct Settings {
     url: String,
+    expected_store_id: String,
     allow_chats: BTreeSet<String>,
     block_chats: BTreeSet<String>,
 }
@@ -70,6 +74,7 @@ struct ArchiveClient {
     http: reqwest::Client,
     url: String,
     token: String,
+    expected_store_id: String,
     requests: AtomicUsize,
 }
 
@@ -104,10 +109,10 @@ impl ArchiveClient {
             .map_err(|_| "WhatsApp archive returned invalid data".into())
     }
 
-    async fn archive(&self, store: &str) -> Result<Archive, PluginError> {
+    async fn archive(&self) -> Result<Archive, PluginError> {
         let archive: Archive = self.get("/v1/archive", &[]).await?;
-        if !store.is_empty() && archive.store_id != store {
-            return Err("WhatsApp archive store changed during the run".into());
+        if archive.store_id != self.expected_store_id {
+            return Err("WhatsApp archive does not match expected_store_id; inspect the authenticated archive before deliberately updating the connection configuration".into());
         }
         if !matches!(archive.schema_version, 32 | 33)
             || archive.floor < 0
@@ -118,14 +123,17 @@ impl ArchiveClient {
         Ok(archive)
     }
 
-    async fn chats(&self, store: &str) -> Result<BTreeMap<String, Chat>, PluginError> {
+    async fn chats(&self) -> Result<BTreeMap<String, Chat>, PluginError> {
         let mut chats = BTreeMap::new();
         let mut after = String::new();
         loop {
             let page: ChatsPage = self
                 .get(
                     "/v1/chats",
-                    &[("store_id", store.to_owned()), ("after", after.clone())],
+                    &[
+                        ("store_id", self.expected_store_id.clone()),
+                        ("after", after.clone()),
+                    ],
                 )
                 .await?;
             for chat in page.chats {
@@ -143,19 +151,14 @@ impl ArchiveClient {
         }
     }
 
-    async fn changes(
-        &self,
-        store: &str,
-        mut after: i64,
-        through: i64,
-    ) -> Result<BTreeSet<String>, PluginError> {
+    async fn changes(&self, mut after: i64, through: i64) -> Result<BTreeSet<String>, PluginError> {
         let mut affected = BTreeSet::new();
         loop {
             let page: ChangesPage = self
                 .get(
                     "/v1/changes",
                     &[
-                        ("store_id", store.to_owned()),
+                        ("store_id", self.expected_store_id.clone()),
                         ("after", after.to_string()),
                         ("through", through.to_string()),
                     ],
@@ -199,7 +202,6 @@ impl ArchiveClient {
     async fn ingest_chat(
         &self,
         run: &Run,
-        store: &str,
         chat: &Chat,
         source: &str,
         stats: &mut RunStats,
@@ -208,7 +210,10 @@ impl ArchiveClient {
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
-            let mut params = vec![("store_id", store.to_owned()), ("chat", chat.jid.clone())];
+            let mut params = vec![
+                ("store_id", self.expected_store_id.clone()),
+                ("chat", chat.jid.clone()),
+            ];
             if let Some(key) = after {
                 params.extend([
                     ("after_ts", key.ts.to_string()),
@@ -263,8 +268,19 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     if config.token.len() != 64 || !config.token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("WhatsApp requires a 64-character hexadecimal archive bearer token".into());
     }
+    if config.expected_store_id.len() != 32
+        || !config
+            .expected_store_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(
+            "WhatsApp expected_store_id must be 32 lowercase hexadecimal characters".into(),
+        );
+    }
     let settings = Settings {
         url: url.as_str().trim_end_matches('/').to_owned(),
+        expected_store_id: config.expected_store_id,
         allow_chats: config.allow_chats,
         block_chats: config.block_chats,
     };
@@ -276,15 +292,9 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             .build()?,
         url: settings.url.clone(),
         token: config.token,
+        expected_store_id: settings.expected_store_id.clone(),
         requests: AtomicUsize::new(0),
     };
-    let archive = client.archive("").await?;
-    // Binding commits before any document/sync write, including a failed first traversal.
-    run.api.bind_archive(&archive.store_id).await.map_err(|_| "WhatsApp archive binding rejected; verify identity or recreate the connection for intentional replacement")?;
-    run.log.line(format!(
-        "Local archive only; collector status {}, last successful collector sync {:?}",
-        archive.collector_status, archive.last_sync_at
-    ));
     let previous = if run.state == json!({}) {
         None
     } else {
@@ -362,11 +372,11 @@ async fn reconcile(
     previous: Option<&Cursor>,
     stats: &mut RunStats,
 ) -> Result<serde_json::Value, PluginError> {
-    let start = client.archive("").await?;
-    run.api
-        .bind_archive(&start.store_id)
-        .await
-        .map_err(|_| "WhatsApp archive binding rejected")?;
+    let start = client.archive().await?;
+    run.log.line(format!(
+        "Local archive only; collector status {}, last successful collector sync {:?}",
+        start.collector_status, start.last_sync_at
+    ));
     let full = previous
         .is_none_or(|cursor| cursor.settings != *settings || cursor.checkpoint < start.floor);
     if previous.is_some_and(|cursor| cursor.checkpoint < start.floor) {
@@ -377,7 +387,7 @@ async fn reconcile(
     } else {
         previous.expect("incremental cursor").checkpoint
     };
-    let mut chats = client.chats(&start.store_id).await?;
+    let mut chats = client.chats().await?;
     validate_filters(settings, &chats)?;
     let root_sync = if full {
         Some(run.api.start_sync(&run.source).await?.sync_id)
@@ -387,9 +397,7 @@ async fn reconcile(
     let mut affected = if full {
         chats.keys().cloned().collect()
     } else {
-        let mut affected = client
-            .changes(&start.store_id, beginning, start.high)
-            .await?;
+        let mut affected = client.changes(beginning, start.high).await?;
         affected.extend(metadata_changes(
             &previous.expect("incremental cursor").chats,
             &chats,
@@ -397,47 +405,21 @@ async fn reconcile(
         affected
     };
     let mut syncs = Vec::new();
-    rebuild(
-        run,
-        client,
-        settings,
-        &start.store_id,
-        &chats,
-        &affected,
-        &mut syncs,
-        stats,
-    )
-    .await?;
+    rebuild(run, client, settings, &chats, &affected, &mut syncs, stats).await?;
     // Capture the replay boundary after traversal, not before it: backfill can arrive behind
     // both keysets. This fixed drain is finite even when the collector keeps writing.
-    let end = client.archive(&start.store_id).await?;
-    let latest_chats = client.chats(&start.store_id).await?;
+    let end = client.archive().await?;
+    let latest_chats = client.chats().await?;
     validate_filters(settings, &latest_chats)?;
-    affected = client
-        .changes(&start.store_id, start.high, end.high)
-        .await?;
+    affected = client.changes(start.high, end.high).await?;
     affected.extend(metadata_changes(&chats, &latest_chats));
     chats = latest_chats;
-    rebuild(
-        run,
-        client,
-        settings,
-        &start.store_id,
-        &chats,
-        &affected,
-        &mut syncs,
-        stats,
-    )
-    .await?;
+    rebuild(run, client, settings, &chats, &affected, &mut syncs, stats).await?;
     // No traversal failure authorizes any sweep. Recheck retention and identity immediately
     // before destructive commits, even when the final change page was empty.
-    client
-        .changes(&start.store_id, beginning, beginning)
-        .await?;
+    client.changes(beginning, beginning).await?;
     for sync in syncs.iter().copied().chain(root_sync) {
-        client
-            .changes(&start.store_id, beginning, beginning)
-            .await?;
+        client.changes(beginning, beginning).await?;
         stats.deleted += run.api.commit_sync(sync).await?.deleted;
     }
     run.log.line(format!(
@@ -452,6 +434,7 @@ async fn reconcile(
         checkpoint: end.high,
         settings: Settings {
             url: settings.url.clone(),
+            expected_store_id: settings.expected_store_id.clone(),
             allow_chats: settings.allow_chats.clone(),
             block_chats: settings.block_chats.clone(),
         },
@@ -459,12 +442,10 @@ async fn reconcile(
     })?)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn rebuild(
     run: &Run,
     client: &ArchiveClient,
     settings: &Settings,
-    store: &str,
     chats: &BTreeMap<String, Chat>,
     affected: &BTreeSet<String>,
     syncs: &mut Vec<Uuid>,
@@ -475,7 +456,7 @@ async fn rebuild(
         let sync = run.api.start_sync(&source).await?.sync_id;
         syncs.push(sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
-            client.ingest_chat(run, store, chat, &source, stats).await?;
+            client.ingest_chat(run, chat, &source, stats).await?;
         }
     }
     Ok(())
