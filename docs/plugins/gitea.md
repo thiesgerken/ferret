@@ -24,6 +24,8 @@ Only `url` and `token` are required. `url` is the instance address as the worker
 
 Repository patterns match current `owner/repo`; file patterns match repository-relative paths. Empty/omitted includes select everything in their respective scope; exclusions win. Forks and archived repositories are eligible unless a repository pattern excludes them. File patterns do not filter issue/PR text. `markdown` defaults to `**/*.md`. Unknown configuration fields are rejected.
 
+Repository/file patterns (`include_repos`, `exclude_repos`, `include`, `exclude`) and `markdown` preserve the stored token when edited, added or removed. Repository patterns only filter the instance's discovered repositories. Changing the instance `url` requires re-entering the token, even alongside filter changes.
+
 Git transport defaults to HTTPS. An HTTP instance also needs the worker's `FERRET_GIT_PROTOCOLS` to include `http`, just as for the standalone Git plugin. API requests do not follow redirects or origin-supplied pagination URLs; clone URLs are built from the configured instance rather than trusting a different clone host returned by the API.
 
 ## Sources, documents and threads

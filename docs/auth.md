@@ -40,7 +40,7 @@ Run tokens are signed JWTs with a separate run audience/type, owner and source. 
 
 Plugin JSON Schema marks top-level secret properties `writeOnly`. They are split out of normal config, encrypted using XChaCha20-Poly1305 under `FERRET_CONFIG_KEY` (32 random bytes, base64), and bound to the connection/user ids as authenticated data. GraphQL never returns them. Only a claimed run receives merged plaintext config.
 
-Non-secret config changes require re-entry of existing secrets, preventing hidden credential reuse against a newly chosen origin. Merely changing schedule/enabled does not. Back up the encryption key separately from the database: losing it makes stored origin credentials unreadable. There is no online key-rotation/re-encryption workflow in the API; changing the environment key alone is not rotation.
+Config changes require re-entry of every existing secret unless all changed top-level properties explicitly opt in with `x-ferret-preserve-credentials: true` in the plugin schema. This opt-in is only for audited indexing/presentation settings that cannot redirect or change how stored credentials are used; `writeOnly` properties cannot opt in. Unknown/unannotated fields and non-boolean annotations stay protected. Additions and removals count as changes, and a mixed safe/protected edit still requires re-entry. Name, icon, schedule and enabled are outside this config check. Back up the encryption key separately from the database: losing it makes stored origin credentials unreadable, even for safe edits. There is no online key-rotation/re-encryption workflow in the API; changing the environment key alone is not rotation.
 
 ## Privacy consequences
 

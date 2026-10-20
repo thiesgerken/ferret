@@ -18,7 +18,7 @@ Create a Ferret connection with plugin `moneta`, source root `finance/moneta`, a
 
 `url` is the worker-reachable instance root, without `/graphql`. `public_url` is optional and defaults to `url`. HTTP(S) base paths are preserved: a root ending in `/household` reads `/household/graphql` and links to `/household/expenses?expense=<uuid>`. Credentials embedded in URLs, query strings and fragments are rejected. Redirects are not followed; bypass interactive login proxies. Requests have a finite timeout.
 
-`token` is write-only. Ferret encrypts it separately from visible configuration and supplies it only to a claimed worker run. Re-enter it when changing non-secret configuration. See [connections](../connections.md) for setup, **Run now**, and exclusions.
+`token` is write-only. Ferret encrypts it separately from visible configuration and supplies it only to a claimed worker run. Changing, adding or removing the browser-only `public_url` preserves it. Changing the worker-facing `url` requires re-entry, even alongside a browser-link change. See [connections](../connections.md) for setup, **Run now**, and exclusions.
 
 ## Search representation
 

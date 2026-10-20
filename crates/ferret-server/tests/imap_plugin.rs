@@ -148,6 +148,21 @@ impl Connection {
         }
     }
 
+    async fn update(&self, config: Value) -> Value {
+        self.server
+            .graphql(
+                &self.cookie,
+                "mutation ($id: ID!, $input: ConnectionUpdate!) {
+                    updateConnection(id: $id, input: $input) { config }
+                }",
+                json!({"id": self.id, "input": {
+                    "name": "Mail", "icon": "mail", "config": config.to_string(),
+                    "schedule": "0 * * * *", "enabled": true,
+                }}),
+            )
+            .await
+    }
+
     /// Runs the connection and returns the run's status, error, stats and log.
     async fn run(&self) -> Value {
         self.server
@@ -212,6 +227,74 @@ fn stats(run: &Value) -> (i64, i64, i64) {
 const SPAM: &str = "From: win@spam.example\nTo: alice@example.com\nSubject: Gewinn\nDate: Thu, 16 Jan 2025 03:00:00 +0100\nMessage-ID: <spam@spam.example>\n\nSie haben gewonnen.\n";
 const DRAFT: &str = "From: alice@example.com\nTo: dave@example.org\nSubject: Entwurf\nDate: Thu, 16 Jan 2025 04:00:00 +0100\nMessage-ID: <draft@alice.example>\n\nNoch nicht fertig.\n";
 const NEW_REPLY: &str = "From: Alice Example <alice@example.com>\nTo: Dave <dave@example.org>\nSubject: Re: RE: Termin\nDate: Sat, 18 Jan 2025 09:00:00 +0100\nMessage-ID: <alice-re-re-termin@alice.example>\nIn-Reply-To: <dave-re-termin@example.org>\nReferences: <termin@alice.example> <dave-re-termin@example.org>\n\nPrima.\n\nOn Fri, 17 Jan 2025 at 16:00, Dave <dave@example.org> wrote:\n> Passt so, bis Dienstag.\n";
+
+#[sqlx::test(migrations = false)]
+async fn presentation_and_folder_changes_reuse_password_but_login_changes_do_not(pool: PgPool) {
+    let mut mailbox = TestMailbox::new().await;
+    mailbox
+        .append_raw("INBOX", SPAM, "16-Jan-2025 03:00:00 +0100")
+        .await;
+    let mut config = mailbox.config(PASSWORD);
+    let connection = Connection::create(pool.clone(), config.clone()).await;
+    assert_eq!(stats(&connection.run().await), (1, 0, 0));
+    config.as_object_mut().unwrap().remove("password");
+
+    config["url_template"] = json!("https://mail.example/message/{message_id}");
+    let updated = connection.update(config.clone()).await;
+    assert_eq!(updated["errors"], Value::Null, "{updated}");
+    assert!(!updated.to_string().contains("password"));
+    assert_eq!(stats(&connection.run().await), (1, 0, 0));
+    let url: Option<String> = sqlx::query_scalar("select url from documents")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        url.as_deref(),
+        Some("https://mail.example/message/spam@spam.example")
+    );
+
+    config["exclude_folders"] = json!(["INBOX"]);
+    let updated = connection.update(config.clone()).await;
+    assert_eq!(updated["errors"], Value::Null, "{updated}");
+    assert_eq!(stats(&connection.run().await), (0, 0, 1));
+    assert!(connection.external_ids().await.is_empty());
+
+    config.as_object_mut().unwrap().remove("url_template");
+    config.as_object_mut().unwrap().remove("exclude_folders");
+    let updated = connection.update(config.clone()).await;
+    assert_eq!(updated["errors"], Value::Null, "{updated}");
+    assert_eq!(stats(&connection.run().await), (1, 0, 0));
+    let url: Option<String> = sqlx::query_scalar("select url from documents")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(url, None);
+
+    for (field, value) in [
+        ("server", json!("attacker.example:993")),
+        (
+            "server",
+            json!(format!("{}:994", mailbox.server.split(':').next().unwrap())),
+        ),
+        ("tls", json!(true)),
+        ("username", json!("another-account")),
+    ] {
+        let mut protected = config.clone();
+        protected[field] = value;
+        for mixed in [false, true] {
+            if mixed {
+                protected["url_template"] = json!("mid:{message_id}");
+            }
+            let refused = connection.update(protected.clone()).await;
+            assert_eq!(
+                refused["errors"][0]["message"],
+                "a changed configuration needs its credentials again: enter password",
+                "{field}, mixed={mixed}: {refused}"
+            );
+        }
+    }
+    assert_eq!(stats(&connection.run().await), (0, 0, 0));
+}
 
 #[sqlx::test(migrations = false)]
 async fn mails_sync_incrementally_with_threads_moves_and_deletions(pool: PgPool) {

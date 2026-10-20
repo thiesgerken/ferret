@@ -247,10 +247,11 @@ without it.
 - They're stored apart from the rest of the config (`connections.credentials`: nonce, then
   ciphertext), so the GraphQL API can't return them. The ciphertext is bound to its user and
   connection (as associated data): copied to another row, it doesn't open.
-- Stored secrets survive only an update that leaves the rest of the config unchanged (schedule
-  and enabled may change). Any other config change needs every stored secret entered again, so a
-  session can't point a connection at its own server and have the next run send the secret
-  there. `null` removes a secret.
+- Stored secrets survive changes only to top-level non-secret config fields explicitly marked
+  `x-ferret-preserve-credentials: true`, plus name, icon, schedule and enabled changes. Other
+  config changes need every stored secret entered again, so a session can't point a connection
+  at its own server and have the next run send the secret there. Unknown fields stay protected;
+  safe changes do not override protected changes in the same edit. `null` removes a secret.
 - Validation errors under a secret field, or ones that would quote a secret, only name the path.
 - Only claimed runs get decrypted secrets, over the internal API.
 - The key must be backed up separately from the database. A database backup without it restores

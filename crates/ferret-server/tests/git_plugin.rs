@@ -498,14 +498,13 @@ async fn a_token_clones_a_private_repository_and_never_leaves_the_server(pool: P
     run_again().await;
     assert_eq!(invoice_hits(&server).await.len(), 3);
 
-    // A changed config needs the token again: else a session could send it to another remote.
+    // A new remote needs the token again: else a session could send it to another server.
     let elsewhere = update(json!({"remote": "https://attacker.example/x.git"})).await;
     assert_eq!(
         elsewhere["errors"][0]["message"],
         "a changed configuration needs its credentials again: enter token"
     );
-    let narrowed =
-        update(json!({"remote": remote, "include": ["notes/**"], "token": "s3cret-token"})).await;
+    let narrowed = update(json!({"remote": remote, "include": ["notes/**"]})).await;
     assert_eq!(narrowed["errors"], Value::Null, "{narrowed}");
     run_again().await;
     assert_eq!(invoice_hits(&server).await.len(), 1);

@@ -38,7 +38,9 @@ Only one live run of a connection is claimed at a time. Workers heartbeat their 
 
 ## Credentials and changes
 
-Secret fields are write-only. The server encrypts them separately from non-secret configuration and releases them to a worker only for a claimed run. Editing non-secret configuration requires re-entering stored credentials, so changing the remote cannot forward a hidden token to an attacker-controlled origin. A schedule-only or enabled-only change preserves them. Setting a credential to null removes it.
+Secret fields are write-only. The server encrypts them separately from non-secret configuration and releases them to a worker only for a claimed run. Omitted secrets are preserved when changing only settings the plugin explicitly marks safe, such as indexing filters and browser links. The UI also omits blank secret inputs. Changing any protected setting requires re-entering every stored credential, even alongside safe changes: a hidden token must not follow a changed remote to an attacker-controlled origin. Unknown and unannotated fields are protected by default. Name, icon, schedule and enabled changes preserve credentials. Setting a credential to null removes it.
+
+For IMAP, `url_template` and `exclude_folders` preserve the stored password; `server` (including port), `tls` and `username` require re-entry. Other plugins' guides list their safe settings. The worker must register its updated schema before the server recognizes new safe fields; no database migration or credential reset is needed.
 
 The plugin and source root are not editable. To change ownership, create a different connection at a fresh root or deliberately delete the old connection and its indexed documents.
 
