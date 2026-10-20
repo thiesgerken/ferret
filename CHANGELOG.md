@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.26.2 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #178 from thiesgerken/fix/safe-connection-settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+### 🔧 Configuration
+
+
+- 🔧 fix(connections): preserve credentials for safe settings
+  ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
+
+- 🔧 fix(connections): preserve credentials for explicitly safe settings
+  ([`e812c06`](https://github.com/thiesgerken/ferret/commit/e812c06f1da7f409cf646ffc104c673c65e55a63))
+
 ## v0.26.1 (2026-10-20)
 
 
