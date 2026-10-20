@@ -17,6 +17,8 @@ Create plugin `carapace`, source `carapace`, a name/icon and schedule `0 * * * *
 
 `remote` and `carapace_url` are required. Omit `branch` to use the remote default; omit `token` for a public repository. The token uses the same HTTPS transport as the [git plugin](git.md). The URL must be the UI address users can open, not an API credential endpoint.
 
+Changing `branch` or the browser-only `carapace_url` preserves the stored token. Changing `remote` requires re-entering it, even alongside safe settings.
+
 ## What becomes searchable
 
 For a connection root `carapace`:

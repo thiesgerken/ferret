@@ -429,7 +429,7 @@ function ConfigInput({
   id: string;
   field: ConfigField;
   value: unknown;
-  /** An empty secret field keeps the stored secret, so it's never required. */
+  /** The server preserves an omitted secret unless a protected setting changes. */
   keepsStoredSecret: boolean;
 }) {
   const t = useTranslations();

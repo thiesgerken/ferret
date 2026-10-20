@@ -20,6 +20,8 @@ Create a Ferret connection with plugin `mealie`, source root `food/mealie`, and 
 
 The required token is marked `writeOnly` in the configuration schema. Ferret encrypts it separately and does not return it through visible configuration. This is a Ferret storage/UI property, not a restriction on Mealie token permissions.
 
+Changing, adding or removing the browser-only `public_url` preserves the stored token. Changing the worker-facing `url` requires re-entering it, even alongside a browser-link change.
+
 ## Indexed content and identity
 
 One recipe becomes one Markdown document at `<root>/recipes`, with its UUID as `external_id`. Slug and title changes keep document identity. Hits open `{public_url}/g/{groupSlug}/r/{slug}/` in Mealie, not the original recipe website or an individual comment. Path segments are URL-encoded; the trailing slash is required by Mealie's static frontend. No creator attribution is invented from owner IDs.

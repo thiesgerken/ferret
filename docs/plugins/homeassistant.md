@@ -23,6 +23,8 @@ In Connections select `homeassistant`, a dedicated root such as `homeassistant/h
 - The transport uses normal TLS certificate verification, no redirect following and finite connection/authentication/command deadlines. There is no insecure certificate switch or new polling setting.
 - The protocol baseline is Home Assistant Core **2026.10.2**. The plugin needs device/entity/area/floor/label registries, batched extended entity reads, runtime entity enumeration, loaded `automation/config` and `script/config`, and `search/related`. It does not scrape files or fetch blueprint URLs.
 
+Changing, adding or removing the browser-only `public_url` preserves the stored token. Changing the worker-facing `url` requires re-entering it, even alongside a browser-link change.
+
 ## Documents and identity
 
 For root `homeassistant/home`:

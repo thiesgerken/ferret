@@ -23,6 +23,7 @@ pub struct MealieConfig {
     url: String,
     /// Instance root people open. Defaults to `url`.
     #[serde(default)]
+    #[schemars(extend("x-ferret-preserve-credentials" = true))]
     public_url: Option<String>,
     /// Copies all accessible recipes in the token user's group, across households.
     /// The plugin only reads, but this Mealie API token has its owner's capabilities.
