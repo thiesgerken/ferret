@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Unreleased
+
+### Fixes
+
+- Reduce Home Assistant indexed Markdown noise by omitting absent placement fields, empty inventory/relationship sections and missing-registry notices, and deduplicating equal device classes and repeated names/aliases. Known location context, exact identities, typed metadata, origin dates and faithful definitions are preserved. Affected text updates on the next successful sync without a manual migration.
+
 
 ## v0.26.1 (2026-10-20)
 

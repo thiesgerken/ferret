@@ -363,13 +363,9 @@ async fn inventory_behavior_relationships_and_reconciliation_are_searchable(pool
     assert!(!child.text.contains("Hallroom"));
     let area = docs.iter().find(|d| d.external_id == "study").unwrap();
     assert!(!area.text.contains("sensor.room_override"));
-    assert!(
-        docs.iter()
-            .find(|d| d.external_id == "empty")
-            .unwrap()
-            .text
-            .contains("No entities included under indexing rules")
-    );
+    let empty = docs.iter().find(|d| d.external_id == "empty").unwrap();
+    assert_eq!(empty.meta["entities"], json!([]));
+    assert!(empty.text.contains("Filteredonlydevice") && empty.text.contains("empty"));
     let yaml = docs
         .iter()
         .find(|d| d.external_id == "runtime:sensor.yaml_inventory")
@@ -467,6 +463,229 @@ async fn inventory_behavior_relationships_and_reconciliation_are_searchable(pool
             .unwrap()
             .text
             .contains("input_boolean.renamed_helper")
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn rendered_inventory_keeps_facts_without_missing_value_or_duplicate_filler(pool: PgPool) {
+    let origin = origin();
+    {
+        let mut o = origin.lock();
+        let mut unplaced = device("unplaced", "Rangefindermodel", None, None, None);
+        unplaced["name_by_user"] = json!("Rangefinder");
+        unplaced["serial_number"] = json!("RANGESERIAL42");
+        unplaced["hw_version"] = json!("");
+        unplaced["sw_version"] = json!("   ");
+        o.devices.push(unplaced);
+        for (id, entity_id, registry_class, runtime_class) in [
+            (
+                "equal-registry",
+                "sensor.equal_class",
+                Some("distance"),
+                "distance",
+            ),
+            (
+                "distinct-registry",
+                "sensor.distinct_class",
+                Some("registryclass"),
+                "runtimeclass",
+            ),
+            (
+                "runtimeclass-registry",
+                "sensor.runtime_class",
+                None,
+                "runtimeonlyclass",
+            ),
+        ] {
+            let mut registered = entity(id, entity_id, Some("unplaced"), None);
+            registered["original_device_class"] = json!(registry_class);
+            if id == "equal-registry" {
+                registered["original_name"] = json!("Equaloriginalname");
+                registered["aliases"] = json!([id, "Equaloriginalname", "Rangealias", "", null]);
+            }
+            o.entities.push(registered);
+            let mut state = runtime(entity_id, entity_id);
+            state["attributes"]["device_class"] = json!(runtime_class);
+            state["attributes"]["unit_of_measurement"] = json!("mm");
+            o.runtime.push(state);
+        }
+        o.runtime
+            .iter_mut()
+            .find(|state| state["entity_id"] == "sensor.yaml_inventory")
+            .unwrap()["attributes"]["device_class"] = json!("yamlclass");
+        o.areas
+            .push(json!({"area_id":"vacant","name":"Vacantroom","aliases":[],
+            "floor_id":null,"labels":[],"created_at":1735689600.0}));
+        o.areas[0]["aliases"] = json!(["Booknookalias", "Studyroom", ""]);
+        o.floors[0]["aliases"] = json!(["Atticalias", "Upperfloor", " "]);
+        o.relations.insert(
+            ("script".into(), "script.reading_setup".into()),
+            json!({"scene":["scene.unrendered"],"device":[]}),
+        );
+    }
+    let url = serve(origin).await;
+    let server = start_server(pool.clone()).await;
+    let run = run(&server, &url).await;
+    assert_eq!(
+        plugins::run("homeassistant", &run).await.unwrap().stats.put,
+        12
+    );
+    let docs = documents(&server, &pool).await;
+    assert_eq!(docs.len(), 12);
+    for doc in &docs {
+        for filler in [
+            "unknown",
+            "not assigned",
+            "Registry entry: none",
+            "No included",
+            "No entities included",
+            "No devices or entities included",
+        ] {
+            assert!(!doc.text.contains(filler), "{}: {filler}", doc.external_id);
+        }
+        assert!(
+            !doc.text.lines().any(|line| line.ends_with(": ")),
+            "{}",
+            doc.external_id
+        );
+    }
+    let unplaced = docs
+        .iter()
+        .find(|doc| doc.external_id == "unplaced")
+        .unwrap();
+    for fact in [
+        "Rangefinder",
+        "Rangefindermodel",
+        "RANGESERIAL42",
+        "Rangealias",
+        "Equaloriginalname",
+        "sensor.equal_class",
+        "equal-registry",
+        "sensor.distinct_class",
+        "distinct-registry",
+        "sensor.runtime_class",
+        "runtimeclass-registry",
+        "fixture",
+        "mm",
+    ] {
+        assert!(unplaced.text.contains(fact), "{fact}");
+    }
+    for class in [
+        "distance",
+        "registryclass",
+        "runtimeclass",
+        "runtimeonlyclass",
+    ] {
+        assert_eq!(
+            unplaced
+                .text
+                .lines()
+                .filter_map(|line| line.split_once(": "))
+                .filter(|(_, value)| *value == class)
+                .count(),
+            1,
+            "{class}"
+        );
+    }
+    assert_eq!(unplaced.text.matches("Equaloriginalname").count(), 1);
+    assert!(unplaced.meta["device"]["area_id"].is_null());
+    assert!(unplaced.meta["placement"].is_null());
+    let entities = unplaced.meta["entities"].as_array().unwrap();
+    assert_eq!(entities.len(), 3);
+    let equal = entities
+        .iter()
+        .find(|e| e["entity_id"] == "sensor.equal_class")
+        .unwrap();
+    assert_eq!(equal["registry"]["original_device_class"], "distance");
+    assert_eq!(equal["descriptive"]["device_class"], "distance");
+    assert!(entities.iter().all(|e| e["registry"]["area_id"].is_null()));
+    let explicit = docs
+        .iter()
+        .find(|doc| doc.external_id == "registry:helper-registry")
+        .unwrap();
+    assert_eq!(explicit.text.matches("(study)").count(), 1);
+    assert_eq!(explicit.meta["entity"]["registry"]["area_id"], "study");
+    assert_eq!(explicit.meta["placement"]["provenance"], "entity override");
+    let child = docs.iter().find(|doc| doc.external_id == "child").unwrap();
+    assert!(child.meta["device"]["area_id"].is_null());
+    assert_eq!(child.meta["placement"]["provenance"], "parent");
+    for doc in [explicit, child] {
+        for fact in [
+            "Studyroom",
+            "study",
+            "Booknookalias",
+            "Upperfloor",
+            "upstairs",
+            "Atticalias",
+            "Readinglabel",
+            "Quietreadingdescription",
+        ] {
+            assert!(doc.text.contains(fact), "{}: {fact}", doc.external_id);
+        }
+    }
+    assert!(child.text.contains("Readingstation") && child.text.contains("COBALTSERIAL731"));
+    let parent = docs.iter().find(|doc| doc.external_id == "parent").unwrap();
+    assert!(parent.text.contains("Hallroom") && parent.text.contains("sensor.room_override"));
+    assert!(parent.text.contains("dynamic templates"));
+    let hall = docs.iter().find(|doc| doc.external_id == "hall").unwrap();
+    assert!(hall.meta["floor"].is_null());
+    assert!(!hall.text.contains("Floor:"));
+    for id in ["empty", "vacant"] {
+        let doc = docs.iter().find(|doc| doc.external_id == id).unwrap();
+        assert!(doc.text.contains(doc.title.as_deref().unwrap()));
+        assert!(doc.text.contains(id));
+        assert_eq!(
+            doc.text
+                .lines()
+                .filter(|line| line.starts_with('#'))
+                .count(),
+            1
+        );
+    }
+    let yaml = docs
+        .iter()
+        .find(|doc| doc.external_id == "runtime:sensor.yaml_inventory")
+        .unwrap();
+    assert!(yaml.meta["entity"]["registry"].is_null() && yaml.meta["placement"].is_null());
+    assert!(yaml.text.contains("sensor.yaml_inventory") && yaml.text.contains("yamlclass"));
+    assert_eq!(yaml.text.matches("YAMLinventorysentinel").count(), 1);
+    let script = docs
+        .iter()
+        .find(|doc| doc.external_id == "registry:script-registry")
+        .unwrap();
+    assert!(
+        !script.text.contains("Related resources") && !script.text.contains("dynamic templates")
+    );
+    let automation = docs
+        .iter()
+        .find(|doc| doc.external_id == "registry:automation-registry")
+        .unwrap();
+    assert!(
+        automation.text.contains("dynamic templates") && automation.text.contains("Readingstation")
+    );
+    for (query, target) in [
+        ("Rangealias", unplaced),
+        ("runtimeonlyclass", unplaced),
+        ("Atticalias", child),
+        ("COBALTSERIAL731", child),
+        ("yamlclass", yaml),
+    ] {
+        assert!(
+            finds(&server, query)
+                .await
+                .iter()
+                .any(|hit| hit.document_id == target.id),
+            "{query}"
+        );
+    }
+    let unchanged = plugins::run("homeassistant", &run).await.unwrap();
+    assert_eq!(
+        (
+            unchanged.stats.put,
+            unchanged.stats.unchanged,
+            unchanged.stats.deleted
+        ),
+        (0, 12, 0)
     );
 }
 

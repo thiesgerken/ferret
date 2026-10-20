@@ -47,12 +47,20 @@ pub fn documents(
             writeln!(text, "Integration identifier {kind}: {value}")?;
         }
         labels(&mut text, snapshot, "Device", &device.labels);
-        writeln!(
-            text,
-            "Explicit device area: {}",
-            device.area_id.as_deref().unwrap_or("unknown")
-        )?;
-        placement(&mut text, snapshot, snapshot.device_area(&device.id)?);
+        let effective = snapshot.device_area(&device.id)?;
+        if let Some((area, owner)) = effective {
+            if owner == device.id {
+                text.push_str("Area assigned to this device.\n");
+            } else {
+                let parent = &snapshot.devices[owner];
+                writeln!(
+                    text,
+                    "Area inherited from parent device: {} ({owner})",
+                    parent.name()
+                )?;
+            }
+            area_context(&mut text, snapshot, area);
+        }
         if let Some(parent) = device
             .parent_device_id
             .as_ref()
@@ -95,16 +103,14 @@ pub fn documents(
             .values()
             .filter(|e| e.eligible() && e.device_id() == Some(&device.id))
             .collect();
-        text.push_str("\n## Included entities\n");
-        if attached.is_empty() {
-            text.push_str("\nNo entities included under indexing rules.\n");
+        if !attached.is_empty() {
+            text.push_str("\n## Included entities\n");
         }
         for entity in &attached {
-            entity_section(&mut text, snapshot, entity)?;
+            entity_section(&mut text, snapshot, entity, "###")?;
         }
         let related = related_behavior(snapshot, "device", &device.id);
         behavior_links(&mut text, snapshot, &related);
-        let effective = snapshot.device_area(&device.id)?;
         documents.push(document(format!("{source}/devices"), &device.id, device.name(), text,
             links.join(&format!("config/devices/device/{}", device.id))?.into(), device.created_at,
             json!({"kind":"device", "device":device, "placement":placement_meta(snapshot, effective),
@@ -112,28 +118,23 @@ pub fn documents(
     }
     for area in snapshot.areas.values() {
         let mut text = format!("# {}\n\nArea registry ID: {}\n", area.name, area.area_id);
-        area_context(&mut text, snapshot, area);
-        text.push_str("\n## Placement directory\n");
-        let mut count = 0;
+        area_facts(&mut text, snapshot, area);
+        let mut has_directory = false;
         for device in snapshot.devices.values() {
             if snapshot
                 .device_area(&device.id)?
                 .is_some_and(|(a, _)| a.area_id == area.area_id)
             {
+                if !has_directory {
+                    text.push_str("\n## Placement directory\n");
+                    has_directory = true;
+                }
                 writeln!(
                     text,
                     "\n### Device: {}\n\nDevice registry ID: {}",
                     device.name(),
                     device.id
                 )?;
-                let has_included_entity = snapshot
-                    .entities
-                    .values()
-                    .any(|e| e.eligible() && e.device_id() == Some(&device.id));
-                if !has_included_entity {
-                    text.push_str("No entities included under indexing rules.\n");
-                }
-                count += 1;
             }
         }
         for entity in snapshot.entities.values().filter(|e| e.eligible()) {
@@ -141,12 +142,12 @@ pub fn documents(
                 .entity_area(entity)?
                 .is_some_and(|(a, _)| a.area_id == area.area_id)
             {
-                entity_section(&mut text, snapshot, entity)?;
-                count += 1;
+                if !has_directory {
+                    text.push_str("\n## Placement directory\n");
+                    has_directory = true;
+                }
+                entity_section(&mut text, snapshot, entity, "###")?;
             }
-        }
-        if count == 0 {
-            text.push_str("\nNo devices or entities included under indexing rules.\n");
         }
         let related = related_behavior(snapshot, "area", &area.area_id);
         behavior_links(&mut text, snapshot, &related);
@@ -161,11 +162,11 @@ pub fn documents(
         if !entity.dedicated() && entity.device_id().is_some() {
             continue;
         }
-        let mut text = format!("# {}\n", entity.name());
-        entity_section(&mut text, snapshot, entity)?;
+        let mut text = String::new();
+        entity_section(&mut text, snapshot, entity, "#")?;
         let (suffix, kind) = if entity.dedicated() {
             let config = &snapshot.definitions[&entity.entity_id];
-            text.push_str("\n## Configured definition\n\nFaithful loaded configuration. Templates are expressions, not evaluated targets.\n\n");
+            text.push_str("\n## Configured definition\n\n");
             // JSON object keys use serde_json's ordered map; array order is configured behavior.
             let definition = serde_json::to_string_pretty(config)?;
             let fence = "`".repeat(longest_backtick_run(&definition).max(2) + 1);
@@ -232,7 +233,7 @@ fn document(
 
 fn fields(text: &mut String, fields: &[(&str, Option<&str>)]) {
     for (name, value) in fields {
-        if let Some(value) = value {
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
             writeln!(text, "{name}: {value}").expect("string writes succeed");
         }
     }
@@ -242,7 +243,11 @@ fn labels(text: &mut String, snapshot: &Snapshot, scope: &str, ids: &BTreeSet<St
     for id in ids {
         let label = &snapshot.labels[id];
         writeln!(text, "{scope} label: {} ({id})", label.name).expect("string writes succeed");
-        if let Some(description) = &label.description {
+        if let Some(description) = label
+            .description
+            .as_deref()
+            .filter(|d| !d.trim().is_empty())
+        {
             writeln!(text, "{scope} label description: {description}")
                 .expect("string writes succeed");
         }
@@ -251,7 +256,15 @@ fn labels(text: &mut String, snapshot: &Snapshot, scope: &str, ids: &BTreeSet<St
 
 fn area_context(text: &mut String, snapshot: &Snapshot, area: &Area) {
     writeln!(text, "Area: {} ({})", area.name, area.area_id).expect("string writes succeed");
-    for alias in &area.aliases {
+    area_facts(text, snapshot, area);
+}
+
+fn area_facts(text: &mut String, snapshot: &Snapshot, area: &Area) {
+    for alias in area
+        .aliases
+        .iter()
+        .filter(|alias| *alias != &area.name && !alias.trim().is_empty())
+    {
         writeln!(text, "Area alias: {alias}").expect("string writes succeed");
     }
     labels(text, snapshot, "Area", &area.labels);
@@ -261,20 +274,13 @@ fn area_context(text: &mut String, snapshot: &Snapshot, area: &Area) {
         if let Some(level) = floor.level {
             writeln!(text, "Floor level: {level}").expect("string writes succeed");
         }
-        for alias in &floor.aliases {
+        for alias in floor
+            .aliases
+            .iter()
+            .filter(|alias| *alias != &floor.name && !alias.trim().is_empty())
+        {
             writeln!(text, "Floor alias: {alias}").expect("string writes succeed");
         }
-    } else {
-        text.push_str("Floor: unknown\n");
-    }
-}
-
-fn placement(text: &mut String, snapshot: &Snapshot, effective: Option<(&Area, &str)>) {
-    if let Some((area, provenance)) = effective {
-        writeln!(text, "Effective placement from: {provenance}").expect("string writes succeed");
-        area_context(text, snapshot, area);
-    } else {
-        text.push_str("Effective area and floor: unknown\n");
     }
 }
 
@@ -307,10 +313,14 @@ fn entity_section(
     text: &mut String,
     snapshot: &Snapshot,
     entity: &Entity,
+    heading: &str,
 ) -> Result<(), PluginError> {
+    if !text.is_empty() {
+        text.push('\n');
+    }
     writeln!(
         text,
-        "\n### Entity: {}\n\nExact entity ID: {}\nDomain: {}",
+        "{heading} Entity: {}\n\nExact entity ID: {}\nDomain: {}",
         entity.name(),
         entity.entity_id,
         entity.domain()
@@ -318,6 +328,12 @@ fn entity_section(
     if let Some(device) = entity.device_id().map(|id| &snapshot.devices[id]) {
         writeln!(text, "Device: {} ({})", device.name(), device.id)?;
     }
+    let registry_class = entity.registry.as_ref().and_then(|registry| {
+        registry
+            .device_class
+            .as_deref()
+            .or(registry.original_device_class.as_deref())
+    });
     if let Some(registry) = &entity.registry {
         writeln!(
             text,
@@ -334,42 +350,56 @@ fn entity_section(
                         .as_deref()
                         .filter(|name| *name != entity.name()),
                 ),
-                (
-                    "Device class",
-                    registry
-                        .device_class
-                        .as_deref()
-                        .or(registry.original_device_class.as_deref()),
-                ),
                 ("Entity category", registry.entity_category.as_deref()),
             ],
         );
-        for alias in registry.aliases.iter().flatten() {
+        for alias in registry.aliases.iter().flatten().filter(|alias| {
+            alias.as_str() != entity.name()
+                && Some(alias.as_str()) != registry.original_name.as_deref()
+                && !alias.trim().is_empty()
+        }) {
             writeln!(text, "Entity alias: {alias}")?;
         }
         labels(text, snapshot, "Entity", &registry.labels);
-        writeln!(
-            text,
-            "Explicit entity area: {}",
-            registry.area_id.as_deref().unwrap_or("not assigned")
-        )?;
-    } else {
-        text.push_str("Registry entry: none. Registry flags and assigned placement are unknown.\n");
     }
     fields(
         text,
         &[
+            (
+                "Device class",
+                registry_class.or(entity.descriptive.device_class.as_deref()),
+            ),
             (
                 "Static unit",
                 entity.descriptive.unit_of_measurement.as_deref(),
             ),
             (
                 "Descriptive device class",
-                entity.descriptive.device_class.as_deref(),
+                entity.descriptive.device_class.as_deref().filter(|class| {
+                    registry_class.is_some_and(|registry_class| registry_class != *class)
+                }),
             ),
         ],
     );
-    placement(text, snapshot, snapshot.entity_area(entity)?);
+    if let Some((area, owner)) = snapshot.entity_area(entity)? {
+        if entity
+            .registry
+            .as_ref()
+            .is_some_and(|registry| registry.area_id.is_some())
+        {
+            text.push_str("Area assigned to this entity.\n");
+        } else if entity.device_id() == Some(owner) {
+            text.push_str("Area inherited from device.\n");
+        } else {
+            let parent = &snapshot.devices[owner];
+            writeln!(
+                text,
+                "Area inherited from parent device: {} ({owner})",
+                parent.name()
+            )?;
+        }
+        area_context(text, snapshot, area);
+    }
     Ok(())
 }
 
@@ -395,10 +425,10 @@ fn related_behavior(snapshot: &Snapshot, kind: &str, id: &str) -> BTreeSet<Strin
 }
 
 fn behavior_links(text: &mut String, snapshot: &Snapshot, ids: &BTreeSet<String>) {
-    text.push_str("\n## Related behavior recognized by Home Assistant\n\nNot exhaustive: dynamic templates may hide targets.\n");
     if ids.is_empty() {
-        text.push_str("\nNo included automations or scripts recognized.\n");
+        return;
     }
+    text.push_str("\n## Related behavior recognized by Home Assistant\n\nNot exhaustive: dynamic templates may hide targets.\n");
     for id in ids {
         match snapshot.entities.get(id) {
             Some(entity) if entity.dedicated() && !entity.loaded_behavior() => writeln!(
@@ -414,7 +444,7 @@ fn behavior_links(text: &mut String, snapshot: &Snapshot, ids: &BTreeSet<String>
 }
 
 fn named_relations(text: &mut String, snapshot: &Snapshot, relations: &Relations) {
-    text.push_str("\n## Related resources recognized by Home Assistant\n\nNot exhaustive: dynamic templates may hide targets. Inventory exclusions do not redact configured references.\n");
+    let mut has_relations = false;
     for (kind, ids) in relations {
         for id in ids {
             let name = match kind.as_str() {
@@ -423,8 +453,12 @@ fn named_relations(text: &mut String, snapshot: &Snapshot, relations: &Relations
                 "floor" => snapshot.floors.get(id).map(|floor| floor.name.as_str()),
                 "label" => snapshot.labels.get(id).map(|label| label.name.as_str()),
                 "entity" | "automation" | "script" => snapshot.entities.get(id).map(Entity::name),
-                _ => None,
+                _ => continue,
             };
+            if !has_relations {
+                text.push_str("\n## Related resources recognized by Home Assistant\n\nNot exhaustive: dynamic templates may hide targets. Inventory exclusions do not redact configured references.\n");
+                has_relations = true;
+            }
             if let Some(name) = name {
                 writeln!(text, "- {kind}: {name} ({id})").expect("string writes succeed");
                 if snapshot
@@ -434,10 +468,7 @@ fn named_relations(text: &mut String, snapshot: &Snapshot, relations: &Relations
                 {
                     text.push_str("  Configured definition not loaded.\n");
                 }
-            } else if matches!(
-                kind.as_str(),
-                "device" | "area" | "floor" | "label" | "entity" | "automation" | "script"
-            ) {
+            } else {
                 writeln!(text, "- {kind}: unresolved in current inventory ({id})")
                     .expect("string writes succeed");
             }
