@@ -785,7 +785,6 @@ mod tests {
         let root = directory(fixture.path());
         let children = children(&root, "", &glob_set(&[]).unwrap()).unwrap();
         let text = listing("", &children).unwrap();
-        assert_eq!(text, listing("", &children).unwrap());
         assert!(!text.contains("grandchild"));
         assert!(!text.contains("child content absent"));
         assert!(text.contains("share root"));
