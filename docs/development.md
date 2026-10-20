@@ -42,6 +42,13 @@ scripts/demo-seed.sh
 
 The overlay mounts that local Git repository into workers and explicitly permits file transport for the demonstration. Only committed/mirrored content is indexed. Keep this exception out of untrusted deployments.
 
+### Standalone embedding maps
+
+The [Embedding Atlas scripts](../scripts/embedding-atlas/README.md) export one user's existing
+embeddings from local Postgres or Kubernetes and serve a private snapshot on localhost. The
+adjacent README covers prerequisites, commands, snapshot retention and production read load.
+This is separate from Explore and changes neither Ferret's schema nor its deployment.
+
 ## Host server and workers
 
 Start only the test/development database if port 8080/8081 will be used by the host server:
