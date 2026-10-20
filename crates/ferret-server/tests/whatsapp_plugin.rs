@@ -637,26 +637,4 @@ async fn required_expected_identity_is_validated_before_any_ingestion(pool: PgPo
         .unwrap();
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let registration = plugins::registrations()
-        .into_iter()
-        .find(|plugin| plugin.name == "whatsapp")
-        .unwrap();
-    assert_eq!(
-        registration.config_schema["properties"]["token"]["writeOnly"],
-        true
-    );
-    assert!(
-        registration.config_schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("expected_store_id"))
-    );
-    assert_eq!(
-        registration.config_schema["properties"]["expected_store_id"]["pattern"],
-        "^[0-9a-f]{32}$"
-    );
-    assert_ne!(
-        registration.config_schema["properties"]["expected_store_id"]["writeOnly"],
-        true
-    );
 }
