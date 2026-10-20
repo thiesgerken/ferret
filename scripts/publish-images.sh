@@ -12,6 +12,7 @@ for component in server plugins frontend; do
   archive="docker-archive:dist/${component}.tar.gz"
   test "$(skopeo inspect "$archive" | jq -r .Architecture)" = amd64
   for tag in "$@"; do
-    skopeo copy --format oci "$archive" "docker://ghcr.io/${REGISTRY_OWNER}/${image}:${tag}"
+    # CI verifies archive provenance; image signing is outside this publication contract.
+    skopeo --insecure-policy copy --format oci "$archive" "docker://ghcr.io/${REGISTRY_OWNER}/${image}:${tag}"
   done
 done

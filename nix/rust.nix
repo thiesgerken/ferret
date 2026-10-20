@@ -34,6 +34,14 @@ let
       cargoExtraArgs = "--workspace --locked";
     }
   );
+  # Service-fixture changes must not discard compiled integration-test artifacts.
+  testArtifacts = craneLib.cargoTest (
+    common
+    // {
+      inherit cargoArtifacts;
+      cargoExtraArgs = "--workspace --locked --no-run";
+    }
+  );
   package =
     name:
     craneLib.buildPackage (
@@ -81,7 +89,7 @@ in
       common
       // services
       // {
-        inherit cargoArtifacts;
+        cargoArtifacts = testArtifacts;
         cargoExtraArgs = "--workspace --locked";
         RUST_TEST_THREADS = "6";
       }

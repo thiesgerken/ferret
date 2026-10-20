@@ -68,6 +68,7 @@ service imap-login {
 }
 namespace inbox {
   inbox = yes
+  separator = /
   mailbox Papierkorb {
     special_use = \\Trash
   }
