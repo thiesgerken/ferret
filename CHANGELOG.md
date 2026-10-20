@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.28.0 (2026-10-20)
+
+
+### Other
+
+
+- Merge pull request #180 from thiesgerken/prototype/embedding-atlas
+  ([`8ed99b4`](https://github.com/thiesgerken/ferret/commit/8ed99b490353b513acf8a0dc6fa6b943db41149b))
+
+- Merge remote-tracking branch 'origin/main' into prototype/embedding-atlas
+  ([`e2b011a`](https://github.com/thiesgerken/ferret/commit/e2b011a10ad042b8ab13d1a4c8fa5c2ced33dbb2))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(dev): add standalone Embedding Atlas scripts
+  ([`8ed99b4`](https://github.com/thiesgerken/ferret/commit/8ed99b490353b513acf8a0dc6fa6b943db41149b))
+
+- 🔧 chore(dev): package standalone Atlas snapshot workflow
+  ([`1476995`](https://github.com/thiesgerken/ferret/commit/147699502759fefed18215d1348bf047f482acb7))
+
 ## v0.27.0 (2026-10-20)
 
 
@@ -46,6 +67,9 @@
 - Merge pull request #178 from thiesgerken/fix/safe-connection-settings
   ([`67f6b23`](https://github.com/thiesgerken/ferret/commit/67f6b235f9a61fcf681c93d5c61c51efbc6865b8))
 
+- 📝 docs(dev): document offline Atlas snapshot viewing
+  ([`f3086cd`](https://github.com/thiesgerken/ferret/commit/f3086cd38df4175c0fd638d243d694099a17220d))
+
 ### 🔧 Configuration
 
 
@@ -54,6 +78,16 @@
 
 - 🔧 fix(connections): preserve credentials for explicitly safe settings
   ([`e812c06`](https://github.com/thiesgerken/ferret/commit/e812c06f1da7f409cf646ffc104c673c65e55a63))
+
+### ✨ Features
+
+
+- ✨ feat(dev): prototype standalone embedding atlas
+  ([`085f48a`](https://github.com/thiesgerken/ferret/commit/085f48accf4349a860898132e0125d072569adef))
+
+  Read one user's existing model embeddings without database writes and visualize document centroids with cosine UMAP. Keep the snapshot viewer on localhost, outside Ferret's application.
+
+  Verified on 199 development documents: source-colored map, filtering to 53 Ferret documents, text cards and clearing filters. This establishes the standalone browsing path, not document-centroid semantic quality or production readiness.
 
 ## v0.26.1 (2026-10-20)
 
