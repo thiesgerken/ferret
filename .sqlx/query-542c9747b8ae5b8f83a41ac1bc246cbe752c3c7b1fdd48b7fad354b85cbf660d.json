@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id from connections where user_id = $1 and source_covers(source, $2)",
+  "query": "select c.id from plugin_runs r join connections c on c.id = r.connection_id\n         where r.id = $1 and r.status = 'running' and c.user_id = $2 and c.source = $3\n           and r.heartbeat_at >= statement_timestamp() - interval '120 seconds'\n         for update of r",
   "describe": {
     "columns": [
       {
@@ -18,6 +18,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Uuid",
         "Text"
       ]
     },
@@ -25,5 +26,5 @@
       false
     ]
   },
-  "hash": "54e75af1f452f1c1346a97dcb93cc36471ca671c7ea84ebfad4c17471c9cbdc5"
+  "hash": "542c9747b8ae5b8f83a41ac1bc246cbe752c3c7b1fdd48b7fad354b85cbf660d"
 }

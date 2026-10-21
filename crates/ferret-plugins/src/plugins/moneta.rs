@@ -163,7 +163,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let source = format!("{}/expenses", run.source);
-    let sync = run.api.start_sync(&source).await?.sync_id;
+    let sync = run.api.start_sync(&source, None).await?.sync_id;
     let mut stats = RunStats::default();
     let mut ids = HashSet::new();
     let mut total = None;

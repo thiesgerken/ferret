@@ -149,7 +149,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         titles: &titles,
         base: &base,
     };
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
+    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
     let ids: Vec<&str> = live.iter().map(|doc| doc.id.as_str()).collect();
     for batch in ids.chunks(SEEN_BATCH) {
         run.api.sync_seen(sync, &run.source, batch).await?;

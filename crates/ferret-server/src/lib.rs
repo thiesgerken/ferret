@@ -32,12 +32,14 @@ mod inventory;
 mod judgments;
 mod mcp;
 mod model_registry;
+mod namespaces;
 mod runs;
 mod search;
 mod search_query;
 mod sources;
 mod statistics;
 mod syncs;
+mod threads;
 mod users;
 mod writer_stats;
 mod writers;
@@ -158,6 +160,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/documents/{id}", get(documents::get))
         .route("/api/search", get(search::handle))
         .route("/api/syncs", post(syncs::start))
+        .route("/api/namespaces/flatten", post(namespaces::flatten))
         .route("/api/syncs/{id}/seen", post(syncs::seen))
         .route("/api/syncs/{id}/commit", post(syncs::commit))
         .route("/api/inventory/lookup", post(inventory::lookup))

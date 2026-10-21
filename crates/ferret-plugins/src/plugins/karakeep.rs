@@ -136,7 +136,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         .map_err(|_| "Karakeep configuration is invalid")?;
     let karakeep = Karakeep::new(&config)?;
     let links = instance_url(config.public_url.as_deref().unwrap_or(&config.url))?;
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
+    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
     let mut stats = RunStats::default();
     let mut ids = HashSet::new();
     let mut cursors = HashSet::new();

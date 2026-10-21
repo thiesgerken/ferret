@@ -17,7 +17,7 @@ export FERRET_KEY='fk_replace_with_your_key'
 | 401 | missing, invalid, revoked or expired credential; ended run token |
 | 403 | missing scope, prohibited source, connection-owned write |
 | 404 | missing/unreadable document, unknown sync |
-| 409 | sync already committed |
+| 409 | sync already committed; namespace identity collision or run ended during relocation |
 | 415 / 422 | JSON content type / body deserialization rejection |
 | 500 | database/internal error (`{"error":"internal error"}`) |
 | 503 | semantic-only query cannot obtain its query embedding |
@@ -33,6 +33,7 @@ Requires `search:read`.
 | `q` | required positive words, quoted phrases, `-excluded` tokens |
 | repeated `source` | optional source roots and descendants; omit for all authorized roots |
 | repeated `author` | any selected author |
+| repeated `thread` | exact source/thread alternatives, each a JSON object `{"source":"demo/chat","thread":"harz-trip"}` |
 | repeated `content_type` | `markdown`, `plain`, `email` |
 | `from`, `to` | creation timestamp at/after `from`, strictly before `to` |
 | `k` | 1–100, default 10 |
@@ -41,12 +42,13 @@ Requires `search:read`.
 | `collapse` | boolean, default true; collapse same-source threads |
 | `mode` | `hybrid` (default), `keyword`, `semantic` |
 
-Unknown search parameters are rejected. Values are URL-encoded; arrays are repeated keys, not JSON/comma-delimited values.
+Unknown search parameters are rejected. Values are URL-encoded; arrays use repeated keys, not comma-delimited values or a JSON array. Each `thread` value contains one JSON object pairing its exact source and thread identity. Authors, threads, sources, content type, time and query filters combine; selected values within one filter are alternatives.
 
 ```sh
 curl --fail-with-body -sS -G "$FERRET_URL/api/search" \
   -H "Authorization: Bearer $FERRET_KEY" \
   --data-urlencode 'q=Brocken' --data-urlencode 'source=demo/chat' \
+  --data-urlencode 'thread={"source":"demo/chat","thread":"harz-trip"}' \
   --data-urlencode 'mode=keyword' --data-urlencode 'collapse=false' \
   --data-urlencode 'k=10' --data-urlencode 'offset=0'
 ```
@@ -57,11 +59,11 @@ Response fields:
 - `chunk`: `start_offset`, `end_offset` in Unicode scalar values and `parts`, each `{text, highlight}`. Highlighted parts are data, not HTML. Join all parts for the matched passage.
 - `writer`: nullable `{kind: "connection"|"api_key", id, name, icon}`.
 - `total`, `total_is_lower_bound`, `documents_in_scope`, `has_more`, `facets`, `took_ms`, `semantic_unavailable` and selected `model`.
-- `facets.sources`: `{value,count,writer}`; `facets.authors`: `{value,count}`; `facets.are_lower_bounds` indicates candidate-bounded counts.
+- `facets.sources`: `{value,count,writer}`; `facets.authors`: `{value,count}`; `facets.threads`: `{source,thread,title,count}` with an optional document-title label. Thread facets include all candidate-matching threads and selected zero-count identities, not just twenty values. `facets.are_lower_bounds` indicates candidate-bounded counts.
 
 `documents_in_scope` is informational source-scope metadata, cached for 60 seconds per user and
 effective source roots after narrowing to the key's allowed sources. Query words, exclusions,
-time, authors and content types do not narrow this count. Root permutations/duplicates share a
+time, authors, threads and content types do not narrow this count. Root permutations/duplicates share a
 snapshot. Hits, matching `total` and facets remain fresh, so this count can temporarily lag
 ingestion/deletion or be lower than the current matching total.
 
@@ -135,11 +137,27 @@ All three operations require `ingest:write`. JSON request types reject unknown f
 
 | Endpoint | Request | 200 response |
 | --- | --- | --- |
-| `POST /api/syncs` | `{"source":"manual/notes"}` | `{"sync_id":"<uuid>"}` |
+| `POST /api/syncs` | `{"source":"manual/notes","thread":null}` | `{"sync_id":"<uuid>"}` |
 | `POST /api/syncs/{id}/seen` | `{"source":"manual/notes","external_ids":["note-42"]}` | `{"seen":1}` |
 | `POST /api/syncs/{id}/commit` | no body | `{"deleted":0}` |
 
 Start validates a complete authorized sweep root. Seen's exact source must be the root or a descendant; unknown external ids are ignored and not counted. Commit sweeps all root/descendant documents not put/seen since start and closes the sync. A repeated seen/commit after closure returns 409. Missing syncs return 404. Sync access is user/root-bound rather than exclusive to the creating key. Puts do not take a sync-id parameter. The [ingester workflow](../ingestion.md) explains why enumeration failure must never reach commit.
+
+An optional non-null `thread` on start narrows the sync to **that exact `(source,thread)` pair**. Its `seen` calls must name the exact source; ids from other threads do not count. Commit leaves sibling threads, unthreaded documents and descendants untouched. Omitting/nulling `thread` retains the subtree behavior above. The Rust client takes an explicit `Option<&str>` as its second `start_sync` argument.
+
+## Namespace relocation
+
+`POST /api/namespaces/flatten` is available only to a live owning plugin run, never an ordinary API key. Both paths must be within that connection's source root, and the destination must be outside the input subtree:
+
+```json
+{"from_source_prefix":"notes/old","to_source":"notes"}
+```
+
+For example, source `notes/old/topic` and external id `segment` become source `notes` and external id `topic/segment`. An external id directly in the input prefix remains unchanged. Thread strings are retained at the destination source. The same transform applies to **all** stored document and thread exclusions, including exclusions whose origin content is absent.
+
+The operation atomically preserves document UUIDs, payloads, seen timestamps, chunks and embeddings, while updating identities, derived source columns and content hashes. It is not a sweep or a successful plugin checkpoint. Document/exclusion collisions return 409 with the entire operation rolled back. A successful repeat against an empty old namespace moves nothing. The 200 response is `{"documents":12,"exclusions":2}` with actual moved counts.
+
+The connection-root/source guards serialize ingestion and exclusions during relocation. Live-run status is checked again before commit without blocking heartbeat updates for the long phase. Coordinate worker rollout so old implementations cannot recreate the old layout afterwards; there is no legacy alias or dual-source mode.
 
 ## Plugin inventory
 

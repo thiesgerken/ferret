@@ -1,4 +1,5 @@
 import type { ContentType, DocumentOrder } from "@/gql/graphql";
+import { parseThread, threadKey, type ThreadIdentity } from "@/lib/thread-filter";
 
 /** Explore's state lives in the URL (`/explore?source=...&month=2026-01&sort=TITLE&asc`), so a
  * filtered table survives reloads and can be linked. */
@@ -6,6 +7,7 @@ export type ExploreState = {
   sources: string[];
   contentTypes: ContentType[];
   authors: string[];
+  threads: ThreadIdentity[];
   /** `YYYY-MM`, in UTC like the months facet. */
   month: string | null;
   orderBy: DocumentOrder;
@@ -27,6 +29,7 @@ export function parseExplore(params: URLSearchParams): ExploreState {
     sources: params.getAll("source"),
     contentTypes: params.getAll("type").filter((type): type is ContentType => CONTENT_TYPES.includes(type as ContentType)),
     authors: params.getAll("author"),
+    threads: params.getAll("thread").map(parseThread),
     month: month && /^\d{4}-\d{2}$/.test(month) ? month : null,
     orderBy: ORDERS.includes(orderBy) ? orderBy : "CREATED_AT",
     descending: !params.has("asc"),
@@ -39,6 +42,7 @@ export function exploreHref(state: ExploreState): string {
   state.sources.forEach((source) => params.append("source", source));
   state.contentTypes.forEach((type) => params.append("type", type));
   state.authors.forEach((author) => params.append("author", author));
+  state.threads.forEach((thread) => params.append("thread", threadKey(thread)));
   if (state.month) params.set("month", state.month);
   if (state.orderBy !== "CREATED_AT") params.set("sort", state.orderBy);
   if (!state.descending) params.set("asc", "");

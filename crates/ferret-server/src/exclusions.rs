@@ -80,80 +80,88 @@ pub async fn exclude(
     document_id: Uuid,
     whole_thread: bool,
 ) -> Result<Option<Excluded>, ExclusionError> {
-    let mut tx = pool.begin().await?;
-    // The source lock comes before the row lock, in the order a PUT takes them, or the two
-    // deadlock. A document's source never changes, so reading it unlocked is safe.
-    let Some(source) = sqlx::query_scalar!(
-        "select source from documents where id = $1 and user_id = $2",
-        document_id,
-        user_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    else {
-        return Ok(None);
-    };
-    lock_source(&mut tx, user_id, &source, SourceLock::Exclusive).await?;
-    let Some(document) = sqlx::query!(
-        "select source, external_id, thread from documents
-         where id = $1 and user_id = $2
-         for update",
-        document_id,
-        user_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    else {
-        return Ok(None);
-    };
-    let thread = match (whole_thread, document.thread) {
-        (true, None) => {
-            return Err(ExclusionError::Invalid(
-                "the document isn't part of a thread".to_owned(),
-            ));
+    loop {
+        let mut tx = pool.begin().await?;
+        let Some(source) = sqlx::query_scalar!(
+            "select source from documents where id = $1 and user_id = $2",
+            document_id,
+            user_id,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Ok(None);
+        };
+        let connection = sqlx::query!(
+            "select id, source from connections where user_id = $1 and source_covers(source, $2)",
+            user_id,
+            source,
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(connection) = &connection
+            && connection.source != source
+        {
+            lock_source(&mut tx, user_id, &connection.source, SourceLock::Shared).await?;
         }
-        (true, thread) => thread,
-        (false, _) => None,
-    };
-    let external_id = thread.is_none().then_some(document.external_id);
-
-    // Roots don't overlap, so at most one connection owns the source.
-    let connection = sqlx::query_scalar!(
-        "select id from connections where user_id = $1 and source_covers(source, $2)",
-        user_id,
-        document.source,
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
-    if let Some(connection) = connection {
-        sqlx::query!(
-            "insert into exclusions (id, connection_id, source, external_id, thread, created_at)
-             values (uuidv7(), $1, $2, $3, $4, now())
-             on conflict do nothing",
-            connection,
+        // Root before exact source, then document row: the same order as PUT and relocation.
+        lock_source(&mut tx, user_id, &source, SourceLock::Exclusive).await?;
+        let Some(document) = sqlx::query!(
+            "select source, external_id, thread from documents
+             where id = $1 and user_id = $2 for update",
+            document_id,
+            user_id,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Ok(None);
+        };
+        if document.source != source {
+            // A relocation can finish while this request waits for the root lock.
+            tx.rollback().await?;
+            continue;
+        }
+        let thread = match (whole_thread, document.thread) {
+            (true, None) => {
+                return Err(ExclusionError::Invalid(
+                    "the document isn't part of a thread".to_owned(),
+                ));
+            }
+            (true, thread) => thread,
+            (false, _) => None,
+        };
+        let external_id = thread.is_none().then_some(document.external_id);
+        if let Some(connection) = &connection {
+            sqlx::query!(
+                "insert into exclusions (id, connection_id, source, external_id, thread, created_at)
+                 values (uuidv7(), $1, $2, $3, $4, now())
+                 on conflict do nothing",
+                connection.id,
+                document.source,
+                external_id,
+                thread,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        let deleted = sqlx::query!(
+            "delete from documents
+             where user_id = $1 and source = $2 and (external_id = $3 or thread = $4)",
+            user_id,
             document.source,
             external_id,
             thread,
         )
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+        tx.commit().await?;
+        return Ok(Some(Excluded {
+            deleted,
+            remembered: connection.is_some(),
+        }));
     }
-    let deleted = sqlx::query!(
-        "delete from documents
-         where user_id = $1 and source = $2 and (external_id = $3 or thread = $4)",
-        user_id,
-        document.source,
-        external_id,
-        thread,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
-    tx.commit().await?;
-    Ok(Some(Excluded {
-        deleted,
-        remembered: connection.is_some(),
-    }))
 }
 
 /// The connection's exclusions, newest first.

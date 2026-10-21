@@ -13,6 +13,7 @@ use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
 use ferret_api::{
     FacetCount, Hit, HitChunk, SearchFacets, SearchMode, SearchQuery, SearchResponse, SourceCount,
+    ThreadCount, ThreadIdentity,
 };
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -27,6 +28,7 @@ use crate::{
     search_query::{self, ParsedQuery},
     sources,
     statistics::Statistics,
+    threads,
     writers::Writers,
 };
 
@@ -139,6 +141,7 @@ pub fn validate(request: &SearchQuery) -> Result<ParsedQuery, SearchError> {
             "{invalid:?} is not a source path like `notes` or `mail/personal`"
         )));
     }
+    threads::validate(&request.threads).map_err(SearchError::Invalid)?;
     Ok(query)
 }
 
@@ -185,6 +188,7 @@ pub async fn find(
             .map(|content_type| content_type::as_str(*content_type))
             .collect(),
         authors: &request.authors,
+        threads: &request.threads,
         from: request.from,
         to: request.to,
         excluded: &query.excluded,
@@ -232,6 +236,10 @@ pub async fn find(
         authors: &[],
         ..filters.clone()
     };
+    let without_threads = Filters {
+        threads: &[],
+        ..filters.clone()
+    };
 
     let mut tx = pool.begin().await?;
     // One snapshot for the page, `total` and the facets. Not `read only`: pg_search's field
@@ -260,6 +268,21 @@ pub async fn find(
     } else {
         Some(hybrid.matches(&mut tx, &without_authors, 0..0).await?)
     };
+    let by_thread = if request.threads.is_empty() {
+        None
+    } else {
+        Some(hybrid.matches(&mut tx, &without_threads, 0..0).await?)
+    };
+    let by_thread = by_thread.as_deref().unwrap_or(&matches);
+    let mut thread_facets = thread_counts(by_thread);
+    threads::complete_counts(
+        &mut tx,
+        user_id,
+        allowed,
+        &request.threads,
+        &mut thread_facets,
+    )
+    .await?;
     let writers = Writers::load(&mut tx, user_id).await?;
     tx.commit().await?;
     let by_source = by_source.as_deref().unwrap_or(&matches);
@@ -267,7 +290,10 @@ pub async fn find(
     let facets = SearchFacets {
         sources: source_counts(by_source, &request.sources, &writers),
         authors: author_counts(by_author, collapse, &request.authors),
-        are_lower_bounds: is_lower_bound(by_source) || is_lower_bound(by_author),
+        threads: thread_facets,
+        are_lower_bounds: is_lower_bound(by_source)
+            || is_lower_bound(by_author)
+            || is_lower_bound(by_thread),
     };
     let total = u32::try_from(matches.iter().filter(|row| row.is_top()).count())
         .expect("at most the candidates match");
@@ -592,6 +618,33 @@ fn author_counts(rows: &[MatchRow], collapse: bool, selected: &[String]) -> Vec<
     })
 }
 
+fn thread_counts(rows: &[MatchRow]) -> Vec<ThreadCount> {
+    let mut groups: BTreeMap<(&str, &str), (u32, Option<&MatchRow>)> = BTreeMap::new();
+    for row in rows {
+        let Some(thread) = row.thread.as_deref() else {
+            continue;
+        };
+        let (count, labelled) = groups.entry((&row.source, thread)).or_default();
+        *count += u32::from(row.is_top());
+        if row.title.as_ref().is_some_and(|title| !title.is_empty())
+            && labelled.is_none_or(|previous| {
+                (row.created_at, row.id) > (previous.created_at, previous.id)
+            })
+        {
+            *labelled = Some(row);
+        }
+    }
+    groups
+        .into_iter()
+        .map(|((source, thread), (count, labelled))| ThreadCount {
+            source: source.to_owned(),
+            thread: thread.to_owned(),
+            title: labelled.and_then(|row| row.title.clone()),
+            count,
+        })
+        .collect()
+}
+
 /// How often each value occurs, most frequent first, keeping those `keep` accepts by their rank
 /// and value.
 fn counts<'a>(
@@ -689,6 +742,7 @@ struct Filters<'a> {
     roots: Option<Vec<String>>,
     content_types: Vec<&'static str>,
     authors: &'a [String],
+    threads: &'a [ThreadIdentity],
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
     excluded: &'a [String],
@@ -730,6 +784,13 @@ impl Filters<'_> {
             ))
             .push_bind(self.authors.to_vec())
             .push("::text[])");
+        }
+        if !self.threads.is_empty() {
+            sql.push(format!(
+                " and exists (select 1 from documents d where d.id = {table}.document_id and "
+            ));
+            threads::push_filter(sql, self.threads);
+            sql.push(")");
         }
         if let Some(from) = self.from {
             sql.push(format!(" and {table}.ts >= ")).push_bind(from);

@@ -115,7 +115,8 @@
       "defaultModelRan": "Standardmodell ({model})",
       "sources": "Quellen",
       "allOfWriter": "Alle",
-      "authors": "Autoren"
+      "authors": "Autoren",
+      "threads": "Threads"
     }
   },
   "viewer": {
@@ -399,6 +400,7 @@
     "sources": "Quellen",
     "type": "Typ",
     "authors": "Autoren",
+    "threads": "Threads",
     "month": "Monat",
     "title": "Titel",
     "source": "Quelle",

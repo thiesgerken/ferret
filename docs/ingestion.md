@@ -65,6 +65,8 @@ curl --fail-with-body -sS -X POST "$FERRET_URL/api/syncs/$sync_id/commit" \
 
 `seen` counts only existing ids; it does not create missing documents. A put after sync start also counts as seen, even when unchanged. The commit deletes documents in the root and descendants whose `seen_at` predates sync start, and returns `{"deleted":N}`. A second commit is a conflict. The sync belongs to the user and authorized source, not exclusively to the creating key.
 
+For a producer rebuilding only one exchange, pass `"thread":"<origin-thread-id>"` when starting the sync. It then covers that **exact** source/thread only: seen ids from other threads do not count, descendants are outside scope, and commit leaves sibling threads untouched. Omitted/null `thread` retains the whole-subtree sweep. See [reconciliation and namespace relocation](api/rest.md#reconciliation).
+
 If a listing is truncated, authentication fails, or a write fails, **do not commit**. Leave the sync uncommitted and start a new one on the next complete attempt. Earlier puts remain stored; leaving a sync open does not roll them back and does not sweep anything. Never interpret a failed origin listing as an empty origin. An intentionally empty successful listing followed by commit deletes the entire root.
 
 ## Explicit deletion and read-back

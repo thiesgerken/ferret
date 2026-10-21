@@ -179,7 +179,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         return Err("Mealie returned an invalid user group".into());
     }
     let source = format!("{}/recipes", run.source);
-    let sync = run.api.start_sync(&source).await?.sync_id;
+    let sync = run.api.start_sync(&source, None).await?.sync_id;
     let mut stats = RunStats::default();
     let mut total = None;
     let mut previous_id = None;

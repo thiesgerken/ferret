@@ -124,7 +124,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     run.log
         .line(format!("{} projects in Vikunja", projects.len()));
 
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
+    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
     let mut stats = RunStats::default();
     let mut task_ids = HashSet::new();
     for project in projects {

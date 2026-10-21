@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into exclusions (id, connection_id, source, external_id, thread, created_at)\n                 values (uuidv7(), $1, $2, $3, $4, now())\n                 on conflict do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0778d207325466394d069a1ad85bbf6eb24147befaf97299f6546d37200c979f"
+}

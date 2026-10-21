@@ -1,9 +1,12 @@
+import { parseThread, threadKey, type ThreadIdentity } from "@/lib/thread-filter";
+
 /** The search's state lives in the URL (`/?q=...&source=...&author=...&range=...&model=...&mode=...`), so
  * results survive reloads and can be linked. */
 export type SearchState = {
   q: string;
   sources: string[];
   authors: string[];
+  threads: ThreadIdentity[];
   range: TimeRange;
   /** The embedding model, null for the user's default. */
   model: string | null;
@@ -45,6 +48,7 @@ export function parseSearch(params: URLSearchParams): SearchState {
     q: params.get("q") ?? "",
     sources: params.getAll("source"),
     authors: params.getAll("author"),
+    threads: params.getAll("thread").map(parseThread),
     range: range in TIME_RANGES ? (range as TimeRange) : "any",
     model: params.get("model"),
     mode: SEARCH_MODES.includes(mode as SearchMode) ? (mode as SearchMode) : "hybrid",
@@ -55,6 +59,7 @@ export function searchHref(state: SearchState): string {
   const params = new URLSearchParams({ q: state.q });
   state.sources.forEach((source) => params.append("source", source));
   state.authors.forEach((author) => params.append("author", author));
+  state.threads.forEach((thread) => params.append("thread", threadKey(thread)));
   if (state.range !== "any") params.set("range", state.range);
   if (state.model) params.set("model", state.model);
   if (state.mode !== "hybrid") params.set("mode", state.mode);

@@ -35,13 +35,15 @@ pub async fn start(
         )));
     }
     caller.require_source(&body.source)?;
-    connections::check_api_key_may_write(&state.pool, &caller, &body.source, true).await?;
+    connections::check_api_key_may_write(&state.pool, &caller, &body.source, body.thread.is_none())
+        .await?;
     let sync_id = sqlx::query_scalar!(
-        "insert into syncs (id, user_id, source, started_at)
-         values (uuidv7(), $1, $2, now())
+        "insert into syncs (id, user_id, source, thread, started_at)
+         values (uuidv7(), $1, $2, $3, now())
          returning id",
         caller.user_id,
         body.source,
+        body.thread,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -60,6 +62,11 @@ pub async fn seen(
     let Path(id) = id?;
     let Json(body) = body?;
     let sync = open_sync(&state, &caller, id).await?;
+    if sync.thread.is_some() && body.source != sync.source {
+        return Err(ApiError::bad_request(
+            "a thread sync only covers its exact source",
+        ));
+    }
     if !sources::covers(&sync.source, &body.source) {
         return Err(ApiError::bad_request(&format!(
             "{:?} is not the sync's source {:?} or below it",
@@ -68,10 +75,12 @@ pub async fn seen(
     }
     let seen = sqlx::query!(
         "update documents set seen_at = now()
-         where user_id = $1 and source = $2 and external_id = any($3)",
+         where user_id = $1 and source = $2 and external_id = any($3)
+           and ($4::text is null or thread = $4)",
         caller.user_id,
         body.source,
         &body.external_ids,
+        sync.thread,
     )
     .execute(&state.pool)
     .await?
@@ -92,7 +101,7 @@ pub async fn commit(
     // The row lock makes concurrent commits of one sync wait for each other; the second finds it
     // committed.
     let sync = sqlx::query!(
-        "select source, started_at, committed_at is not null as \"committed!\"
+        "select source, thread, started_at, committed_at is not null as \"committed!\"
          from syncs where id = $1 and user_id = $2
          for update",
         id,
@@ -106,13 +115,17 @@ pub async fn commit(
         return Err(ApiError::conflict("the sync is already committed"));
     }
     // Checked again: a connection may have been created below the source since the start.
-    connections::check_api_key_may_write(&state.pool, &caller, &sync.source, true).await?;
+    connections::check_api_key_may_write(&state.pool, &caller, &sync.source, sync.thread.is_none())
+        .await?;
     let deleted = sqlx::query!(
         "delete from documents
-         where user_id = $1 and source_covers($2, source) and seen_at < $3",
+         where user_id = $1 and seen_at < $3
+           and (($4::text is null and source_covers($2, source))
+             or (source = $2 and thread = $4))",
         caller.user_id,
         sync.source,
         sync.started_at,
+        sync.thread,
     )
     .execute(&mut *tx)
     .await?
@@ -131,12 +144,13 @@ pub async fn commit(
 
 struct OpenSync {
     source: String,
+    thread: Option<String>,
 }
 
 /// The caller's uncommitted sync `id`, within the caller's sources.
 async fn open_sync(state: &AppState, caller: &ApiCaller, id: Uuid) -> Result<OpenSync, ApiError> {
     let sync = sqlx::query!(
-        "select source, committed_at is not null as \"committed!\"
+        "select source, thread, committed_at is not null as \"committed!\"
          from syncs where id = $1 and user_id = $2",
         id,
         caller.user_id,
@@ -150,5 +164,6 @@ async fn open_sync(state: &AppState, caller: &ApiCaller, id: Uuid) -> Result<Ope
     }
     Ok(OpenSync {
         source: sync.source,
+        thread: sync.thread,
     })
 }

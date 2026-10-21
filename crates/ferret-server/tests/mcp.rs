@@ -269,3 +269,41 @@ async fn origin_dates_are_independently_nullable_in_agent_search_and_reads(pool:
         }
     }
 }
+
+#[sqlx::test(migrations = false)]
+async fn an_agent_combines_source_local_threads_and_actual_authors(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for (source, id, thread, author) in [
+        ("chats/personal", "incoming", "alice", "Alice"),
+        ("chats/personal", "outgoing", "alice", "Me"),
+        ("chats/personal", "group", "team", "Me"),
+        ("chats/work", "work", "alice", "Me"),
+    ] {
+        let mut doc = document(source, id, "Car service details.");
+        doc.thread = Some(thread.into());
+        doc.authors = vec![author.into()];
+        api.put_document(&doc).await.unwrap();
+    }
+    let key = server
+        .create_api_key(&["SEARCH_READ"], Some(&["chats/personal"]))
+        .await;
+    let client = connect(&server, &key).await;
+    let found = structured(call(&client, "search", json!({
+        "query":"car", "mode":"keyword", "authors":["Me"],
+        "threads":[{"source":"chats/personal","thread":"alice"},{"source":"chats/work","thread":"alice"}],
+    })).await);
+    assert_eq!(found["total"], 1);
+    assert_eq!(found["hits"][0]["source"], "chats/personal");
+    assert_eq!(found["hits"][0]["thread"], "alice");
+    let doc = structured(
+        call(
+            &client,
+            "get_document",
+            json!({"id":found["hits"][0]["document_id"]}),
+        )
+        .await,
+    );
+    assert_eq!(doc["external_id"], "outgoing");
+    assert_eq!(doc["authors"], json!(["Me"]));
+}

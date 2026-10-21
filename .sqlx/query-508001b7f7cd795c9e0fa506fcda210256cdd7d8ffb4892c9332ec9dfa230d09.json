@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update chunk_embeddings set source = $3 where user_id = $1 and source_covers($2, source)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "508001b7f7cd795c9e0fa506fcda210256cdd7d8ffb4892c9332ec9dfa230d09"
+}

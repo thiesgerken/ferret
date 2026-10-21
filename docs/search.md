@@ -6,7 +6,7 @@ Use search to discover what exists and where it lives, then open the origin to w
 
 Enter a query on the home page. **Keyword** and **Semantic** are independent toggles; both on means hybrid, only Keyword means keyword search, only Semantic means meaning search. At least one stays on. Start with keyword mode for names, ids and exact phrases, or when a model is unavailable.
 
-Source and author facets narrow results. A source includes descendants; several selected sources/authors are alternatives within that filter, while different filter kinds combine. Time filters use document **creation** time, not modification or ingestion time. The UI also offers Explore for browsing without a query. A copied search URL preserves query/filter choices. The API additionally accepts content types and explicit timestamps.
+Source, author and thread facets narrow results. A source includes descendants; a thread is one exact `(source, thread)` pair. Several selected values are alternatives within their filter, while different filter kinds combine. **Authors** selects documents containing an actual speaker/author; **Threads** selects the whole exchange, including outgoing-only chat segments. For example, Author Alice excludes segments spoken only by Me, while Thread Alice includes them; a group thread includes all its speakers without turning the group name into an author. Thread labels use document titles, with source/identity disambiguation when names repeat. Time filters use document **creation** time, not modification or ingestion time. Explore offers the same separate author/thread choices without a query. Copied URLs preserve all filter choices. The API additionally accepts content types and explicit timestamps.
 
 Unknown origin creation and modification dates stay null in REST, GraphQL and MCP. Undated documents participate in keyword, semantic and hybrid search without date filters. An explicit creation-date bound excludes unknown creation dates; it never filters on ingestion/seen time. The UI omits missing dates; Explore leaves their date cells empty, sorts unknown dates last in either direction, and does not invent a month facet for them. Thread listings and viewer neighbors place unknown creation dates after dated documents, ordered by document id.
 
@@ -46,7 +46,7 @@ totals. Hits, matching totals and facets are not cached by this metadata cache.
 approximation means even a false flag is not an exhaustive-corpus guarantee. The semantic check
 looks only far enough into the eligible scope to establish whether more than the retrieved
 nearest candidates exist. Facets apply all filters except their own so alternative choices remain
-visible. Author facets include the twenty most frequent values plus selected values.
+visible. Author facets include the twenty most frequent values plus selected values. Thread facets expose every matching thread in the candidate set, without a separate top-twenty cap, and retain selected zero-count identities with readable titles when available. Explore exposes every scoped thread. Search facets are not a discovery listing of threads with no query match.
 
 REST pages use `k` (default 10, range 1–100) and `offset`; subsequent requests should retain query/filter/model/mode/collapse choices. Each request has a consistent database snapshot for its hits, matching totals and facets; the informational scope count may be older. Successive pages are not a persistent snapshot across ingestion.
 

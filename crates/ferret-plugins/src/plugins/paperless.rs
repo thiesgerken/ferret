@@ -131,7 +131,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         changed.len()
     ));
 
-    let sync = run.api.start_sync(&run.source).await?.sync_id;
+    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
     let ids: Vec<String> = listed
         .iter()
         .map(|document| document.id.to_string())

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update exclusions set\n             external_id = case when external_id is null then null\n                 when source = $2 then external_id\n                 else substr(source, length($2) + 2) || '/' || external_id end,\n             source = $3\n         where connection_id = $1 and source_covers($2, source)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "405a9493fd18bbe59bcfe428140a513cfeb7cdd19a6bcdbd0c3929c9bbb20994"
+}

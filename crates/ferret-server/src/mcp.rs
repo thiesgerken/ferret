@@ -84,6 +84,12 @@ pub struct SearchArgs {
     /// the key may read when left out. `list_sources` shows them.
     #[serde(default)]
     sources: Vec<String>,
+    /// Only documents with at least one of these authors. Combined with thread/source filters.
+    #[serde(default)]
+    authors: Vec<String>,
+    /// Exact source/thread alternatives, such as {\"source\":\"chats\",\"thread\":\"alice\"}.
+    #[serde(default)]
+    threads: Vec<ferret_api::ThreadIdentity>,
     /// `hybrid` (the default) finds documents by keyword and by meaning. `keyword` only matches
     /// the words, for names, ids and exact terms. `semantic` only matches by meaning.
     mode: Option<SearchMode>,
@@ -209,6 +215,8 @@ impl Ferret {
         let request = SearchQuery {
             q: args.query,
             sources: args.sources,
+            authors: args.authors,
+            threads: args.threads,
             k: args.limit,
             offset,
             model: args.model,

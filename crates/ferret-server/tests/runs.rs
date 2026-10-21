@@ -396,10 +396,10 @@ async fn connection_roots_are_exclusive(pool: PgPool) {
     assert_eq!(put_status(&key, "notes/work-old").await, StatusCode::OK);
     // A sync over `notes` would sweep the connection's documents.
     assert_eq!(
-        key.start_sync("notes").await.unwrap_err().status(),
+        key.start_sync("notes", None).await.unwrap_err().status(),
         Some(StatusCode::FORBIDDEN)
     );
-    assert!(key.start_sync("notes/private").await.is_ok());
+    assert!(key.start_sync("notes/private", None).await.is_ok());
 }
 
 #[sqlx::test(migrations = false)]

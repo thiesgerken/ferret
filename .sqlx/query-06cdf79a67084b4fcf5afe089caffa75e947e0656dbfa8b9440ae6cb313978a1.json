@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from documents\n         where user_id = $1 and seen_at < $3\n           and (($4::text is null and source_covers($2, source))\n             or (source = $2 and thread = $4))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06cdf79a67084b4fcf5afe089caffa75e947e0656dbfa8b9440ae6cb313978a1"
+}

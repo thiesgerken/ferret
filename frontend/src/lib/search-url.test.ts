@@ -8,6 +8,7 @@ test("search state round-trips through the URL", () => {
     q: "invoice 2026",
     sources: ["paperless", "mail/personal"],
     authors: ["Allianz"],
+    threads: [],
     range: "month" as const,
     model: "qwen3",
     mode: "keyword" as const,
@@ -24,7 +25,7 @@ test("unknown ranges fall back to any time", () => {
 test("unknown or missing modes are hybrid, which stays out of the URL", () => {
   assert.equal(parseSearch(new URLSearchParams("q=x&mode=fuzzy")).mode, "hybrid");
   assert.equal(parseSearch(new URLSearchParams("q=x")).mode, "hybrid");
-  assert.equal(searchHref({ q: "x", sources: [], authors: [], range: "any", model: null, mode: "hybrid" }), "/?q=x");
+  assert.equal(searchHref({ q: "x", sources: [], authors: [], threads: [], range: "any", model: null, mode: "hybrid" }), "/?q=x");
 });
 
 test("keyword and semantic matching switch independently, but never both off", () => {
@@ -39,4 +40,20 @@ test("keyword and semantic matching switch independently, but never both off", (
 test("toggle adds and removes", () => {
   assert.deepEqual(toggle(["a"], "b"), ["a", "b"]);
   assert.deepEqual(toggle(["a", "b"], "a"), ["b"]);
+});
+
+test("thread identities survive URLs independently of sources and authors", () => {
+  const state = {
+    q: "hello", sources: ["chats"], authors: ["Alice"],
+    threads: [
+      { source: "chats/personal", thread: "same/+? #漢字" },
+      { source: "chats/work", thread: "same/+? #漢字" },
+    ],
+    range: "week" as const, model: null, mode: "keyword" as const,
+  };
+  const href = searchHref(state);
+  const params = new URLSearchParams(href.slice(2));
+  assert.equal(params.getAll("thread").length, 2);
+  assert.deepEqual(parseSearch(params), state);
+  assert.throws(() => parseSearch(new URLSearchParams('thread={"source":"chats"}')));
 });
