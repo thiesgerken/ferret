@@ -12,7 +12,7 @@ Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run comma
 docker compose pull
 ```
 
-Set `FERRET_IMAGE_TAG` to a release version or PR tag to select matching server, worker and frontend images.
+`latest` is the last release and may not match the checkout's configuration; set `FERRET_IMAGE_TAG` to the matching release/PR tag, or use [local images](development.md#compose-development).
 
 ### Apple Silicon: build native images
 
@@ -20,8 +20,8 @@ Install [Determinate Nix](https://docs.determinate.systems/) and authorize its N
 
 ```sh
 determinate-nixd auth login
-nix build .#packages.aarch64-linux.{server,plugins,frontend}-image
-for image in result*; do docker load -i "$image"; done
+nix build .#packages.aarch64-linux.{server,plugins,frontend}-image --out-link result-image
+for image in result-image*; do docker load -i "$image"; done
 export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.arm.yml
 ```
 

@@ -42,6 +42,7 @@ jobs:
           pr=$(jq -er '.pull_requests | if length == 1 then .[0].number else error("Expected one tested PR") end' <<< "$TESTED_RUN")
           sha=$(jq -er '.head_sha' <<< "$TESTED_RUN")
           current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr")
+          # Previews are intentionally limited to PRs against main.
           jq -e --arg repo "$GITHUB_REPOSITORY" --arg sha "$sha" \
             '.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo and .base.ref == "main"' <<< "$current" >/dev/null
           echo "pr=$pr" >> "$GITHUB_OUTPUT"

@@ -28,11 +28,22 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
 - Run all checks/packages/images: bootstrap `nix-fast-build` from the locked nixpkgs and build
   `ciBuilds.x86_64-linux` (Linux x64) or `ciBuilds.aarch64-darwin` (Apple Silicon).
   Exact commands and image smoke instructions are in `docs/development.md`.
-- Host iteration is optional: `cargo run -p ferret-server`, `cargo run -p ferret-plugins` or
-  `pnpm --dir frontend dev` inside the dev shell. Host services/secrets are documented there.
-- Regenerate GraphQL: `cargo run -p ferret-server -- schema > frontend/schema.graphql`.
-- Refresh SQLx metadata after query/migration changes using the dev shell's sqlx and a migrated
-  database: `cargo sqlx prepare --workspace`. Commit `.sqlx/`.
+- Host iteration inside `nix develop`:
+  - Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`, plus
+    `docker compose up -d --scale dovecot=1 dovecot` for the IMAP plugin's tests.
+  - Build: `cargo build --workspace`.
+  - Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
+    The config file's endpoint URLs must be reachable from the host (compose's `docker/ferret.yaml`
+    uses `http://tei:80/v1` and `http://tei-bge:80/v1`, which only work inside compose). `tei-bge`
+    (bge-m3) is scaled to 0: `docker compose up -d --scale tei-bge=1 tei-bge` starts it.
+  - Test: `cargo test --workspace` (needs the Compose ParadeDB/Dovecot, see Testing).
+  - Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
+  - Frontend: `pnpm --dir frontend dev`.
+- Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`.
+- After changing a query or a migration, refresh the sqlx query metadata (using the dev shell's
+  sqlx CLI and a migrated database):
+  `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
+  then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`.
 - Refresh dependency pins/hashes: `python3 scripts/update-nix-deps.py` inside the dev shell.
 
 ## Project structure

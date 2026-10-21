@@ -12,7 +12,7 @@ on container port 8080. Upstream database, TEI and proxy images have separate ru
 For deployment restrictions, see the [chart README](../charts/ferret/README.md#runtime-security-and-images);
 the [independent archive guide](plugins/whatsapp.md) covers its directory/token mounts and storage-owner UID.
 Compose uses public development credentials; follow the [quickstart](quickstart.md) only for local use.
-Its ParadeDB image is `0.26.2-pg18` (PostgreSQL 18), with `pgdata` mounted at `/var/lib/postgresql`.
+The Compose ParadeDB image uses PostgreSQL 18, with `pgdata` mounted at `/var/lib/postgresql`.
 Nix integration checks use separate sandbox-local databases, never developer volumes.
 
 ## Health and logs

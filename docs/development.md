@@ -12,6 +12,21 @@ nix develop
 
 The shell includes Rust, Node, pnpm, sqlx, Git, Helm and Skopeo. Compose v2.24.4 or newer provides the local service environment.
 
+## Repository map
+
+| Path | Responsibility |
+| --- | --- |
+| `crates/ferret-server/src` | axum routers, GraphQL, auth, ingestion, search, scheduling and embed pump |
+| `crates/ferret-server/migrations` | embedded sqlx migrations, applied before startup listens |
+| `crates/ferret-server/tests` | real-Postgres HTTP integration tests plus fixtures/helpers |
+| `crates/ferret-api` | shared public/internal wire types and clients |
+| `crates/ferret-plugins` | worker orchestration, schemas and origin implementations |
+| `frontend/src` | static Next.js UI, GraphQL operations and unit tests |
+| `frontend/schema.graphql` | checked generated server schema |
+| `.sqlx` | checked offline query metadata |
+| `docker`, `scripts/demo-seed.sh` | local config, origin fixtures and demo ingestion |
+| `charts/ferret` | deployment templates and canonical Helm values |
+
 ## Apple Silicon: build native ARM Linux images
 
 Install [Determinate Nix](https://docs.determinate.systems/) and authorize its Native Linux Builder with a free FlakeHub account:
@@ -28,7 +43,11 @@ The local overlay selects `:local` images with `pull_policy: never`. The ARM ove
 
 ## Compose development
 
-Follow the [quickstart](quickstart.md) for initial startup and demo data. To use local images on x64:
+Follow the [quickstart](quickstart.md) for initial startup and demo data.
+
+`latest` is the last release and may not match the checkout's configuration; set `FERRET_IMAGE_TAG` to the matching release/PR tag, or use local images.
+
+To use local images on x64:
 
 ```sh
 nix build .#server-image .#plugins-image .#frontend-image --out-link result-image
@@ -53,11 +72,14 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}:docker-compose.demo.yml" docke
 scripts/demo-seed.sh
 ```
 
-The demo explicitly permits local Git file transport. Only committed content is indexed.
+The overlay mounts that local Git repository into workers and explicitly permits file transport for the demonstration. Only committed/mirrored content is indexed. Keep this exception out of untrusted deployments.
 
 ### Standalone embedding maps
 
-The [Embedding Atlas scripts](../scripts/embedding-atlas/README.md) export existing embeddings and serve a private localhost snapshot. They are separate from Explore.
+The [Embedding Atlas scripts](../scripts/embedding-atlas/README.md) export one user's existing
+embeddings from local Postgres or Kubernetes and serve a private snapshot on localhost. The
+adjacent README covers prerequisites, commands, snapshot retention and production read load.
+This is separate from Explore and changes neither Ferret's schema nor its deployment.
 
 ## Host iteration
 
@@ -84,6 +106,8 @@ FERRET_SERVER_URL=http://127.0.0.1:8080 \
 FERRET_WORKER_SECRET='development worker secret, not for production' \
 cargo run -p ferret-plugins
 ```
+
+Host listeners are fixed at public8080/internal8081. If another local app owns8080, either stop your own conflicting instance or keep Ferret containerized with mapped host ports. There is no implemented listener override variable.
 
 For frontend iteration:
 
@@ -127,6 +151,8 @@ The smoke uses disposable volumes and dynamic ports. It checks server health/log
 
 For focused host tests, `.cargo/config.toml` supplies development database/mailbox defaults. Start `paradedb` and `docker compose up -d --scale dovecot=1 dovecot`, then use `cargo test --workspace --locked`. Linux files-plugin tests additionally require `FERRET_TEST_FILES_ROOT` to name an empty disposable mount. Nix checks supply their own isolated tmpfs. Never use personal files as test fixtures.
 
+The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
+
 ## Migrations and generated contracts
 
 Create a migration instead of editing an applied one; follow AGENTS.md's timestamp ordering rule:
@@ -152,6 +178,8 @@ See the [builder prerequisites and known issues](https://docs.determinate.system
 
 ## Dependency updates and CI
 
+[renovate.json](../renovate.json) configures automated dependency updates. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
+
 [Renovate](../renovate.json) updates dependencies and `flake.lock`. After changing pnpm, its lockfile or the `pg_search` version, refresh binary pins and the pnpm dependency hash inside the dev shell:
 
 ```sh
@@ -160,4 +188,4 @@ python3 scripts/update-nix-deps.py
 
 The command selects native Linux outputs (ARM Linux on Apple Silicon); `--system` can select another supported Linux target. Commit its pin/hash changes with the dependency update. Hash refresh is manual on Renovate PRs; these updates are not auto-merged. `pg_search` uses SHA-256-pinned official PostgreSQL 18 binaries; the other packages come from stable nixpkgs.
 
-[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts; [releases](../.github/workflows/release.yml) verify the version-bumped tag before publishing. Semantic-release is a known tooling exception: `uv tool run` pins its PyPI version, but not its transitive dependencies.
+[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts only for PRs against `main`; [releases](../.github/workflows/release.yml) verify the version-bumped tag before publishing. Semantic-release is a known tooling exception: `uv tool run` pins its PyPI version, but not its transitive dependencies.
