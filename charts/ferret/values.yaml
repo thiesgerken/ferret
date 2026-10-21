@@ -2,7 +2,7 @@
 image:
   registry: ghcr.io
   repository: thiesgerken/ferret
-  tag: ""
+  tag: "@sha256:4742537c303d0520fc14fec7811fc760ea4d33a777feabbb48715e6b2d8fc76c"
   pullPolicy: IfNotPresent
 
 server:
@@ -78,7 +78,7 @@ plugins:
   image:
     registry: ghcr.io
     repository: thiesgerken/ferret-plugins
-    tag: ""
+    tag: "@sha256:29f41a099886c672dc451bd7b3fafb0eba56cee52e6eba04f18fb9ab8f084aea"
     pullPolicy: IfNotPresent
   replicas: 1
   # -- Kubernetes volumes supplied to every worker replica, e.g. an NFS export or existing PVC.
@@ -101,7 +101,7 @@ frontend:
   image:
     registry: ghcr.io
     repository: thiesgerken/ferret-frontend
-    tag: ""
+    tag: "@sha256:85e665bd4bb6996b89d07bba65f8901aa36f8d88839182e1276b0ee3aaa959dd"
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
