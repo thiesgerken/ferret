@@ -1,6 +1,6 @@
 # Targets: server (default), plugins, whatsapp-archive.
 # Each target builds only its own binary, so plugin dependencies never slow down server builds.
-FROM rust:1.99.0-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS builder
+FROM rust:1.99.1-trixie@sha256:767c71592f7d1f3f242292000f8efd4e67b6732363da176772f4d220332e264f AS builder
 WORKDIR /build
 COPY . .
 
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked -p ferret-server \
     && cp target/release/ferret /ferret
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 # reqwest's rustls client loads the system's root certificates when it's built, and fails without
 # any, even for plain-http calls like the server's to TEI. They also serve https git remotes.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \

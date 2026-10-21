@@ -2,6 +2,6 @@
 # CI is the one that builds the release binary, and a new stable clippy lint arrives as a
 # reviewable bump instead of a red main.
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
