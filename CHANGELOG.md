@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.31.1 (2026-10-21)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #187 from thiesgerken/fix/files-listing-size-cap
+  ([`42bbd73`](https://github.com/thiesgerken/ferret/commit/42bbd735dc96045faa94290ebb065fdc4879ad12))
+
+- 🐛 fix(files): cap directory listing text at 1 MiB
+  ([`42bbd73`](https://github.com/thiesgerken/ferret/commit/42bbd735dc96045faa94290ebb065fdc4879ad12))
+
+- 🐛 fix(files): cap directory listing text at 1 MiB
+  ([`94d9142`](https://github.com/thiesgerken/ferret/commit/94d9142f6f763f5dc66da2f0b4eccc11e0079576))
+
 ## v0.31.0 (2026-10-21)
 
 
