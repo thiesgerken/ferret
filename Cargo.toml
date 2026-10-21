@@ -37,6 +37,7 @@ sqlx = { version = "0.9", default-features = false, features = [
     "migrate",
     "postgres",
     "runtime-tokio",
+    "tls-rustls-aws-lc-rs",
     "uuid",
 ] }
 schemars = "1"
