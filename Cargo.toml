@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.28.0"
+version = "0.29.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -50,6 +50,7 @@ text-splitter = { version = "0.33", features = ["markdown"] }
 percent-encoding = "2"
 rust-stemmers = "1.2"
 rustls-platform-verifier = "0.7"
+rustix = { version = "1", features = ["fs"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = "0.26"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }

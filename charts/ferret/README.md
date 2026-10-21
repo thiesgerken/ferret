@@ -107,6 +107,18 @@ model's `name`, `modelId`, `maxBatchTokens`, `cacheSize`, `resources` or `bulkUr
   http://192.168.1.20:8080/v1`, and the in-cluster TEI its `queryApi`. Routing between several
   TEIs for one model is a proxy's job (LiteLLM).
 
+## Read-only worker mounts
+
+`plugins.volumes` accepts Kubernetes volume definitions (for example NFS exports or existing PVCs).
+`plugins.volumeMounts` accepts `{name, mountPath}` entries and always renders `readOnly: true`.
+Mounts apply to every plugin replica, never the server, frontend or database. Worker pods have no
+service-account token and need no privileged mounting capability. Use the mounted directory itself
+as the `files` connection root, not a subdirectory or an unmounted placeholder.
+
+See the [files plugin setup](../../docs/plugins/files.md#mount-the-origin-first) for generic NFS/k3s
+values, mount-availability checks, origin links and failure/recovery behavior. Deploy the required
+volumes consistently before enabling connections; a worker missing a mount fails without sweeping.
+
 ## Uninstall
 
 `helm uninstall` keeps the database PVC and the Secret, so a reinstall under the same release name

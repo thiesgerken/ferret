@@ -1,6 +1,7 @@
 /** The icon a new connection starts with, by plugin. The user can pick another. */
 const PLUGIN_ICONS: Record<string, string> = {
   affine: "notebook-pen",
+  files: "folder",
   git: "git-branch",
   homeassistant: "house",
   carapace: "brain",

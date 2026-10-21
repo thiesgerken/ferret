@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.29.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #184 from thiesgerken/feat/183-files-plugin
+  ([`4ddd51e`](https://github.com/thiesgerken/ferret/commit/4ddd51e67155a1f877813794e22d0a32da78dcb9))
+
+- ✨ feat(files): index mounted filesystem trees
+  ([`4ddd51e`](https://github.com/thiesgerken/ferret/commit/4ddd51e67155a1f877813794e22d0a32da78dcb9))
+
+- ✨ feat(files): index mounted directories and selected text
+  ([`9751dfe`](https://github.com/thiesgerken/ferret/commit/9751dfe0cf9b0696d9b92a425c4521d9a5d3823c))
+
+### Other
+
+
+- ✅ test(files): remove tautological listing assertion
+  ([`7d2393a`](https://github.com/thiesgerken/ferret/commit/7d2393aab0726ce09977dcc8bd6aad91f7151ad2))
+
 ## v0.28.0 (2026-10-20)
 
 

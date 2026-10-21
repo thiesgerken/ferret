@@ -1,0 +1,22 @@
+ingress:
+  hostname: ferret.example.com
+bundledTei:
+  enabled: true
+embedding:
+  default: qwen3-embedding-0.6b
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      minSimilarity: 0.42
+      bundledTei: true
+plugins:
+  replicas: 2
+  volumes:
+    - name: documents
+      nfs:
+        server: nas.example.com
+        path: /exports/documents
+        readOnly: true
+  volumeMounts:
+    - name: documents
+      mountPath: /mnt/documents

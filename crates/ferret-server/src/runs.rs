@@ -254,6 +254,17 @@ async fn try_claim(
         tx.commit().await?;
         return Ok(None);
     };
+    sqlx::query!(
+        "delete from plugin_inventory
+         where connection_id = $1 and generation::text is distinct from $2",
+        connection.id,
+        connection
+            .state
+            .get("inventory_generation")
+            .and_then(serde_json::Value::as_str),
+    )
+    .execute(&mut *tx)
+    .await?;
 
     let config = match &connection.credentials {
         None => Ok(connection.config),
@@ -405,6 +416,17 @@ pub async fn finish(
         )
         .execute(&mut *tx)
         .await?;
+        sqlx::query!(
+            "delete from plugin_inventory where connection_id = $1 and generation != $2",
+            connection_id,
+            id,
+        )
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query!("delete from plugin_inventory where generation = $1", id)
+            .execute(&mut *tx)
+            .await?;
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

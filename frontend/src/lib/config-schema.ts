@@ -1,12 +1,14 @@
 /** A form field for one property of a plugin's config schema. */
 export type ConfigField = {
   name: string;
-  kind: "text" | "lines" | "checkbox";
+  kind: "text" | "lines" | "checkbox" | "integer";
   required: boolean;
   /** `writeOnly` in the schema: the server stores it encrypted and never returns it. */
   secret: boolean;
   description: string;
   default: unknown;
+  minimum?: number;
+  maximum?: number;
 };
 
 type Property = {
@@ -15,13 +17,15 @@ type Property = {
   description?: string;
   default?: unknown;
   writeOnly?: boolean;
+  minimum?: number;
+  maximum?: number;
 };
 
 /**
  * The form fields of a plugin's config schema, required ones first. Only the shapes plugins use are
- * supported: strings, lists of strings and booleans, each optionally nullable. Anything else
- * throws, so a plugin with a new shape fails visibly instead of getting a field that can't hold
- * its value.
+ * supported: strings, lists of strings, booleans and safe integers, each optionally nullable.
+ * Anything else throws, so a plugin with a new shape fails visibly instead of getting a field
+ * that can't hold its value.
  */
 export function configFields(schemaJson: string): ConfigField[] {
   const schema = JSON.parse(schemaJson) as { properties?: Record<string, Property>; required?: string[] };
@@ -34,6 +38,8 @@ export function configFields(schemaJson: string): ConfigField[] {
       secret: property.writeOnly === true,
       description: property.description ?? "",
       default: property.default,
+      minimum: property.minimum,
+      maximum: property.maximum,
     }))
     .sort((a, b) => Number(b.required) - Number(a.required));
 }
@@ -43,6 +49,9 @@ function fieldKind(name: string, property: Property): ConfigField["kind"] {
   if (types.length === 1) {
     if (types[0] === "string") {
       return "text";
+    }
+    if (types[0] === "integer") {
+      return "integer";
     }
     if (types[0] === "boolean") {
       return "checkbox";
@@ -74,6 +83,12 @@ export function configFromForm(fields: ConfigField[], form: FormData): Record<st
       if (lines.length > 0) {
         config[field.name] = lines;
       }
+    } else if (field.kind === "integer" && value) {
+      const number = Number(value);
+      if (!Number.isSafeInteger(number)) {
+        throw new Error(`The config field "${field.name}" must be a safe integer.`);
+      }
+      config[field.name] = number;
     } else if (value) {
       config[field.name] = value;
     }

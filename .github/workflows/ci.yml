@@ -40,7 +40,15 @@ jobs:
       # Not a service container: it needs docker/dovecot-test.conf from the checkout. Compose scales
       # it to 0 by default.
       - run: docker compose up -d --scale dovecot=1 dovecot
+      - name: Mount isolated files-plugin fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/ferret-files-fixture"
+          sudo mount --bind "$RUNNER_TEMP/ferret-files-fixture" "$RUNNER_TEMP/ferret-files-fixture"
+          echo "FERRET_TEST_FILES_ROOT=$RUNNER_TEMP/ferret-files-fixture" >> "$GITHUB_ENV"
       - run: cargo test --workspace --locked
+      - name: Unmount isolated files-plugin fixture
+        if: always()
+        run: sudo umount "$RUNNER_TEMP/ferret-files-fixture"
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: sqlx-cli@0.9.0
