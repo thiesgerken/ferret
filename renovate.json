@@ -28,7 +28,7 @@
         "helm-values"
       ],
       "matchFileNames": [
-        "charts/carapace/values.yaml"
+        "charts/ferret/values.yaml"
       ],
       "pinDigests": false
     },
