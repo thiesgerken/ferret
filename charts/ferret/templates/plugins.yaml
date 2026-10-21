@@ -22,6 +22,10 @@ spec:
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
+      {{- with .Values.plugins.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: plugins
           image: {{ include "ferret.image" (dict "root" . "image" .Values.plugins.image) }}
@@ -38,6 +42,14 @@ spec:
                   key: worker-secret
             - name: RUST_LOG
               value: {{ .Values.server.logLevel | quote }}
+          {{- with .Values.plugins.volumeMounts }}
+          volumeMounts:
+            {{- range . }}
+            - name: {{ .name | quote }}
+              mountPath: {{ .mountPath | quote }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
           {{- with .Values.plugins.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

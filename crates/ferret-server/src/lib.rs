@@ -28,6 +28,7 @@ mod explore;
 pub mod graphql;
 mod highlight;
 mod icons;
+mod inventory;
 mod judgments;
 mod mcp;
 mod model_registry;
@@ -159,6 +160,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/syncs", post(syncs::start))
         .route("/api/syncs/{id}/seen", post(syncs::seen))
         .route("/api/syncs/{id}/commit", post(syncs::commit))
+        .route("/api/inventory/lookup", post(inventory::lookup))
+        .route("/api/inventory", axum::routing::put(inventory::stage))
         .merge(
             Router::new()
                 .route_service("/mcp", mcp::service(state.clone()))

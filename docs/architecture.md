@@ -23,7 +23,7 @@ flowchart LR
 - **Frontend:** a statically exported Next.js app, served by nginx. It talks to `/graphql` using the browser session and `/auth` for login/password/logout. It is not a separate authorization service.
 - **Server:** Rust/axum process with public and internal listeners. It applies migrations, bootstraps users, authorizes requests, stores/chunks documents, executes search, manages connection schedules and records Activity. GraphQL and REST reuse the same domain code.
 - **Plugin workers:** independent Rust processes that advertise plugin schemas and pull due work. No inbound webhook or worker service is required. A worker reaches the origin, receives credentials only for its claimed run, and ingests using the public API with a source-limited run token.
-- **Postgres:** the persistent store for users, sessions, keys, encrypted connection credentials, runs/cursors, documents, chunks, BM25 indexes, model vectors/cache, failures and judgments. ParadeDB and pgvector are requirements, not optional remote search services.
+- **Postgres:** the persistent store for users, sessions, keys, encrypted connection credentials, runs/cursors and bulk plugin inventories, documents, chunks, BM25 indexes, model vectors/cache, failures and judgments. ParadeDB and pgvector are requirements, not optional remote search services.
 - **Embedding endpoints:** an OpenAI-compatible endpoint per model (a TEI, a proxy such as LiteLLM, or a cloud API), one for chunks and one for queries if they differ. The server runs the pump and checks every answer; routing, failover and serving are the endpoint's job.
 - **Proxy:** routes static pages to the frontend and `/graphql`, `/auth`, `/api`, `/mcp` to the public server. Internal port 8081 stays private. [MCP](api/mcp.md) exposes read-only search/document/source tools using scoped API keys.
 
@@ -42,6 +42,12 @@ The caller's user and source restrictions narrow the corpus. Query parsing separ
 ### Connections
 
 Creation makes a connection due. A registered worker claims it, receives the previous successful state and a token, heartbeats while running, then reports outcome and new state. Expired leases produce lost runs. Origin writes are incremental, not rolled back if the run later fails. [Connections](connections.md) is the user guide; [plugins](plugins/README.md) is the wire/implementation contract.
+
+The files plugin stages metadata fingerprints in bounded HTTP batches in a server-owned inventory.
+Its cursor references only a successful generation and settings fingerprint. Failed/lost runs and
+remembered-exclusion resets invalidate reuse; the next worker fully reconciles even if older
+inventory rows still exist. Read-only filesystem mounts belong only to workers, consistently across
+replicas. See [mounted files](plugins/files.md) for availability checks and operational limits.
 
 ## Boundaries and failure domains
 

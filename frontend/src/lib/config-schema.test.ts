@@ -31,7 +31,7 @@ test("maps the schema's properties to fields, required ones first", () => {
 });
 
 test("rejects a property the form can't show", () => {
-  const schema = JSON.stringify({ properties: { depth: { type: "integer" } } });
+  const schema = JSON.stringify({ properties: { depth: { type: "object" } } });
 
   assert.throws(() => configFields(schema), /"depth"/);
 });
@@ -47,4 +47,24 @@ test("builds the config from the form and leaves empty fields to the plugin's de
     exclude: [".obsidian/**", "drafts/**"],
     shallow: false,
   });
+});
+
+test("renders and submits the files plugin's defaulted byte limit as an integer", () => {
+  const schema = JSON.stringify({ properties: {
+    max_file_size: { type: "integer", minimum: 0, default: 1048576 },
+  } });
+  const fields = configFields(schema);
+  assert.equal(fields[0].kind, "integer");
+  assert.equal(fields[0].default, 1048576);
+  assert.equal(fields[0].minimum, 0);
+  const form = new FormData();
+  assert.deepEqual(configFromForm(fields, form), {});
+  for (const limit of ["0", "1048576", "2097152"]) {
+    form.set("config.max_file_size", limit);
+    assert.deepEqual(configFromForm(fields, form), { max_file_size: Number(limit) });
+  }
+  for (const invalid of ["1.5", "NaN", "9007199254740992"]) {
+    form.set("config.max_file_size", invalid);
+    assert.throws(() => configFromForm(fields, form), /safe integer/);
+  }
 });

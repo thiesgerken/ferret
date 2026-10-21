@@ -81,6 +81,10 @@ plugins:
     tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
+  # -- Kubernetes volumes supplied to every worker replica, e.g. an NFS export or existing PVC.
+  volumes: []
+  # -- Worker mount points ({name, mountPath}). Always mounted read-only, without subPath.
+  volumeMounts: []
   resources:
     requests:
       cpu: 50m

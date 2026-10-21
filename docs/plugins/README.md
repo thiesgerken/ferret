@@ -1,6 +1,6 @@
 # Plugin implementation contract
 
-For configuring built-ins use [git](git.md), [Gitea](gitea.md), [Home Assistant](homeassistant.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
+For configuring built-ins use [files](files.md), [git](git.md), [Gitea](gitea.md), [Home Assistant](homeassistant.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
 
 A plugin is code in a worker, not code dynamically loaded into the server. Registration advertises a name and JSON Schema; the server stores schemas for validation/UI forms. Workers claim only names they advertised. Third-party workers can implement the same protocol without linking the built-in Rust binary, but the PSK is a trusted cross-user credential.
 
@@ -13,6 +13,8 @@ A plugin is code in a worker, not code dynamically loaded into the server. Regis
 - a run log and operator-fixed options (currently Git transport allowlist).
 
 `Outcome` returns JSON state and `RunStats { put, unchanged, deleted }`. The server saves state only on successful finish. Returning an error does not roll back earlier puts or deletes. After a failed/lost run, the next claim supplies `{}` instead of the stored cursor: those partial writes may no longer match it, so the plugin must fully reconcile. A subsequent successful run restores cursor reuse. Never use a new cursor until all origin pages and required writes have completed.
+
+Large metadata inventories belong in server-owned Postgres, not cursor JSON or worker-local files. The [files plugin](files.md#inventory-recovery-and-diagnostics) uses bounded run-token inventory endpoints with per-run staged generations. Only successful finish publishes a reusable generation. Empty working state and settings changes must invalidate reuse even when bulk inventory still exists.
 
 ## A complete minimal plugin
 

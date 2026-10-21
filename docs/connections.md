@@ -10,7 +10,7 @@ Use a root such as `notes/work` or `mail/personal`: nonempty slash-separated seg
 
 A user's connection roots cannot overlap. Creation also rejects documents already below the new root. Ordinary API keys cannot write inside a connection's root, or start a sweep above it. This prevents another writer's sweep from deleting plugin-owned documents. Users have separate namespaces.
 
-Use the appropriate setup guide: [git](plugins/git.md), [Gitea](plugins/gitea.md), [Home Assistant](plugins/homeassistant.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md), [Karakeep](plugins/karakeep.md), [Mealie](plugins/mealie.md), [Moneta](plugins/moneta.md). Examples there are plugin configuration objects, not entire connection requests. In the UI enter their fields individually. A source is not an origin credential or remote folder.
+Use the appropriate setup guide: [files](plugins/files.md), [git](plugins/git.md), [Gitea](plugins/gitea.md), [Home Assistant](plugins/homeassistant.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md), [Karakeep](plugins/karakeep.md), [Mealie](plugins/mealie.md), [Moneta](plugins/moneta.md). Examples there are plugin configuration objects, not entire connection requests. In the UI enter their fields individually. A source is not an origin credential or remote folder.
 
 ## Schedule and run lifecycle
 

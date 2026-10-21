@@ -112,6 +112,14 @@ helm lint charts/ferret --set ingress.hostname=ferret.example.com
 
 The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
 
+The Linux mounted-files regression (`cargo test -p ferret-server --test files_plugin`) uses an empty
+isolated mount at `FERRET_TEST_FILES_ROOT`. CI creates a disposable bind mount before the workspace
+tests and unmounts it afterwards. The test refuses a nonempty fixture, creates and removes only its
+own content, and exercises the real server/database, inventory reuse, links, filters, failure/no-sweep
+recovery, a directory above the request hard limit and an available empty share. On non-Linux hosts
+run this test in a Linux container with an empty volume mounted directly at that configured root.
+Never point it at personal or production files.
+
 ## Migrations and sqlx metadata
 
 Install a matching sqlx CLI (`cargo install sqlx-cli --version 0.9.0`). Create a new migration rather than editing an applied one:

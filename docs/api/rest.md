@@ -141,6 +141,24 @@ All three operations require `ingest:write`. JSON request types reject unknown f
 
 Start validates a complete authorized sweep root. Seen's exact source must be the root or a descendant; unknown external ids are ignored and not counted. Commit sweeps all root/descendant documents not put/seen since start and closes the sync. A repeated seen/commit after closure returns 409. Missing syncs return 404. Sync access is user/root-bound rather than exclusive to the creating key. Puts do not take a sync-id parameter. The [ingester workflow](../ingestion.md) explains why enumeration failure must never reach commit.
 
+## Plugin inventory
+
+Only live plugin run tokens may use these endpoints; ordinary API keys receive 403. Inventory is
+connection-scoped and stored by the server, not supplied in claims or finish requests.
+
+| Endpoint | Request | 200 response |
+| --- | --- | --- |
+| `POST /api/inventory/lookup` | `{generation: "<uuid>", external_ids: ["file:note.txt"]}` | array of `{external_id, fingerprint, indexed}` |
+| `PUT /api/inventory` | array of `{external_id, fingerprint, indexed}` | `{generation: "<current-run-uuid>"}` |
+
+Batches contain at most 512 entries. Staged identities are at most 16,384 UTF-8 bytes and fingerprints
+at most 256 bytes. Oversized batches/fields return 400. Lookup exposes only the connection's
+successful reusable generation; an unknown, foreign, reset or failed/lost generation yields no
+fingerprints. Stage only after associated document operations succeed. Successful finish publishes
+the generation through `state.inventory_generation`; failed finish never publishes it. The files
+plugin also compares its settings/rendering fingerprint before lookup, and commits its sweep last.
+See [files recovery](../plugins/files.md#inventory-recovery-and-diagnostics).
+
 ## Users: `GET /api/users`
 
 Requires `admin:read` (or `admin:write`) and an owner who is currently an admin. Returns a JSON array of `{id, username, display_name, is_admin, enabled}` for every user. No pagination and no password hashes. This is the only current public REST admin endpoint; connection/user/key mutations are GraphQL.
