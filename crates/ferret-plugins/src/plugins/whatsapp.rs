@@ -205,10 +205,9 @@ impl ArchiveClient {
         &self,
         run: &Run,
         chat: &Chat,
-        source: &str,
         stats: &mut RunStats,
     ) -> Result<(), PluginError> {
-        let mut segments = Segments::new(source, chat)?;
+        let mut segments = Segments::new(&run.source, chat)?;
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
@@ -454,7 +453,7 @@ async fn rebuild(
         let sync = run.api.start_thread_sync(&run.source, jid).await?.sync_id;
         syncs.push(sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
-            client.ingest_chat(run, chat, &run.source, stats).await?;
+            client.ingest_chat(run, chat, stats).await?;
         }
     }
     Ok(())

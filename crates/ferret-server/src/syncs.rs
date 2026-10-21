@@ -35,6 +35,7 @@ pub async fn start(
         )));
     }
     caller.require_source(&body.source)?;
+    // A thread sync deletes only at its exact source, so connection roots below it are safe.
     connections::check_api_key_may_write(&state.pool, &caller, &body.source, body.thread.is_none())
         .await?;
     let sync_id = sqlx::query_scalar!(

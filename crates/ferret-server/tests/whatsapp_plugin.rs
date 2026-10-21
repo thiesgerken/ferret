@@ -16,8 +16,8 @@ use axum::{
 };
 use common::{TestServer, start_server};
 use ferret_api::{
-    Client, Document, SearchQuery,
-    internal::{RunFinish, RunResult},
+    Client, Document, PutResponse, SearchQuery,
+    internal::{RunFinish, RunResult, RunStats},
 };
 use ferret_plugins::{
     plugins::{self, Log, PluginOptions, Run},
@@ -551,6 +551,53 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
         saved["settings"]["expected_store_id"],
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+
+    // Only a root sweep can remove content outside the current chat inventory.
+    due(&server, &id).await;
+    let claimed = worker
+        .internal
+        .claim(wid, Duration::ZERO)
+        .await
+        .unwrap()
+        .unwrap();
+    let api = Client::new(server.public_url()).with_api_key(claimed.token);
+    let leftover = common::document(
+        "chat/archive/retired",
+        "leftover",
+        "WhatsApp retired archive content",
+    );
+    assert!(matches!(
+        api.put_document(&leftover).await.unwrap(),
+        PutResponse::Created { .. }
+    ));
+    worker
+        .internal
+        .finish(
+            claimed.run_id,
+            &RunFinish {
+                result: RunResult::Succeeded {
+                    state: claimed.state,
+                    stats: RunStats {
+                        put: 1,
+                        ..RunStats::default()
+                    },
+                },
+                log_lines: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(documents(&server).await.len(), 2);
+    archive
+        .sql("UPDATE retrieval_state SET store_id='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';")
+        .await;
+    let mut replacement = archive.config(&[], &[]);
+    replacement["expected_store_id"] = json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    update(&server, &id, replacement).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let root_reconciled = documents(&server).await;
+    assert_eq!(root_reconciled.len(), 1);
+    assert_eq!(root_reconciled[0].id, reconciled[0].id);
 }
 
 #[sqlx::test(migrations = false)]

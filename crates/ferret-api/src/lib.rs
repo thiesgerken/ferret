@@ -482,16 +482,11 @@ impl Client {
 
     /// Starts a sync over `source` and everything below it. Needs the `ingest:write` scope.
     pub async fn start_sync(&self, source: &str) -> Result<SyncStarted, reqwest::Error> {
-        self.api(reqwest::Method::POST, "/api/syncs")
-            .json(&SyncStart {
-                source: source.to_owned(),
-                thread: None,
-            })
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
+        self.start(&SyncStart {
+            source: source.to_owned(),
+            thread: None,
+        })
+        .await
     }
 
     /// Starts a sync of one exact source/thread. Needs the `ingest:write` scope.
@@ -500,11 +495,16 @@ impl Client {
         source: &str,
         thread: &str,
     ) -> Result<SyncStarted, reqwest::Error> {
+        self.start(&SyncStart {
+            source: source.to_owned(),
+            thread: Some(thread.to_owned()),
+        })
+        .await
+    }
+
+    async fn start(&self, body: &SyncStart) -> Result<SyncStarted, reqwest::Error> {
         self.api(reqwest::Method::POST, "/api/syncs")
-            .json(&SyncStart {
-                source: source.to_owned(),
-                thread: Some(thread.to_owned()),
-            })
+            .json(body)
             .send()
             .await?
             .error_for_status()?

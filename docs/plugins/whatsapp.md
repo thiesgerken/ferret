@@ -86,11 +86,9 @@ This is a **manual clean rebuild**, not an automatic data/exclusion migration. B
 3. Delete the old connection through Connections, confirming its source root. This intentionally clears its indexed documents, remembered document/thread exclusions and run history. It does **not** change or delete the native wacli archive.
 4. Recreate the WhatsApp connection with the same root and recorded settings, re-entering the original archive token. The new connection performs a full import using flat sources and current text rendering, including historical zero-size removal.
 
-Old viewer UUID links and exclusions are not preserved. Reapply any desired exclusions after rebuilding; configured allow/blocklists and the explicit archive pin must be copied into the new connection. There is no clear/reset endpoint, legacy alias or dual-layout mode.
+Old viewer UUID links and exclusions are not preserved. Reapply any desired exclusions after rebuilding; configured allow/blocklists and the explicit archive pin must be copied into the new connection.
 
-A supplied version-1 cursor fails with delete/recreate guidance before writing or starting a sync. This is not a persistent migration gate: generic failed/lost-run recovery still supplies empty disposable state. Follow the rollout above rather than relying on a failed run as an upgrade procedure.
-
-Removing rendered size lines can shift approximate-size segment boundaries. The existing regrouping limitation remains: an exact segment exclusion does not permanently track its text when regrouped under another ID. Whole-thread exclusions cover all segments of the same stable chat ID.
+A version-1 cursor fails the run with these instructions.
 
 ### Archive identity and collector status
 
