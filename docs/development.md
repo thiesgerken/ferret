@@ -1,10 +1,20 @@
 # Development
 
-Use the [quickstart](quickstart.md) to try the app; this page covers changing it. The [contribution rules](../AGENTS.md) apply to every PR. Read maintained topic docs for current behavior, the [glossary](glossary.md) for vocabulary and [ADRs](adr/) for rationale. Conception is background, not the endpoint/config contract.
+Use the [quickstart](quickstart.md) to try the app. The [contribution rules](../AGENTS.md), [glossary](glossary.md) and [ADRs](adr/) cover conventions and design decisions.
 
-## Prerequisites and repository map
+## Tooling
 
-Install the Rust toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), a C/C++ build toolchain for native dependencies, Git, Docker Compose v2, curl and jq. Frontend development uses Node 24 and the pnpm version pinned in frontend/package.json (12.8.1 at this baseline). Use that package manager with the checked lockfile.
+The committed Nix flake and lockfile own builds and checks. Rust comes from `rust-toolchain.toml`, pnpm from `frontend/package.json`, and Node from the locked nixpkgs. Enter the native host toolchain with:
+
+```sh
+nix develop
+```
+
+With direnv and nix-direnv, run `direnv allow` once per checkout or worktree to load the same shell automatically.
+
+The shell includes Rust, Node, pnpm, sqlx, Git, Helm and Skopeo. Compose v2.24.4 or newer provides the local service environment.
+
+## Repository map
 
 | Path | Responsibility |
 | --- | --- |
@@ -19,24 +29,48 @@ Install the Rust toolchain pinned in [rust-toolchain.toml](../rust-toolchain.tom
 | `docker`, `scripts/demo-seed.sh` | local config, origin fixtures and demo ingestion |
 | `charts/ferret` | deployment templates and canonical Helm values |
 
-## Full Compose development
+## Apple Silicon: build native ARM Linux images
+
+Install [Determinate Nix](https://docs.determinate.systems/) and authorize its Native Linux Builder with a free FlakeHub account:
 
 ```sh
-# Apple Silicon only:
-export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
-docker compose up -d --build
-scripts/demo-seed.sh
+determinate-nixd auth login
+determinate-nixd status
+nix build .#packages.aarch64-linux.{server,plugins,frontend}-image --out-link result-image
+for image in result-image*; do docker load -i "$image"; done
+export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.arm.yml
 ```
 
-The app is at <http://127.0.0.1:3380>, direct server at 8380, host database at 5439. Login is admin/ferret-development on a fresh database. First startup builds images and downloads weights. `tei` serves Qwen3 for queries and the embed pump; `tei-bge` (bge-m3) is scaled to 0 until `docker compose up -d --scale tei-bge=1 tei-bge`. This is development/demo configuration with public secrets, not a deployment recipe.
+The local overlay selects `:local` images with `pull_policy: never`. The ARM overlay pins all services to `linux/arm64` and selects native TEI. No x86 emulation is needed.
 
-Use `docker compose logs -f server plugins` and Activity for different layers of diagnostics. Rebuild the service you changed with `docker compose up -d --build server` (or plugins/frontend); frontend static output is baked into its image, not hot-reloaded from the checkout. Do not start a second project on occupied fixed ports or seed an existing personal index. Use isolated project names, host-port overrides and separate volumes when working alongside one.
+## Compose development
+
+Follow the [quickstart](quickstart.md) for initial startup and demo data.
+
+`latest` is the last release and may not match the checkout's configuration; set `FERRET_IMAGE_TAG` to the matching release/PR tag, or use local images.
+
+To use local images on x64:
+
+```sh
+nix build .#server-image .#plugins-image .#frontend-image --out-link result-image
+for image in result-image*; do docker load -i "$image"; done
+export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
+```
+
+On Apple Silicon, keep the three-file `COMPOSE_FILE` above. Rebuild an individual component and restart it with:
+
+```sh
+nix build .#packages.aarch64-linux.server-image && docker load -i result && docker compose up -d server
+# On x64 Linux: nix build .#server-image && docker load -i result && docker compose up -d server
+```
+
+Use `plugins-image`/`plugins` or `frontend-image`/`frontend` for the other components. The UI is at <http://127.0.0.1:3380>, the server at 8380 and the database at 5439. Inspect `docker compose logs -f server plugins` and Activity for diagnostics.
 
 Optional carapace demo:
 
 ```sh
 export CARAPACE_KNOWLEDGE_DIR=/absolute/path/to/knowledge-repository
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}:docker-compose.demo.yml" docker compose up -d
 scripts/demo-seed.sh
 ```
 
@@ -49,9 +83,9 @@ embeddings from local Postgres or Kubernetes and serve a private snapshot on loc
 adjacent README covers prerequisites, commands, snapshot retention and production read load.
 This is separate from Explore and changes neither Ferret's schema nor its deployment.
 
-## Host server and workers
+## Host iteration
 
-Start only the test/development database if port 8080/8081 will be used by the host server:
+Inside `nix develop`, start the database and run the server:
 
 ```sh
 docker compose up -d paradedb
@@ -64,9 +98,9 @@ export FERRET_BOOTSTRAP_PASSWORD=ferret-development
 cargo run -p ferret-server
 ```
 
-Create host-ferret.yaml from the complete [configuration example](configuration.md#complete-server-yaml), replacing endpoint URLs with addresses reachable from the host. Compose's `http://tei:80/v1` names are not host DNS. Run an independent TEI with a host-published port, or configure an existing reachable endpoint; do not copy container-only addresses and then diagnose their expected DNS failure as a model bug. Endpoints may be down at startup, but semantic queries need a reachable one.
+Create host-ferret.yaml from the [configuration example](configuration.md#complete-server-yaml), with embedding endpoints reachable from the host. Compose's `http://tei:80/v1` names resolve only inside its network. The host server listens on public port 8080 and internal port 8081.
 
-In another terminal, with the same worker secret:
+In another dev shell:
 
 ```sh
 FERRET_INTERNAL_URL=http://127.0.0.1:8081 \
@@ -77,74 +111,81 @@ cargo run -p ferret-plugins
 
 Host listeners are fixed at public8080/internal8081. If another local app owns8080, either stop your own conflicting instance or keep Ferret containerized with mapped host ports. There is no implemented listener override variable.
 
-## Frontend iteration
+For frontend iteration:
 
 ```sh
 pnpm --dir frontend install --frozen-lockfile
 pnpm --dir frontend dev
 ```
 
-Next dev serves port3000 by default. It proxies GraphQL/MCP/API/auth to `http://127.0.0.1:8380`, fitting the Compose server. For the host server:
-
-```sh
-FERRET_SERVER_URL=http://127.0.0.1:8080 pnpm --dir frontend dev
-```
-
-Production builds are static exports served by nginx; reverse-proxy routing replaces dev rewrites. `predev`, `prebuild` and `pretest` regenerate typed GraphQL client artifacts from the checked schema and operations. Do not hand-edit `frontend/src/gql/`.
+Next serves port 3000 and proxies API requests to the Compose server at 8380. Set `FERRET_SERVER_URL=http://127.0.0.1:8080` for a host server. Production is a static export served by nginx. GraphQL client artifacts regenerate before dev, build and test; do not edit `frontend/src/gql/`.
 
 ## Tests and checks
 
-Server tests start in-process servers against a real ParadeDB, not a mocked SQL interface. sqlx tests create an isolated database per test, so the configured test role needs database-creation permission. Use disposable test infrastructure, never an irreplaceable production database server.
+`ciBuilds.<host-system>` contains every mandatory check, runtime package/image and CI/release tool profile. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
+
+Bootstrap the locked runner:
 
 ```sh
-docker compose up -d paradedb
-docker compose up -d --scale dovecot=1 dovecot
-cargo test --workspace --locked
-
-pnpm --dir frontend test
-pnpm --dir frontend lint
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-helm lint charts/ferret --set ingress.hostname=ferret.example.com
+nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
 ```
 
-[.cargo/config.toml](../.cargo/config.toml) supplies DATABASE_URL at localhost5439, FERRET_TEST_IMAP at localhost3143, offline SQL metadata and six test threads. Exported variables override those non-forced defaults. IMAP tests each use their own test mailbox user on the development Dovecot; they do not use personal mail accounts. Many origin tests use protocol fixtures; embedding tests use a fake OpenAI-compatible endpoint (`tests/common/fake_endpoint.rs`). See actual test setup before assuming an external account/GPU is required.
+On x64 Linux:
+
+```sh
+result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.x86_64-linux --systems x86_64-linux --out-link result-ci
+```
+
+On Apple Silicon:
+
+```sh
+result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.aarch64-darwin --systems "aarch64-darwin aarch64-linux" --out-link result-ci
+```
+
+Load the images and exercise the runtime restrictions:
+
+```sh
+for image in result-ci-{server,plugins,whatsapp-archive,frontend}-image; do docker load -i "$image"; done
+result-ci-tools/bin/python scripts/smoke-images.py
+```
+
+The smoke uses disposable volumes and dynamic ports. It checks server health/login, Git ingestion and keyword search, frontend/static/404 responses, archive health and an authenticated read, and non-root/read-only execution. It requires no model download or WhatsApp account.
+
+For focused host tests, `.cargo/config.toml` supplies development database/mailbox defaults. Start `paradedb` and `docker compose up -d --scale dovecot=1 dovecot`, then use `cargo test --workspace --locked`. Linux files-plugin tests additionally require `FERRET_TEST_FILES_ROOT` to name an empty disposable mount. Nix checks supply their own isolated tmpfs. Never use personal files as test fixtures.
 
 The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
 
-The Linux mounted-files regression (`cargo test -p ferret-server --test files_plugin`) uses an empty
-isolated mount at `FERRET_TEST_FILES_ROOT`. CI creates a disposable bind mount before the workspace
-tests and unmounts it afterwards. The test refuses a nonempty fixture, creates and removes only its
-own content, and exercises the real server/database, inventory reuse, links, filters, failure/no-sweep
-recovery, a directory above the request hard limit and an available empty share. On non-Linux hosts
-run this test in a Linux container with an empty volume mounted directly at that configured root.
-Never point it at personal or production files.
+## Migrations and generated contracts
 
-## Migrations and sqlx metadata
-
-Install a matching sqlx CLI (`cargo install sqlx-cli --version 0.9.0`). Create a new migration rather than editing an applied one:
+Create a migration instead of editing an applied one; follow AGENTS.md's timestamp ordering rule:
 
 ```sh
 cargo sqlx migrate add --source crates/ferret-server/migrations describe_change
-DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret \
-  cargo sqlx migrate run --source crates/ferret-server/migrations
-DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret \
-  cargo sqlx prepare --workspace
+DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations
+DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx prepare --workspace
 ```
 
-Follow the migration-version ordering rule in AGENTS.md when existing migrations are future-dated. Commit `.sqlx/` with query/migration changes: builds use checked metadata and do not require a live database; tests/metadata regeneration do. CI also checks metadata against the migrated schema. The runtime server uses FERRET_DATABASE_URL, not the tooling DATABASE_URL.
-
-## GraphQL schema changes
+Commit `.sqlx/` with query/migration changes. Builds use offline metadata; regeneration needs a migrated database. For GraphQL changes:
 
 ```sh
 cargo run --locked -q -p ferret-server -- schema > frontend/schema.graphql
 pnpm --dir frontend codegen
 ```
 
-The schema command prints SDL without starting the server or needing runtime secrets/database. Commit the canonical schema with resolver/input changes. Client codegen reads [codegen.ts](../frontend/codegen.ts) and frontend operations; generated client files are not the canonical API contract.
+Update the relevant maintained [topic/API/plugin guide](README.md) with behavior changes.
 
-For behavior changes, update the appropriate maintained [topic/API/plugin guide](README.md), not just conception. [CI](../.github/workflows/ci.yml) defines the actual checks and PR preview image/chart publication; do not claim a check passed unless you ran it.
+## Native Linux Builder constraints
 
-## Dependency updates
+See the [builder prerequisites and known issues](https://docs.determinate.systems/troubleshooting/native-linux-builder/). Its shared store must be case-sensitive for case-colliding outputs. `cp --no-preserve=mode` can fail on the shared filesystem; concurrent guest-store initialization failures may require a retry with `--max-jobs 1`.
 
-[renovate.json](../renovate.json) configures automated dependency updates. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
+## Dependency updates and CI
+
+[Renovate](../renovate.json) updates dependencies and `flake.lock`. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file. After changing pnpm, its lockfile or the `pg_search` version, refresh binary pins and the pnpm dependency hash inside the dev shell:
+
+```sh
+python3 scripts/update-nix-deps.py
+```
+
+The command selects native Linux outputs (ARM Linux on Apple Silicon); `--system` can select another supported Linux target. Commit its pin/hash changes with the dependency update. Hash refresh is manual on Renovate PRs; these updates are not auto-merged. `pg_search` uses SHA-256-pinned official PostgreSQL 18 binaries; the other packages come from stable nixpkgs.
+
+[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts only for PRs against `main`; [releases](../.github/workflows/release.yml) verify the version-bumped tag before publishing. Semantic-release is a known tooling exception: `uv tool run` pins its PyPI version, but not its transitive dependencies.

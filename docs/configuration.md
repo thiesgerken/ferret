@@ -83,7 +83,8 @@ Unknown fields are rejected at every defined config struct. Ids differing only b
 | worker | `HOSTNAME` | informational worker name, otherwise `ferret-plugins` |
 | worker | `RUST_LOG` | optional JSON tracing filter; async-imap command tracing is forcibly off to avoid password disclosure |
 | frontend dev | `FERRET_SERVER_URL` | optional Next dev proxy target, trimmed, defaults `http://127.0.0.1:8380` |
-| Compose | `TEI_IMAGE` | selects the image of the local TEIs; native ARM image required on Apple Silicon |
+| Compose | `FERRET_IMAGE_TAG` | matching published server/worker/frontend tag, defaults to `latest` (x64 only) |
+| Compose | `TEI_IMAGE` | optional upstream TEI image override; the ARM overlay explicitly selects native ARM TEI instead |
 | demo seed | `FERRET_URL`, `FERRET_PASSWORD` | optional target/password, default local3380/development bootstrap password |
 | demo overlay | `CARAPACE_KNOWLEDGE_DIR` | local repository path to mount for carapace demonstration |
 | tests | `DATABASE_URL`, `FERRET_TEST_IMAP` | override host test-service defaults in .cargo/config.toml |

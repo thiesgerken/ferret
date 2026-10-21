@@ -16,6 +16,7 @@ spec:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "frontend") | nindent 8 }}
     spec:
+      {{- include "ferret.podRuntime" . | nindent 6 }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -23,9 +24,14 @@ spec:
         - name: frontend
           image: {{ include "ferret.image" (dict "root" . "image" .Values.frontend.image) }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          securityContext:
+            {{- include "ferret.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           {{- with .Values.frontend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -35,6 +41,9 @@ spec:
               path: /
               port: http
             periodSeconds: 30
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -6,7 +6,7 @@ The `whatsapp` built-in plugin indexes a **retained local wacli archive**, not W
 
 Use released **wacli v0.22.0 (schema 32)**, or upstream commit [`c45422b4f29eee225d06d326163845a88fe0d6ae`](https://github.com/openclaw/wacli/tree/c45422b4f29eee225d06d326163845a88fe0d6ae) (schema 33). The collector must open its archive writable at least once to apply native migrations. Versions 30–32 must carry their upstream retrieval/journal migration names; schema 33 additionally requires `ordered chat auto-unarchive`. Unknown future versions and prerelease swapped migration IDs are rejected. The API never migrates the archive. This is a deployment prerequisite, not a request to let the API write it.
 
-Build with `docker build --target whatsapp-archive -t ferret-whatsapp-archive .`. CI publishes `ghcr.io/<owner>/ferret-whatsapp-archive:pr<N>` and `:pr<N>-<sha>` alongside the ordinary images; releases publish version tags and `latest`.
+Pull `ghcr.io/thiesgerken/ferret-whatsapp-archive:<version>` (x64), or build `whatsapp-archive-image` with Nix on Apple Silicon (`nix build .#packages.aarch64-linux.whatsapp-archive-image`, then `docker load -i result`). Use `ferret-whatsapp-archive:local` for local builds. It is not part of the Compose stack or Helm chart.
 
 Create a mounted bearer Secret containing exactly 64 hexadecimal characters generated from 32 random bytes:
 
@@ -24,14 +24,16 @@ Native wacli puts `session.db` in the same store directory. The whole-directory 
 ```sh
 docker run --rm --name whatsapp-archive \
   --user "$(id -u):$(id -g)" --read-only \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \
   --mount type=bind,src="$(pwd)/archive",dst=/archive,readonly \
   --mount type=bind,src="$(pwd)/archive-token",dst=/run/secrets/archive-token,readonly \
   -e WHATSAPP_ARCHIVE_DB=/archive/wacli.db \
   -e WHATSAPP_ARCHIVE_TOKEN_FILE=/run/secrets/archive-token \
-  -p 127.0.0.1:8080:8080 ferret-whatsapp-archive
+  -p 127.0.0.1:8080:8080 ghcr.io/thiesgerken/ferret-whatsapp-archive:latest
 ```
 
-Required environment variables are `WHATSAPP_ARCHIVE_DB` (existing database file) and `WHATSAPP_ARCHIVE_TOKEN_FILE` (mounted Secret file). The process refuses missing/invalid configuration and listens on port 8080. An optional final newline in the Secret file is stripped. The image defaults to `nobody`; override its numeric user to match the archive owner when native wacli's private file permissions require that. Do not loosen archive/session permissions globally to make a container work.
+Required environment variables are `WHATSAPP_ARCHIVE_DB` (existing database file) and `WHATSAPP_ARCHIVE_TOKEN_FILE` (mounted Secret file). The process refuses missing/invalid configuration and listens on port 8080. An optional final newline in the Secret file is stripped. The image defaults to UID/GID `65532:65532`; override its numeric user to match the archive owner when native wacli's private file permissions require that. Do not loosen archive/session permissions globally to make a container work.
 
 In Kubernetes deploy this as an independent workload next to the collector's storage. Use a read-only volume mount and root filesystem, a Secret volume, a UID able to read the archive, an internal Service on 8080 and a NetworkPolicy permitting ingress only from the ferret plugin workers (and explicitly authorized operator diagnostics). Do not create public Ingress/Gateway routes. Private HTTP plus NetworkPolicy is the trust model: the bearer token is not transport encryption. Network restrictions must also prevent untrusted pods from reaching the Service. The ferret Helm chart does not deploy/manage wacli or this independent archive workload.
 

@@ -16,20 +16,24 @@ spec:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "plugins") | nindent 8 }}
     spec:
-      # Runs read files from repositories they don't control; there's nothing in the Kubernetes API
-      # a worker needs.
-      automountServiceAccountToken: false
+      {{- include "ferret.podRuntime" . | nindent 6 }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
-      {{- end }}
-      {{- with .Values.plugins.volumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: plugins
           image: {{ include "ferret.image" (dict "root" . "image" .Values.plugins.image) }}
           imagePullPolicy: {{ .Values.plugins.image.pullPolicy }}
+          securityContext:
+            {{- include "ferret.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- range .Values.plugins.volumeMounts }}
+            - name: {{ .name | quote }}
+              mountPath: {{ .mountPath | quote }}
+              readOnly: true
+            {{- end }}
           env:
             - name: FERRET_INTERNAL_URL
               value: "http://{{ .Release.Name }}-server:8081"
@@ -42,15 +46,13 @@ spec:
                   key: worker-secret
             - name: RUST_LOG
               value: {{ .Values.server.logLevel | quote }}
-          {{- with .Values.plugins.volumeMounts }}
-          volumeMounts:
-            {{- range . }}
-            - name: {{ .name | quote }}
-              mountPath: {{ .mountPath | quote }}
-              readOnly: true
-            {{- end }}
-          {{- end }}
           {{- with .Values.plugins.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.plugins.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

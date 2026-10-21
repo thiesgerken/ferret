@@ -1,0 +1,20 @@
+# Use with docker-compose.yml and docker-compose.local.yml for native ARM images.
+services:
+  server:
+    platform: linux/arm64
+  plugins:
+    platform: linux/arm64
+  frontend:
+    platform: linux/arm64
+  paradedb:
+    platform: linux/arm64
+  proxy:
+    platform: linux/arm64
+  dovecot:
+    platform: linux/arm64
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4@sha256:798cd7615e060a72ccbdf19aa0ada52289c6a0147490195bafaece6ce04d70f1
+    platform: linux/arm64
+  tei-bge:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4@sha256:798cd7615e060a72ccbdf19aa0ada52289c6a0147490195bafaece6ce04d70f1
+    platform: linux/arm64

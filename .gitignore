@@ -1,3 +1,7 @@
 /target
 /.venv-atlas/
 /.atlas-prototype/
+/result
+/result-*
+/dist/
+/.direnv/

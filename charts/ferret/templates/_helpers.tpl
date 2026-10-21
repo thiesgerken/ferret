@@ -1,3 +1,27 @@
+{{- define "ferret.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 65532
+runAsGroup: 65532
+fsGroup: 65532
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{- define "ferret.containerSecurityContext" -}}
+readOnlyRootFilesystem: true
+allowPrivilegeEscalation: false
+capabilities:
+  drop: [ALL]
+{{- end }}
+
+{{- define "ferret.podRuntime" -}}
+automountServiceAccountToken: false
+securityContext:
+  {{- include "ferret.podSecurityContext" . | nindent 2 }}
+nodeSelector:
+  kubernetes.io/arch: amd64
+{{- end }}
+
 {{- define "ferret.labels" -}}
 app.kubernetes.io/name: ferret
 app.kubernetes.io/instance: {{ .Release.Name }}

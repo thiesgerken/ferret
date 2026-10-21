@@ -20,6 +20,7 @@ spec:
         # Rolls the pods when the models change: the server reads them only at startup.
         checksum/config: {{ include "ferret.config" . | sha256sum }}
     spec:
+      {{- include "ferret.podRuntime" . | nindent 6 }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -27,6 +28,8 @@ spec:
         - name: server
           image: {{ include "ferret.image" (dict "root" . "image" .Values.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "ferret.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
@@ -83,6 +86,8 @@ spec:
             - name: config
               mountPath: /etc/ferret
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
             {{- with $postgresCa }}
             - name: postgres-ca
               mountPath: /etc/ferret-postgres
@@ -109,6 +114,8 @@ spec:
         - name: config
           configMap:
             name: {{ .Release.Name }}-config
+        - name: tmp
+          emptyDir: {}
         {{- with $postgresCa }}
         - name: postgres-ca
           secret:

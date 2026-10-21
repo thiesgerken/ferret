@@ -130,11 +130,14 @@ claude mcp add --transport http ferret https://ferret.example.com/mcp \
 ## 🚀 Getting started
 
 Follow the [quickstart](docs/quickstart.md) to start the development stack, sign in, seed sample
-documents, search a known phrase, and open its origin. It includes Apple Silicon instructions and
-shows how to inspect a real git connection in Activity.
+documents, search a known phrase, and open its origin. It shows how to inspect a real git connection
+in Activity; native Apple Silicon builds are covered in [development](docs/development.md#apple-silicon-build-native-arm-linux-images).
 
 The Compose stack is for local development and demos, not deployment. For a real installation
 follow the [Kubernetes walkthrough](docs/kubernetes.md) and [Helm chart](charts/ferret/README.md).
+
+On x64, `docker compose up -d` runs published images.
+On Apple Silicon, build native images with the [quickstart](docs/quickstart.md#apple-silicon-build-native-images).
 
 ## Documentation
 

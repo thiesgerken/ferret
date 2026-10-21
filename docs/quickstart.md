@@ -4,22 +4,40 @@ This walkthrough uses the development Compose stack and disposable demo data. Do
 
 ## Prerequisites
 
-Install Git, Docker with Compose v2, Bash, curl, and jq. Run commands at the repository root. The stack builds Rust and the frontend and downloads embedding-model weights on first use; allow disk space, memory, network access to image registries and Hugging Face, and several minutes for startup. A healthy database alone does not mean the embedding model is ready.
+- Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run commands from the repository root.
+- Published images support Linux x64 only; x64 users do not need Nix.
+- The first start downloads model weights. Allow disk space, memory, registry/Hugging Face network access, and time.
+- A healthy database does not mean the embedding model is ready.
 
-On Apple Silicon select the native ARM TEI image in the same shell before starting:
+### x64: pull published images
 
 ```sh
-export TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9.4
+docker compose pull
 ```
 
-The default CPU TEI image is amd64. Emulating it is not the recommended local path. `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable, which is how an endpoint that is down looks.
+`latest` is the last release and may not match the checkout's configuration; set `FERRET_IMAGE_TAG` to the matching release/PR tag, or use [local images](development.md#compose-development).
+
+### Apple Silicon: build native images
+
+Install [Determinate Nix](https://docs.determinate.systems/) and authorize its Native Linux Builder with a free FlakeHub account:
+
+```sh
+determinate-nixd auth login
+nix build .#packages.aarch64-linux.{server,plugins,frontend}-image --out-link result-image
+for image in result-image*; do docker load -i "$image"; done
+export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.arm.yml
+```
+
+Keep `COMPOSE_FILE` set for subsequent commands. The overlays select local images without pulling replacements and native ARM supporting services.
+
+`tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 
 ## Start and sign in
 
 Check that ports 3380, 8380 and 5439 are free. If you already run Ferret, use a separate checkout, Compose project, volumes and port overrides instead of seeding your existing index.
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 docker compose logs -f server tei
 ```
