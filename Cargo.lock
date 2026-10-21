@@ -1210,7 +1210,7 @@ name = "ferret-plugins"
 version = "0.31.1"
 dependencies = [
  "async-imap",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "ferret-api",
  "ferret-whatsapp-archive",
@@ -1245,7 +1245,7 @@ dependencies = [
  "async-imap",
  "axum",
  "axum-extra",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chacha20poly1305",
  "chrono",
  "croner",
