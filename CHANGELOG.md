@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.30.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #185 from thiesgerken/feat/chart-external-postgres
+  ([`07242aa`](https://github.com/thiesgerken/ferret/commit/07242aab0f3285f282ebbb9f88b58e82a7b8483c))
+
+- ✨ feat(chart): support an external Postgres
+  ([`07242aa`](https://github.com/thiesgerken/ferret/commit/07242aab0f3285f282ebbb9f88b58e82a7b8483c))
+
+- ✨ feat(server): enable rustls for Postgres connections
+  ([`427adef`](https://github.com/thiesgerken/ferret/commit/427adefe99a6a6eba8603d6eef65b2f1d5843a7e))
+
+- ✨ feat(chart): support an external Postgres
+  ([`c8e70da`](https://github.com/thiesgerken/ferret/commit/c8e70dad80952867c23a96b0b50ba8f211be2171))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(chart): retain bundled credentials across external cutover
+  ([`98567b1`](https://github.com/thiesgerken/ferret/commit/98567b1dd170e6dc6302081c59741f66dbcbb4e1))
+
 ## v0.29.0 (2026-10-21)
 
 
