@@ -142,6 +142,7 @@
           inherit (p.frontend) frontend;
           tools = project.${system}.tools.ci;
           release-tools = project.${system}.tools.release;
+          sqlite-writer = p.pkgs.python3;
         }
         // self.imageBuilds.${linux}
       );

@@ -1,14 +1,5 @@
 # CHANGELOG
 
-## Unreleased
-
-### 🔧 Configuration
-
-- Build and publish all four runtime images through the pinned Nix pipeline, including the
-  independent read-only WhatsApp archive.
-- Require the mounted-files integration fixture and exercise it on the sandbox's isolated
-  tmpfs without host mounts or additional privileges.
-
 
 ## v0.31.2 (2026-10-21)
 

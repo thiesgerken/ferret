@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Exercise locally loaded images in an isolated, disposable Compose project."""
 
+import argparse
 from contextlib import ExitStack
 from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
 import secrets
-import sqlite3
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -57,35 +59,58 @@ def eventually(operation, timeout=120):
             time.sleep(1)
 
 
-def smoke_whatsapp_archive(state, architecture):
+def smoke_whatsapp_archive(state, architecture, sqlite_writer):
     archive_dir = state / "archive"
-    archive_dir.mkdir(mode=0o755)
+    archive_dir.mkdir()
+    # Only synthetic fixture data lives here; the container's UID must create its database.
+    archive_dir.chmod(0o777)
     database = archive_dir / "wacli.db"
     token = secrets.token_hex(32)
     token_file = state / "archive-token"
     token_file.write_text(token + "\n")
     token_file.chmod(0o644)
     name = f"ferret-archive-smoke-{uuid.uuid4().hex[:10]}"
+    store = Path("/nix/store")
+    if sys.platform == "darwin":
+        # Docker Desktop cannot bind the host's Nix volume; stage only this tool's runtime closure.
+        store = state / "writer-store"
+        store.mkdir()
+        for source in run("nix-store", "--query", "--requisites", str(sqlite_writer)).splitlines():
+            source = Path(source)
+            if source.is_dir():
+                shutil.copytree(source, store / source.name, symlinks=True)
+            else:
+                shutil.copy2(source, store / source.name, follow_symlinks=False)
     with ExitStack() as cleanup:
-        writer = sqlite3.connect(database)
-        cleanup.callback(writer.close)
-        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
-        writer.execute("PRAGMA wal_autocheckpoint=0")
         fixture = ROOT / "crates/ferret-whatsapp-archive/tests/fixtures/wacli-v0.22.0.sql"
-        writer.executescript(fixture.read_text())
-        writer.execute("INSERT INTO chats(jid,kind,name) VALUES('1@s.whatsapp.net','dm','Offline fixture')")
-        writer.execute(
-            "INSERT INTO messages(chat_jid,msg_id,ts,from_me,text,direct_path,media_key,local_path) "
-            "VALUES('1@s.whatsapp.net','first',1,0,'Offline archive smoke','privatepath',x'010203','/private/media')"
+        writer_container = run(
+            "docker", "create", "--interactive", "--name", name + "-writer", "--network", "none",
+            "--platform", f"linux/{architecture}", "--read-only", "--cap-drop=ALL",
+            "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,mode=1777",
+            "--mount", f"type=bind,src={store},dst=/nix/store,readonly",
+            "--mount", f"type=bind,src={archive_dir},dst=/archive",
+            "--mount", f"type=bind,src={fixture},dst=/fixture/schema.sql,readonly",
+            "--mount", f"type=bind,src={ROOT / 'scripts/whatsapp-archive-fixture.py'},dst=/fixture/writer.py,readonly",
+            "--entrypoint", str(sqlite_writer / "bin/python3"), "ferret-whatsapp-archive:local",
+            "/fixture/writer.py", "/fixture/schema.sql", "/archive/wacli.db"
         )
-        writer.commit()
+        cleanup.callback(run, "docker", "rm", "--force", writer_container)
+        writer = cleanup.enter_context(subprocess.Popen(
+            ["docker", "start", "--attach", "--interactive", writer_container],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+        ))
+        assert json.loads(writer.stdout.readline()) == {"state": "ready"}
         for suffix in ("", "-wal", "-shm"):
             path = Path(str(database) + suffix)
             assert path.stat().st_size > 0, path
-            path.chmod(0o644)
-        run("docker", "network", "create", "--internal", name)
+
+        def writer_command(command):
+            writer.stdin.write(json.dumps({"command": command}) + "\n")
+            writer.stdin.flush()
+            assert json.loads(writer.stdout.readline()) == {"state": command}
+
+        run("docker", "network", "create", name)
         cleanup.callback(run, "docker", "network", "rm", name)
-        assert run("docker", "network", "inspect", name, "--format", "{{.Internal}}") == "true"
         container = run(
             "docker", "run", "-d", "--name", name, "--network", name,
             "--platform", f"linux/{architecture}", "--read-only", "--cap-drop=ALL",
@@ -127,13 +152,10 @@ def smoke_whatsapp_archive(state, architecture):
                     assert forbidden not in response, forbidden
 
             verify_messages(["Offline archive smoke"])
-            writer.execute(
-                "INSERT INTO messages(chat_jid,msg_id,ts,from_me,text) "
-                "VALUES('1@s.whatsapp.net','second',2,0,'Live WAL follow-up')"
-            )
-            writer.commit()
+            writer_command("append")
             verify_messages(["Offline archive smoke", "Live WAL follow-up"])
-            writer.close()
+            writer_command("close")
+            assert writer.wait(timeout=15) == 0
             for suffix in ("-wal", "-shm"):
                 assert Path(str(database) + suffix).is_file(), suffix
             verify_messages(["Offline archive smoke", "Live WAL follow-up"])
@@ -149,13 +171,17 @@ def smoke_whatsapp_archive(state, architecture):
             assert any(option.startswith("no-new-privileges") for option in config["HostConfig"]["SecurityOpt"])
             assert all(not mount["RW"] for mount in config["Mounts"] if mount["Type"] == "bind")
             print(f"PASS {architecture} WhatsApp archive: offline native fixture, health/401/authenticated reads, "
-                  "live WAL updates, fresh reads/restart after writer exit, read-only mounts/non-root/internal network")
+                  "live WAL updates, fresh reads/restart after writer exit, read-only mounts/non-root/isolated bridge")
         except BaseException:
             subprocess.run(["docker", "logs", container], check=False)
             raise
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sqlite-writer", type=Path, required=True,
+                        help="Realized native Linux Python package from the CI build set")
+    sqlite_writer = parser.parse_args().sqlite_writer.resolve(strict=True)
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     arm = architecture in ("aarch64", "arm64")
     assert arm or architecture in ("x86_64", "amd64"), architecture
@@ -168,7 +194,7 @@ def main():
         state = Path(state)
         # Docker Desktop must be able to traverse the bind mount as the image's non-root user.
         state.chmod(0o755)
-        smoke_whatsapp_archive(state, expected)
+        smoke_whatsapp_archive(state, expected, sqlite_writer)
         repo = state / "repo"
         repo.mkdir()
         run("git", "init", "--quiet", str(repo))

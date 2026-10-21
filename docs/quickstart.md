@@ -15,28 +15,7 @@ docker compose up -d
 
 Set `FERRET_IMAGE_TAG` to a release version or PR tag to select matching server, worker and frontend images. These images contain runtime closures, not compilers or package managers.
 
-### Apple Silicon: build native ARM Linux images
-
-Install [Determinate Nix](https://docs.determinate.systems/) and sign up for a free FlakeHub account. `determinate-nixd auth login` authorizes the Native Linux Builder; `determinate-nixd status` reports the login. This managed ARM Linux build VM is separate from Docker Desktop's ARM Linux runtime VM. Do not enable x86 emulation or select `x86_64-linux` outputs on this path.
-
-```sh
-determinate-nixd status
-nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
-mkdir -p dist
-result-build-tool/bin/nix-fast-build --no-nom \
-  --flake .#imageBuilds.aarch64-linux --systems aarch64-linux \
-  --out-link result --result-file dist/image-results.json
-docker load --input result-server-image
-docker load --input result-plugins-image
-docker load --input result-whatsapp-archive-image
-docker load --input result-frontend-image
-export COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml
-docker compose up -d
-```
-
-The ARM overlay selects the local `:local` Ferret images with `pull_policy: never` and explicitly selects `linux/arm64` for every service, including native TEI. A missing local image fails instead of pulling an x64 replacement. Keep `COMPOSE_FILE` set for subsequent commands on this page. See [development](development.md) for builder filesystem constraints and checks.
-
-The bootstrap selects the native host's runner from the committed nixpkgs lock without evaluating Ferret's outputs. The one image build-set traversal realizes all four ARM Linux archives; the outlinks are loaded directly, without staging another copy. `dist/image-results.json` records the build results. Do not add `--skip-cached`: cached archives still need to be downloaded locally. The WhatsApp archive image is independent of this Compose stack; use its [deployment guide](plugins/whatsapp.md) only when connecting a retained archive.
+Apple Silicon developers must [build and load native ARM Linux images](development.md#apple-silicon-build-native-arm-linux-images) before running the stack. Published images are x64-only; do not enable x86 emulation.
 
 `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 

@@ -4,7 +4,7 @@ Use the [quickstart](quickstart.md) to try the app; this page covers changing it
 
 ## Prerequisites and repository map
 
-Use the committed Nix flake/lockfile for builds and checks. It selects supported stable nixpkgs, consumes `rust-toolchain.toml`, and builds the pnpm version selected by `frontend/package.json`; Node 24 remains the frontend runtime. The sandbox database has the narrowly scoped package-input exception described below. `nix develop` provides optional native tooling (including `aarch64-darwin` on Apple Silicon). Docker with Compose v2.24.4 or newer remains the primary environment, not the dev shell.
+Use the committed Nix flake/lockfile for builds and checks. It selects supported stable nixpkgs, consumes `rust-toolchain.toml`, and builds the pnpm version selected by `frontend/package.json`; Node 24 remains the frontend runtime. The sandbox database has the narrowly scoped package-input exception described below. Docker with Compose v2.24.4 or newer remains the primary environment, not the dev shell.
 
 | Path | Responsibility |
 | --- | --- |
@@ -19,9 +19,42 @@ Use the committed Nix flake/lockfile for builds and checks. It selects supported
 | `docker`, `scripts/demo-seed.sh` | local config, origin fixtures and demo ingestion |
 | `charts/ferret` | deployment templates and canonical Helm values |
 
+## Native dev shell
+
+For host server, worker or frontend iteration, enter the pinned native toolchain from the repository root:
+
+```sh
+nix develop
+```
+
+The shell includes the project's Rust, Node, pnpm and sqlx toolchains, plus Git, Helm and Skopeo. Rust and pnpm versions come from the repository declarations; do not substitute stable nixpkgs' older defaults. On Apple Silicon this is native `aarch64-darwin`, with no Linux VM or x86 emulation needed for the shell. Compose still provides the primary service environment; Linux image builds and integration checks are separate and use the Native Linux Builder on macOS.
+
+## Apple Silicon: build native ARM Linux images
+
+Install [Determinate Nix](https://docs.determinate.systems/) and sign up for a free FlakeHub account. `determinate-nixd auth login` authorizes the Native Linux Builder; `determinate-nixd status` reports the login. This managed ARM Linux build VM is separate from Docker Desktop's ARM Linux runtime VM. Do not enable x86 emulation or select `x86_64-linux` outputs on this path.
+
+```sh
+determinate-nixd status
+nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
+mkdir -p dist
+result-build-tool/bin/nix-fast-build --no-nom \
+  --flake .#imageBuilds.aarch64-linux --systems aarch64-linux \
+  --out-link result --result-file dist/image-results.json
+docker load --input result-server-image
+docker load --input result-plugins-image
+docker load --input result-whatsapp-archive-image
+docker load --input result-frontend-image
+export COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml
+docker compose up -d
+```
+
+The ARM overlay selects the local `:local` Ferret images with `pull_policy: never` and explicitly selects `linux/arm64` for every service, including native TEI. A missing local image fails instead of pulling an x64 replacement. Keep `COMPOSE_FILE` set for subsequent commands on this page.
+
+The bootstrap selects the native host's runner from the committed nixpkgs lock without evaluating Ferret's outputs. The one image build-set traversal realizes all four ARM Linux archives; the outlinks are loaded directly, without staging another copy. `dist/image-results.json` records the build results. Do not add `--skip-cached`: cached archives still need to be downloaded locally. The WhatsApp archive image is independent of this Compose stack; use its [deployment guide](plugins/whatsapp.md) only when connecting a retained archive.
+
 ## Full Compose development
 
-Follow the [quickstart](quickstart.md) for either x64 pulls without Nix or native ARM Linux builds/loads on Apple Silicon. On ARM, keep `COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml` set. Then:
+For x64 pulls without Nix, follow the [quickstart](quickstart.md). On Apple Silicon, build and load the [native ARM Linux images](#apple-silicon-build-native-arm-linux-images) above and keep `COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml` set. Then:
 
 ```sh
 docker compose up -d
@@ -50,8 +83,6 @@ adjacent README covers prerequisites, commands, snapshot retention and productio
 This is separate from Explore and changes neither Ferret's schema nor its deployment.
 
 ## Host server and workers
-
-Enter the optional native shell with `nix develop` before the host commands below. Rust and pnpm versions come from the repository declarations; do not replace them with the older defaults of stable nixpkgs. The dev shell is native macOS on Apple Silicon. Packaged builds and integration checks remain Linux outputs.
 
 Start only the test/development database if port 8080/8081 will be used by the host server:
 
@@ -140,13 +171,18 @@ The selected `pg_search` package declares `requires = 'vector'`. The isolated bo
 
 Ferret requires the `paradedb` index access method with automatic key-field inference; `pdb.simple` with German/English stemmers and aliases; `pdb.ngram`; `pdb.literal`; query-side `pdb.alias`; `&&&`; `pdb.score`; and the `paradedb.planner_warnings=off` setting. Package version alone is not a compatibility proof: all existing migrations, SQLx metadata checks and database integration tests must pass unchanged.
 
-After loading all four native Linux image archives as in the quickstart:
+After realizing the full CI build set above, load its four native Linux images and run:
 
 ```sh
-result-ci-tools/bin/python scripts/smoke-images.py
+for image in result-ci-{server,plugins,whatsapp-archive,frontend}-image; do
+  docker load --input "$image"
+done
+result-ci-tools/bin/python scripts/smoke-images.py --sqlite-writer result-ci-sqlite-writer
 ```
 
-This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. The independent WhatsApp archive image is tested separately on an internal-only Docker network with the committed offline wacli SQLite fixture, a live WAL writer and read-only directory/token mounts, including authenticated fresh reads after the writer closes. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
+This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. The independent WhatsApp archive image is tested separately on a uniquely named Docker bridge with a loopback-only published port, the committed offline wacli SQLite fixture, a live WAL writer and read-only directory/token mounts, including authenticated fresh reads after the writer closes. No WhatsApp or collector connection is made. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
+
+The private `sqlite-writer` output supplies native Linux Python for the disposable fixture writer, so SQLite WAL/shared-memory coordination stays inside Docker's Linux kernel even when the driver runs on macOS. On Linux it binds the existing Nix store read-only. Docker Desktop cannot bind the host's `/nix/store`, so the driver stages only that Python runtime closure in its own temporary directory and mounts it read-only. No host Docker sharing configuration is changed, no tool enters the published archive image, and image archives are not copied.
 
 For focused host iteration, `.cargo/config.toml` supplies non-forced development defaults for DATABASE_URL, FERRET_TEST_IMAP, offline SQL metadata and six test threads. Start `paradedb` and scale `dovecot` to one before `cargo test --workspace --locked`; Linux also requires the isolated files mount described below. These manual commands are conveniences, not a replacement CI pipeline. IMAP tests use per-test mailboxes, not personal accounts; embedding tests use protocol fixtures.
 
