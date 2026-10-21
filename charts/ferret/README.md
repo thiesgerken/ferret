@@ -75,7 +75,9 @@ The presence of `external` disables the bundled PVC, Deployment and Service. All
   `/etc/ferret-postgres/ca.crt` and sets `PGSSLROOTCERT` to that file. Use `sslmode=verify-full`
   to verify the server certificate and hostname. Omit `caSecret` for a publicly trusted CA.
 - `secrets.existingSecret` still supplies the application secrets in the table above, but needs
-  no `postgres-password` in external mode. A generated application Secret omits that key too.
+  no `postgres-password` in external mode. A newly generated application Secret omits that key.
+  An existing bundled password is retained across cutover so the kept PVC remains usable for
+  rollback.
 
 ### Database requirements
 

@@ -14,18 +14,11 @@ Choose who operates the database:
   Postgres processes must never open one data directory. A multi-replica server does not make
   the database highly available.
 - **Your own Postgres:** set `postgres.external` as described in the
-  [chart's external Postgres contract](../charts/ferret/README.md#external-postgres). The reference
-  setup is CloudNativePG with a ParadeDB image. The database needs `pg_search` compatible with
-  the chart's pinned 0.26.x and pgvector. For a non-superuser Ferret owner, an administrator must
-  pre-create both extensions, for example through CloudNativePG's `Database.spec.extensions` or
-  `postInitApplicationSQL`; migrations skip existing extensions. Plain RDS/Cloud SQL lack
-  `pg_search`. Connect directly or through session pooling, never transaction pooling:
-  Ferret uses `LISTEN/NOTIFY`, advisory locks and the `paradedb.planner_warnings` startup option.
-  You operate and back up this database separately.
+  [chart's external Postgres contract](../charts/ferret/README.md#external-postgres), checking its
+  [database requirements](../charts/ferret/README.md#database-requirements). CloudNativePG with a
+  ParadeDB image is the reference setup; you operate and back up this database separately.
 
-Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint/egress isolation policy; add your cluster's controls as required. Never put private port 8081 behind the Gateway.
-
-The chart's NetworkPolicy restricts no egress, so no chart policy needs opening for an external database.
+Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint isolation policy and restricts no egress, so no chart policy needs opening for an external database. Add your cluster's controls as required. Never put private port 8081 behind the Gateway.
 
 Decide where embeddings come from before installing: every configured model needs an OpenAI-compatible endpoint the server pods can reach (a TEI, a proxy such as LiteLLM, or a cloud API), and the chart refuses to render without one. The chart's optional `bundledTei` deploys one CPU TEI for one model; it hard-codes an `amd64` node selector, so ARM-only clusters run a native ARM TEI themselves and name it as the endpoint. A TEI's first start downloads weights; plan its cache storage and memory as well as database capacity. See [embeddings](embeddings.md).
 

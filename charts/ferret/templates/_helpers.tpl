@@ -30,7 +30,8 @@ app.kubernetes.io/component: {{ .component }}
 
 {{- define "ferret.databasePasswordSecret" -}}
 {{- if hasKey .Values.postgres "external" }}
-{{- toYaml .Values.postgres.external.passwordSecret }}
+name: {{ .Values.postgres.external.passwordSecret.name | quote }}
+key: {{ .Values.postgres.external.passwordSecret.key | quote }}
 {{- else }}
 name: {{ include "ferret.secretName" . }}
 key: postgres-password
@@ -58,7 +59,8 @@ concurrency: {{ . }}
 {{- end }}
 {{- end }}
 
-{{/* Fail rather than silently ignoring invalid or obsolete configuration. */}}
+{{/* Fails on obsolete values, invalid external Postgres settings, and a bundled TEI without
+exactly one model for it. */}}
 {{- define "ferret.checkValues" -}}
 {{- if hasKey .Values.postgres "external" }}
 {{- $external := .Values.postgres.external }}
