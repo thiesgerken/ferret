@@ -43,6 +43,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- range .Values.plugins.volumeMounts }}
+            - name: {{ .name | quote }}
+              mountPath: {{ .mountPath | quote }}
+              readOnly: true
+            {{- end }}
           env:
             - name: FERRET_INTERNAL_URL
               value: "http://{{ .Release.Name }}-server:8081"
@@ -62,3 +67,6 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- with .Values.plugins.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

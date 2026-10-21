@@ -42,14 +42,15 @@ jobs:
         run: |
           ln -s "$(realpath result-ci-server-image)" dist/server.tar.gz
           ln -s "$(realpath result-ci-plugins-image)" dist/plugins.tar.gz
+          ln -s "$(realpath result-ci-whatsapp-archive-image)" dist/whatsapp-archive.tar.gz
           ln -s "$(realpath result-ci-frontend-image)" dist/frontend.tar.gz
           cp -R charts/ferret dist/chart
-          sha256sum dist/server.tar.gz dist/plugins.tar.gz dist/frontend.tar.gz >> "$GITHUB_STEP_SUMMARY"
+          sha256sum dist/server.tar.gz dist/plugins.tar.gz dist/whatsapp-archive.tar.gz dist/frontend.tar.gz >> "$GITHUB_STEP_SUMMARY"
       - name: Exercise hardened runtime images
         run: |
           for archive in dist/*.tar.gz; do docker load --input "$archive"; done
           result-ci-tools/bin/python scripts/smoke-images.py
-          docker image inspect ferret:local ferret-plugins:local ferret-frontend:local \
+          docker image inspect ferret:local ferret-plugins:local ferret-whatsapp-archive:local ferret-frontend:local \
             --format '{{.RepoTags}} {{.Architecture}} {{.Size}} bytes' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

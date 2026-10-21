@@ -1,5 +1,113 @@
 # CHANGELOG
 
+## Unreleased
+
+### 🔧 Configuration
+
+- Build and publish all four runtime images through the pinned Nix pipeline, including the
+  independent read-only WhatsApp archive.
+- Require the mounted-files integration fixture and exercise it on the sandbox's isolated
+  tmpfs without host mounts or additional privileges.
+
+
+## v0.31.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #175 from thiesgerken/feat/whatsapp-archive
+  ([`9da870f`](https://github.com/thiesgerken/ferret/commit/9da870f3105a4bc8bcb1fae389c133d289f98cad))
+
+- ✨ feat(whatsapp): index retained wacli archives through read-only API
+  ([`9da870f`](https://github.com/thiesgerken/ferret/commit/9da870f3105a4bc8bcb1fae389c133d289f98cad))
+
+- ✨ feat(whatsapp): index retained wacli archives through read-only API
+  ([`08e6dac`](https://github.com/thiesgerken/ferret/commit/08e6dac9a153a9a5b24143f0081296d473bb488b))
+
+### Other
+
+
+- 🔀 chore(merge): integrate main files-plugin release
+  ([`99cdbda`](https://github.com/thiesgerken/ferret/commit/99cdbda2e784cde506dcbffd27213b7d87918b01))
+
+- Merge remote-tracking branch 'origin/main' into feat/whatsapp-archive
+  ([`c9adb2e`](https://github.com/thiesgerken/ferret/commit/c9adb2ec7f981afeef7362dadc7b2d1223dec9cf))
+
+- ✅ test(whatsapp): keep pin checks at behavior boundaries
+  ([`d9074a7`](https://github.com/thiesgerken/ferret/commit/d9074a7a6fcb6bad02c03f0ffacfc0001c1b1302))
+
+- 📝 docs(whatsapp): clarify below-floor checkpoint responses
+  ([`ff65303`](https://github.com/thiesgerken/ferret/commit/ff65303b0200b78e91b705bc861528ecf9f23d9e))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(whatsapp): align with current workspace and config conventions
+  ([`b131c09`](https://github.com/thiesgerken/ferret/commit/b131c098a410116796480f68021c90e105210797))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(whatsapp): require configured archive identity without server coupling
+  ([`1632231`](https://github.com/thiesgerken/ferret/commit/163223187b8813cfc9a4c9302a88f4615b9cf16d))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(whatsapp): preserve read-only WAL availability after collector exit
+  ([`5a5f7ea`](https://github.com/thiesgerken/ferret/commit/5a5f7ea5d3f33fc3e76b8929cf3b544094dfb5ee))
+
+- 🐛 fix(whatsapp): commit all completed reconciliation syncs
+  ([`fcafc21`](https://github.com/thiesgerken/ferret/commit/fcafc213f67817ccc7ee56a930628a52341ac698))
+
+- 🐛 fix(whatsapp): stream completed segments within page memory bounds
+  ([`3774fd8`](https://github.com/thiesgerken/ferret/commit/3774fd80a6276d2e7d5a0440dbcf27845c0567db))
+
+## v0.30.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #185 from thiesgerken/feat/chart-external-postgres
+  ([`07242aa`](https://github.com/thiesgerken/ferret/commit/07242aab0f3285f282ebbb9f88b58e82a7b8483c))
+
+- ✨ feat(chart): support an external Postgres
+  ([`07242aa`](https://github.com/thiesgerken/ferret/commit/07242aab0f3285f282ebbb9f88b58e82a7b8483c))
+
+- ✨ feat(server): enable rustls for Postgres connections
+  ([`427adef`](https://github.com/thiesgerken/ferret/commit/427adefe99a6a6eba8603d6eef65b2f1d5843a7e))
+
+- ✨ feat(chart): support an external Postgres
+  ([`c8e70da`](https://github.com/thiesgerken/ferret/commit/c8e70dad80952867c23a96b0b50ba8f211be2171))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(chart): retain bundled credentials across external cutover
+  ([`98567b1`](https://github.com/thiesgerken/ferret/commit/98567b1dd170e6dc6302081c59741f66dbcbb4e1))
+
+## v0.29.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #184 from thiesgerken/feat/183-files-plugin
+  ([`4ddd51e`](https://github.com/thiesgerken/ferret/commit/4ddd51e67155a1f877813794e22d0a32da78dcb9))
+
+- ✨ feat(files): index mounted filesystem trees
+  ([`4ddd51e`](https://github.com/thiesgerken/ferret/commit/4ddd51e67155a1f877813794e22d0a32da78dcb9))
+
+- ✨ feat(files): index mounted directories and selected text
+  ([`9751dfe`](https://github.com/thiesgerken/ferret/commit/9751dfe0cf9b0696d9b92a425c4521d9a5d3823c))
+
+### Other
+
+
+- ✅ test(files): remove tautological listing assertion
+  ([`7d2393a`](https://github.com/thiesgerken/ferret/commit/7d2393aab0726ce09977dcc8bd6aad91f7151ad2))
 
 ## v0.28.0 (2026-10-20)
 

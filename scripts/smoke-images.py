@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Exercise locally loaded images in an isolated, disposable Compose project."""
 
+from contextlib import ExitStack
 from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import secrets
+import sqlite3
 import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -53,12 +57,110 @@ def eventually(operation, timeout=120):
             time.sleep(1)
 
 
+def smoke_whatsapp_archive(state, architecture):
+    archive_dir = state / "archive"
+    archive_dir.mkdir(mode=0o755)
+    database = archive_dir / "wacli.db"
+    token = secrets.token_hex(32)
+    token_file = state / "archive-token"
+    token_file.write_text(token + "\n")
+    token_file.chmod(0o644)
+    name = f"ferret-archive-smoke-{uuid.uuid4().hex[:10]}"
+    with ExitStack() as cleanup:
+        writer = sqlite3.connect(database)
+        cleanup.callback(writer.close)
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        fixture = ROOT / "crates/ferret-whatsapp-archive/tests/fixtures/wacli-v0.22.0.sql"
+        writer.executescript(fixture.read_text())
+        writer.execute("INSERT INTO chats(jid,kind,name) VALUES('1@s.whatsapp.net','dm','Offline fixture')")
+        writer.execute(
+            "INSERT INTO messages(chat_jid,msg_id,ts,from_me,text,direct_path,media_key,local_path) "
+            "VALUES('1@s.whatsapp.net','first',1,0,'Offline archive smoke','privatepath',x'010203','/private/media')"
+        )
+        writer.commit()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(database) + suffix)
+            assert path.stat().st_size > 0, path
+            path.chmod(0o644)
+        run("docker", "network", "create", "--internal", name)
+        cleanup.callback(run, "docker", "network", "rm", name)
+        assert run("docker", "network", "inspect", name, "--format", "{{.Internal}}") == "true"
+        container = run(
+            "docker", "run", "-d", "--name", name, "--network", name,
+            "--platform", f"linux/{architecture}", "--read-only", "--cap-drop=ALL",
+            "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,mode=1777",
+            "--mount", f"type=bind,src={archive_dir},dst=/archive,readonly",
+            "--mount", f"type=bind,src={token_file},dst=/run/secrets/archive-token,readonly",
+            "-e", "WHATSAPP_ARCHIVE_DB=/archive/wacli.db",
+            "-e", "WHATSAPP_ARCHIVE_TOKEN_FILE=/run/secrets/archive-token",
+            "-p", "127.0.0.1::8080", "ferret-whatsapp-archive:local"
+        )
+        cleanup.callback(run, "docker", "rm", "--force", container)
+        try:
+            base = "http://" + run("docker", "port", container, "8080/tcp")
+            eventually(lambda: request(base + "/healthz").read())
+            for route in ("archive", "chats", "messages", "changes"):
+                try:
+                    request(base + "/v1/" + route)
+                    raise AssertionError(f"Unauthenticated archive {route} did not return 401")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 401, error
+                    assert json.load(error) == {"code": "unauthorized"}
+
+            def archive_get(route):
+                return urllib.request.urlopen(urllib.request.Request(
+                    base + route, headers={"Authorization": "Bearer " + token}
+                ), timeout=15)
+
+            archive = json.load(archive_get("/v1/archive"))
+            assert archive["schema_version"] == 32, archive
+            assert archive["collector_status"] == "unknown", archive
+            store_id = archive["store_id"]
+            query = urllib.parse.urlencode({"store_id": store_id, "chat": "1@s.whatsapp.net"})
+
+            def verify_messages(texts):
+                response = archive_get("/v1/messages?" + query).read().decode()
+                messages = json.loads(response)["messages"]
+                assert [message["text"] for message in messages] == texts, messages
+                for forbidden in ("privatepath", "media_key", "direct_path", "local_path", "/private/media"):
+                    assert forbidden not in response, forbidden
+
+            verify_messages(["Offline archive smoke"])
+            writer.execute(
+                "INSERT INTO messages(chat_jid,msg_id,ts,from_me,text) "
+                "VALUES('1@s.whatsapp.net','second',2,0,'Live WAL follow-up')"
+            )
+            writer.commit()
+            verify_messages(["Offline archive smoke", "Live WAL follow-up"])
+            writer.close()
+            for suffix in ("-wal", "-shm"):
+                assert Path(str(database) + suffix).is_file(), suffix
+            verify_messages(["Offline archive smoke", "Live WAL follow-up"])
+            run("docker", "restart", container)
+            eventually(lambda: request(base + "/healthz").read())
+            assert json.load(archive_get("/v1/archive"))["store_id"] == store_id
+            verify_messages(["Offline archive smoke", "Live WAL follow-up"])
+            config = json.loads(run("docker", "inspect", container))[0]
+            assert config["State"]["Running"], config["State"]
+            assert config["Config"]["User"] == "65532:65532"
+            assert config["HostConfig"]["ReadonlyRootfs"]
+            assert config["HostConfig"]["CapDrop"] == ["ALL"]
+            assert any(option.startswith("no-new-privileges") for option in config["HostConfig"]["SecurityOpt"])
+            assert all(not mount["RW"] for mount in config["Mounts"] if mount["Type"] == "bind")
+            print(f"PASS {architecture} WhatsApp archive: offline native fixture, health/401/authenticated reads, "
+                  "live WAL updates, fresh reads/restart after writer exit, read-only mounts/non-root/internal network")
+        except BaseException:
+            subprocess.run(["docker", "logs", container], check=False)
+            raise
+
+
 def main():
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     arm = architecture in ("aarch64", "arm64")
     assert arm or architecture in ("x86_64", "amd64"), architecture
     expected = "arm64" if arm else "amd64"
-    for image in ("ferret", "ferret-plugins", "ferret-frontend"):
+    for image in ("ferret", "ferret-plugins", "ferret-whatsapp-archive", "ferret-frontend"):
         actual = run("docker", "image", "inspect", f"{image}:local", "--format", "{{.Architecture}}")
         assert actual == expected, (image, actual, expected)
 
@@ -66,6 +168,7 @@ def main():
         state = Path(state)
         # Docker Desktop must be able to traverse the bind mount as the image's non-root user.
         state.chmod(0o755)
+        smoke_whatsapp_archive(state, expected)
         repo = state / "repo"
         repo.mkdir()
         run("git", "init", "--quiet", str(repo))

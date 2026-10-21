@@ -20,6 +20,24 @@ app.kubernetes.io/component: {{ .component }}
 {{- .Values.secrets.existingSecret | default (printf "%s-secrets" .Release.Name) -}}
 {{- end }}
 
+{{- define "ferret.databaseUrl" -}}
+{{- if hasKey .Values.postgres "external" -}}
+{{- .Values.postgres.external.url -}}
+{{- else -}}
+{{- printf "postgres://%s@%s-postgres:5432/%s" .Values.postgres.username .Release.Name .Values.postgres.database -}}
+{{- end -}}
+{{- end }}
+
+{{- define "ferret.databasePasswordSecret" -}}
+{{- if hasKey .Values.postgres "external" }}
+name: {{ .Values.postgres.external.passwordSecret.name | quote }}
+key: {{ .Values.postgres.external.passwordSecret.key | quote }}
+{{- else }}
+name: {{ include "ferret.secretName" . }}
+key: postgres-password
+{{- end }}
+{{- end }}
+
 {{/* The environment variable holding an endpoint's token; pass (dict "model" . "role" "EMBEDDING").
 Environment variable names allow no dots or dashes. */}}
 {{- define "ferret.tokenEnv" -}}
@@ -41,9 +59,28 @@ concurrency: {{ . }}
 {{- end }}
 {{- end }}
 
-{{/* Fails on values the chart doesn't take (any more), which would otherwise be ignored without a
-word, and on a bundled TEI without exactly one model for it. */}}
+{{/* Fails on obsolete values, invalid external Postgres settings, and a bundled TEI without
+exactly one model for it. */}}
 {{- define "ferret.checkValues" -}}
+{{- if hasKey .Values.postgres "external" }}
+{{- $external := .Values.postgres.external }}
+{{- if not $external.url }}
+{{- fail "postgres.external needs a url" }}
+{{- end }}
+{{- if or (regexMatch "^[^:]+://[^/?#@]*:[^/?#@]*@" $external.url) (regexMatch "(?i)[?&]password=" $external.url) }}
+{{- fail "postgres.external.url must not contain a password; use passwordSecret" }}
+{{- end }}
+{{- $password := $external.passwordSecret | default dict }}
+{{- if not (and $password.name $password.key) }}
+{{- fail "postgres.external.passwordSecret needs a name and a key" }}
+{{- end }}
+{{- if hasKey $external "caSecret" }}
+{{- $ca := $external.caSecret | default dict }}
+{{- if not (and $ca.name $ca.key) }}
+{{- fail "postgres.external.caSecret needs a name and a key" }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if or .Values.tei .Values.externalTeis }}
 {{- fail "tei and externalTeis were replaced by per-model endpoints (embeddingApi, queryApi) and the optional bundledTei, see the chart README" }}
 {{- end }}

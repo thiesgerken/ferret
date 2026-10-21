@@ -290,10 +290,9 @@ as a user and turns each doc's Yjs state into Markdown itself.
 
 In rough order of value per effort:
 
-1. **Files** (Obsidian vaults): the vaults are Syncthing folders, not git repos. A Syncthing node
-   in the cluster syncs them into a PVC, mounted read-only into a dedicated worker. Every run is a
-   full sync (`PUT` everything, the server skips unchanged files), excluding `.stfolder`,
-   `.stversions` and `.obsidian`.
+1. **Files**: implemented as mounted-filesystem directory discovery and selected plaintext/code
+   indexing. See the maintained [files guide](../plugins/files.md). Kubernetes supplies read-only
+   mounts directly to workers; no Syncthing service or blanket Obsidian exclusion is required.
 2. **Outlook** (work), as its own plugin: Microsoft Graph rather than [IMAP](#imap).
 3. **Chats** (WhatsApp and Signal exports), see [Chats](#chats).
 4. **Saved articles** (Karakeep or Wallabag). Only what I read or saved, no news firehose.

@@ -2,6 +2,7 @@
   pkgs,
   server,
   plugins,
+  whatsapp-archive,
   frontend,
 }:
 let
@@ -70,6 +71,10 @@ in
   plugins-image = image "ferret-plugins" [ plugins pkgs.cacert pkgs.gitMinimal ] {
     Cmd = [ "${plugins}/bin/ferret-plugins" ];
     Env = tlsEnv ++ [ "PATH=${pkgs.gitMinimal}/bin" ];
+  };
+  whatsapp-archive-image = image "ferret-whatsapp-archive" [ whatsapp-archive ] {
+    Cmd = [ "${whatsapp-archive}/bin/ferret-whatsapp-archive" ];
+    ExposedPorts."8080/tcp" = { };
   };
   frontend-image = image "ferret-frontend" [ pkgs.nginx frontend ] {
     Cmd = [

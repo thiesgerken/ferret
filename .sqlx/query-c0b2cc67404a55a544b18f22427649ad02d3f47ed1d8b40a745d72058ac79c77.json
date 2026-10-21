@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select r.connection_id from plugin_runs r join connections c on c.id = r.connection_id\n         where r.id = $1 and r.status = 'running' and c.user_id = $2\n           and r.heartbeat_at >= now() - interval '120 seconds'\n         for update of r",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "connection_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugin_runs",
+            "name": "connection_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c0b2cc67404a55a544b18f22427649ad02d3f47ed1d8b40a745d72058ac79c77"
+}

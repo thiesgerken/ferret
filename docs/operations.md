@@ -4,7 +4,7 @@ Operate the index, origins and model-serving infrastructure as separate failure 
 
 ## Runtime images and writable state
 
-The server, worker and frontend images are built by Nix from runtime closures without a distribution base or build environment. Releases publish Linux x64 only. All three execute as UID/GID 65532 with a read-only root, dropped capabilities and no privilege escalation in Compose and Helm. Temporary state is explicitly writable at `/tmp`: Compose supplies a tmpfs, and Helm supplies a per-pod `emptyDir`. Workers clone repositories there; size node/container temporary storage for the repositories they process. It is disposable state, not a backup target.
+The server, worker, frontend and independent WhatsApp archive images are built by Nix from runtime closures without a distribution base or build environment. Releases publish Linux x64 only. All four default to UID/GID 65532. The main Compose/Helm workloads run with read-only roots, dropped capabilities and no privilege escalation; the [independent archive guide](plugins/whatsapp.md) applies the same hardening and documents its storage-owner UID override. The archive is not deployed by that stack/chart. Temporary state is explicitly writable at `/tmp`: Compose supplies a tmpfs, and Helm supplies a per-pod `emptyDir`. Workers clone repositories there; size node/container temporary storage for the repositories they process. It is disposable state, not a backup target.
 
 The worker closure includes Git and CA certificates for outbound HTTPS, and the server includes CA certificates for outbound API/TLS clients. The frontend runs nginx on container port 8080, while the chart's frontend Service remains port 80 and public routes do not change. Do not add writable root access or run as root to fix a missing temporary mount. The upstream database, TEI, proxy and test-mail images retain their own runtime requirements; the Ferret image restrictions do not claim those services are hardened identically.
 
@@ -115,7 +115,7 @@ Back up:
 - Deployment values/server configuration and exact application/database image versions.
 - The required runtime secrets through your secret manager, particularly **config-key in a separately protected backup**. A database dump without it cannot recover stored origin credentials.
 
-Use your infrastructure's database-consistent backups/PITR or snapshots with proper Postgres coordination. A raw copy of a mounted live data directory is not a safe backup. The chart creates no backup schedule and documents storage snapshots as a cluster responsibility.
+Use your infrastructure's database-consistent backups/PITR or snapshots with proper Postgres coordination. A raw copy of a mounted live data directory is not a safe backup. The chart creates no backup schedule and documents storage snapshots as a cluster responsibility. With `postgres.external`, backups, retention and recovery belong to the external database operator, not the Ferret chart.
 
 For a logical backup on a local disposable Compose project, use the matching database container tools and a protected backup path:
 
@@ -137,6 +137,18 @@ docker compose exec -T paradedb pg_restore -U ferret -d ferret_restore \
 ```
 
 Point the isolated server's `FERRET_DATABASE_URL` at `ferret_restore` (or set the deployment's database name accordingly). Never restore over an initialized live Ferret database. Use a compatible ParadeDB image and verify restored indexes/extensions with its supported PostgreSQL restore procedure; logical dumps containing extension/index state are version-sensitive. Restore the matching config key and other secrets before permitting workers to claim runs. First validate startup/migrations and a known keyword search, then connection credential decryption, a controlled run and model/query health. Only cut over after proving the restore. A previously lost secret may require reissuing origin credentials/API keys or signing sessions out, not a fabricated fallback.
+
+### Moving from the bundled database to an external Postgres
+
+Use `pg_dump`/`pg_restore` and the restore procedure above; setting `postgres.external` does not
+copy data. Prepare the target with the [required extensions and connection settings](../charts/ferret/README.md#database-requirements).
+Stop the server and plugin workers before the final dump so no writes are lost at cutover.
+Restore to an empty target and validate it in isolation as above, keeping the same application
+secrets, especially `config-key`. Then set `postgres.external.url` to the restored database and
+`passwordSecret` (plus `caSecret` if needed) to its credentials, and upgrade the release. The chart
+removes the bundled Deployment and Service but retains its PVC; keep that PVC and the backup
+until the cutover has been verified. Resume the desired server/worker replicas only after the
+target is ready. The external database operator owns backups from then on.
 
 ## Data-loss boundaries
 

@@ -64,7 +64,7 @@
           };
           images = import ./nix/images.nix {
             inherit pkgs;
-            inherit (backend) server plugins;
+            inherit (backend) server plugins whatsapp-archive;
             inherit (frontend) frontend;
           };
         in
@@ -93,7 +93,7 @@
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
-            inherit (p.backend) server plugins;
+            inherit (p.backend) server plugins whatsapp-archive;
             inherit (p.frontend) frontend pnpmDeps;
             default = p.backend.server;
           }
@@ -138,7 +138,7 @@
         in
         self.checks.${linux}
         // {
-          inherit (p.backend) server plugins;
+          inherit (p.backend) server plugins whatsapp-archive;
           inherit (p.frontend) frontend;
           tools = project.${system}.tools.ci;
           release-tools = project.${system}.tools.release;

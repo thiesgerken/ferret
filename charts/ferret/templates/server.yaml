@@ -1,3 +1,4 @@
+{{- $postgresCa := dig "external" "caSecret" dict .Values.postgres }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -54,12 +55,15 @@ spec:
             # The password travels separately (libpq's PGPASSWORD, read by sqlx), so it never
             # needs URL-encoding.
             - name: FERRET_DATABASE_URL
-              value: "postgres://{{ .Values.postgres.username }}@{{ .Release.Name }}-postgres:5432/{{ .Values.postgres.database }}"
+              value: {{ include "ferret.databaseUrl" . | quote }}
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ferret.secretName" . }}
-                  key: postgres-password
+                  {{- include "ferret.databasePasswordSecret" . | nindent 18 }}
+            {{- with $postgresCa }}
+            - name: PGSSLROOTCERT
+              value: /etc/ferret-postgres/ca.crt
+            {{- end }}
             - name: FERRET_BOOTSTRAP_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -96,6 +100,11 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            {{- with $postgresCa }}
+            - name: postgres-ca
+              mountPath: /etc/ferret-postgres
+              readOnly: true
+            {{- end }}
           # Startup covers migrations and waiting for Postgres.
           startupProbe:
             tcpSocket:
@@ -119,6 +128,14 @@ spec:
             name: {{ .Release.Name }}-config
         - name: tmp
           emptyDir: {}
+        {{- with $postgresCa }}
+        - name: postgres-ca
+          secret:
+            secretName: {{ .name | quote }}
+            items:
+              - key: {{ .key | quote }}
+                path: ca.crt
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

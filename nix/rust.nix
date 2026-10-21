@@ -26,7 +26,6 @@ let
       pkgs.pkg-config
       pkgs.cmake
     ];
-    buildInputs = [ pkgs.openssl ];
   };
   cargoArtifacts = craneLib.buildDepsOnly (
     common
@@ -54,6 +53,7 @@ let
     );
   server = package "ferret-server";
   plugins = package "ferret-plugins";
+  whatsapp-archive = package "ferret-whatsapp-archive";
   services = {
     nativeBuildInputs = common.nativeBuildInputs ++ [
       postgres
@@ -72,6 +72,7 @@ in
   inherit
     server
     plugins
+    whatsapp-archive
     postgres
     cargoArtifacts
     ;
@@ -93,6 +94,13 @@ in
         doInstallCargoArtifacts = false;
         cargoExtraArgs = "--workspace --locked";
         RUST_TEST_THREADS = "6";
+        nativeBuildInputs = services.nativeBuildInputs ++ [ (lib.getBin pkgs.util-linux) ];
+        preBuild = services.preBuild + ''
+          test "$(findmnt --noheadings --mountpoint /dev/shm --output FSTYPE)" = tmpfs
+          test -z "$(find /dev/shm -mindepth 1 -print -quit)"
+          export FERRET_TEST_FILES_ROOT=/dev/shm
+          echo "Mounted files fixture: $FERRET_TEST_FILES_ROOT (isolated sandbox tmpfs)"
+        '';
       }
     );
     sqlx = craneLib.mkCargoDerivation (

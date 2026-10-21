@@ -140,17 +140,32 @@ The selected `pg_search` package declares `requires = 'vector'`. The isolated bo
 
 Ferret requires the `paradedb` index access method with automatic key-field inference; `pdb.simple` with German/English stemmers and aliases; `pdb.ngram`; `pdb.literal`; query-side `pdb.alias`; `&&&`; `pdb.score`; and the `paradedb.planner_warnings=off` setting. Package version alone is not a compatibility proof: all existing migrations, SQLx metadata checks and database integration tests must pass unchanged.
 
-After loading the three native Linux image archives as in the quickstart:
+After loading all four native Linux image archives as in the quickstart:
 
 ```sh
 result-ci-tools/bin/python scripts/smoke-images.py
 ```
 
-This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
+This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. The independent WhatsApp archive image is tested separately on an internal-only Docker network with the committed offline wacli SQLite fixture, a live WAL writer and read-only directory/token mounts, including authenticated fresh reads after the writer closes. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
 
-For focused host iteration, `.cargo/config.toml` supplies non-forced development defaults for DATABASE_URL, FERRET_TEST_IMAP, offline SQL metadata and six test threads. Start `paradedb` and scale `dovecot` to one before `cargo test --workspace --locked`. These manual commands are conveniences, not a replacement CI pipeline. IMAP tests use per-test mailboxes, not personal accounts; embedding tests use protocol fixtures.
+For focused host iteration, `.cargo/config.toml` supplies non-forced development defaults for DATABASE_URL, FERRET_TEST_IMAP, offline SQL metadata and six test threads. Start `paradedb` and scale `dovecot` to one before `cargo test --workspace --locked`; Linux also requires the isolated files mount described below. These manual commands are conveniences, not a replacement CI pipeline. IMAP tests use per-test mailboxes, not personal accounts; embedding tests use protocol fixtures.
 
 The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
+
+The Linux mounted-files regression (`cargo test -p ferret-server --test files_plugin`) requires an
+empty isolated mount at `FERRET_TEST_FILES_ROOT`; an absent variable fails instead of skipping.
+Nix checks use their sandbox's private `/dev/shm` tmpfs, verify its actual mount type and empty
+contents before the test writes, and configure PostgreSQL dynamic shared memory as `mmap` so it
+does not populate that fixture. No host mount, sudo or extra build privilege is needed. The sandbox
+owns and destroys the mount on either build outcome; service exit/failure hooks stop the database
+and mail server. The test creates and removes only its own content, exercising the real server and
+database, inventory reuse, links, filters, failure/no-sweep recovery, a directory above the request
+hard limit and an available empty share.
+
+For manual Linux tests outside Nix, provide an empty disposable directory mounted directly at the
+configured path (for example an isolated container volume), then export `FERRET_TEST_FILES_ROOT`.
+On non-Linux hosts use the ARM Linux Nix checks or a native Linux container. Never point the fixture
+at personal or production files or set it to an unmounted placeholder.
 
 ## Migrations and sqlx metadata
 

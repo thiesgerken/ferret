@@ -462,8 +462,8 @@ function ConfigInput({
     ? t("connections.form.keepSecret")
     : Array.isArray(field.default)
       ? field.default.join("\n")
-      : typeof field.default === "string"
-        ? field.default
+      : typeof field.default === "string" || typeof field.default === "number"
+        ? String(field.default)
         : undefined;
   return (
     <Field
@@ -490,11 +490,14 @@ function ConfigInput({
         <input
           id={id}
           name={name}
-          type={field.secret ? "password" : "text"}
+          type={field.secret ? "password" : field.kind === "integer" ? "number" : "text"}
+          step={field.kind === "integer" ? 1 : undefined}
+          min={field.kind === "integer" ? (field.minimum ?? Number.MIN_SAFE_INTEGER) : undefined}
+          max={field.kind === "integer" ? Math.min(field.maximum ?? Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) : undefined}
           // Not the browser's saved ferret password.
           autoComplete={field.secret ? "new-password" : undefined}
           required={field.required && !keepsStoredSecret}
-          defaultValue={typeof value === "string" ? value : undefined}
+          defaultValue={typeof value === "string" || typeof value === "number" ? value : undefined}
           placeholder={placeholder}
           className={fieldClass}
         />

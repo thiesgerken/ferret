@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from plugin_inventory where connection_id = $1 and generation != $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1e792559d6b4024ae1b326a3c52c6c29e922dbf5daa67a6f017559d1dfd2f895"
+}

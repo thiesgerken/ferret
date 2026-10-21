@@ -6,19 +6,29 @@ Use the Helm chart for a real deployment, not the development Compose credential
 
 You need Helm, kubectl access to your target cluster, Gateway API CRDs/controller and an existing Gateway with an HTTPS listener. Provision DNS and a certificate for your hostname at that Gateway. Ferret's HTTPRoute does not create a Gateway, certificate or DNS record. When the Gateway is in another namespace, its allowedRoutes must admit the Ferret namespace; set the parent reference accordingly.
 
-Choose a ReadWriteOnce StorageClass for the single-instance ParadeDB PVC and establish a database-consistent backup policy with your infrastructure tooling. The chart is not an HA Postgres operator. Its database Deployment uses Recreate because two Postgres processes must never open one data directory. A multi-replica server does not make the database highly available.
+Choose who operates the database:
 
-Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint/egress isolation policy; add your cluster's controls as required. Never put private port 8081 behind the Gateway.
+- **Bundled ParadeDB (default):** choose a ReadWriteOnce StorageClass for its single-instance
+  PVC and establish a database-consistent backup policy with your infrastructure tooling. The
+  chart is not an HA Postgres operator. Its database Deployment uses Recreate because two
+  Postgres processes must never open one data directory. A multi-replica server does not make
+  the database highly available.
+- **Your own Postgres:** set `postgres.external` as described in the
+  [chart's external Postgres contract](../charts/ferret/README.md#external-postgres), checking its
+  [database requirements](../charts/ferret/README.md#database-requirements). CloudNativePG with a
+  ParadeDB image is the reference setup; you operate and back up this database separately.
+
+Use a CNI enforcing NetworkPolicy. The chart allows public server port 8080 ingress but restricts private port 8081 to this release's worker pods. This policy is **not** a complete database/frontend/embedding-endpoint isolation policy and restricts no egress, so no chart policy needs opening for an external database. Add your cluster's controls as required. Never put private port 8081 behind the Gateway.
 
 Published Ferret images and their chart workloads support Linux x64 nodes only. ARM Linux outputs are for local Nix development, not ARM production releases. Decide where embeddings come from before installing: every configured model needs an OpenAI-compatible endpoint the server pods can reach, and the chart refuses to render without one. The optional `bundledTei` deploys one CPU TEI for one model on an x64 node. A TEI's first start downloads weights; plan cache storage and memory as well as database capacity. See [embeddings](embeddings.md).
 
 ## Choose secret management
 
-For ordinary `helm install/upgrade`, the chart generates its Secret once and reuses values with live `lookup`. Both the generated Secret and database PVC are marked keep on uninstall. A same-name reinstall can reuse the old state.
+For ordinary `helm install/upgrade`, the chart generates its Secret once and reuses values with live `lookup`. The generated Secret and bundled database PVC are marked keep on uninstall. A same-name reinstall can reuse the old state.
 
-For GitOps/render-only tooling, create a stable Secret separately and set `secrets.existingSecret`. `helm template` cannot look up the live Secret and would otherwise generate different credentials on every render. Use SOPS/Sealed Secrets/your secret manager rather than committing plaintext secrets. The exact five required keys are documented in the [chart secret contract](../charts/ferret/README.md#secrets).
+For GitOps/render-only tooling, create a stable Secret separately and set `secrets.existingSecret`. `helm template` cannot look up the live Secret and would otherwise generate different credentials on every render. Use SOPS/Sealed Secrets/your secret manager rather than committing plaintext secrets. The required keys are documented in the [chart secret contract](../charts/ferret/README.md#secrets); `postgres-password` is bundled-only. External database credentials come from `postgres.external.passwordSecret`, with an optional `caSecret` for TLS verification.
 
-For an imperative test install, this creates a separately owned Secret with independent generated values (the shell passes them as local process arguments, so use trusted administration tooling):
+For an imperative test install with the bundled database, this creates a separately owned Secret with independent generated values (the shell passes them as local process arguments, so use trusted administration tooling):
 
 ```sh
 kubectl create namespace ferret
@@ -62,11 +72,15 @@ embedding:
 
 For a first try without an embeddings service of your own, replace the model's `embeddingApi` with `bundledTei: true` and set `bundledTei.enabled: true`.
 
+For an external database, replace the `postgres.persistence` block with the chart's
+[`postgres.external` example](../charts/ferret/README.md#external-postgres). Create or sync its
+password Secret and optional CA Secret into the Ferret namespace before installing.
+
 From the repository root:
 
 ```sh
 helm upgrade --install ferret ./charts/ferret -n ferret -f deployment-values.yaml
-kubectl -n ferret rollout status deployment/ferret-postgres
+kubectl -n ferret rollout status deployment/ferret-postgres # bundled database only
 kubectl -n ferret rollout status deployment/ferret-server
 kubectl -n ferret rollout status deployment/ferret-plugins
 kubectl -n ferret rollout status deployment/ferret-frontend

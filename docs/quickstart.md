@@ -28,6 +28,7 @@ result-build-tool/bin/nix-fast-build --no-nom \
   --out-link result --result-file dist/image-results.json
 docker load --input result-server-image
 docker load --input result-plugins-image
+docker load --input result-whatsapp-archive-image
 docker load --input result-frontend-image
 export COMPOSE_FILE=docker-compose.yml:docker-compose.arm.yml
 docker compose up -d
@@ -35,7 +36,7 @@ docker compose up -d
 
 The ARM overlay selects the local `:local` Ferret images with `pull_policy: never` and explicitly selects `linux/arm64` for every service, including native TEI. A missing local image fails instead of pulling an x64 replacement. Keep `COMPOSE_FILE` set for subsequent commands on this page. See [development](development.md) for builder filesystem constraints and checks.
 
-The bootstrap selects the native host's runner from the committed nixpkgs lock without evaluating Ferret's outputs. The one image build-set traversal realizes all three ARM Linux archives; the outlinks are loaded directly, without staging another copy. `dist/image-results.json` records the build results. Do not add `--skip-cached`: cached archives still need to be downloaded locally.
+The bootstrap selects the native host's runner from the committed nixpkgs lock without evaluating Ferret's outputs. The one image build-set traversal realizes all four ARM Linux archives; the outlinks are loaded directly, without staging another copy. `dist/image-results.json` records the build results. Do not add `--skip-cached`: cached archives still need to be downloaded locally. The WhatsApp archive image is independent of this Compose stack; use its [deployment guide](plugins/whatsapp.md) only when connecting a retained archive.
 
 `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 

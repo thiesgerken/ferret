@@ -10,6 +10,7 @@ use serde_json::Value;
 
 pub mod affine;
 pub mod carapace;
+pub mod files;
 pub mod git;
 pub mod gitea;
 pub mod homeassistant;
@@ -20,6 +21,7 @@ pub mod moneta;
 pub mod paperless;
 pub mod repo;
 pub mod vikunja;
+pub mod whatsapp;
 
 pub type PluginError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -34,6 +36,11 @@ pub fn registrations() -> Vec<PluginRegistration> {
         PluginRegistration {
             name: carapace::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(carapace::CarapaceConfig))
+                .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: files::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(files::FilesConfig))
                 .expect("a schema serializes"),
         },
         PluginRegistration {
@@ -81,6 +88,11 @@ pub fn registrations() -> Vec<PluginRegistration> {
         PluginRegistration {
             name: vikunja::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(vikunja::VikunjaConfig))
+                .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: whatsapp::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(whatsapp::WhatsAppConfig))
                 .expect("a schema serializes"),
         },
     ]
@@ -150,6 +162,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
     match plugin {
         affine::NAME => affine::run(run).await,
         carapace::NAME => carapace::run(run).await,
+        files::NAME => files::run(run).await,
         git::NAME => git::run(run).await,
         gitea::NAME => gitea::run(run).await,
         homeassistant::NAME => homeassistant::run(run).await,
@@ -159,6 +172,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
         moneta::NAME => moneta::run(run).await,
         paperless::NAME => paperless::run(run).await,
         vikunja::NAME => vikunja::run(run).await,
+        whatsapp::NAME => whatsapp::run(run).await,
         other => Err(format!("this worker doesn't know the plugin {other:?}").into()),
     }
 }

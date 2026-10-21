@@ -43,7 +43,7 @@ where that source's own tools take over, instead of guessing which tool's search
   the file in your git forge or Obsidian vault, the carapace session. ferret keeps a copy to search
   it, never to become the place you read it.
 - 🔌 **Plugins for your systems, a REST API for everything else.** git repos, Gitea accounts,
-  Home Assistant inventory and configured behavior, Paperless, carapace, IMAP mailboxes, AFFiNE workspaces, Vikunja tasks, Karakeep bookmarks, Mealie recipes and Moneta expenses sync on a schedule.
+  mounted filesystem directories and selected plaintext/code, Home Assistant inventory and configured behavior, Paperless, carapace, IMAP mailboxes, AFFiNE workspaces, Vikunja tasks, Karakeep bookmarks, Mealie recipes and Moneta expenses sync on a schedule.
   Anything else sends documents with a plain HTTP `PUT`.
 - 🤖 **Your agent searches once.** One index over everything, so the cocktail question finds the
   recipe and the note about your home bar in the same query, and the agent knows where to dig
@@ -112,6 +112,7 @@ respective sources.
 | Mealie | group-wide recipes with attached notes and comments, across households | the recipe in Mealie |
 | Moneta | every visible expense, including income, transfers and labelled templates | the expense editor in Moneta |
 | Home Assistant | devices, areas, eligible entities and faithful automation/script definitions | inventory or loaded-definition pages (ordinary registry-less entities use instance home) |
+| Files | immediate-child directory listings and complete selected plaintext/code files from read-only mounts | independently configured origin URLs, including NFS |
 
 Everything else goes through the [ingest API](docs/conception/README.md#ingest-api): a `PUT` per
 document with an API key, from a script, a cron job or an agent.
@@ -139,8 +140,9 @@ Compose is the primary local environment. Linux x64 users pull published images 
 Apple Silicon developers build/load native ARM Linux images through Determinate Native Linux
 Builder and use the ARM Compose overlay. Releases publish x64 images only. One committed Nix
 flake/lockfile owns builds and checks; the optional native dev shell is documented in
-[development](docs/development.md). All three Ferret runtime images run non-root with read-only
-roots and explicit temporary storage in the maintained Compose/Helm configurations.
+[development](docs/development.md). All four Ferret runtime images default to a non-root user.
+The maintained Compose/Helm workloads use read-only roots and explicit temporary storage; the
+[independent WhatsApp archive](docs/plugins/whatsapp.md) documents its own hardened deployment.
 
 ## Documentation
 
@@ -149,9 +151,10 @@ Start at the [documentation index](docs/README.md), or go directly to:
 - [Search](docs/search.md): query syntax, filters, ranking and origin links.
 - [Connections](docs/connections.md): schedules, runs, exclusions and data ownership.
 - [HTTP ingestion](docs/ingestion.md): document identity, upserts and safe deletion reconciliation.
-- Plugin setup: [git](docs/plugins/git.md), [Gitea](docs/plugins/gitea.md), [Paperless](docs/plugins/paperless.md),
+- Plugin setup: [files](docs/plugins/files.md), [git](docs/plugins/git.md), [Gitea](docs/plugins/gitea.md), [Paperless](docs/plugins/paperless.md),
   [carapace](docs/plugins/carapace.md), [IMAP](docs/plugins/imap.md), [AFFiNE](docs/plugins/affine.md),
   [Vikunja](docs/plugins/vikunja.md), [Karakeep](docs/plugins/karakeep.md), [Mealie](docs/plugins/mealie.md), [Moneta](docs/plugins/moneta.md), [Home Assistant](docs/plugins/homeassistant.md).
+- [WhatsApp archive](docs/plugins/whatsapp.md): read-only archive API container and scheduled chat ingestion.
 - [MCP setup](docs/api/mcp.md): connect agents to search, full-document reads and source discovery.
 - [API guide](docs/api/README.md): REST and GraphQL contracts and credential choices.
 - [Architecture](docs/architecture.md): components, data flows and subsystem references.

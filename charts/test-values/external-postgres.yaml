@@ -1,0 +1,15 @@
+ingress:
+  hostname: ferret.example.com
+postgres:
+  external:
+    url: postgres://ferret@db.example.com:5432/ferret?sslmode=verify-full
+    passwordSecret: {name: ferret-db-app, key: password}
+    caSecret: {name: ferret-db-ca, key: ca.crt}
+embedding:
+  models:
+    - id: qwen3-embedding-0.6b
+      dimension: 1024
+      minSimilarity: 0.42
+      embeddingApi:
+        url: http://tei:80/v1
+        model: Qwen/Qwen3-Embedding-0.6B
