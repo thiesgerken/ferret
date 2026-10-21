@@ -69,12 +69,6 @@ const SearchHitsQueryDocument = graphql(`
           value
           count
         }
-        threads {
-          source
-          thread
-          title
-          count
-        }
         areLowerBounds
       }
     }
@@ -110,12 +104,11 @@ export function SearchResults({
       q: state.q,
       sources: state.sources.length > 0 ? state.sources : null,
       authors: state.authors.length > 0 ? state.authors : null,
-      threads: state.threads.length > 0 ? state.threads : null,
       range: TIME_RANGES[state.range].preset,
       model: state.model,
       mode: state.mode === "hybrid" ? null : (state.mode.toUpperCase() as SearchModeInput),
     }),
-    [state.q, state.sources, state.authors, state.threads, state.range, state.model, state.mode],
+    [state.q, state.sources, state.authors, state.range, state.model, state.mode],
   );
   // Typing revisits queries all the time, and a cached answer would pass off an old `tookMs` and
   // `semanticUnavailable` as current.
@@ -155,7 +148,7 @@ export function SearchResults({
   }
   const semanticUnavailable = data?.search.semanticUnavailable;
 
-  const filtered = state.sources.length > 0 || state.authors.length > 0 || state.threads.length > 0 || state.range !== "any";
+  const filtered = state.sources.length > 0 || state.authors.length > 0 || state.range !== "any";
 
   return (
     <div className="min-h-dvh">
@@ -211,7 +204,7 @@ export function SearchResults({
           ) : !data ? (
             <HitSkeletons />
           ) : hits.length === 0 ? (
-            <NoMatches q={state.q} mode={state.mode} onClearFilters={filtered ? () => onChange({ ...state, sources: [], authors: [], threads: [], range: "any" }) : null} />
+            <NoMatches q={state.q} mode={state.mode} onClearFilters={filtered ? () => onChange({ ...state, sources: [], authors: [], range: "any" }) : null} />
           ) : (
             // Keyed by the search, so a hit's ✓ state never carries over into another search.
             <ol key={JSON.stringify(input)} className={cn("space-y-7 transition-opacity", fetching && "opacity-60")}>

@@ -44,8 +44,6 @@ curl --fail-with-body -sS "$FERRET_URL/graphql" \
 
 Search and REST share retrieval logic. GraphQL adds UI concerns such as judgments and relative ranges (`DAY`, `WEEK`, `MONTH`, `YEAR`) in place of an explicit `from`; inspect the canonical enum before constructing other inputs. `document(id:)` returns full text and thread neighbors for the viewer. `explore(input:)` browses documents without query terms.
 
-Both `SearchInput` and `ExploreInput` accept `threads: [{source: "demo/chat", thread: "harz-trip"}]`, independently of `authors` and source roots. A thread matches only its exact source, never another source with the same string id. Values within each filter are alternatives; filter kinds combine. Both result facets expose `threads { source thread title count }`, labelled by document titles, including selected zero-count identities. Thread facets have no top-twenty truncation. Search remains candidate-bounded; Explore lists all scoped threads. A query with `authors:["Alice"]` matches her segments, while choosing her thread also includes segments spoken only by Me.
-
 `Document`, `Hit` and `ExploredDocument` expose independently nullable `createdAt` and `modifiedAt` origin dates. Consumers must check each before formatting. Date filters exclude unknown creation dates. Explore's date ordering puts unknowns last, its month facets include only known creation dates, and thread neighbors follow the thread listing's dated-first ordering.
 
 Search's `documentsInScope` is informational metadata cached for 60 seconds per signed-in user and

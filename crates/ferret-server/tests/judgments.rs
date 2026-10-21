@@ -275,37 +275,3 @@ async fn relative_ranges_are_judged_as_presets(pool: PgPool) {
     );
     assert_eq!(both["errors"][0]["message"], "set either from or range");
 }
-
-#[sqlx::test(migrations = false)]
-async fn judgments_keep_source_local_thread_selections_and_ignore_their_order(pool: PgPool) {
-    let server = start_server(pool).await;
-    let mut doc = document("chats/personal", "one", "The invoice is paid.");
-    doc.thread = Some("alice".into());
-    let id = server
-        .admin_api()
-        .await
-        .put_document(&doc)
-        .await
-        .unwrap()
-        .id()
-        .unwrap()
-        .to_string();
-    let cookie = server.sign_in().await;
-    let first = json!({"source":"chats/personal","thread":"alice"});
-    let other = json!({"source":"chats/work","thread":"alice"});
-    let selected = json!({"q":"invoice","threads":[first,other]});
-    let set = set_judgment(&server, &cookie, selected.clone(), &id, true).await;
-    assert_eq!(set["errors"], Value::Null, "{set}");
-    assert!(
-        judged(
-            &server,
-            &cookie,
-            json!({"q":"invoice","threads":[other,first,first]})
-        )
-        .await[0]
-            .1
-    );
-    assert!(!judged(&server, &cookie, json!({"q":"invoice","threads":[first]})).await[0].1);
-    assert!(!judged(&server, &cookie, json!({"q":"invoice"})).await[0].1);
-    set_judgment(&server, &cookie, selected, &id, false).await;
-}

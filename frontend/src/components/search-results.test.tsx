@@ -6,7 +6,6 @@ import { Provider } from "urql";
 import { renderReact, settle } from "../../test/react-test-utils";
 import { createGraphqlClient } from "@/lib/graphql";
 import type { SearchState } from "@/lib/search-url";
-import type { ThreadFacet } from "@/lib/thread-filter";
 import { TYPING_DEBOUNCE_MS } from "./search-field";
 
 /** jsdom has no IntersectionObserver: this one reports an intersection when the test scrolls. */
@@ -69,12 +68,10 @@ async function renderResults(
     models = ["alpha"],
     searchError = null,
     answered = Promise.resolve(),
-    threadFacets = [],
   }: {
     semanticUnavailable?: string | null;
     models?: string[];
     searchError?: string | null;
-    threadFacets?: ThreadFacet[];
     /** When the search for the initial query gets its answer. */
     answered?: Promise<void>;
   } = {},
@@ -136,7 +133,6 @@ async function renderResults(
               { __typename: "FacetCount", value: "thies", count: 9 },
               { __typename: "FacetCount", value: "Allianz", count: 2 },
             ],
-            threads: threadFacets.map((thread) => ({ __typename: "ThreadFacet", ...thread })),
             areLowerBounds: false,
           },
         },
@@ -190,11 +186,12 @@ const label = (button: Element) => button.querySelector("span.truncate")?.textCo
 const facetChips = (root: Element, selector = CHIPS) =>
   [...root.querySelectorAll<HTMLButtonElement>(selector)].filter((b) => !["Keyword", "Semantic"].includes(label(b) ?? ""));
 
-const STATE: SearchState = { q: "invoice", sources: [], authors: [], threads: [], range: "any", model: null, mode: "hybrid" };
+const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null, mode: "hybrid" };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
-  const { view } = await renderResults(STATE);
+  const { view, variables } = await renderResults(STATE);
 
+  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, range: null, model: null, mode: null } });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
@@ -326,7 +323,7 @@ test("a search for a model that's gone keeps the select to switch back", async (
 });
 
 test("a ✓ judges the hit for this search, a second click takes it back", async () => {
-  const { view } = await renderResults({ ...STATE, sources: ["notes"] });
+  const { view, variables } = await renderResults({ ...STATE, sources: ["notes"] });
   const check = () => view.container.querySelector<HTMLButtonElement>('article button[aria-label="Right hit for this search"]')!;
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
@@ -337,6 +334,11 @@ test("a ✓ judges the hit for this search, a second click takes it back", async
   await settle();
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
+  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null, mode: null };
+  assert.deepEqual(variables.slice(1), [
+    { input: { search, documentId: "a", judged: true } },
+    { input: { search, documentId: "a", judged: false } },
+  ]);
   await view.unmount();
 });
 
@@ -469,35 +471,5 @@ test("keyword and semantic matching switch off one at a time, never both", async
   await settle();
   assert.deepEqual(changes.at(-1), { ...STATE, mode: "semantic" });
   assert.match(text(), /37 semantic matches/);
-  await view.unmount();
-});
-
-test("threads remain independently selectable beyond twenty chats and distinguish equal ids by source", async () => {
-  const threadFacets = Array.from({ length: 26 }, (_, index) => ({
-    source: "chats", thread: `chat-${index}`, title: `Chat ${index}`, count: 26 - index,
-  }));
-  threadFacets.push(
-    { source: "chats/personal", thread: "alice", title: "Alice", count: 2 },
-    { source: "chats/work", thread: "alice", title: "Alice", count: 1 },
-  );
-  const selected = { source: "chats/personal", thread: "alice" };
-  const { view, changes, variables } = await renderResults(
-    { ...STATE, authors: ["Alice"], threads: [selected] }, { threadFacets },
-  );
-  const chip = (name: string) =>
-    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => button.getAttribute("aria-label") === name)!;
-  const personal = chip("Thread: Alice · chats/personal");
-  assert.equal(personal.getAttribute("aria-pressed"), "true");
-  assert.match(personal.textContent ?? "", /Thread: Alice/);
-  assert.ok(facetChips(view.container).some((button) => label(button) === "Alice"), "the separate author chip remains available");
-  assert.equal(chip("Thread: Alice · chats/work").getAttribute("aria-pressed"), "false");
-  await act(async () => chip("Thread: Chat 25").click());
-  assert.deepEqual(changes.at(-1)?.threads, [selected, { source: "chats", thread: "chat-25" }]);
-  assert.deepEqual(changes.at(-1)?.authors, ["Alice"]);
-  const last = variables.at(-1);
-  assert.ok(last && typeof last === "object" && "input" in last);
-  const input = last.input;
-  assert.ok(input && typeof input === "object" && "threads" in input);
-  assert.deepEqual(input.threads, changes.at(-1)?.threads);
   await view.unmount();
 });

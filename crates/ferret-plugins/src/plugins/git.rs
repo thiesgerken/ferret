@@ -249,7 +249,7 @@ impl<'a> Indexer<'a> {
     /// Puts every file inside a sync, whose commit deletes the documents of files that are gone.
     async fn full_sync(&self) -> Result<RunStats, PluginError> {
         let run = self.run;
-        let sync = run.api.start_sync(&run.source, None).await?.sync_id;
+        let sync = run.api.start_sync(&run.source).await?.sync_id;
         let mut stats = RunStats::default();
         for path in self.paths() {
             self.put(path, &mut stats).await?;

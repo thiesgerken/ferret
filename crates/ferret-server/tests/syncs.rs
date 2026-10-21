@@ -42,7 +42,7 @@ async fn a_commit_sweeps_what_was_neither_put_nor_seen_below_the_source(pool: Pg
         put(&api, source, id).await;
     }
 
-    let sync = api.start_sync("paperless", None).await.unwrap().sync_id;
+    let sync = api.start_sync("paperless").await.unwrap().sync_id;
     // A no-op PUT counts as seen, just like `seen`.
     put(&api, "paperless", "kept-by-put").await;
     let seen = api
@@ -71,11 +71,11 @@ async fn a_sync_that_is_never_committed_deletes_nothing(pool: PgPool) {
     put(&api, "paperless", "a").await;
     put(&api, "paperless", "b").await;
 
-    let sync = api.start_sync("paperless", None).await.unwrap().sync_id;
+    let sync = api.start_sync("paperless").await.unwrap().sync_id;
     api.sync_seen(sync, "paperless", &["a"]).await.unwrap();
     assert_eq!(stored(&pool).await, ["paperless/a", "paperless/b"]);
     // A crashed run starts over with a new sync, which sees everything again.
-    let next = api.start_sync("paperless", None).await.unwrap().sync_id;
+    let next = api.start_sync("paperless").await.unwrap().sync_id;
     api.sync_seen(next, "paperless", &["a", "b"]).await.unwrap();
     api.commit_sync(next).await.unwrap();
 
@@ -89,7 +89,7 @@ async fn seen_names_the_source_because_external_ids_repeat_across_sources(pool: 
     put(&api, "carapace/facts", "1").await;
     put(&api, "carapace/sessions", "1").await;
 
-    let sync = api.start_sync("carapace", None).await.unwrap().sync_id;
+    let sync = api.start_sync("carapace").await.unwrap().sync_id;
     api.sync_seen(sync, "carapace/facts", &["1"]).await.unwrap();
     let outside = api.sync_seen(sync, "notes", &["1"]).await.unwrap_err();
     api.commit_sync(sync).await.unwrap();
@@ -102,7 +102,7 @@ async fn seen_names_the_source_because_external_ids_repeat_across_sources(pool: 
 async fn a_committed_sync_takes_no_more_reports(pool: PgPool) {
     let server = start_server(pool).await;
     let api = server.admin_api().await;
-    let sync = api.start_sync("paperless", None).await.unwrap().sync_id;
+    let sync = api.start_sync("paperless").await.unwrap().sync_id;
     api.commit_sync(sync).await.unwrap();
 
     let seen = api.sync_seen(sync, "paperless", &["a"]).await.unwrap_err();
@@ -126,20 +126,20 @@ async fn syncs_need_ingest_write_within_the_keys_sources(pool: PgPool) {
     let notes = server.api_with_key(&notes_key);
 
     assert_eq!(
-        status(reader.start_sync("notes", None).await.unwrap_err()),
+        status(reader.start_sync("notes").await.unwrap_err()),
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        status(notes.start_sync("paperless", None).await.unwrap_err()),
+        status(notes.start_sync("paperless").await.unwrap_err()),
         StatusCode::FORBIDDEN
     );
     // A sync of another key stays out of reach of a key whose sources don't cover it.
-    let foreign = admin.start_sync("paperless", None).await.unwrap().sync_id;
+    let foreign = admin.start_sync("paperless").await.unwrap().sync_id;
     assert_eq!(
         status(notes.commit_sync(foreign).await.unwrap_err()),
         StatusCode::FORBIDDEN
     );
-    let sync = notes.start_sync("notes/work", None).await.unwrap().sync_id;
+    let sync = notes.start_sync("notes/work").await.unwrap().sync_id;
     notes
         .sync_seen(sync, "notes/work", &["kept"])
         .await
@@ -169,7 +169,7 @@ async fn a_sweep_leaves_other_users_documents_alone(pool: PgPool) {
     .await
     .unwrap();
 
-    let sync = api.start_sync("paperless", None).await.unwrap().sync_id;
+    let sync = api.start_sync("paperless").await.unwrap().sync_id;
     let committed = api.commit_sync(sync).await.unwrap();
 
     assert_eq!(committed.deleted, 0);
@@ -192,7 +192,7 @@ async fn thread_sync_sweeps_only_its_exact_source_and_thread(pool: PgPool) {
         api.put_document(&doc).await.unwrap();
     }
     let sync = api
-        .start_sync("chats", Some("alice"))
+        .start_thread_sync("chats", "alice")
         .await
         .unwrap()
         .sync_id;

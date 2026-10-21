@@ -200,7 +200,7 @@ impl Repository<'_> {
     /// Puts every file inside a sync, whose commit deletes what's gone.
     async fn full_sync(&self) -> Result<RunStats, PluginError> {
         let run = self.run;
-        let sync = run.api.start_sync(&run.source, None).await?.sync_id;
+        let sync = run.api.start_sync(&run.source).await?.sync_id;
         let mut stats = RunStats::default();
         let mut paths: Vec<&String> = self.modes.keys().collect();
         paths.sort();

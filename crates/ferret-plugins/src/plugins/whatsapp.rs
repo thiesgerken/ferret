@@ -389,7 +389,7 @@ async fn reconcile(
     let mut chats = client.chats().await?;
     validate_filters(settings, &chats)?;
     let root_sync = if full {
-        Some(run.api.start_sync(&run.source, None).await?.sync_id)
+        Some(run.api.start_sync(&run.source).await?.sync_id)
     } else {
         None
     };
@@ -451,7 +451,7 @@ async fn rebuild(
     stats: &mut RunStats,
 ) -> Result<(), PluginError> {
     for jid in affected {
-        let sync = run.api.start_sync(&run.source, Some(jid)).await?.sync_id;
+        let sync = run.api.start_thread_sync(&run.source, jid).await?.sync_id;
         syncs.push(sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
             client.ingest_chat(run, chat, &run.source, stats).await?;

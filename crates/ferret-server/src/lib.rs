@@ -38,7 +38,6 @@ mod search_query;
 mod sources;
 mod statistics;
 mod syncs;
-mod threads;
 mod users;
 mod writer_stats;
 mod writers;

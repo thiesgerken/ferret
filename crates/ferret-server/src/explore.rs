@@ -3,11 +3,11 @@
 //! `created_at` from inclusive to exclusive.
 
 use chrono::{DateTime, Utc};
-use ferret_api::{ContentType, SourceCount, ThreadCount, ThreadIdentity, Writer};
+use ferret_api::{ContentType, SourceCount, Writer};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use crate::{content_type, sources, threads, writers::Writers};
+use crate::{content_type, sources, writers::Writers};
 
 pub const MAX_LIMIT: i64 = 100;
 /// Authors are the one facet that grows with the data, so only the most frequent ones count,
@@ -22,7 +22,6 @@ pub struct ExploreFilter {
     pub content_types: Vec<ContentType>,
     /// Documents with at least one of these authors. Empty: any author.
     pub authors: Vec<String>,
-    pub threads: Vec<ThreadIdentity>,
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,
 }
@@ -73,14 +72,6 @@ pub struct FacetCount {
     pub count: i64,
 }
 
-#[derive(sqlx::FromRow)]
-struct ThreadRow {
-    source: String,
-    thread: String,
-    title: Option<String>,
-    count: i64,
-}
-
 /// How many documents each facet value has. A facet's counts apply every filter except its own,
 /// so they show what choosing another value of it would give.
 pub struct Facets {
@@ -89,7 +80,6 @@ pub struct Facets {
     pub content_types: Vec<FacetCount>,
     /// The most frequent ones and the selected ones.
     pub authors: Vec<FacetCount>,
-    pub threads: Vec<ThreadCount>,
     /// `YYYY-MM` of `created_at` in UTC, newest first.
     pub months: Vec<FacetCount>,
 }
@@ -118,7 +108,6 @@ enum Facet {
     Source,
     ContentType,
     Author,
-    Thread,
     Month,
 }
 
@@ -139,7 +128,6 @@ pub async fn explore(
             "{invalid:?} is not a source path like `notes` or `mail/personal`"
         )));
     }
-    threads::validate(&filter.threads).map_err(ExploreError::Invalid)?;
     if !(1..=MAX_LIMIT).contains(&page.limit) || page.offset < 0 {
         return Err(ExploreError::Invalid(format!(
             "the limit must be between 1 and {MAX_LIMIT}, the offset at least 0"
@@ -223,15 +211,6 @@ pub async fn explore(
         .push_bind(filter.authors.clone())
         .push("::text[]) order by count desc, value");
 
-    let mut by_thread = QueryBuilder::new(
-        "select d.source, d.thread, count(*),
-                (array_agg(d.title order by d.created_at desc nulls last, d.id desc)
-                     filter (where d.title is not null and d.title != ''))[1] as title
-         from documents d",
-    );
-    push_filters(&mut by_thread, user_id, filter, Some(Facet::Thread));
-    by_thread.push(" and d.thread is not null group by d.source, d.thread order by count(*) desc, d.source, d.thread");
-
     let mut by_month = QueryBuilder::new(
         "select to_char(d.created_at at time zone 'UTC', 'YYYY-MM') as value, count(*)
          from documents d",
@@ -265,27 +244,6 @@ pub async fn explore(
         .build_query_as()
         .fetch_all(&mut *connection)
         .await?;
-    let thread_rows: Vec<ThreadRow> = by_thread
-        .build_query_as()
-        .fetch_all(&mut *connection)
-        .await?;
-    let mut threads: Vec<ThreadCount> = thread_rows
-        .into_iter()
-        .map(|row| ThreadCount {
-            source: row.source,
-            thread: row.thread,
-            title: row.title,
-            count: u32::try_from(row.count).expect("a count is never negative"),
-        })
-        .collect();
-    threads::complete_counts(
-        &mut connection,
-        user_id,
-        None,
-        &filter.threads,
-        &mut threads,
-    )
-    .await?;
     let months = by_month
         .build_query_as()
         .fetch_all(&mut *connection)
@@ -312,7 +270,6 @@ pub async fn explore(
             sources,
             content_types,
             authors,
-            threads,
             months,
         },
     })
@@ -346,10 +303,6 @@ fn push_filters(
         sql.push(" and d.authors && ")
             .push_bind(filter.authors.clone())
             .push("::text[]");
-    }
-    if applies(Facet::Thread) && !filter.threads.is_empty() {
-        sql.push(" and ");
-        threads::push_filter(sql, &filter.threads);
     }
     if applies(Facet::Month) {
         if let Some(from) = filter.from {

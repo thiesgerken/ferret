@@ -120,7 +120,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     git::glob_set(&config.exclude)?;
     git::glob_set(&config.markdown)?;
 
-    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
+    let sync = run.api.start_sync(&run.source).await?.sync_id;
     let repositories = gitea
         .all::<Repository>("user/repos", |repo| repo.id)
         .await?;

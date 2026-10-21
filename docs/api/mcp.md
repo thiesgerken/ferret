@@ -20,7 +20,7 @@ Use your actual HTTPS origin and key. This is Streamable HTTP, not stdio or the 
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `list_sources` | `{}` | sources visible to the key, counts and writer names |
-| `search` | `query`; optional `sources`, `authors`, `threads`, `mode`, `model`, `limit`, `cursor` | hits with best matching chunk, origin URL, metadata, total and next cursor |
+| `search` | `query`; optional `sources`, `mode`, `model`, `limit`, `cursor` | hits with best matching chunk, origin URL, metadata, total and next cursor |
 | `get_document` | `id` (a hit's document UUID) | full authorized text and metadata |
 
 For example, MCP `tools/call` parameters are:
@@ -30,8 +30,6 @@ For example, MCP `tools/call` parameters are:
 ```
 
 Then call `get_document` with the returned `document_id`, or use the hit's `url` with the origin's own tools. `external_id` is not the UUID expected by `get_document`. `list_sources` takes no filters. `search` defaults to hybrid and ten hits, accepts limits 1 through 100, collapses threads, and returns `next_cursor` for subsequent pages. Pass the same search arguments with that cursor; it is not a snapshot of a changing index.
-
-`threads` is an array of exact source/thread objects, for example `{"query":"car","authors":["Me"],"threads":[{"source":"chats/personal","thread":"alice"}]}`. Values inside a filter are alternatives; author/thread/source/query filters combine. A thread id alone is not globally unique. Authors describe the actual speakers of a document, not its chat's name; selecting a thread without an author also includes outgoing-only segments. Retain these filters when requesting the next cursor.
 
 Search hits and full-document responses carry independently nullable `created_at` and `modified_at` origin dates. Null means unknown, not the ingestion date. Unfiltered search includes undated documents; explicit creation-date bounds exclude unknown creation dates.
 

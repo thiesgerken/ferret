@@ -556,7 +556,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         run.log
             .line("full reconciliation: no reusable inventory/settings");
     }
-    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
+    let sync = run.api.start_sync(&run.source).await?.sync_id;
     let mut stats = RunStats::default();
     let mut pending = vec![String::new()];
     let mut generation = None;

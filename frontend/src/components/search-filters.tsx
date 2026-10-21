@@ -7,7 +7,6 @@ import type { SearchHitsQuery } from "@/gql/graphql";
 import { NamedIcon } from "@/components/named-icon";
 import { TIME_RANGES, matchingOn, toggle, toggleMatching, type SearchState, type TimeRange } from "@/lib/search-url";
 import { sourceLabel, type SourceLabel } from "@/lib/source-label";
-import { threadKey, threadLabel, toggleThread, withSelectedThreads } from "@/lib/thread-filter";
 import { cn } from "@/lib/utils";
 
 /** How many authors get a filter, most matches first. The facet has more, the column stays short. */
@@ -43,8 +42,6 @@ export function SearchFilters({
   const writerOf = (source: string) => sourceFacets.find((facet) => facet.value === source)?.writer ?? null;
   const groups = groupByWriter(withSelected(sourceFacets, state.sources), writerOf);
   const authors = withSelected(facets?.authors ?? [], state.authors).slice(0, Math.max(MAX_AUTHORS, state.authors.length));
-  const threads = withSelectedThreads(facets?.threads ?? [], state.threads);
-  const selectedThreads = new Set(state.threads.map(threadKey));
   const counted = (count: number | null) => (count === null ? null : `${count}${facets?.areLowerBounds ? "+" : ""}`);
 
   return (
@@ -149,26 +146,6 @@ export function SearchFilters({
           ))}
         </FilterGroup>
       )}
-      {threads.length > 0 && (
-        <FilterGroup title={t("threads")}>
-          {threads.map((thread) => {
-            const name = threadLabel(thread, threads);
-            const typedName = t("thread", { name });
-            return (
-              <FilterButton
-                key={threadKey(thread)}
-                label={typedName}
-                short={name}
-                ariaLabel={typedName}
-                title={`${thread.source} · ${thread.thread}`}
-                count={counted(thread.count)}
-                pressed={selectedThreads.has(threadKey(thread))}
-                onClick={() => onChange({ ...state, threads: toggleThread(state.threads, thread) })}
-              />
-            );
-          })}
-        </FilterGroup>
-      )}
     </nav>
   );
 }
@@ -189,7 +166,6 @@ function FilterButton({
   label,
   short,
   title,
-  ariaLabel,
   count,
   pressed,
   disabled,
@@ -200,7 +176,6 @@ function FilterButton({
   /** What the column shows under a writer's heading instead of the full label. */
   short?: string;
   title?: string;
-  ariaLabel?: string;
   /** Null for a selected value the facet doesn't list. */
   count: string | null;
   pressed: boolean;
@@ -211,7 +186,6 @@ function FilterButton({
     <button
       type="button"
       aria-pressed={pressed}
-      aria-label={ariaLabel}
       disabled={disabled}
       onClick={onClick}
       title={title}

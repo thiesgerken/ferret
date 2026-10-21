@@ -42,7 +42,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let documents = render::documents(&snapshot, &run.source, &links)?;
     // A disconnect while completing the required reads must not authorize a sweep.
     session.close().await?;
-    let sync = run.api.start_sync(&run.source, None).await?.sync_id;
+    let sync = run.api.start_sync(&run.source).await?.sync_id;
     let mut stats = RunStats::default();
     for document in documents {
         match run.api.put_document(&document).await? {

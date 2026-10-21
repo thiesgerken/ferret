@@ -15,7 +15,6 @@ import { sourceLabel } from "@/lib/source-label";
 import { SourceName } from "@/components/source-name";
 import { cn } from "@/lib/utils";
 import { viewerHref } from "@/lib/viewer-url";
-import { parseThread, threadKey, threadLabel, toggleThread, withSelectedThreads } from "@/lib/thread-filter";
 
 const ExploreDocumentsQueryDocument = graphql(`
   query ExploreDocuments($input: ExploreInput!) {
@@ -54,12 +53,6 @@ const ExploreDocumentsQueryDocument = graphql(`
         }
         authors {
           value
-          count
-        }
-        threads {
-          source
-          thread
-          title
           count
         }
         months {
@@ -111,7 +104,6 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
       sources: state.sources.length > 0 ? state.sources : null,
       contentTypes: state.contentTypes.length > 0 ? state.contentTypes : null,
       authors: state.authors.length > 0 ? state.authors : null,
-      threads: state.threads.length > 0 ? state.threads : null,
       ...(state.month ? monthRange(state.month) : {}),
       orderBy: state.orderBy,
       descending: state.descending,
@@ -137,7 +129,6 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
   }
   const { total, documents, facets } = data.explore;
   const writerOf = (source: string) => facets.sources.find((facet) => facet.value === source)?.writer ?? null;
-  const threads = withSelectedThreads(facets.threads, state.threads);
 
   return (
     <div className="grid gap-8 md:grid-cols-[14rem_1fr]">
@@ -165,13 +156,6 @@ export function Explore({ state, onChange }: { state: ExploreState; onChange: (s
           values={withSelected(facets.authors, state.authors)}
           selected={state.authors}
           onToggle={(author) => narrow({ authors: toggle(state.authors, author) })}
-        />
-        <FacetList
-          title={t("threads")}
-          values={threads.map((thread) => ({ value: threadKey(thread), count: thread.count }))}
-          selected={state.threads.map(threadKey)}
-          label={(value) => threadLabel(threads.find((thread) => threadKey(thread) === value)!, threads)}
-          onToggle={(value) => narrow({ threads: toggleThread(state.threads, parseThread(value)) })}
         />
         <FacetList
           title={t("month")}

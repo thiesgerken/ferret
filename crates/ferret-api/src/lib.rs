@@ -131,25 +131,6 @@ pub struct ThreadResponse {
     pub documents: Vec<Document>,
 }
 
-/// A thread's identity is local to one exact source, never a source subtree.
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(deny_unknown_fields)]
-pub struct ThreadIdentity {
-    pub source: String,
-    pub thread: String,
-}
-
-fn query_threads<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<ThreadIdentity>, D::Error> {
-    Vec::<String>::deserialize(deserializer)?
-        .into_iter()
-        .map(|value| serde_json::from_str(&value).map_err(serde::de::Error::custom))
-        .collect()
-}
-
 /// The parameters of `GET /api/search`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -167,10 +148,6 @@ pub struct SearchQuery {
     /// in the query string.
     #[serde(default, rename = "author")]
     pub authors: Vec<String>,
-    /// Exact source/thread alternatives, combined with the other filters. Repeated `thread=`,
-    /// each containing a JSON `{"source":"…","thread":"…"}` object.
-    #[serde(default, rename = "thread", deserialize_with = "query_threads")]
-    pub threads: Vec<ThreadIdentity>,
     /// Only documents created at or after this time.
     pub from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -219,8 +196,6 @@ pub struct SearchFacets {
     pub sources: Vec<SourceCount>,
     /// The 20 most frequent authors and the selected ones.
     pub authors: Vec<FacetCount>,
-    /// Matching threads and the selected ones, labelled by a document's title.
-    pub threads: Vec<ThreadCount>,
     /// The counts may be short, as `total_is_lower_bound` says for `total`.
     pub are_lower_bounds: bool,
 }
@@ -228,14 +203,6 @@ pub struct SearchFacets {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FacetCount {
     pub value: String,
-    pub count: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ThreadCount {
-    pub source: String,
-    pub thread: String,
-    pub title: Option<String>,
     pub count: u32,
 }
 
@@ -318,6 +285,7 @@ pub struct TextPart {
 pub struct SyncStart {
     /// Without `thread`, this source and everything below it. With `thread`, this exact source.
     pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thread: Option<String>,
 }
 
@@ -490,12 +458,6 @@ impl Client {
                 .iter()
                 .map(|author| ("author", author.clone())),
         );
-        params.extend(query.threads.iter().map(|thread| {
-            (
-                "thread",
-                serde_json::to_string(thread).expect("a thread identity serializes"),
-            )
-        }));
         params.extend(query.from.map(|from| ("from", from.to_rfc3339())));
         params.extend(query.to.map(|to| ("to", to.to_rfc3339())));
         params.extend(query.k.map(|k| ("k", k.to_string())));
@@ -518,16 +480,30 @@ impl Client {
             .await
     }
 
-    /// Starts a subtree sync, or with `thread` only that exact source/thread. Needs `ingest:write`.
-    pub async fn start_sync(
+    /// Starts a sync over `source` and everything below it. Needs the `ingest:write` scope.
+    pub async fn start_sync(&self, source: &str) -> Result<SyncStarted, reqwest::Error> {
+        self.api(reqwest::Method::POST, "/api/syncs")
+            .json(&SyncStart {
+                source: source.to_owned(),
+                thread: None,
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
+    /// Starts a sync of one exact source/thread. Needs the `ingest:write` scope.
+    pub async fn start_thread_sync(
         &self,
         source: &str,
-        thread: Option<&str>,
+        thread: &str,
     ) -> Result<SyncStarted, reqwest::Error> {
         self.api(reqwest::Method::POST, "/api/syncs")
             .json(&SyncStart {
                 source: source.to_owned(),
-                thread: thread.map(str::to_owned),
+                thread: Some(thread.to_owned()),
             })
             .send()
             .await?

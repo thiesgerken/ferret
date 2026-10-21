@@ -12,7 +12,6 @@ const STATE: ExploreState = {
   sources: [],
   contentTypes: [],
   authors: [],
-  threads: [],
   month: null,
   orderBy: "CREATED_AT",
   descending: true,
@@ -48,9 +47,6 @@ const EXPLORATION = {
     ],
     contentTypes: [{ __typename: "ContentTypeCount", contentType: "EMAIL", count: 51 }],
     authors: [{ __typename: "FacetCount", value: "Ada", count: 30 }],
-    threads: Array.from({ length: 26 }, (_, index) => ({
-      __typename: "ThreadFacet", source: "mail/personal", thread: `thread-${index}`, title: `Thread ${index}`, count: 26 - index,
-    })),
     months: [{ __typename: "FacetCount", value: "2026-01", count: 51 }],
   },
 };
@@ -85,7 +81,6 @@ test("lists a page of documents that open the viewer, with facet counts", async 
       sources: null,
       contentTypes: null,
       authors: null,
-      threads: null,
       from: "2026-01-01T00:00:00.000Z",
       to: "2026-02-01T00:00:00.000Z",
       orderBy: "CREATED_AT",
@@ -139,15 +134,5 @@ test("a column header sorts by it, and again reverses", async () => {
       ["CREATED_AT", false],
     ],
   );
-  await view.unmount();
-});
-
-test("a low-volume thread is selectable without changing the author or source filters", async () => {
-  const { view, changes, button } = await renderExplore({ ...STATE, authors: ["Ada"], sources: ["mail"] });
-  await act(async () => button("Thread 25").click());
-  assert.deepEqual(changes, [{
-    ...STATE, page: 0, authors: ["Ada"], sources: ["mail"],
-    threads: [{ source: "mail/personal", thread: "thread-25" }],
-  }]);
   await view.unmount();
 });

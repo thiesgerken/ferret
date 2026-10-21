@@ -115,9 +115,7 @@
       "defaultModelRan": "Default model ({model})",
       "sources": "Sources",
       "allOfWriter": "All",
-      "authors": "Authors",
-      "threads": "Threads",
-      "thread": "Thread: {name}"
+      "authors": "Authors"
     }
   },
   "viewer": {
@@ -401,7 +399,6 @@
     "sources": "Sources",
     "type": "Type",
     "authors": "Authors",
-    "threads": "Threads",
     "month": "Month",
     "title": "Title",
     "source": "Source",

@@ -233,7 +233,6 @@ impl Query {
             facets: SearchFacets {
                 sources: source_counts(response.facets.sources),
                 authors: search_facet_counts(response.facets.authors),
-                threads: thread_counts(response.facets.threads),
                 are_lower_bounds: response.facets.are_lower_bounds,
             },
             took_ms: graphql_int(response.took_ms),
@@ -254,12 +253,6 @@ impl Query {
                 .map(ferret_api::ContentType::from)
                 .collect(),
             authors: input.authors.unwrap_or_default(),
-            threads: input
-                .threads
-                .unwrap_or_default()
-                .into_iter()
-                .map(ferret_api::ThreadIdentity::from)
-                .collect(),
             from: input.from,
             to: input.to,
         };
@@ -629,8 +622,6 @@ struct SearchInput {
     sources: Option<Vec<String>>,
     /// Only documents with at least one of these authors. Leave out for any author.
     authors: Option<Vec<String>>,
-    /// Exact source/thread alternatives. Combined with the other filters.
-    threads: Option<Vec<ThreadInput>>,
     /// Only documents of these content types. Leave out for all.
     content_types: Option<Vec<ContentType>>,
     /// Only documents created at or after this time.
@@ -651,21 +642,6 @@ struct SearchInput {
     mode: Option<SearchMode>,
 }
 
-#[derive(GraphQLInputObject)]
-struct ThreadInput {
-    source: String,
-    thread: String,
-}
-
-impl From<ThreadInput> for ferret_api::ThreadIdentity {
-    fn from(thread: ThreadInput) -> Self {
-        Self {
-            source: thread.source,
-            thread: thread.thread,
-        }
-    }
-}
-
 const DEFAULT_EXPLORE_LIMIT: i32 = 50;
 
 #[derive(GraphQLInputObject)]
@@ -676,8 +652,6 @@ struct ExploreInput {
     content_types: Option<Vec<ContentType>>,
     /// Only documents with at least one of these authors. Leave out for any author.
     authors: Option<Vec<String>>,
-    /// Exact source/thread alternatives. Combined with the other filters.
-    threads: Option<Vec<ThreadInput>>,
     /// Only documents created at or after this time.
     from: Option<DateTime<Utc>>,
     /// Only documents created before this time.
@@ -733,7 +707,6 @@ struct Facets {
     content_types: Vec<ContentTypeCount>,
     /// The 20 most frequent authors.
     authors: Vec<FacetCount>,
-    threads: Vec<ThreadFacet>,
     /// `YYYY-MM` of `createdAt` in UTC, newest first.
     months: Vec<FacetCount>,
 }
@@ -926,7 +899,6 @@ impl From<explore::Exploration> for Exploration {
                     })
                     .collect(),
                 authors: counts(facets.authors),
-                threads: thread_counts(facets.threads),
                 months: counts(facets.months),
             },
         }
@@ -972,12 +944,6 @@ impl SearchInput {
             q: self.q,
             sources: self.sources.unwrap_or_default(),
             authors: self.authors.unwrap_or_default(),
-            threads: self
-                .threads
-                .unwrap_or_default()
-                .into_iter()
-                .map(ferret_api::ThreadIdentity::from)
-                .collect(),
             content_types: self
                 .content_types
                 .unwrap_or_default()
@@ -1088,30 +1054,8 @@ struct SearchFacets {
     sources: Vec<SourceCount>,
     /// The 20 most frequent authors and the selected ones.
     authors: Vec<FacetCount>,
-    /// Matching threads and selected ones, labelled by a document title.
-    threads: Vec<ThreadFacet>,
     /// True when the counts may be short, as `totalIsLowerBound` says for `total`.
     are_lower_bounds: bool,
-}
-
-#[derive(GraphQLObject)]
-struct ThreadFacet {
-    source: String,
-    thread: String,
-    title: Option<String>,
-    count: i32,
-}
-
-fn thread_counts(counts: Vec<ferret_api::ThreadCount>) -> Vec<ThreadFacet> {
-    counts
-        .into_iter()
-        .map(|facet| ThreadFacet {
-            source: facet.source,
-            thread: facet.thread,
-            title: facet.title,
-            count: graphql_int(facet.count),
-        })
-        .collect()
 }
 
 fn search_facet_counts(counts: Vec<ferret_api::FacetCount>) -> Vec<FacetCount> {
