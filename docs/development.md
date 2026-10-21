@@ -188,6 +188,7 @@ Renovate updates Nix inputs/`flake.lock` as well as the existing Rust/frontend d
 ```sh
 # On Apple Silicon:
 nix build .#ci-tools --out-link result-ci-tools
+export PATH="$PWD/result-ci-tools/bin:$PATH"
 export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
 result-ci-tools/bin/python scripts/update-nix-deps.py --system aarch64-linux
 # On native x64 Linux, use --system x86_64-linux instead.
