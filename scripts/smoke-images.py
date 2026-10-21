@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise locally loaded images in an isolated, disposable Compose project."""
 
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import json
 from pathlib import Path
 import re
@@ -47,8 +47,6 @@ def eventually(operation, timeout=120):
 def smoke_whatsapp_archive(state, architecture):
     archive_dir = state / "archive"
     archive_dir.mkdir()
-    # Only synthetic fixture data lives here; the container's UID must create its database.
-    archive_dir.chmod(0o777)
     database = archive_dir / "wacli.db"
     token = secrets.token_hex(32)
     token_file = state / "archive-token"
@@ -56,7 +54,7 @@ def smoke_whatsapp_archive(state, architecture):
     token_file.chmod(0o644)
     name = f"ferret-archive-smoke-{uuid.uuid4().hex[:10]}"
     fixture = ROOT / "crates/ferret-whatsapp-archive/tests/fixtures/wacli-v0.22.0.sql"
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db:
         db.executescript(fixture.read_text())
     database.chmod(0o644)
     with ExitStack() as cleanup:
