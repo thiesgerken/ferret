@@ -276,7 +276,7 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
             .any(|doc| doc.0 == "file:renamed.txt")
     );
 
-    // A complete directory body above the HTTP hard limit must fail, not truncate or sweep.
+    // Capping listing text must preserve traversal and successful deletion reconciliation.
     fs::create_dir(root.join("zz-large")).unwrap();
     for i in 0..12500 {
         fs::write(
@@ -286,7 +286,34 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
         )
         .unwrap();
     }
+    fs::write(
+        root.join("zz-large/zz-content.md"),
+        "directorycaptraversalproof",
+    )
+    .unwrap();
     fs::remove_file(root.join("oversize.txt")).unwrap();
+    due(&pool, connection, &config).await;
+    execute(&server, worker).await.1.unwrap();
+    let capped = documents(&pool).await;
+    let listing = &capped.iter().find(|doc| doc.0 == "dir:zz-large").unwrap().2;
+    assert!(listing.len() <= 1_048_576);
+    assert!(listing.contains("of 12501 immediate children shown."));
+    assert!(!listing.contains("zz-content.md"));
+    assert_eq!(
+        capped
+            .iter()
+            .find(|doc| doc.0 == "file:zz-large/zz-content.md")
+            .unwrap()
+            .2,
+        "directorycaptraversalproof"
+    );
+    assert!(!capped.iter().any(|doc| doc.0 == "file:oversize.txt"));
+
+    // File contents remain complete; HTTP rejection cannot authorize a deletion sweep.
+    const REJECTED_SIZE: usize = 4 * 1024 * 1024;
+    fs::write(root.join("zz-too-large.txt"), "x".repeat(REJECTED_SIZE)).unwrap();
+    fs::remove_file(root.join("private/secret.txt")).unwrap();
+    config["max_file_size"] = json!(REJECTED_SIZE);
     due(&pool, connection, &config).await;
     let (_, failed, _) = execute(&server, worker).await;
     assert!(failed.err().unwrap().to_string().contains("413"));
@@ -294,17 +321,21 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
         documents(&pool)
             .await
             .iter()
-            .any(|doc| doc.0 == "file:oversize.txt")
+            .any(|doc| doc.0 == "file:private/secret.txt")
     );
+    fs::remove_file(root.join("zz-too-large.txt")).unwrap();
+    config["max_file_size"] = json!(65);
     fs::remove_dir_all(root.join("zz-large")).unwrap();
     due(&pool, connection, &config).await;
     execute(&server, worker).await.1.unwrap();
-    assert!(
-        !documents(&pool)
-            .await
-            .iter()
-            .any(|doc| doc.0 == "file:oversize.txt")
-    );
+    let recovered = documents(&pool).await;
+    for removed in [
+        "file:private/secret.txt",
+        "dir:zz-large",
+        "file:zz-large/zz-content.md",
+    ] {
+        assert!(!recovered.iter().any(|doc| doc.0 == removed), "{removed}");
+    }
 
     // This mount started empty and every child was created by this test.
     for child in fs::read_dir(root).unwrap() {

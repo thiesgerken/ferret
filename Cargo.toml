@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.31.0"
+version = "0.31.2"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -12,7 +12,7 @@ publish = false
 ferret-api = { path = "crates/ferret-api" }
 argon2 = "0.6"
 async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
-base64 = "0.22"
+base64 = "0.23"
 chacha20poly1305 = "0.11"
 chrono = { version = "0.4", default-features = false }
 croner = "4"
@@ -24,7 +24,7 @@ globset = "0.4"
 jsonschema = { version = "0.59", default-features = false }
 lol_html = "3"
 mail-parser = "0.11"
-parking_lot = "0.12"
+parking_lot = "0.13"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.

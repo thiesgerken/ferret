@@ -92,7 +92,7 @@ in
       pkgs.bash
       pkgs.coreutils
       pkgs.uv
-      pkgs.python314
+      pkgs.python315
       pkgs.git
       pkgs.cacert
     ];

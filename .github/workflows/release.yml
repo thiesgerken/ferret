@@ -35,7 +35,7 @@ jobs:
           time nix build .#release-tools --out-link result-release-tools --print-build-logs
           echo "$PWD/result-release-tools/bin" >> "$GITHUB_PATH"
           echo "SSL_CERT_FILE=$PWD/result-release-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-          echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14" >> "$GITHUB_ENV"
+          echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.15" >> "$GITHUB_ENV"
       # Not the python-semantic-release action: it builds its image with an
       # unpinned `gitpython ~= 3.0`, and 3.1.60 dropped Actor.name_email_regex,
       # which psr 10.6.1 still uses. Drop the --with once psr releases a fix.

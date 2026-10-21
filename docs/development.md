@@ -121,7 +121,7 @@ result-build-tool/bin/nix-fast-build --no-nom \
   --out-link result-ci --result-file dist/ci-results.json
 ```
 
-The resulting `result-ci-tools/bin` contains Bash, coreutils, Git, Skopeo, Helm, Python and the other CI commands; the profile also supplies the CA bundle. `result-ci-release-tools` supplies the selected Rust toolchain, uv and Python 3.14. Reuse these realized profiles instead of repeatedly starting tool shells:
+The resulting `result-ci-tools/bin` contains Bash, coreutils, Git, Skopeo, Helm, Python and the other CI commands; the profile also supplies the CA bundle. `result-ci-release-tools` supplies the selected Rust toolchain, uv and Python 3.15. Reuse these realized profiles instead of repeatedly starting tool shells:
 
 ```sh
 export PATH="$PWD/result-ci-tools/bin:$PATH"
@@ -159,8 +159,8 @@ contents before the test writes, and configure PostgreSQL dynamic shared memory 
 does not populate that fixture. No host mount, sudo or extra build privilege is needed. The sandbox
 owns and destroys the mount on either build outcome; service exit/failure hooks stop the database
 and mail server. The test creates and removes only its own content, exercising the real server and
-database, inventory reuse, links, filters, failure/no-sweep recovery, a directory above the request
-hard limit and an available empty share.
+database, inventory reuse, links, filters, failure/no-sweep recovery, a capped large-directory
+listing without lost traversal, HTTP payload rejection without a sweep and an available empty share.
 
 For manual Linux tests outside Nix, provide an empty disposable directory mounted directly at the
 configured path (for example an isolated container volume), then export `FERRET_TEST_FILES_ROOT`.

@@ -1,6 +1,6 @@
 # Mounted files
 
-The `files` plugin discovers a Linux-mounted filesystem tree. Each included directory, including the share root and empty directories, becomes a document listing exactly its immediate children. Selected UTF-8 files also become complete-content documents. PDFs, Office documents, images, music and videos remain discoverable by filename and metadata in directory documents. No converters run, no original binary files are stored, and Ferret does not serve or proxy files.
+The `files` plugin discovers a Linux-mounted filesystem tree. Each included directory, including the share root and empty directories, becomes a document listing its immediate children, capped at 1 MiB with an explicit truncation count. Selected UTF-8 files also become complete-content documents. PDFs, Office documents, images, music and videos are discoverable by filename and metadata when included in directory documents. No converters run, no original binary files are stored, and Ferret does not serve or proxy files.
 
 ## Mount the origin first
 
@@ -39,7 +39,7 @@ Once the worker registers `files`, select it in **Connections → Create**. Ente
 }
 ```
 
-The schema-driven form describes additive filters. `root` and `origin_url_prefix` are required. Both glob lists default to empty, extending rather than replacing bundled behavior. `max_file_size` defaults to 1 MiB (1,048,576 bytes), with an inclusive byte boundary. A zero limit permits only empty text files. The limit applies to individual plaintext files, never generated directory listings.
+The schema-driven form describes additive filters. `root` and `origin_url_prefix` are required. Both glob lists default to empty, extending rather than replacing bundled behavior. `max_file_size` defaults to 1 MiB (1,048,576 bytes), with an inclusive byte boundary. A zero limit permits only empty text files. The limit applies to individual plaintext files; directory listings have an independent, fixed 1 MiB text cap.
 
 Globs use the existing Git plugin's `globset` syntax against slash-separated share-relative paths. Match a directory itself (for example `**/private`) to prune its entire subtree. `**/private/**` alone matches descendants, not the parent name. Ordinary hidden entries remain eligible. `Archive`, `Backup`, `build`, `dist`, `target` and `vendor` are not bundled exclusions.
 
@@ -49,7 +49,9 @@ Use existing UTC cron scheduling, for example `0 2,14 * * *` twice daily, or **R
 
 All documents belong directly to the connection's configured source root, with no filesystem-derived sources. External identities are `dir:` for the root, `dir:Projects/demo` for a directory and `file:Projects/demo/main.rs` for file contents. A rename removes the old identity and creates the new one on successful reconciliation. File and directory namespaces cannot collide when a path changes kind.
 
-Directory text contains its share-relative path (`/ (share root)` at the root) and alphabetically sorted JSON lines with immediate-child names, kinds and nanosecond UTC modification timestamps. Regular files also have sizes in bytes. JSON escaping keeps newline, quotation-mark and Markdown-like names unambiguous. Symlinks describe the link's metadata, not its target, and are never followed, including loops and links outside the mount. Special filesystem objects are listing-only. Non-UTF-8 filenames and unsupported timestamps fail explicitly rather than silently omitting names. Directory listings are never truncated; an ingestion/request hard limit fails the run without a sweep.
+Directory text contains its share-relative path (`/ (share root)` at the root) and alphabetically sorted JSON lines with immediate-child names, kinds and nanosecond UTC modification timestamps. Regular files also have sizes in bytes. JSON escaping keeps newline, quotation-mark and Markdown-like names unambiguous. Symlinks describe the link's metadata, not its target, and are never followed, including loops and links outside the mount. Special filesystem objects are listing-only. Non-UTF-8 filenames and unsupported timestamps fail explicitly rather than silently omitting names.
+
+Each listing's UTF-8 text is capped at 1 MiB (1,048,576 bytes), including its header and any truncation notice. Listings that fit remain complete. Larger listings retain an alphabetical prefix of complete JSON lines and end with `Listing truncated: N of M immediate children shown.` Entries and UTF-8 characters are never cut in half. Names omitted from that directory document are not searchable through it. Truncation affects only the listing text: every child is still traversed and inventoried, eligible file contents are still indexed, and successful runs still reconcile deletions. An ingestion/request hard limit still fails the run without a sweep.
 
 File documents contain complete text or nothing. `.md` and `.markdown` use Markdown content type; all other selected files are plain text. Origin creation dates and authors remain unknown. File modification dates come from filesystem mtime, not ingestion time or ctime. Directory modification dates are unknown because the directory's own mtime does not cover edits to existing children. Metadata includes `kind` and the share-relative `path`.
 
@@ -75,7 +77,7 @@ GNUmakefile Dockerfile Containerfile Justfile justfile Gemfile Rakefile Procfile
 .gitignore .gitattributes .editorconfig .env
 ```
 
-Valid UTF-8 includes ASCII. Selected invalid-encoding, NUL-containing/binary or oversized files are intentional logged skips, remaining visible in their parent listing. The plugin never stores a truncated prefix, executes files, unpacks archives or converts encodings. Unexpected selected-file read errors fail the run. Changes observed between enumeration and reading also fail safely and can be retried against the live tree.
+Valid UTF-8 includes ASCII. Selected invalid-encoding, NUL-containing/binary or oversized files are intentional logged skips, eligible to appear in their parent listing subject to its text cap. The plugin never stores a truncated file-content prefix, executes files, unpacks archives or converts encodings. Unexpected selected-file read errors fail the run. Changes observed between enumeration and reading also fail safely and can be retried against the live tree.
 
 ## Mandatory exclusions
 

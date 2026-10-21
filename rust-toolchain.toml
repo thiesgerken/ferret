@@ -1,6 +1,6 @@
 # Nix consumes this selection for developer tooling, checks, and release binaries so compiler
 # and Clippy updates remain reviewable dependency changes.
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
