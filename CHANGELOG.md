@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.31.3 (2026-10-21)
+
+
+### Other
+
+
+- Merge pull request #188 from thiesgerken/fix/renovate-helm-digest-pinning
+  ([`235790d`](https://github.com/thiesgerken/ferret/commit/235790d0bc22e203c5ea36e1e34cb68ed92a996a))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(renovate): fix Helm values digest pinning rule
+  ([`235790d`](https://github.com/thiesgerken/ferret/commit/235790d0bc22e203c5ea36e1e34cb68ed92a996a))
+
+- 🔧 chore(renovate): fix Helm values digest pinning rule
+  ([`0a2cc77`](https://github.com/thiesgerken/ferret/commit/0a2cc7795a5472188f073a7363c84e148c6b5407))
+
 ## v0.31.2 (2026-10-21)
 
 

@@ -234,6 +234,8 @@ Determinate Nix and a FlakeHub login are required; no FlakeHub project cache is 
 
 ## Dependency updates and publication
 
+[renovate.json](../renovate.json) configures automated dependency updates. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
+
 Renovate updates Nix inputs/`flake.lock` as well as the existing Rust/frontend dependencies. pnpm uses official native upstream release archives, pinned by SHA-256 in `nix/pnpm-binaries.json` and asserted against `packageManager`; it is not rebuilt from pnpm's Rust workspace or replaced by stable nixpkgs' older pnpm. After changing that declaration or `frontend/pnpm-lock.yaml` (including on a Renovate PR), refresh the binary pins and fixed-output cache with the pinned tooling:
 
 ```sh
