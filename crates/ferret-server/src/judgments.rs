@@ -19,6 +19,7 @@ use crate::{content_type, search::RelativeRange};
 struct Filters<'a> {
     sources: Vec<&'a str>,
     authors: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     threads: Vec<&'a ferret_api::ThreadIdentity>,
     content_types: Vec<&'static str>,
     from: Option<DateTime<Utc>>,

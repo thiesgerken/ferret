@@ -1,10 +1,7 @@
 //! Ingest: documents in, chunks out. `PUT` is idempotent and cheap to repeat, so plugins can
 //! resend everything on every run.
 
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-};
+use std::collections::HashMap;
 
 use axum::{
     Json,
@@ -58,22 +55,6 @@ async fn put_document(
     connections::check_api_key_may_write(&state.pool, caller, &document.source, false).await?;
 
     let mut tx = state.pool.begin().await?;
-    if caller.is_plugin_run() {
-        for root in caller
-            .sources()
-            .expect("plugin run tokens have source roots")
-        {
-            if root != &document.source {
-                exclusions::lock_source(
-                    &mut tx,
-                    caller.user_id,
-                    root,
-                    exclusions::SourceLock::Shared,
-                )
-                .await?;
-            }
-        }
-    }
     exclusions::lock_source(
         &mut tx,
         caller.user_id,
@@ -98,24 +79,6 @@ async fn put_document(
     activity::record(&mut tx, caller, counts).await?;
     tx.commit().await?;
     Ok(response)
-}
-struct HashWriter(Sha256);
-
-impl Write for HashWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-pub(crate) fn content_hash(document: &DocumentPut) -> [u8; 32] {
-    let mut writer = HashWriter(Sha256::new());
-    serde_json::to_writer(&mut writer, document).expect("a document serializes");
-    writer.0.finalize().into()
 }
 
 fn normalize_document(document: &mut DocumentPut) -> Result<(), ApiError> {
@@ -410,7 +373,8 @@ async fn upsert(
     api_key_id: Option<Uuid>,
     document: &DocumentPut,
 ) -> Result<PutResponse, sqlx::Error> {
-    let content_hash = content_hash(document);
+    let content_hash =
+        Sha256::digest(serde_json::to_vec(document).expect("a document serializes")).to_vec();
     let stored = sqlx::query!(
         "select id, content_hash from documents
          where user_id = $1 and source = $2 and external_id = $3
@@ -450,7 +414,7 @@ async fn upsert(
                 document.modified_at,
                 Jsonb(&document.meta) as _,
                 document.text,
-                &content_hash[..],
+                content_hash,
                 api_key_id,
             )
             .execute(&mut *tx)
@@ -478,7 +442,7 @@ async fn upsert(
                 document.modified_at,
                 Jsonb(&document.meta) as _,
                 document.text,
-                &content_hash[..],
+                content_hash,
                 api_key_id,
             )
             .fetch_one(&mut *tx)

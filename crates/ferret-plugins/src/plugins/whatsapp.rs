@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use ferret_api::{ContentType, DocumentPut, NamespaceFlatten, PutResponse, internal::RunStats};
+use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
 use ferret_whatsapp_archive::{
     Archive, ChangesPage, Chat, ChatsPage, Message, MessageKey, MessagesPage,
 };
@@ -303,11 +303,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         let cursor: Cursor = serde_json::from_value(run.state.clone())
             .map_err(|_| "WhatsApp saved cursor is invalid")?;
         match cursor.version {
-            1 => {
-                run.log
-                    .line("Reconciling archive with flat sources and updated message rendering");
-                None
-            }
+            1 => return Err("WhatsApp cursor uses the old index layout; delete/recreate the WhatsApp connection to rebuild the flat index (indexed documents and remembered exclusions will be cleared; the native archive is untouched)".into()),
             2 => Some(cursor),
             _ => return Err("WhatsApp saved cursor version is unsupported".into()),
         }
@@ -393,19 +389,6 @@ async fn reconcile(
     let mut chats = client.chats().await?;
     validate_filters(settings, &chats)?;
     let root_sync = if full {
-        let moved = run
-            .api
-            .flatten_namespace(&NamespaceFlatten {
-                from_source_prefix: format!("{}/chats", run.source),
-                to_source: run.source.clone(),
-            })
-            .await?;
-        if moved.documents != 0 || moved.exclusions != 0 {
-            run.log.line(format!(
-                "Relocated {} document identities and {} exclusions without deleting content",
-                moved.documents, moved.exclusions
-            ));
-        }
         Some(run.api.start_sync(&run.source, None).await?.sync_id)
     } else {
         None

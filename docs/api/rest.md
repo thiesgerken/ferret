@@ -17,7 +17,7 @@ export FERRET_KEY='fk_replace_with_your_key'
 | 401 | missing, invalid, revoked or expired credential; ended run token |
 | 403 | missing scope, prohibited source, connection-owned write |
 | 404 | missing/unreadable document, unknown sync |
-| 409 | sync already committed; namespace identity collision or run ended during relocation |
+| 409 | sync already committed |
 | 415 / 422 | JSON content type / body deserialization rejection |
 | 500 | database/internal error (`{"error":"internal error"}`) |
 | 503 | semantic-only query cannot obtain its query embedding |
@@ -144,20 +144,6 @@ All three operations require `ingest:write`. JSON request types reject unknown f
 Start validates a complete authorized sweep root. Seen's exact source must be the root or a descendant; unknown external ids are ignored and not counted. Commit sweeps all root/descendant documents not put/seen since start and closes the sync. A repeated seen/commit after closure returns 409. Missing syncs return 404. Sync access is user/root-bound rather than exclusive to the creating key. Puts do not take a sync-id parameter. The [ingester workflow](../ingestion.md) explains why enumeration failure must never reach commit.
 
 An optional non-null `thread` on start narrows the sync to **that exact `(source,thread)` pair**. Its `seen` calls must name the exact source; ids from other threads do not count. Commit leaves sibling threads, unthreaded documents and descendants untouched. Omitting/nulling `thread` retains the subtree behavior above. The Rust client takes an explicit `Option<&str>` as its second `start_sync` argument.
-
-## Namespace relocation
-
-`POST /api/namespaces/flatten` is available only to a live owning plugin run, never an ordinary API key. Both paths must be within that connection's source root, and the destination must be outside the input subtree:
-
-```json
-{"from_source_prefix":"notes/old","to_source":"notes"}
-```
-
-For example, source `notes/old/topic` and external id `segment` become source `notes` and external id `topic/segment`. An external id directly in the input prefix remains unchanged. Thread strings are retained at the destination source. The same transform applies to **all** stored document and thread exclusions, including exclusions whose origin content is absent.
-
-The operation atomically preserves document UUIDs, payloads, seen timestamps, chunks and embeddings, while updating identities, derived source columns and content hashes. It is not a sweep or a successful plugin checkpoint. Document/exclusion collisions return 409 with the entire operation rolled back. A successful repeat against an empty old namespace moves nothing. The 200 response is `{"documents":12,"exclusions":2}` with actual moved counts.
-
-The connection-root/source guards serialize ingestion and exclusions during relocation. Live-run status is checked again before commit without blocking heartbeat updates for the long phase. Coordinate worker rollout so old implementations cannot recreate the old layout afterwards; there is no legacy alias or dual-source mode.
 
 ## Plugin inventory
 

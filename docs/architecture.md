@@ -34,7 +34,7 @@ flowchart LR
 
 An HTTP producer authenticates with an API key; a plugin uses its live run token. A put checks user/source ownership and exclusions, computes document change identity, updates text and chunk rows transactionally, and records writer activity. Unchanged puts mark the document seen without rewriting chunks. Full-listing producers use sync/seen/commit to sweep absent documents. See [ingestion](ingestion.md), [indexing](indexing.md) and [plugin contract](plugins/README.md).
 
-Syncs can optionally target one exact source/thread, leaving sibling threads and descendants alone. A live connection can also atomically flatten a source namespace while preserving document UUIDs, payloads, derived rows and exclusions. This generic identity operation precedes reconciliation and does not authorize sweeping incomplete imports. Plugins own their layout transforms; the core has no origin-specific source rules. See the [REST contracts](api/rest.md#reconciliation).
+Syncs can optionally target one exact source/thread, leaving sibling threads and descendants alone. This supports bounded per-thread reconciliation without turning chats into separate source namespaces. See the [REST contract](api/rest.md#reconciliation).
 
 The pump observes pending chunks, claims bounded work with database advisory locks and sends title/chunk inputs to the model's embedding endpoint. Ingestion does not wait for this network call. The same database coordinates multiple server pumps and run claims. Missing notifications are recovered by polling/reconnecting, not by requiring a separate message broker.
 

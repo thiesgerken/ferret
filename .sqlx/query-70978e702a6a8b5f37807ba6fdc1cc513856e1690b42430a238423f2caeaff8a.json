@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "delete from documents\n             where user_id = $1 and source = $2 and (external_id = $3 or thread = $4)",
+  "query": "delete from documents\n         where user_id = $1 and source = $2 and (external_id = $3 or thread = $4)",
   "describe": {
     "columns": [],
     "parameters": {
@@ -13,5 +13,5 @@
     },
     "nullable": []
   },
-  "hash": "27dc16f2094a7d2831a62524b71db1dc2fa038a06bc9a9ce44a1beec0fb14ca6"
+  "hash": "70978e702a6a8b5f37807ba6fdc1cc513856e1690b42430a238423f2caeaff8a"
 }

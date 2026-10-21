@@ -181,7 +181,7 @@ async fn judgments_are_per_user(pool: PgPool) {
            )
            insert into relevance_judgments (id, user_id, query, filters, document_id, created_at)
            select uuidv7(), bob.id, 'invoice',
-                  '{"sources": [], "authors": [], "threads": [], "content_types": [], "from": null, "to": null, "range": null}',
+                  '{"sources": [], "authors": [], "content_types": [], "from": null, "to": null, "range": null}',
                   $1, now()
            from bob"#,
     )

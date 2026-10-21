@@ -79,13 +79,20 @@ The journal retains at most 30 days or 100,000 references. Expired checkpoints a
 
 ### Layout and rendering cutover
 
-Pause existing WhatsApp connections and wait for active runs to finish. Upgrade the server/frontend, then **all** plugin workers before enabling the connections again. Do not leave old workers eligible to recreate the per-chat source layout. There is no legacy alias, dual-source mode or archive snapshot machinery.
+This is a **manual clean rebuild**, not an automatic data/exclusion migration. Before enabling new workers for an existing WhatsApp connection:
 
-The next run automatically reconciles version-1 cursors in full, even if the native journal has no new messages. This updates historical text to omit zero/unknown sizes and moves chat selection from Sources to Threads. Before rebuilding, the plugin requests the generic atomic namespace transform from `<root>/chats` to `<root>`. Existing document UUIDs, payloads, chunks, embeddings and seen timestamps are preserved; relative chat-hash source suffixes become external-id prefixes. Document and thread exclusions move in the same transaction, including exclusions for chats no longer present in the archive. Destination collisions fail with no partial relocation.
+1. Disable the connection and wait for its active run to finish. Record its name, source root, schedule, `url`, `expected_store_id`, `allow_chats` and `block_chats`. Obtain the archive token from the original Secret; stored credentials are write-only and cannot be exported.
+2. Upgrade the server/frontend and **all** plugin workers. Do not let old workers claim the recreated connection.
+3. Delete the old connection through Connections, confirming its source root. This intentionally clears its indexed documents, remembered document/thread exclusions and run history. It does **not** change or delete the native wacli archive.
+4. Recreate the WhatsApp connection with the same root and recorded settings, re-entering the original archive token. The new connection performs a full import using flat sources and current text rendering, including historical zero-size removal.
 
-A failed traversal after relocation retains the relocated readable content and exclusions, performs no deletion sweep and advances no successful cursor. Retry is idempotent. Only a complete validated traversal/replay authorizes sweeping obsolete segments. Documents whose segment identity survives keep their UUIDs and viewer links.
+Old viewer UUID links and exclusions are not preserved. Reapply any desired exclusions after rebuilding; configured allow/blocklists and the explicit archive pin must be copied into the new connection. There is no clear/reset endpoint, legacy alias or dual-layout mode.
 
-Removing rendered size lines can shift approximate-size segment boundaries. The existing regrouping limitation still applies: an exact document exclusion maps to its corresponding segment identity, not permanently to every piece of its text. Text regrouped under a different segment ID can reappear. Whole-thread exclusions remain effective for the same stable chat ID and survive the namespace move.
+A supplied version-1 cursor fails with delete/recreate guidance before writing or starting a sync. This is not a persistent migration gate: generic failed/lost-run recovery still supplies empty disposable state. Follow the rollout above rather than relying on a failed run as an upgrade procedure.
+
+Removing rendered size lines can shift approximate-size segment boundaries. The existing regrouping limitation remains: an exact segment exclusion does not permanently track its text when regrouped under another ID. Whole-thread exclusions cover all segments of the same stable chat ID.
+
+### Archive identity and collector status
 
 An archive whose authenticated `store_id` differs from `expected_store_id` fails before ingestion or sweep, even on an empty state or after a failed first run. For intentional replacement, inspect the new authenticated archive and explicitly edit `expected_store_id` through the ordinary connection configuration flow. Changing only this pin preserves the stored token. This authorizes a full authoritative reconciliation against the new archive and may remove content previously indexed under this source. Consider the retained history, source contents and exclusions before changing the pin. Archive identity is plugin configuration, not separate server-owned state.
 

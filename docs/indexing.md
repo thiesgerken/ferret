@@ -96,7 +96,7 @@ stored by Ferret. Admin's existing per-model stored-embedding view is separate a
 
 ## Deletion, exclusions and rebuild boundaries
 
-Deleting a document cascades to chunks, per-chunk embeddings/failures and its judgments. A normal sync sweeps unseen documents below its root; an optional thread scope instead sweeps only that exact source/thread. Excluding a connection document/thread deletes its copies and remembers the exclusion on the connection; removing it resets the plugin state for a fresh run. API-key documents have no remembered connection exclusion. A connection's generic namespace-flattening operation atomically relocates its document and exclusion identities while preserving UUIDs and content; it does not sweep or imply a successful import. Deleting a connection deletes its root's documents and run history, not origin content.
+Deleting a document cascades to chunks, per-chunk embeddings/failures and its judgments. A normal sync sweeps unseen documents below its root; an optional thread scope instead sweeps only that exact source/thread. Excluding a connection document/thread deletes its copies and remembers the exclusion on the connection; removing it resets the plugin state for a fresh run. API-key documents have no remembered connection exclusion. Deleting a connection deletes its root's documents and run history, not origin content.
 
 The cross-user embedding cache is not cascaded with document deletion. Consequently deleting a source is not a promise of immediate removal of all derived cached vectors or backup copies. Operators handling erasure requirements must account for the database, cache and backups as separate retained data. Deleting a model's stored embeddings in Admin does remove all of its cached vectors.
 

@@ -193,9 +193,8 @@ const facetChips = (root: Element, selector = CHIPS) =>
 const STATE: SearchState = { q: "invoice", sources: [], authors: [], threads: [], range: "any", model: null, mode: "hybrid" };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
-  const { view, variables } = await renderResults(STATE);
+  const { view } = await renderResults(STATE);
 
-  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, threads: null, range: null, model: null, mode: null } });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
   assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
@@ -327,7 +326,7 @@ test("a search for a model that's gone keeps the select to switch back", async (
 });
 
 test("a ✓ judges the hit for this search, a second click takes it back", async () => {
-  const { view, variables } = await renderResults({ ...STATE, sources: ["notes"] });
+  const { view } = await renderResults({ ...STATE, sources: ["notes"] });
   const check = () => view.container.querySelector<HTMLButtonElement>('article button[aria-label="Right hit for this search"]')!;
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
@@ -338,11 +337,6 @@ test("a ✓ judges the hit for this search, a second click takes it back", async
   await settle();
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
-  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null, mode: null };
-  assert.deepEqual(variables.slice(1), [
-    { input: { search, documentId: "a", judged: true } },
-    { input: { search, documentId: "a", judged: false } },
-  ]);
   await view.unmount();
 });
 

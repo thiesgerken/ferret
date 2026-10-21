@@ -321,21 +321,6 @@ pub struct SyncStart {
     pub thread: Option<String>,
 }
 
-/// Atomically folds a source subtree into one source, preserving document UUIDs and exclusions.
-/// Relative source paths become external-id prefixes, separated by `/`.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NamespaceFlatten {
-    pub from_source_prefix: String,
-    pub to_source: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NamespaceFlattened {
-    pub documents: u64,
-    pub exclusions: u64,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SyncStarted {
     pub sync_id: Uuid,
@@ -544,20 +529,6 @@ impl Client {
                 source: source.to_owned(),
                 thread: thread.map(str::to_owned),
             })
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-    }
-
-    /// Relocates this live run's document/exclusion identities without discarding content.
-    pub async fn flatten_namespace(
-        &self,
-        transform: &NamespaceFlatten,
-    ) -> Result<NamespaceFlattened, reqwest::Error> {
-        self.api(reqwest::Method::POST, "/api/namespaces/flatten")
-            .json(transform)
             .send()
             .await?
             .error_for_status()?
