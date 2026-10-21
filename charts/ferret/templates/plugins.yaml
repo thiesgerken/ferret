@@ -16,18 +16,7 @@ spec:
       labels:
         {{- include "ferret.selectorLabels" (dict "root" . "component" "plugins") | nindent 8 }}
     spec:
-      # Runs read files from repositories they don't control; there's nothing in the Kubernetes API
-      # a worker needs.
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
-      nodeSelector:
-        kubernetes.io/arch: amd64
+      {{- include "ferret.podRuntime" . | nindent 6 }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -36,10 +25,7 @@ spec:
           image: {{ include "ferret.image" (dict "root" . "image" .Values.plugins.image) }}
           imagePullPolicy: {{ .Values.plugins.image.pullPolicy }}
           securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
+            {{- include "ferret.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

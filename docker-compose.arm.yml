@@ -1,17 +1,11 @@
-# Load the three aarch64-linux Nix archives before starting this stack.
+# Use with docker-compose.yml and docker-compose.local.yml for native ARM images.
 services:
   server:
-    image: ferret:local
     platform: linux/arm64
-    pull_policy: never
   plugins:
-    image: ferret-plugins:local
     platform: linux/arm64
-    pull_policy: never
   frontend:
-    image: ferret-frontend:local
     platform: linux/arm64
-    pull_policy: never
   paradedb:
     platform: linux/arm64
   proxy:

@@ -1,0 +1,11 @@
+# Load the server, plugins and frontend Nix archives before starting this stack.
+services:
+  server:
+    image: ferret:local
+    pull_policy: never
+  plugins:
+    image: ferret-plugins:local
+    pull_policy: never
+  frontend:
+    image: ferret-frontend:local
+    pull_policy: never

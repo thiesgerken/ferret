@@ -20,16 +20,7 @@ spec:
         # Rolls the pods when the models change: the server reads them only at startup.
         checksum/config: {{ include "ferret.config" . | sha256sum }}
     spec:
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
-      nodeSelector:
-        kubernetes.io/arch: amd64
+      {{- include "ferret.podRuntime" . | nindent 6 }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
@@ -38,10 +29,7 @@ spec:
           image: {{ include "ferret.image" (dict "root" . "image" .Values.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
+            {{- include "ferret.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
