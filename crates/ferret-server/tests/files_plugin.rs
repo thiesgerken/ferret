@@ -280,7 +280,7 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
             .any(|doc| doc.0 == "file:renamed.txt")
     );
 
-    // A complete directory body above the HTTP hard limit must fail, not truncate or sweep.
+    // Capping the readable listing must not cap traversal or suppress the authoritative sweep.
     fs::create_dir(root.join("zz-large")).unwrap();
     for i in 0..12500 {
         fs::write(
@@ -290,24 +290,29 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
         )
         .unwrap();
     }
+    fs::write(
+        root.join("zz-large/zz-final.txt"),
+        "Beyondlistingcapsentinel",
+    )
+    .unwrap();
     fs::remove_file(root.join("oversize.txt")).unwrap();
     due(&pool, connection, &config).await;
-    let (_, failed, _) = execute(&server, worker).await;
-    assert!(failed.err().unwrap().to_string().contains("413"));
-    assert!(
-        documents(&pool)
-            .await
-            .iter()
-            .any(|doc| doc.0 == "file:oversize.txt")
-    );
+    execute(&server, worker).await.1.unwrap();
+    let capped = documents(&pool).await;
+    let listing = capped.iter().find(|doc| doc.0 == "dir:zz-large").unwrap();
+    assert!(!listing.2.contains("zz-final.txt"));
+    assert!(capped.iter().any(|doc| {
+        doc.0 == "file:zz-large/zz-final.txt" && doc.2 == "Beyondlistingcapsentinel"
+    }));
+    assert!(!capped.iter().any(|doc| doc.0 == "file:oversize.txt"));
     fs::remove_dir_all(root.join("zz-large")).unwrap();
     due(&pool, connection, &config).await;
     execute(&server, worker).await.1.unwrap();
     assert!(
-        !documents(&pool)
+        documents(&pool)
             .await
             .iter()
-            .any(|doc| doc.0 == "file:oversize.txt")
+            .all(|doc| { doc.0 != "dir:zz-large" && !doc.0.starts_with("file:zz-large/") })
     );
 
     // This mount started empty and every child was created by this test.

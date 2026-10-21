@@ -116,7 +116,7 @@ The Linux mounted-files regression (`cargo test -p ferret-server --test files_pl
 isolated mount at `FERRET_TEST_FILES_ROOT`. CI creates a disposable bind mount before the workspace
 tests and unmounts it afterwards. The test refuses a nonempty fixture, creates and removes only its
 own content, and exercises the real server/database, inventory reuse, links, filters, failure/no-sweep
-recovery, a directory above the request hard limit and an available empty share. On non-Linux hosts
+recovery, a capped large-directory listing with complete child traversal, and an available empty share. On non-Linux hosts
 run this test in a Linux container with an empty volume mounted directly at that configured root.
 Never point it at personal or production files.
 
