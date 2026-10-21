@@ -8,8 +8,9 @@ For Kubernetes, [chart values.yaml](../charts/ferret/values.yaml) is the canonic
 
 | Variable | Requirement and meaning |
 | --- | --- |
-| `FERRET_DATABASE_URL` | required Postgres connection URL; database must provide ParadeDB/pgvector extensions |
+| `FERRET_DATABASE_URL` | required Postgres connection URL; database must provide ParadeDB/pgvector extensions. TLS uses the URL's `sslmode` (use `verify-full` to verify certificate and hostname); `PGSSLROOTCERT` supplies a private CA |
 | `PGPASSWORD` | optional libpq/sqlx password input when URL omits password; used by chart to avoid URL escaping |
+| `PGSSLROOTCERT` | optional path to a PEM CA certificate for database TLS; publicly trusted certificates need no custom CA |
 | `FERRET_CONFIG_FILE` | required path to readable YAML below |
 | `FERRET_SESSION_SECRET` | required, at least 32 bytes; shared by replicas, signs sessions and run tokens |
 | `FERRET_WORKER_SECRET` | required, at least 32 bytes; identical on server/workers, authorizes private worker API |

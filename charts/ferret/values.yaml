@@ -127,13 +127,19 @@ ingress:
 # a new Postgres password the initialized database doesn't know, and a new session secret that
 # logs everyone out. Under GitOps, use existingSecret.
 secrets:
-  # -- Existing Secret with the keys postgres-password, bootstrap-password, session-secret,
-  # worker-secret and config-key (see the chart's README).
+  # -- Existing Secret with bootstrap-password, session-secret, worker-secret and config-key,
+  # plus postgres-password when using the bundled database (see the chart's README).
   existingSecret: ""
 
-# -- ParadeDB (Postgres with pg_search and pgvector), single instance with its own PVC. Backups are
-# the cluster's job (CSI snapshots, e.g. Velero): put the PVC on a storage class that supports them.
+# -- Bundled ParadeDB (Postgres with pg_search and pgvector), single instance with its own PVC.
+# Backups are the cluster's job (CSI snapshots, e.g. Velero).
 postgres:
+  # -- Set to use your own Postgres instead of the bundled ParadeDB. The other postgres.* values
+  # then do nothing.
+  # external:
+  #   url: postgres://ferret@db.example.com:5432/ferret?sslmode=verify-full
+  #   passwordSecret: {name: ferret-db-app, key: password}
+  #   caSecret: {name: ferret-db-ca, key: ca.crt} # optional
   image:
     registry: docker.io
     repository: paradedb/paradedb

@@ -20,6 +20,29 @@ if grep -q 'name: ferret-tei' <<<"$defaults"; then
   echo "the defaults render a TEI" >&2
   exit 1
 fi
+if ! grep -q 'name: ferret-postgres' <<<"$defaults" || \
+   ! grep -q 'postgres-password:' <<<"$defaults"; then
+  echo "the defaults do not render the bundled database and its password" >&2
+  exit 1
+fi
+
+external=(-f charts/test-values/external-postgres.yaml)
+external_render=$(helm template ferret "$chart" "${external[@]}")
+if grep -qE 'name: ferret-postgres|postgres-password' <<<"$external_render"; then
+  echo "external Postgres renders a bundled database object or password" >&2
+  exit 1
+fi
+# An externally managed runtime Secret needs no bundled database password. When the database uses
+# a publicly trusted certificate, no custom CA mount is needed.
+external_existing=$(helm template ferret "$chart" -f charts/test-values/endpoints.yaml \
+  --set secrets.existingSecret=ferret-runtime \
+  --set-string 'postgres.external.url=postgres://ferret@db.example.com:5432/ferret?sslmode=verify-full' \
+  --set postgres.external.passwordSecret.name=ferret-db-app \
+  --set postgres.external.passwordSecret.key=password)
+if grep -qE 'kind: Secret|postgres-password|PGSSLROOTCERT|name: postgres-ca' <<<"$external_existing"; then
+  echo "external Postgres without a CA renders generated credentials or a CA mount" >&2
+  exit 1
+fi
 
 mounts=$(helm template ferret "$chart" -f charts/test-values/files-mounts.yaml --show-only templates/plugins.yaml)
 for expected in 'replicas: 2' 'automountServiceAccountToken: false' 'server: nas.example.com' 'mountPath: "/mnt/documents"' 'readOnly: true'; do
@@ -62,4 +85,25 @@ refuse "belong to a TEI" "${endpoints[@]}" --set 'embedding.models[1].modelId=BA
 refuse "were replaced by per-model endpoints" "${endpoints[@]}" --set 'externalTeis[0]=http://laptop:8080'
 refuse "were replaced by per-model endpoints" "${endpoints[@]}" --set tei.internal.enabled=true
 refuse "tokenSecret needs a name and a key" "${endpoints[@]}" --set 'embedding.models[1].embeddingApi.tokenSecret.name=x'
+refuse "postgres.external needs a url" "${endpoints[@]}" --set-json 'postgres.external={}'
+refuse "postgres.external needs a url" "${external[@]}" --set postgres.external.url=
+refuse "postgres.external.passwordSecret needs a name and a key" "${external[@]}" \
+  --set postgres.external.passwordSecret=null
+refuse "postgres.external.passwordSecret needs a name and a key" "${external[@]}" \
+  --set postgres.external.passwordSecret.name=
+refuse "postgres.external.passwordSecret needs a name and a key" "${external[@]}" \
+  --set postgres.external.passwordSecret.key=
+refuse "postgres.external.caSecret needs a name and a key" "${external[@]}" \
+  --set-json 'postgres.external.caSecret={}' --set postgres.external.caSecret.name= \
+  --set postgres.external.caSecret.key=
+refuse "postgres.external.caSecret needs a name and a key" "${external[@]}" \
+  --set postgres.external.caSecret.name=
+refuse "postgres.external.caSecret needs a name and a key" "${external[@]}" \
+  --set postgres.external.caSecret.key=
+refuse "postgres.external.url must not contain a password" "${external[@]}" \
+  --set-string 'postgres.external.url=postgres://ferret:secret@db.example.com:5432/ferret'
+refuse "postgres.external.url must not contain a password" "${external[@]}" \
+  --set-string 'postgres.external.url=postgresql://ferret:p%40ss@db.example.com/ferret'
+refuse "postgres.external.url must not contain a password" "${external[@]}" \
+  --set-string 'postgres.external.url=postgres://ferret@db.example.com/ferret?password=secret'
 echo "chart checks passed"
