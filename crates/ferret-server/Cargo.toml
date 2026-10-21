@@ -43,6 +43,7 @@ uuid.workspace = true
 async-imap.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 ferret-plugins = { path = "../ferret-plugins" }
+ferret-whatsapp-archive = { path = "../ferret-whatsapp-archive" }
 futures-util.workspace = true
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
