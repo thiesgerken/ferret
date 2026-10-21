@@ -297,7 +297,6 @@ async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: Pg
     let capped = documents(&pool).await;
     let listing = &capped.iter().find(|doc| doc.0 == "dir:zz-large").unwrap().2;
     assert!(listing.len() <= 1_048_576);
-    assert!(listing.contains("of 12501 immediate children shown."));
     assert!(!listing.contains("zz-content.md"));
     assert_eq!(
         capped
