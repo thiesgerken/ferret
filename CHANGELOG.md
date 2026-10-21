@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v0.31.2 (2026-10-21)
+
+
+### Other
+
+
+- Merge pull request #160 from thiesgerken/renovate/all-routine-dependencies
+  ([`896d902`](https://github.com/thiesgerken/ferret/commit/896d9023f764bdb8a100452cc62097866efc6c12))
+
+- Merge pull request #162 from thiesgerken/renovate/python-3.x
+  ([`03a00d5`](https://github.com/thiesgerken/ferret/commit/03a00d5bad69ef32ec0cd461a56991a115281254))
+
+- Merge pull request #186 from thiesgerken/renovate/parking_lot-0.x
+  ([`3132b76`](https://github.com/thiesgerken/ferret/commit/3132b766279452688ce311f7d257f0371d9dc1c3))
+
+- Merge pull request #163 from thiesgerken/renovate/base64-0.x
+  ([`9715ce6`](https://github.com/thiesgerken/ferret/commit/9715ce68718b115af5ee0b45794564e760bca617))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`896d902`](https://github.com/thiesgerken/ferret/commit/896d9023f764bdb8a100452cc62097866efc6c12))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`d763da6`](https://github.com/thiesgerken/ferret/commit/d763da6b92b3b7c21817a366c70b38786fdadc35))
+
+- ⬆️ chore: upgrade python to 3.15.1
+  ([`03a00d5`](https://github.com/thiesgerken/ferret/commit/03a00d5bad69ef32ec0cd461a56991a115281254))
+
+- ⬆️ chore: upgrade python to 3.15.1
+  ([`1eedb8d`](https://github.com/thiesgerken/ferret/commit/1eedb8d0cfd6fbf457745ff8dd1a120ef1bbc997))
+
+- ⬆️ chore: upgrade Rust crate parking_lot to 0.13.0
+  ([`3132b76`](https://github.com/thiesgerken/ferret/commit/3132b766279452688ce311f7d257f0371d9dc1c3))
+
+- ⬆️ chore: upgrade Rust crate parking_lot to 0.13.0
+  ([`2d184d1`](https://github.com/thiesgerken/ferret/commit/2d184d1e28df1188a4d03d092414b66bdbb4ac4c))
+
+- ⬆️ chore: upgrade Rust crate base64 to 0.23.1
+  ([`9715ce6`](https://github.com/thiesgerken/ferret/commit/9715ce68718b115af5ee0b45794564e760bca617))
+
+- ⬆️ chore: upgrade Rust crate base64 to 0.23.1
+  ([`c820d9d`](https://github.com/thiesgerken/ferret/commit/c820d9d2e145196522e267a7d54a786797d2d06c))
+
 ## v0.31.1 (2026-10-21)
 
 
