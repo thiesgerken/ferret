@@ -99,7 +99,7 @@ kubectl -n ferret get secret ferret-runtime \
 
 Open your HTTPS hostname and sign in as admin. Create a limited ordinary user if appropriate and a first [connection](connections.md). Inspect Activity and search a known origin title. A ready server confirms database reachability, not model download or a successful origin sync.
 
-The Ferret containers run as UID/GID 65532, with read-only roots, dropped capabilities, no privilege escalation and runtime-default seccomp. Their only writable application state is an explicit `/tmp` `emptyDir`; worker Git clones use that temporary storage. Service-account tokens are not mounted. The frontend container listens on 8080 behind the unchanged port-80 frontend Service. Database and TEI security/storage remain separate infrastructure responsibilities.
+See the [chart's runtime security and images](../charts/ferret/README.md#runtime-security-and-images) for container restrictions and writable storage.
 
 ## Embedding capacity and scaling
 

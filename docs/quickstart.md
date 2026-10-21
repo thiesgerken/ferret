@@ -10,12 +10,22 @@ Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run comma
 
 ```sh
 docker compose pull
-docker compose up -d
 ```
 
-Set `FERRET_IMAGE_TAG` to a release version or PR tag to select matching server, worker and frontend images. These images contain runtime closures, not compilers or package managers.
+Set `FERRET_IMAGE_TAG` to a release version or PR tag to select matching server, worker and frontend images.
 
-Apple Silicon developers must [build and load native ARM Linux images](development.md#apple-silicon-build-native-arm-linux-images) before running the stack. Published images are x64-only; do not enable x86 emulation.
+### Apple Silicon: build native images
+
+Install [Determinate Nix](https://docs.determinate.systems/) and authorize its Native Linux Builder with a free FlakeHub account:
+
+```sh
+determinate-nixd auth login
+nix build .#packages.aarch64-linux.{server,plugins,frontend}-image
+for image in result*; do docker load -i "$image"; done
+export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.arm.yml
+```
+
+Keep `COMPOSE_FILE` set for subsequent commands. The overlays select local images without pulling replacements and native ARM supporting services.
 
 `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 

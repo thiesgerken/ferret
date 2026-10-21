@@ -4,11 +4,16 @@ Operate the index, origins and model-serving infrastructure as separate failure 
 
 ## Runtime images and writable state
 
-The server, worker, frontend and independent WhatsApp archive images are built by Nix from runtime closures without a distribution base or build environment. Releases publish Linux x64 only. All four default to UID/GID 65532. The main Compose/Helm workloads run with read-only roots, dropped capabilities and no privilege escalation; the [independent archive guide](plugins/whatsapp.md) applies the same hardening and documents its storage-owner UID override. The archive is not deployed by that stack/chart. Temporary state is explicitly writable at `/tmp`: Compose supplies a tmpfs, and Helm supplies a per-pod `emptyDir`. Workers clone repositories there; size node/container temporary storage for the repositories they process. It is disposable state, not a backup target.
+Ferret's Nix-built runtime images publish for Linux x64 and run as UID/GID 65532. Compose gives
+the server, worker and frontend read-only roots, dropped capabilities, no privilege escalation
+and a writable `/tmp` tmpfs. Worker Git clones use this disposable space. The frontend listens
+on container port 8080. Upstream database, TEI and proxy images have separate runtime requirements.
 
-The worker closure includes Git and CA certificates for outbound HTTPS, and the server includes CA certificates for outbound API/TLS clients. The frontend runs nginx on container port 8080, while the chart's frontend Service remains port 80 and public routes do not change. Do not add writable root access or run as root to fix a missing temporary mount. The upstream database, TEI, proxy and test-mail images retain their own runtime requirements; the Ferret image restrictions do not claim those services are hardened identically.
-
-Compose remains development/demo configuration with public credentials. Use the [quickstart](quickstart.md) to run provided x64 images or [development](development.md#apple-silicon-build-native-arm-linux-images) to build/load native ARM Linux images. Nix integration checks use a separate sandbox-local PostgreSQL/extensions stack and never migrate a developer volume. The Compose ParadeDB tag, PostgreSQL major, volume name and data path are unchanged by the image-build cutover. Do not replace an existing data directory with the test cluster's version or downgrade its extension because the test nixpkgs selects a different version.
+For deployment restrictions, see the [chart README](../charts/ferret/README.md#runtime-security-and-images);
+the [independent archive guide](plugins/whatsapp.md) covers its directory/token mounts and storage-owner UID.
+Compose uses public development credentials; follow the [quickstart](quickstart.md) only for local use.
+Its ParadeDB image is `0.26.2-pg18` (PostgreSQL 18), with `pgdata` mounted at `/var/lib/postgresql`.
+Nix integration checks use separate sandbox-local databases, never developer volumes.
 
 ## Health and logs
 

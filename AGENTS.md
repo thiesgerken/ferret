@@ -22,21 +22,18 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
 
 ## Commands
 
-- Start everything for development: `docker compose up`
-- Start only the database (for tests and `cargo run`): `docker compose up -d paradedb`, plus
-  `docker compose up -d --scale dovecot=1 dovecot` for the IMAP plugin's tests
-- Build: `cargo build --workspace`
-- Run the server on the host: `FERRET_DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret FERRET_CONFIG_FILE=<config.yaml> FERRET_SESSION_SECRET=<32+ bytes> FERRET_WORKER_SECRET=<32+ bytes> FERRET_CONFIG_KEY=<base64 of 32 bytes> FERRET_BOOTSTRAP_PASSWORD=<16+ chars> cargo run -p ferret-server`.
-  The config file's endpoint URLs must be reachable from the host (compose's `docker/ferret.yaml`
-  uses `http://tei:80/v1` and `http://tei-bge:80/v1`, which only work inside compose). `tei-bge`
-  (bge-m3) is scaled to 0: `docker compose up -d --scale tei-bge=1 tei-bge` starts it.
-- Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`
-- After changing a query or a migration, refresh the sqlx query metadata (needs
-  `cargo install sqlx-cli` and a migrated database):
-  `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
-  then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`
-- Test: `cargo test --workspace` (needs the compose ParadeDB, see Testing)
-- Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`
+- Enter pinned host tooling: `nix develop`.
+- Build images and run the development stack: follow `docs/quickstart.md`; local changes use
+  `docker-compose.local.yml`, plus `docker-compose.arm.yml` on Apple Silicon.
+- Run all checks/packages/images: bootstrap `nix-fast-build` from the locked nixpkgs and build
+  `ciBuilds.x86_64-linux` (Linux x64) or `ciBuilds.aarch64-darwin` (Apple Silicon).
+  Exact commands and image smoke instructions are in `docs/development.md`.
+- Host iteration is optional: `cargo run -p ferret-server`, `cargo run -p ferret-plugins` or
+  `pnpm --dir frontend dev` inside the dev shell. Host services/secrets are documented there.
+- Regenerate GraphQL: `cargo run -p ferret-server -- schema > frontend/schema.graphql`.
+- Refresh SQLx metadata after query/migration changes using the dev shell's sqlx and a migrated
+  database: `cargo sqlx prepare --workspace`. Commit `.sqlx/`.
+- Refresh dependency pins/hashes: `python3 scripts/update-nix-deps.py` inside the dev shell.
 
 ## Project structure
 
@@ -54,25 +51,23 @@ docker-compose.yml   development only, the deployment is the Helm chart
 
 ## Testing
 
-- Server tests are black-box: they start the server in-process (`tests/common`) and talk to it
-  over HTTP (the `ferret-api` client for the machine API), against a real ParadeDB. No mocked
-  database.
-- `#[sqlx::test(migrations = false)]` gives each test its own database, the server's startup
-  migrates it. `DATABASE_URL` comes from `.cargo/config.toml` (the compose ParadeDB), an exported
-  one takes precedence.
-- Queries use sqlx's checked macros (`query!`, `query_as!`, ADR 0005), except search, which is
-  built with `QueryBuilder`. Builds read their metadata from `.sqlx/` (`SQLX_OFFLINE`), so only
-  tests need a database.
-- Plugin parsers are tested against fixtures, the frontend with `node --test`. The IMAP plugin's
-  tests also need the compose Dovecot, which is scaled to 0 by default
-  (`docker compose up -d --scale dovecot=1 dovecot`, `FERRET_TEST_IMAP` in `.cargo/config.toml`),
-  each test logging in as a user of its own.
+- Nix runs the complete workspace suite against isolated PostgreSQL 18 with `pg_search` and
+  `pgvector`, plus disposable Dovecot. No Compose services or personal data are needed.
+- Server tests are black-box HTTP tests against the real database; `#[sqlx::test(migrations = false)]`
+  gives each test a database migrated by server startup.
+- Queries use checked sqlx macros (ADR 0005), except QueryBuilder-based search. Builds use `.sqlx/`
+  offline metadata.
+- Plugin parsers use fixtures; frontend tests use `node --test`.
+- Focused host tests are a convenience: start Compose ParadeDB/Dovecot and use
+  `cargo test --workspace --locked`. `.cargo/config.toml` supplies non-forced service defaults.
+  Linux mounted-files tests also require an empty disposable mount at `FERRET_TEST_FILES_ROOT`.
 
 ## CI
 
-GitHub Actions on every pull request: fmt and clippy, a check that `frontend/schema.graphql` and
-`.sqlx/` are current, tests against a ParadeDB service container, frontend lint and tests, helm
-lint, and PR images and chart published as `:pr<N>`.
+`ci.yml` calls `nix-verify.yml`, which realizes `ciBuilds.x86_64-linux` and smokes the hardened
+runtime images. `publish-pr.yml` publishes verified PR images/charts with `pr<N>` and SHA tags.
+`release.yml` verifies version-bumped release tags before publishing. Publishing tools run from
+trusted refs; untrusted PRs do not receive publishing credentials or write the trusted cache.
 
 ## Conventions
 

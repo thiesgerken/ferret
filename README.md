@@ -136,13 +136,8 @@ in Activity; native Apple Silicon builds are covered in [development](docs/devel
 The Compose stack is for local development and demos, not deployment. For a real installation
 follow the [Kubernetes walkthrough](docs/kubernetes.md) and [Helm chart](charts/ferret/README.md).
 
-Compose is the primary local environment. Linux x64 users pull published images without Nix;
-Apple Silicon developers build/load native ARM Linux images through Determinate Native Linux
-Builder and use the ARM Compose overlay. Releases publish x64 images only. One committed Nix
-flake/lockfile owns builds and checks; the optional native dev shell is documented in
-[development](docs/development.md). All four Ferret runtime images default to a non-root user.
-The maintained Compose/Helm workloads use read-only roots and explicit temporary storage; the
-[independent WhatsApp archive](docs/plugins/whatsapp.md) documents its own hardened deployment.
+On x64, `docker compose up -d` runs published images.
+On Apple Silicon, build native images with the [quickstart](docs/quickstart.md#apple-silicon-build-native-images).
 
 ## Documentation
 

@@ -29,11 +29,9 @@ token mounting, and use the runtime-default seccomp profile. Roots are read-only
 a disposable `emptyDir` at `/tmp`. Workers need enough temporary node storage to clone their Git
 repositories. nginx listens on container port 8080; the frontend Service remains port 80.
 
-These restrictions apply to Ferret, not automatically to the ordinary upstream ParadeDB/TEI
-images. No database volume or extension downgrade accompanies the image-build change. Preserve
+These restrictions apply to Ferret, not automatically to upstream ParadeDB/TEI images. Preserve
 the existing PVC and follow the [upgrade/backup procedures](../../docs/operations.md) when changing
-database versions. The development Compose configuration's public secrets are never production
-defaults.
+database versions.
 
 ## Install
 
