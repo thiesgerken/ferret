@@ -178,9 +178,7 @@ See the [builder prerequisites and known issues](https://docs.determinate.system
 
 ## Dependency updates and CI
 
-[renovate.json](../renovate.json) configures automated dependency updates. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
-
-[Renovate](../renovate.json) updates dependencies and `flake.lock`. After changing pnpm, its lockfile or the `pg_search` version, refresh binary pins and the pnpm dependency hash inside the dev shell:
+[Renovate](../renovate.json) updates dependencies and `flake.lock`. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file. After changing pnpm, its lockfile or the `pg_search` version, refresh binary pins and the pnpm dependency hash inside the dev shell:
 
 ```sh
 python3 scripts/update-nix-deps.py

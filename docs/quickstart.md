@@ -4,7 +4,10 @@ This walkthrough uses the development Compose stack and disposable demo data. Do
 
 ## Prerequisites
 
-Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run commands at the repository root. Compose is the primary development/demo environment. Published Ferret images support Linux x64 only; x64 users do not need Nix. The supporting services use ordinary upstream images. Allow disk space, memory, registry/Hugging Face network access, and time for the first model download. A healthy database alone does not mean the embedding model is ready.
+- Install Git, Docker with Compose v2.24.4 or newer, Bash, curl, and jq. Run commands from the repository root.
+- Published images support Linux x64 only; x64 users do not need Nix.
+- The first start downloads model weights. Allow disk space, memory, registry/Hugging Face network access, and time.
+- A healthy database does not mean the embedding model is ready.
 
 ### x64: pull published images
 
