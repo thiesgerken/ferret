@@ -144,3 +144,7 @@ pnpm --dir frontend codegen
 The schema command prints SDL without starting the server or needing runtime secrets/database. Commit the canonical schema with resolver/input changes. Client codegen reads [codegen.ts](../frontend/codegen.ts) and frontend operations; generated client files are not the canonical API contract.
 
 For behavior changes, update the appropriate maintained [topic/API/plugin guide](README.md), not just conception. [CI](../.github/workflows/ci.yml) defines the actual checks and PR preview image/chart publication; do not claim a check passed unless you ran it.
+
+## Dependency updates
+
+[renovate.json](../renovate.json) configures automated dependency updates. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
