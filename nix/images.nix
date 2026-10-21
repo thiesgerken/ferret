@@ -79,6 +79,8 @@ in
   frontend-image = image "ferret-frontend" [ pkgs.nginx frontend ] {
     Cmd = [
       "${pkgs.nginx}/bin/nginx"
+      "-e"
+      "/dev/stderr"
       "-c"
       "${nginxConfig}"
       "-g"

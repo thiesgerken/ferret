@@ -38,7 +38,7 @@ def eventually(operation, timeout=120):
     while True:
         try:
             return operation()
-        except (AssertionError, urllib.error.URLError, TimeoutError):
+        except (AssertionError, OSError):
             if time.monotonic() >= deadline:
                 raise
             time.sleep(1)
