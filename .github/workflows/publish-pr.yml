@@ -36,15 +36,11 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          TESTED_RUN: ${{ toJSON(github.event.workflow_run) }}
         run: |
           set -euo pipefail
-          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" --jq .id)
-          tested=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")
-          jq -e --arg repo "$GITHUB_REPOSITORY" --argjson workflow "$workflow_id" --argjson run "$RUN_ID" \
-            '.id == $run and .workflow_id == $workflow and .path == ".github/workflows/ci.yml" and .event == "pull_request" and .status == "completed" and .conclusion == "success" and .head_repository.full_name == $repo and (.head_sha | test("^[0-9a-f]{40}$"))' <<< "$tested" >/dev/null
-          pr=$(jq -er '.pull_requests | if length == 1 then .[0].number else error("Expected one tested PR") end' <<< "$tested")
-          sha=$(jq -r .head_sha <<< "$tested")
+          pr=$(jq -er '.pull_requests | if length == 1 then .[0].number else error("Expected one tested PR") end' <<< "$TESTED_RUN")
+          sha=$(jq -er '.head_sha' <<< "$TESTED_RUN")
           current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr")
           jq -e --arg repo "$GITHUB_REPOSITORY" --arg sha "$sha" \
             '.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo and .base.ref == "main"' <<< "$current" >/dev/null
@@ -71,7 +67,7 @@ jobs:
           printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
           short_sha=${HEAD_SHA:0:7}
           bash scripts/publish-images.sh "pr${PR_NUMBER}" "pr${PR_NUMBER}-${short_sha}"
-          base_version=$(helm show chart dist/chart | python -c "import sys; print(next(line.split()[1] for line in sys.stdin if line.startswith(\"version:\")))")
+          base_version=$(helm show chart dist/chart | awk '/^version:/ { print $2; exit }')
           chart_version="${base_version}-pr.${PR_NUMBER}"
           chart_version_sha="${chart_version}.g${short_sha}"
           helm package dist/chart --destination dist --version "$chart_version" --app-version "pr${PR_NUMBER}"
