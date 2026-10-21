@@ -21,9 +21,11 @@ Install [Determinate Nix](https://docs.determinate.systems/) and sign up for a f
 
 ```sh
 determinate-nixd status
-nix build --out-link result-server-image .#packages.aarch64-linux.server-image
-nix build --out-link result-plugins-image .#packages.aarch64-linux.plugins-image
-nix build --out-link result-frontend-image .#packages.aarch64-linux.frontend-image
+nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
+mkdir -p dist
+result-build-tool/bin/nix-fast-build --no-nom \
+  --flake .#imageBuilds.aarch64-linux --systems aarch64-linux \
+  --out-link result --result-file dist/image-results.json
 docker load --input result-server-image
 docker load --input result-plugins-image
 docker load --input result-frontend-image
@@ -32,6 +34,8 @@ docker compose up -d
 ```
 
 The ARM overlay selects the local `:local` Ferret images with `pull_policy: never` and explicitly selects `linux/arm64` for every service, including native TEI. A missing local image fails instead of pulling an x64 replacement. Keep `COMPOSE_FILE` set for subsequent commands on this page. See [development](development.md) for builder filesystem constraints and checks.
+
+The bootstrap selects the native host's runner from the committed nixpkgs lock without evaluating Ferret's outputs. The one image build-set traversal realizes all three ARM Linux archives; the outlinks are loaded directly, without staging another copy. `dist/image-results.json` records the build results. Do not add `--skip-cached`: cached archives still need to be downloaded locally.
 
 `tei` computes Qwen/Qwen3-Embedding-0.6B. A second model, bge-m3, is configured too, but its TEI (`tei-bge`) starts only with `docker compose up -d --scale tei-bge=1 tei-bge`: until then Admin shows its endpoint as unreachable.
 

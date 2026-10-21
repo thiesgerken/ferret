@@ -1,6 +1,7 @@
 {
   pkgs,
   craneLib,
+  rust,
   sqlx-src,
 }:
 let
@@ -65,4 +66,39 @@ let
 in
 {
   inherit nodejs pnpm sqlx;
+  ci = pkgs.buildEnv {
+    name = "ferret-ci-tools";
+    paths = with pkgs; [
+      bash
+      coreutils
+      skopeo
+      kubernetes-helm
+      python3
+      git
+      curl
+      jq
+      gh
+      cacert
+    ];
+    pathsToLink = [
+      "/bin"
+      "/etc/ssl/certs"
+    ];
+  };
+  release = pkgs.buildEnv {
+    name = "ferret-release-tools";
+    paths = [
+      rust
+      pkgs.bash
+      pkgs.coreutils
+      pkgs.uv
+      pkgs.python314
+      pkgs.git
+      pkgs.cacert
+    ];
+    pathsToLink = [
+      "/bin"
+      "/etc/ssl/certs"
+    ];
+  };
 }

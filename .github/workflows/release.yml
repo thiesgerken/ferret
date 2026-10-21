@@ -30,6 +30,12 @@ jobs:
         with:
           determinate: false
 
+      - name: Realize pinned version tools once
+        run: |
+          time nix build .#release-tools --out-link result-release-tools --print-build-logs
+          echo "$PWD/result-release-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-release-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
+          echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14" >> "$GITHUB_ENV"
       # Not the python-semantic-release action: it builds its image with an
       # unpinned `gitpython ~= 3.0`, and 3.1.60 dropped Actor.name_email_regex,
       # which psr 10.6.1 still uses. Drop the --with once psr releases a fix.
@@ -38,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
-          nix develop .#release --command uv tool run
+          uv tool run
           --from 'python-semantic-release==10.6.1'
           --with 'gitpython<3.1.60'
           semantic-release -c releaserc.toml -v version --no-vcs-release
@@ -70,7 +76,10 @@ jobs:
           name: verified-x64-images
           path: dist
       - name: Prepare pinned publishing tools
-        run: nix develop .#ci --command true
+        run: |
+          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
       - name: Publish verified release images
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,13 +87,12 @@ jobs:
           REGISTRY_OWNER: ${{ github.repository_owner }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          nix develop .#ci --command bash -euo pipefail <<'SCRIPT'
-            export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
-            cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
-            trap cleanup_auth EXIT
-            printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
-            bash scripts/publish-images.sh "$VERSION" latest
-          SCRIPT
+          set -euo pipefail
+          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
+          cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
+          trap cleanup_auth EXIT
+          printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
+          bash scripts/publish-images.sh "$VERSION" latest
 
   publish:
     needs: [version, images]
@@ -101,13 +109,18 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+      - name: Realize pinned publishing tools once
+        run: |
+          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
 
       - name: Push Helm chart to GHCR
         run: |
           version="${{ needs.version.outputs.version }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | nix develop .#ci --command helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-          nix develop .#ci --command helm package charts/ferret --version "$version" --app-version "$version"
-          nix develop .#ci --command helm push "ferret-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
+          helm package charts/ferret --version "$version" --app-version "$version"
+          helm push "ferret-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
 
       - name: Create GitHub Release
         env:
@@ -135,7 +148,7 @@ jobs:
           helm install ferret oci://ghcr.io/${owner}/charts/ferret --version ${version}
           \`\`\`"
 
-          nix develop .#ci --command gh release create "v${version}" \
+          gh release create "v${version}" \
             --repo "${{ github.repository }}" \
             --title "v${version}" \
             --notes "${notes}"

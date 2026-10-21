@@ -26,25 +26,29 @@ jobs:
           primary-key: nix-x64-${{ hashFiles('flake.lock', 'Cargo.lock', 'frontend/pnpm-lock.yaml') }}-${{ github.sha }}
           restore-prefixes-first-match: nix-x64-
           save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      - name: Run every Linux check
+      - name: Bootstrap locked build runner
         run: |
           test "$(uname -m)" = x86_64
-          nix flake check --print-build-logs
-      - name: Build all runtime packages and images
+          time nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool --print-build-logs
+      - name: Evaluate and realize every required CI output
         run: |
-          nix build --no-link --print-build-logs .#server .#plugins .#frontend
-          nix build --out-link result-server-image --print-build-logs .#server-image
-          nix build --out-link result-plugins-image --print-build-logs .#plugins-image
-          nix build --out-link result-frontend-image --print-build-logs .#frontend-image
           mkdir -p dist
-          cp -L result-server-image dist/server.tar.gz
-          cp -L result-plugins-image dist/plugins.tar.gz
-          cp -L result-frontend-image dist/frontend.tar.gz
+          time result-build-tool/bin/nix-fast-build --no-nom \
+            --flake .#ciBuilds.x86_64-linux --systems x86_64-linux \
+            --out-link result-ci --result-file dist/ci-results.json
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
+      - name: Stage verified archive paths
+        run: |
+          ln -s "$(realpath result-ci-server-image)" dist/server.tar.gz
+          ln -s "$(realpath result-ci-plugins-image)" dist/plugins.tar.gz
+          ln -s "$(realpath result-ci-frontend-image)" dist/frontend.tar.gz
           cp -R charts/ferret dist/chart
+          sha256sum dist/server.tar.gz dist/plugins.tar.gz dist/frontend.tar.gz >> "$GITHUB_STEP_SUMMARY"
       - name: Exercise hardened runtime images
         run: |
           for archive in dist/*.tar.gz; do docker load --input "$archive"; done
-          nix develop .#ci --command python scripts/smoke-images.py
+          result-ci-tools/bin/python scripts/smoke-images.py
           docker image inspect ferret:local ferret-plugins:local ferret-frontend:local \
             --format '{{.RepoTags}} {{.Architecture}} {{.Size}} bytes' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

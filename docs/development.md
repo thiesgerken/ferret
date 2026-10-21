@@ -96,19 +96,39 @@ Production builds are static exports served by nginx; reverse-proxy routing repl
 
 ## Tests and checks
 
-Nix owns formatting, Clippy, workspace tests, SQLx metadata/schema consistency, frontend lint/tests/codegen/production build/type checking, and Helm validation. CI runs the full set without path-based omissions, then explicitly builds every runtime package/image and executes the image smoke scenario.
+Nix owns formatting, Clippy, workspace tests, SQLx metadata/schema consistency, frontend lint/tests/codegen/production build/type checking, and Helm validation. `ciBuilds.<host-system>` roots every mandatory check, all runtime packages/images and the native CI/release tool profiles in one `nix-fast-build` traversal. The frontend production check and frontend package share a derivation; deduplicating that build does not skip the check.
+
+Bootstrap the runner from the locked nixpkgs input without evaluating the project's outputs:
 
 ```sh
-# Native x64 Linux:
-nix flake check --print-build-logs
-nix build --no-link .#server .#plugins .#frontend .#server-image .#plugins-image .#frontend-image
-
-# Apple Silicon through Determinate Native Linux Builder, never x86 execution:
-nix flake check --system aarch64-linux --print-build-logs
-nix build --no-link .#packages.aarch64-linux.server .#packages.aarch64-linux.plugins \
-  .#packages.aarch64-linux.frontend .#packages.aarch64-linux.server-image \
-  .#packages.aarch64-linux.plugins-image .#packages.aarch64-linux.frontend-image
+nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
+mkdir -p dist
 ```
+
+On native x64 Linux:
+
+```sh
+result-build-tool/bin/nix-fast-build --no-nom \
+  --flake .#ciBuilds.x86_64-linux --systems x86_64-linux \
+  --out-link result-ci --result-file dist/ci-results.json
+```
+
+On Apple Silicon, the build set combines ARM Linux checks/packages/images through Native Linux Builder with native Darwin tools. Allow both ARM platforms, never x86:
+
+```sh
+result-build-tool/bin/nix-fast-build --no-nom \
+  --flake .#ciBuilds.aarch64-darwin --systems "aarch64-darwin aarch64-linux" \
+  --out-link result-ci --result-file dist/ci-results.json
+```
+
+The resulting `result-ci-tools/bin` contains Bash, coreutils, Git, Skopeo, Helm, Python and the other CI commands; the profile also supplies the CA bundle. `result-ci-release-tools` supplies the selected Rust toolchain, uv and Python 3.14. Reuse these realized profiles instead of repeatedly starting tool shells:
+
+```sh
+export PATH="$PWD/result-ci-tools/bin:$PATH"
+export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
+```
+
+Do not use `--skip-cached`: image archives and executable tools must actually be realized locally, including cache downloads. The currently locked nix-fast-build 1.4.0 records output paths on successful `BUILD` records; its `EVAL` durations are zero placeholders, not measured evaluation time. Consume the named outlinks or `BUILD.outputs`, not a newer version's result schema or a fixed build-record count. Evaluation and builds overlap, so summing build durations does not produce wall time.
 
 The database-backed checks create an isolated PostgreSQL 18 cluster with `pg_search` and `pgvector`, and a disposable Dovecot in the sandbox. They initialize writable temporary state, preload the extension, wait for readiness and clean up on success/failure. They override host database/mailbox defaults and require no existing developer data, external Docker services, origin account or publishing credential.
 
@@ -123,7 +143,7 @@ Ferret requires the `paradedb` index access method with automatic key-field infe
 After loading the three native Linux image archives as in the quickstart:
 
 ```sh
-nix develop .#ci --command python scripts/smoke-images.py
+result-ci-tools/bin/python scripts/smoke-images.py
 ```
 
 This runs an isolated Compose project with its own disposable database volume and dynamic ports, then removes only that project. It exercises actual server migrations/database health, authentication, Git worker ingestion and keyword search, Git HTTPS certificate verification, frontend routes/cache headers, and non-root/read-only execution. Its Git TLS probe needs public GitHub access. It does not download model weights or claim to verify model inference.
@@ -167,15 +187,19 @@ Renovate updates Nix inputs/`flake.lock` as well as the existing Rust/frontend d
 
 ```sh
 # On Apple Silicon:
-nix develop .#ci --command python scripts/update-nix-deps.py --system aarch64-linux
+nix build .#ci-tools --out-link result-ci-tools
+export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
+result-ci-tools/bin/python scripts/update-nix-deps.py --system aarch64-linux
 # On native x64 Linux, use --system x86_64-linux instead.
 ```
 
 The refresh command reads official GitHub release-asset digests when the pnpm version changes (public GitHub access is required), and Nix verifies the archive hashes and executable version. Commit the resulting binary pins and dependency hash with the dependency update, then run the full checks/builds/smoke above. A stale hash fails required checks; hosted Renovate cannot automatically repair this aggregate fetchPnpmDeps hash. Updates requiring this documented refresh are not auto-merged. Do not bypass hash checks or change the pnpm dependency-build allow/deny policy to make an update pass.
 
-Renovate proposes `pg_search` release-version updates in `nix/pg-search-binaries.json`, but these are not auto-merged. Refresh the official native-asset hashes with `nix develop .#ci --command python scripts/update-nix-deps.py --pg-search`, then run the complete Linux checks and image smoke. The exception is this extension package only; do not move unrelated packages off stable or modify existing migrations to accommodate an incompatible extension. PostgreSQL's major remains explicitly 18.
+Renovate proposes `pg_search` release-version updates in `nix/pg-search-binaries.json`, but these are not auto-merged. With the tool profile above realized, refresh the official native-asset hashes with `result-ci-tools/bin/python scripts/update-nix-deps.py --pg-search`, then run the complete Linux checks and image smoke. The exception is this extension package only; do not move unrelated packages off stable or modify existing migrations to accommodate an incompatible extension. PostgreSQL's major remains explicitly 18.
 
 GitHub Actions orchestrates verification, the standard nixpkgs binary cache and GitHub Actions artifact caching, smoke execution, release/version operations and Skopeo publication. Verification has no publishing credentials and untrusted PRs cannot write the trusted cache. Only x64 images are published. Docker-compatible archives from dockerTools are copied with Skopeo's OCI manifest conversion; they are not OCI-layout archives.
+
+Verification stages stable image filenames as symlinks to realized archives; Docker loading and artifact upload read those paths without making another local copy of the image bytes. GitHub Actions artifacts still transfer the verified archives/chart data to separate publishing jobs. A credentialed publisher realizes its own trusted main/tag-derived tool profile once and reuses its PATH/CA bundle; it never executes PR-provided tool paths or result manifests. Release versioning, post-bump verification and publishing are distinct jobs/ref contexts, not one global evaluation.
 
 Image-copy commands explicitly accept unsigned, CI-verified archives instead of depending on a host `containers/policy.json`. Skopeo's `--insecure-policy` selects this image-signature policy; it does not disable registry TLS verification. Publication still requires the trusted run/repository/head checks described below.
 

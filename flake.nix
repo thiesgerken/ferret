@@ -51,6 +51,7 @@
             inherit
               pkgs
               craneLib
+              rust
               sqlx-src
               ;
           };
@@ -87,6 +88,8 @@
         in
         {
           inherit (p.tools) pnpm sqlx;
+          ci-tools = p.tools.ci;
+          release-tools = p.tools.release;
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
@@ -126,6 +129,22 @@
               '';
         }
       );
+      imageBuilds = forLinux (system: project.${system}.images);
+      ciBuilds = forSystems (
+        system:
+        let
+          linux = if system == "aarch64-darwin" then "aarch64-linux" else system;
+          p = project.${linux};
+        in
+        self.checks.${linux}
+        // {
+          inherit (p.backend) server plugins;
+          inherit (p.frontend) frontend;
+          tools = project.${system}.tools.ci;
+          release-tools = project.${system}.tools.release;
+        }
+        // self.imageBuilds.${linux}
+      );
       devShells = forSystems (
         system:
         let
@@ -144,25 +163,6 @@
               pkgs.kubernetes-helm
               pkgs.skopeo
               tools.sqlx
-            ];
-          };
-          ci = pkgs.mkShell {
-            packages = [
-              pkgs.skopeo
-              pkgs.kubernetes-helm
-              pkgs.python3
-              pkgs.git
-              pkgs.curl
-              pkgs.jq
-              pkgs.gh
-            ];
-          };
-          release = pkgs.mkShell {
-            packages = [
-              rust
-              pkgs.uv
-              pkgs.python314
-              pkgs.git
             ];
           };
         }
