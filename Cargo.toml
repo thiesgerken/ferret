@@ -24,7 +24,7 @@ globset = "0.4"
 jsonschema = { version = "0.59", default-features = false }
 lol_html = "3"
 mail-parser = "0.11"
-parking_lot = "0.12"
+parking_lot = "0.13"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
