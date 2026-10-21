@@ -10,6 +10,8 @@ The committed Nix flake and lockfile own builds and checks. Rust comes from `rus
 nix develop
 ```
 
+With direnv and nix-direnv, run `direnv allow` once per checkout or worktree to load the same shell automatically.
+
 The shell includes Rust, Node, pnpm, sqlx, Git, Helm and Skopeo. Compose v2.24.4 or newer provides the local service environment.
 
 ## Repository map

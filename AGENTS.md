@@ -22,7 +22,7 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
 
 ## Commands
 
-- Enter pinned host tooling: `nix develop`.
+- Enter pinned host tooling: `nix develop` or `direnv allow` (nix-direnv).
 - Build images and run the development stack: follow `docs/quickstart.md`; local changes use
   `docker-compose.local.yml`, plus `docker-compose.arm.yml` on Apple Silicon.
 - Run all checks/packages/images: bootstrap `nix-fast-build` from the locked nixpkgs and build
