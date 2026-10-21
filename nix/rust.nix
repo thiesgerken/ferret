@@ -93,7 +93,6 @@ in
         cargoArtifacts = testArtifacts;
         doInstallCargoArtifacts = false;
         cargoExtraArgs = "--workspace --locked";
-        RUST_TEST_THREADS = "6";
         nativeBuildInputs = services.nativeBuildInputs ++ [ (lib.getBin pkgs.util-linux) ];
         preBuild = services.preBuild + ''
           test "$(findmnt --noheadings --mountpoint /dev/shm --output FSTYPE)" = tmpfs

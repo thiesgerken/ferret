@@ -129,7 +129,6 @@
               '';
         }
       );
-      imageBuilds = forLinux (system: project.${system}.images);
       ciBuilds = forSystems (
         system:
         let
@@ -142,9 +141,8 @@
           inherit (p.frontend) frontend;
           tools = project.${system}.tools.ci;
           release-tools = project.${system}.tools.release;
-          sqlite-writer = p.pkgs.python3;
         }
-        // self.imageBuilds.${linux}
+        // p.images
       );
       devShells = forSystems (
         system:
@@ -160,6 +158,7 @@
               pkgs.pkg-config
               pkgs.git
               pkgs.curl
+              pkgs.python3
               pkgs.jq
               pkgs.kubernetes-helm
               pkgs.skopeo

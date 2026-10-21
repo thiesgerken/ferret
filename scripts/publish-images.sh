@@ -3,14 +3,9 @@ set -euo pipefail
 : "${REGISTRY_OWNER:?Set the GHCR owner}"
 : "${1:?Supply at least one image tag}"
 
-for component in server plugins whatsapp-archive frontend; do
-  case "$component" in
-    server) image=ferret ;;
-    plugins) image=ferret-plugins ;;
-    whatsapp-archive) image=ferret-whatsapp-archive ;;
-    frontend) image=ferret-frontend ;;
-  esac
-  archive="docker-archive:dist/${component}.tar.gz"
+for path in dist/*.tar.gz; do
+  image=$(basename "$path" .tar.gz)
+  archive="docker-archive:$path"
   test "$(skopeo inspect "$archive" | jq -r .Architecture)" = amd64
   for tag in "$@"; do
     # CI verifies archive provenance; image signing is outside this publication contract.

@@ -40,16 +40,16 @@ jobs:
           echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
       - name: Stage verified archive paths
         run: |
-          ln -s "$(realpath result-ci-server-image)" dist/server.tar.gz
-          ln -s "$(realpath result-ci-plugins-image)" dist/plugins.tar.gz
-          ln -s "$(realpath result-ci-whatsapp-archive-image)" dist/whatsapp-archive.tar.gz
-          ln -s "$(realpath result-ci-frontend-image)" dist/frontend.tar.gz
+          ln -s "$(realpath result-ci-server-image)" dist/ferret.tar.gz
+          ln -s "$(realpath result-ci-plugins-image)" dist/ferret-plugins.tar.gz
+          ln -s "$(realpath result-ci-whatsapp-archive-image)" dist/ferret-whatsapp-archive.tar.gz
+          ln -s "$(realpath result-ci-frontend-image)" dist/ferret-frontend.tar.gz
           cp -R charts/ferret dist/chart
-          sha256sum dist/server.tar.gz dist/plugins.tar.gz dist/whatsapp-archive.tar.gz dist/frontend.tar.gz >> "$GITHUB_STEP_SUMMARY"
+          sha256sum dist/*.tar.gz >> "$GITHUB_STEP_SUMMARY"
       - name: Exercise hardened runtime images
         run: |
           for archive in dist/*.tar.gz; do docker load --input "$archive"; done
-          result-ci-tools/bin/python scripts/smoke-images.py --sqlite-writer result-ci-sqlite-writer
+          result-ci-tools/bin/python scripts/smoke-images.py
           docker image inspect ferret:local ferret-plugins:local ferret-whatsapp-archive:local ferret-frontend:local \
             --format '{{.RepoTags}} {{.Architecture}} {{.Size}} bytes' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -24,22 +24,22 @@ let
       config = {
         User = "65532:65532";
         WorkingDir = "/tmp";
+      }
+      // config
+      // {
         Env = [
           "HOME=/tmp"
           "TMPDIR=/tmp"
-        ];
-      }
-      // config;
+        ] ++ (config.Env or [ ]);
+      };
     };
   tlsEnv = [
-    "HOME=/tmp"
-    "TMPDIR=/tmp"
     "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
     "SSL_CERT_DIR=${pkgs.cacert}/etc/ssl/certs"
     "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
   ];
   frontendRoutes = pkgs.writeText "ferret-frontend-routes.conf" (
-    builtins.replaceStrings [ "listen 80;" "/usr/share/nginx/html" ] [ "listen 8080;" "${frontend}" ] (
+    builtins.replaceStrings [ "/usr/share/nginx/html" ] [ "${frontend}" ] (
       builtins.readFile ../frontend/nginx.conf
     )
   );
