@@ -482,15 +482,18 @@ test("threads remain independently selectable beyond twenty chats and distinguis
   );
   const selected = { source: "chats/personal", thread: "alice" };
   const { view, changes, variables } = await renderResults(
-    { ...STATE, authors: ["thies"], threads: [selected] }, { threadFacets },
+    { ...STATE, authors: ["Alice"], threads: [selected] }, { threadFacets },
   );
   const chip = (name: string) =>
-    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => label(button) === name)!;
-  assert.equal(chip("Alice · chats/personal").getAttribute("aria-pressed"), "true");
-  assert.equal(chip("Alice · chats/work").getAttribute("aria-pressed"), "false");
-  await act(async () => chip("Chat 25").click());
+    [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => button.getAttribute("aria-label") === name)!;
+  const personal = chip("Thread: Alice · chats/personal");
+  assert.equal(personal.getAttribute("aria-pressed"), "true");
+  assert.match(personal.textContent ?? "", /Thread: Alice/);
+  assert.ok(facetChips(view.container).some((button) => label(button) === "Alice"), "the separate author chip remains available");
+  assert.equal(chip("Thread: Alice · chats/work").getAttribute("aria-pressed"), "false");
+  await act(async () => chip("Thread: Chat 25").click());
   assert.deepEqual(changes.at(-1)?.threads, [selected, { source: "chats", thread: "chat-25" }]);
-  assert.deepEqual(changes.at(-1)?.authors, ["thies"]);
+  assert.deepEqual(changes.at(-1)?.authors, ["Alice"]);
   const last = variables.at(-1);
   assert.ok(last && typeof last === "object" && "input" in last);
   const input = last.input;

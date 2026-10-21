@@ -151,16 +151,22 @@ export function SearchFilters({
       )}
       {threads.length > 0 && (
         <FilterGroup title={t("threads")}>
-          {threads.map((thread) => (
-            <FilterButton
-              key={threadKey(thread)}
-              label={threadLabel(thread, threads)}
-              title={`${thread.source} · ${thread.thread}`}
-              count={counted(thread.count)}
-              pressed={selectedThreads.has(threadKey(thread))}
-              onClick={() => onChange({ ...state, threads: toggleThread(state.threads, thread) })}
-            />
-          ))}
+          {threads.map((thread) => {
+            const name = threadLabel(thread, threads);
+            const typedName = t("thread", { name });
+            return (
+              <FilterButton
+                key={threadKey(thread)}
+                label={typedName}
+                short={name}
+                ariaLabel={typedName}
+                title={`${thread.source} · ${thread.thread}`}
+                count={counted(thread.count)}
+                pressed={selectedThreads.has(threadKey(thread))}
+                onClick={() => onChange({ ...state, threads: toggleThread(state.threads, thread) })}
+              />
+            );
+          })}
         </FilterGroup>
       )}
     </nav>
@@ -183,6 +189,7 @@ function FilterButton({
   label,
   short,
   title,
+  ariaLabel,
   count,
   pressed,
   disabled,
@@ -193,6 +200,7 @@ function FilterButton({
   /** What the column shows under a writer's heading instead of the full label. */
   short?: string;
   title?: string;
+  ariaLabel?: string;
   /** Null for a selected value the facet doesn't list. */
   count: string | null;
   pressed: boolean;
@@ -203,6 +211,7 @@ function FilterButton({
     <button
       type="button"
       aria-pressed={pressed}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={onClick}
       title={title}

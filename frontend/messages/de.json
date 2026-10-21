@@ -116,7 +116,8 @@
       "sources": "Quellen",
       "allOfWriter": "Alle",
       "authors": "Autoren",
-      "threads": "Threads"
+      "threads": "Threads",
+      "thread": "Thread: {name}"
     }
   },
   "viewer": {
