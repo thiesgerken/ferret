@@ -29,6 +29,7 @@ const URL_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 const BATCH: usize = 512;
+const MAX_LISTING_SIZE: usize = 1_048_576;
 const RENDERING_VERSION: u32 = 1;
 const EXCLUDED_DIRECTORIES: &[&str] = &[
     ".git",
@@ -182,7 +183,7 @@ pub struct FilesConfig {
     /// to prune it, e.g. **/private (not only **/private/**).
     #[serde(default)]
     pub exclude_globs: Vec<String>,
-    /// Complete UTF-8 file contents only, in bytes. Generated directory listings have no such cap.
+    /// Complete UTF-8 file contents only, in bytes. Directory listings have a separate 1 MiB cap.
     #[serde(default = "default_max_file_size")]
     pub max_file_size: u64,
 }
@@ -385,13 +386,37 @@ fn listing(relative: &str, children: &[Child]) -> Result<String, PluginError> {
         "Directory {}\nImmediate children (JSON lines):\n",
         serde_json::to_string(label)?
     );
-    for child in children {
+    for (mut shown, child) in children.iter().enumerate() {
         let mut entry = json!({"name": child.name, "kind": child.kind,
             "modified_at": timestamp(&child.stat)?.to_rfc3339_opts(SecondsFormat::Nanos, true)});
         if child.kind == "file" {
             entry["size_bytes"] = json!(child.stat.st_size);
         }
-        text.push_str(&serde_json::to_string(&entry)?);
+        let line = serde_json::to_string(&entry)?;
+        if text.len() + line.len() + 1 > MAX_LISTING_SIZE {
+            loop {
+                let footer = format!(
+                    "Listing truncated: {shown} of {} immediate children shown.\n",
+                    children.len()
+                );
+                if text.len() + footer.len() <= MAX_LISTING_SIZE {
+                    text.push_str(&footer);
+                    return Ok(text);
+                }
+                if shown == 0 {
+                    return Err(
+                        "directory path leaves no room for listing truncation notice".into(),
+                    );
+                }
+                // Make room for the notice by removing only complete JSON lines.
+                let end = text[..text.len() - 1]
+                    .rfind('\n')
+                    .expect("listing header ends with a newline");
+                text.truncate(end + 1);
+                shown -= 1;
+            }
+        }
+        text.push_str(&line);
         text.push('\n');
     }
     Ok(text)
@@ -801,6 +826,82 @@ mod tests {
         assert!(open_directory(&root, "outside").is_err());
         assert!(open_directory(&root, "loop").is_err());
         assert!(listing("empty", &[]).unwrap().contains("empty"));
+    }
+
+    #[test]
+    fn listing_cap_preserves_complete_escaped_entries_and_reports_omissions() {
+        let fixture = tempfile::tempfile().unwrap();
+        let stat = fstat(&fixture).unwrap();
+        let children: Vec<_> = (0..12_000)
+            .map(|i| Child {
+                name: format!("{i:05}-ü\"\\\n{}", "a".repeat(100)),
+                relative: String::new(),
+                kind: "file",
+                stat,
+            })
+            .collect();
+        let text = listing("", &children).unwrap();
+        assert!(text.len() <= MAX_LISTING_SIZE);
+        let mut lines: Vec<_> = text.lines().skip(2).collect();
+        let footer = lines.pop().unwrap();
+        assert!(lines.len() < children.len());
+        assert_eq!(
+            footer,
+            format!(
+                "Listing truncated: {} of {} immediate children shown.",
+                lines.len(),
+                children.len()
+            )
+        );
+        for (line, child) in lines.iter().zip(&children) {
+            let entry: Value = serde_json::from_str(line).unwrap();
+            assert_eq!(entry["name"], child.name);
+            assert_eq!(entry["kind"], "file");
+        }
+        assert!(serde_json::to_vec(&json!({"text": text})).unwrap().len() < 2_097_152);
+    }
+
+    #[test]
+    fn listing_cap_is_inclusive_and_reserves_room_for_the_truncation_notice() {
+        let fixture = tempfile::tempfile().unwrap();
+        let stat = fstat(&fixture).unwrap();
+        let child = || Child {
+            name: "file.txt".into(),
+            relative: String::new(),
+            kind: "file",
+            stat,
+        };
+        let header_size = listing("", &[]).unwrap().len();
+        let line_size = listing("", &[child()]).unwrap().len() - header_size;
+        let mut children: Vec<_> = (0..(MAX_LISTING_SIZE - header_size) / line_size)
+            .map(|_| child())
+            .collect();
+        let padding = (MAX_LISTING_SIZE - header_size) % line_size;
+        children
+            .last_mut()
+            .unwrap()
+            .name
+            .push_str(&"x".repeat(padding));
+        let text = listing("", &children).unwrap();
+        assert_eq!(text.len(), MAX_LISTING_SIZE);
+        assert_eq!(text.lines().skip(2).count(), children.len());
+        assert!(!text.contains("Listing truncated:"));
+
+        children.last_mut().unwrap().name.push('x');
+        let text = listing("", &children).unwrap();
+        assert!(text.len() <= MAX_LISTING_SIZE);
+        let shown = text.lines().skip(2).count() - 1;
+        assert!(shown < children.len());
+        assert_eq!(
+            text.lines().last().unwrap(),
+            format!(
+                "Listing truncated: {shown} of {} immediate children shown.",
+                children.len()
+            )
+        );
+        for line in text.lines().skip(2).take(shown) {
+            let _: Value = serde_json::from_str(line).unwrap();
+        }
     }
 
     #[test]
