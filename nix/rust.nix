@@ -6,20 +6,24 @@
 }:
 let
   inherit (pkgs) lib;
+  sources = lib.fileset.unions [
+    ../Cargo.toml
+    ../Cargo.lock
+    ../crates
+    ../.cargo
+    ../.sqlx
+  ];
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [
-      ../Cargo.toml
-      ../Cargo.lock
-      ../crates
-      ../.cargo
-      ../.sqlx
-    ];
+    fileset = sources;
   };
+  version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).workspace.package.version;
   common = {
-    inherit src;
+    inherit src version;
+    # Explicit, so the dependency builds never read their generated dummy source during evaluation
+    # (import from derivation).
+    cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
     pname = "ferret";
-    version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).workspace.package.version;
     strictDeps = true;
     SQLX_OFFLINE = "true";
     nativeBuildInputs = [
@@ -27,14 +31,52 @@ let
       pkgs.cmake
     ];
   };
-  # Only the shipped packages build on these, so they skip the tests' dev-dependencies.
-  cargoArtifacts = craneLib.buildDepsOnly (
-    common
-    // {
-      cargoExtraArgs = "--workspace --locked";
-      doCheck = false;
-    }
+  # semantic-release bumps the workspace version with every release, which would rebuild all
+  # dependencies. Their source pins every workspace member to 0.0.0 instead (cargo's default for a
+  # package without a version), in Cargo.toml and Cargo.lock alike, so `--locked` still holds.
+  lock = builtins.readFile ../Cargo.lock;
+  members = map (package: package.name) (
+    builtins.filter (package: !(package ? source)) (builtins.fromTOML lock).package
   );
+  lockEntry = memberVersion: name: ''
+    name = "${name}"
+    version = "${memberVersion}"
+  '';
+  depsSrc = craneLib.mkDummySrc {
+    src = lib.fileset.toSource {
+      root = ../.;
+      fileset = lib.fileset.difference sources ../Cargo.lock;
+    };
+    cargoLock = builtins.toFile "Cargo.lock" (
+      builtins.replaceStrings (map (lockEntry version) members) (map (lockEntry "0.0.0") members) lock
+    );
+    cleanCargoTomlFilter =
+      path:
+      craneLib.filters.cargoTomlDefault path
+      && !(builtins.elem path [
+        [
+          "package"
+          "version"
+        ]
+        [
+          "workspace"
+          "package"
+          "version"
+        ]
+      ]);
+  };
+  deps =
+    attrs:
+    craneLib.buildDepsOnly (
+      builtins.removeAttrs attrs [ "src" ]
+      // {
+        dummySrc = depsSrc;
+        version = "0";
+        cargoExtraArgs = "--workspace --locked";
+      }
+    );
+  # Only the shipped packages build on these, so they skip the tests' dev-dependencies.
+  cargoArtifacts = deps (common // { doCheck = false; });
   # The checks ship nothing, so they skip release optimization and debug info, which dominate
   # compiling and linking the test binaries. Their deps need artifacts of their own: cargo
   # fingerprints differ per profile and env.
@@ -42,12 +84,7 @@ let
     CARGO_PROFILE = "";
     CARGO_PROFILE_DEV_DEBUG = "0";
   };
-  devArtifacts = craneLib.buildDepsOnly (
-    dev
-    // {
-      cargoExtraArgs = "--workspace --locked";
-    }
-  );
+  devArtifacts = deps dev;
   # Service-fixture changes must not discard compiled integration-test artifacts.
   testArtifacts = craneLib.cargoTest (
     dev
