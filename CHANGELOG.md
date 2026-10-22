@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v0.33.0 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #196 from thiesgerken/feat/thread-tree
+  ([`bfb254d`](https://github.com/thiesgerken/ferret/commit/bfb254d53d45040362021ac50de0928afbc6c891))
+
+- 📝 docs(demo): add a branching mail thread to the demo data
+  ([`58c53ed`](https://github.com/thiesgerken/ferret/commit/58c53ede7e592959d8f5632f1a3b0a4a355bdbbf))
+
+  Gives the thread outline a tree to show: ten mails in `demo/mail` with three replies to the first one and a fork further down.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### ✨ Features
+
+
+- ✨ feat(viewer): show threads as a tree of replies
+  ([`bfb254d`](https://github.com/thiesgerken/ferret/commit/bfb254d53d45040362021ac50de0928afbc6c891))
+
+- ✨ feat(viewer): show threads as a tree of replies
+  ([`69bb850`](https://github.com/thiesgerken/ferret/commit/69bb850b6f0eaa427a566c4731b06204ad6782f7))
+
+  Documents get an optional `parent`: the external_id of the document in the same thread they answer. The viewer replaces previous/next with an outline of the whole thread (a window of 1000 around the document in longer threads), drawn as a tree by parent. IMAP records In-Reply-To (else the last References id) as the parent; a changed rendering rule refetches every mailbox once. MCP's get_document returns the parent.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🩹 Patches
+
+
+- 🩹 fix(viewer): keep thread titles visible on narrow screens
+  ([`6aad366`](https://github.com/thiesgerken/ferret/commit/6aad3661348e5d8becf42fb9adca7f422de59457))
+
+  Caps the author column at two fifths of the row, so a long address no longer squeezes the title to nothing, and drops the last previous/next mentions from the docs.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.32.3 (2026-10-22)
 
 
