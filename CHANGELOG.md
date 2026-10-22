@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.32.3 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #197 from thiesgerken/perf/ci-stable-deps
+  ([`888e466`](https://github.com/thiesgerken/ferret/commit/888e4664f2b888fcd376494067703ab90f920d24))
+
+### ⚡ Performance
+
+
+- ⚡ perf(ci): reuse dependency artifacts across releases and build release binaries once
+  ([`888e466`](https://github.com/thiesgerken/ferret/commit/888e4664f2b888fcd376494067703ab90f920d24))
+
+- ⚡ perf(nix): build the release binaries in one cargo invocation
+  ([`9681d07`](https://github.com/thiesgerken/ferret/commit/9681d072d2bb6dc3f9faf4d393fac8e9aa655c75))
+
+  The server, plugins and whatsapp-archive binaries were three separate `cargo build -p` derivations. They competed for the runner's cores, compiled the shared workspace crates three times, and each resolved its own feature set, so dependencies whose features differ from the workspace-wide dependency build were compiled again per package.
+
+  One build now compiles all three with the workspace's feature set, which matches the release dependency artifacts. Small derivations copy one binary each out of it, so every image still carries only its own binary; `disallowedReferences` fails the copy if a binary ever references the combined build. The attribute names, images and graphql-schema check stay unchanged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- ⚡ perf(nix): keep dependency artifacts stable across version bumps
+  ([`6fd50cd`](https://github.com/thiesgerken/ferret/commit/6fd50cda13d89d9bb1cac2becb2146cead79670a))
+
+  semantic-release bumps the workspace version in Cargo.toml and Cargo.lock with every release. The dependency derivations carried it in their name, in the workspace Cargo.toml Crane keeps in the dummy source, and in the Cargo.lock it copies unaltered, so every release rebuilt all dependencies from scratch, release and dev profile alike.
+
+  The dependency builds now get a constant version and a dummy source in which every workspace member is 0.0.0: the version fields are filtered out of the cleaned Cargo.tomls and the members' Cargo.lock entries are rewritten to match, so `--locked` still accepts the lock file. The vendor directory is passed explicitly so that evaluation never reads the generated dummy source.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.32.2 (2026-10-22)
 
 
