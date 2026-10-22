@@ -108,7 +108,7 @@ async fn unknown_origin_dates_remain_searchable_and_update_reused_embeddings(poo
 }
 
 #[sqlx::test(migrations = false)]
-async fn undated_thread_neighbors_follow_the_listing_without_fake_dates(pool: PgPool) {
+async fn the_thread_outline_follows_the_listing_without_fake_dates(pool: PgPool) {
     let server = common::start_server(pool).await;
     let api = server.admin_api().await;
     let mut ids = Vec::new();
@@ -132,18 +132,21 @@ async fn undated_thread_neighbors_follow_the_listing_without_fake_dates(pool: Pg
     let ordered: Vec<_> = listing.documents.iter().map(|d| d.id).collect();
     assert_eq!(ordered[0], ids[0]);
     let cookie = server.sign_in().await;
-    for (position, id) in ordered.iter().enumerate() {
-        let result = server.graphql(&cookie, "query ($id: ID!) { document(id:$id) { previousInThread { id } nextInThread { id } } }", json!({"id":id})).await;
-        assert_eq!(result["errors"], Value::Null, "{result}");
-        let previous = position.checked_sub(1).map(|i| ordered[i].to_string());
-        let next = ordered.get(position + 1).map(ToString::to_string);
-        assert_eq!(
-            result["data"]["document"]["previousInThread"]["id"],
-            json!(previous)
-        );
-        assert_eq!(
-            result["data"]["document"]["nextInThread"]["id"],
-            json!(next)
-        );
-    }
+    let result = server
+        .graphql(
+            &cookie,
+            "query ($id: ID!) { document(id:$id) { threadOutline { entries { id createdAt } } } }",
+            json!({"id": ordered[1]}),
+        )
+        .await;
+    assert_eq!(result["errors"], Value::Null, "{result}");
+    let entries = result["data"]["document"]["threadOutline"]["entries"]
+        .as_array()
+        .unwrap();
+    let listed: Vec<Value> = entries.iter().map(|entry| entry["id"].clone()).collect();
+    assert_eq!(
+        listed,
+        ordered.iter().map(|id| json!(id)).collect::<Vec<_>>()
+    );
+    assert_eq!(entries[1]["createdAt"], Value::Null);
 }

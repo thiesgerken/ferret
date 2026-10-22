@@ -58,6 +58,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         text: config.text,
         url: config.url,
         thread: None,
+        parent: None,
         authors: Vec::new(),
         created_at: Some(config.created_at),
         modified_at: Some(config.modified_at),

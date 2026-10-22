@@ -25,6 +25,7 @@ cat > /tmp/ferret-note.json <<'JSON'
   "text": "# Workshop checklist\n\nBring the cobalt torque wrench.",
   "url": "https://notes.example.com/notes/42",
   "thread": null,
+  "parent": null,
   "authors": ["Alex"],
   "created_at": "2026-01-02T10:00:00Z",
   "modified_at": "2026-01-02T10:00:00Z",
@@ -39,9 +40,9 @@ curl --fail-with-body -sS -X PUT "$FERRET_URL/api/documents" \
 
 The first response is `{"outcome":"created","id":"<uuid>"}`. Repeating an equivalent normalized request returns `unchanged` with that id. Updating any serialized document field after normalization, including timestamps or metadata, returns `updated`. Do not set `modified_at` to the current time on each enumeration: that defeats no-op detection. `excluded` has no id and means a user's exclusion prevented storage.
 
-A put replaces the complete document, not selected fields. Omitted optional values become absent; `authors`, `created_at`, `modified_at`, `source`, `external_id`, `content_type` and `text` are required keys. Each origin timestamp is independently an RFC 3339 string or `null` when unknown. Never substitute ingestion time, the other origin date or the Unix epoch for an unknown date. `meta` defaults to an empty object. Content types are `markdown`, `plain`, `email`. `url` is an origin deep link; without it Ferret's viewer is the origin. `thread` groups documents only within one exact source. Unknown fields are rejected.
+A put replaces the complete document, not selected fields. Omitted optional values become absent; `authors`, `created_at`, `modified_at`, `source`, `external_id`, `content_type` and `text` are required keys. Each origin timestamp is independently an RFC 3339 string or `null` when unknown. Never substitute ingestion time, the other origin date or the Unix epoch for an unknown date. `meta` defaults to an empty object. Content types are `markdown`, `plain`, `email`. `url` is an origin deep link; without it Ferret's viewer is the origin. `thread` groups documents only within one exact source. `parent` is the `external_id` of the document in the same thread this one answers (a mail's reply target); it needs `thread`, can't name the document itself, and may name a document that isn't indexed (yet). Unknown fields are rejected.
 
-Ferret strips U+0000 (NUL) from document text, title, every author and recursively nested metadata string values before exclusion checks, hashing and chunking. Read-back contains the normalized values, and chunk offsets point into normalized text. Adding or removing only these NUL characters does not trigger an update. NUL in `source`, `external_id`, `thread`, `url` or metadata object keys at any depth instead returns 400 without changing stored data. Fix those inputs at the producer; Ferret will not rewrite identities, URLs or keys.
+Ferret strips U+0000 (NUL) from document text, title, every author and recursively nested metadata string values before exclusion checks, hashing and chunking. Read-back contains the normalized values, and chunk offsets point into normalized text. Adding or removing only these NUL characters does not trigger an update. NUL in `source`, `external_id`, `thread`, `parent`, `url` or metadata object keys at any depth instead returns 400 without changing stored data. Fix those inputs at the producer; Ferret will not rewrite identities, URLs or keys.
 
 Chunking happens with the put; embeddings are asynchronous. Updates reuse unchanged chunk text where possible, but changing the title invalidates its embedding input. The writer is the connection or API key that last put the document, including an unchanged put. Revoking a key does not delete its documents.
 

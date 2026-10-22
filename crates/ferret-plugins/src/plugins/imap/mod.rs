@@ -26,6 +26,7 @@ const SEEN_BATCH: usize = 1000;
 const FETCH_BATCH: usize = 50;
 /// Rendering rules, part of the indexing settings: a new rule refetches every mail.
 const QUOTES: &str = "containers, markers, runs of 3 lines of earlier mails in the thread; remove style, script, template";
+const PARENT: &str = "In-Reply-To, else the last of References";
 
 /// Indexes the mails of an IMAP mailbox.
 #[derive(Deserialize, JsonSchema)]
@@ -85,6 +86,7 @@ impl ImapConfig {
             "username": self.username,
             "url_template": self.url_template,
             "quotes": QUOTES,
+            "parent": PARENT,
         })
     }
 }

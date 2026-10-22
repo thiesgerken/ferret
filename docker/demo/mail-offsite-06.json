@@ -1,0 +1,19 @@
+{
+  "source": "demo/mail",
+  "external_id": "dave-1@example.org",
+  "content_type": "email",
+  "title": "Re: Team offsite in May",
+  "text": "Projector please, I want to show the roadmap.",
+  "thread": "offsite@example.org",
+  "parent": "carla-1@example.org",
+  "authors": [
+    "Dave Probe"
+  ],
+  "created_at": "2026-03-02T15:10:00Z",
+  "modified_at": "2026-03-02T15:10:00Z",
+  "meta": {
+    "to": [
+      "team@example.org"
+    ]
+  }
+}

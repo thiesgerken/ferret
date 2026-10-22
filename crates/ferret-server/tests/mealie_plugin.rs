@@ -242,6 +242,7 @@ async fn recipes_search_attached_content_preserve_uuid_and_reconcile_group_wide(
             text: "Siblingsentinel".into(),
             url: None,
             thread: None,
+            parent: None,
             authors: vec![],
             created_at: Some(common::day(1)),
             modified_at: Some(common::day(1)),

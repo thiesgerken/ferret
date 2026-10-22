@@ -59,6 +59,12 @@ pub struct DocumentPut {
     pub url: Option<String>,
     /// Groups documents into a sequence, e.g. a chat channel or a mail thread.
     pub thread: Option<String>,
+    /// The `external_id` of the document in the same source and thread this one answers, e.g. the
+    /// mail it replies to. Needs `thread`.
+    // Left out when unset, so documents without one keep the content hash they had before
+    // `parent` existed and aren't rewritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     pub authors: Vec<String>,
     /// Origin creation time, null when unknown independently of modification time.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -109,6 +115,8 @@ pub struct Document {
     pub text: String,
     pub url: Option<String>,
     pub thread: Option<String>,
+    /// The `external_id` of the document this one answers.
+    pub parent: Option<String>,
     pub authors: Vec<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub modified_at: Option<DateTime<Utc>>,

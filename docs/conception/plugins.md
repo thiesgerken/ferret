@@ -182,6 +182,7 @@ Indexes a mailbox over IMAP. MIME parsing with
 - Source = the connection's root, e.g. `mail/personal`. Folders are not recorded (a folder filter
   would require tracking moves).
 - `thread` = the first Message-ID in `References`, else `In-Reply-To`, else the mail's own id.
+- `parent` = `In-Reply-To`, else the last Message-ID in `References`: the mail it answers.
 - `content_type = email`, `title` = subject, `authors` = the senders' names (their addresses where
   a name is missing), `meta`: `to` and `cc` (`Name <address>`), `attachments` (file names).
   `created_at` = `modified_at` = the `Date` header, else when the mail arrived (`INTERNALDATE`).
@@ -315,7 +316,7 @@ A chat plugin cuts a conversation into documents, one per **segment**:
    message of the previous segment as context, then one line per message (`[22:14] Alice: ...`).
 
 The parameters are guesses. They are plugin config, tunable once there are relevance judgments.
-The viewer navigates to the previous and next segment through `thread`.
+The viewer lists a chat's segments through `thread`, flat, as segments have no `parent`.
 
 Exports as the only copy: keep the raw zips until the importer has proven itself on real data
 ([README](README.md#backups)).

@@ -76,11 +76,11 @@ curl --fail-with-body -sS "$FERRET_URL/api/documents/$DOCUMENT_ID" \
   -H "Authorization: Bearer $FERRET_KEY"
 ```
 
-Returns the full stored document: `id`, `source`, `external_id`, `content_type`, nullable `title`, `text`, nullable `url` and `thread`, `authors`, independently nullable origin `created_at` and `modified_at`, `meta` and nullable `writer`. Unknown dates are JSON `null`, never observation time or epoch substitutes.
+Returns the full stored document: `id`, `source`, `external_id`, `content_type`, nullable `title`, `text`, nullable `url`, `thread` and `parent`, `authors`, independently nullable origin `created_at` and `modified_at`, `meta` and nullable `writer`. Unknown dates are JSON `null`, never observation time or epoch substitutes.
 
 ## Read a thread: `GET /api/documents?source=&thread=`
 
-Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id, with unknown creation dates last (id breaks ties among them). Viewer previous/next navigation follows the same ordering. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
+Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id, with unknown creation dates last (id breaks ties among them). The viewer's thread outline follows the same ordering. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
 
 ```sh
 curl --fail-with-body -sS -G "$FERRET_URL/api/documents" \
@@ -101,6 +101,7 @@ Requires `ingest:write`. Send a complete JSON object:
 | `text` | required string; may be empty but then yields no chunks |
 | `url` | optional/null origin string; javascript/data/vbscript schemes rejected |
 | `thread` | optional/null string, local to exact source |
+| `parent` | optional/null `external_id` of the document in the same thread this one answers; needs `thread`, not the document's own id, 400 otherwise. Need not exist |
 | `authors` | required array of strings |
 | `created_at`, `modified_at` | required keys; each independently an RFC 3339 string or `null` for an unknown origin date |
 | `meta` | object, defaults to `{}` |
@@ -109,7 +110,7 @@ Unknown fields are rejected. A put replaces stored fields at the same `(user,sou
 
 Before exclusion checks, hashing or chunking, Ferret removes U+0000 (NUL) from `text`, `title`, each `authors` string and metadata string values at every nesting depth, including arrays and objects. Other characters and non-string metadata values are preserved. Read-back and chunk offsets refer to this normalized text. Dirty and equivalent clean payloads have the same unchanged/hash behavior.
 
-NUL in `source`, `external_id`, `thread`, `url` or any metadata object key returns 400 with a field-specific error. These fields are never silently rewritten: doing so could change an identity, URL or metadata key. A rejected put leaves any existing document unchanged.
+NUL in `source`, `external_id`, `thread`, `parent`, `url` or any metadata object key returns 400 with a field-specific error. These fields are never silently rewritten: doing so could change an identity, URL or metadata key. A rejected put leaves any existing document unchanged.
 
 Successful response is exactly one of these shapes:
 

@@ -185,6 +185,7 @@ async fn expenses_preserve_financial_semantics_dates_and_identity_and_reconcile_
         text: "Siblingsentinel".into(),
         url: None,
         thread: None,
+        parent: None,
         authors: vec![],
         created_at: Some(common::day(1)),
         modified_at: Some(common::day(1)),

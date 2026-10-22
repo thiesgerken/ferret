@@ -45,8 +45,15 @@ async function renderViewer(
           url,
           authors: ["thies"],
           ...dates,
-          previousInThread: null,
-          nextInThread: { __typename: "ThreadNeighbor", id: "e", title: null },
+          threadOutline: {
+            __typename: "ThreadOutline",
+            total: 1500,
+            entries: [
+              { __typename: "ThreadEntry", id: "c", externalId: "start", parent: null, title: "Lunch?", authors: ["anna"], createdAt: null },
+              { __typename: "ThreadEntry", id: "d", externalId: "reply", parent: "start", title: "Re: Lunch?", authors: ["thies"], createdAt: null },
+              { __typename: "ThreadEntry", id: "e", externalId: "other", parent: "start", title: null, authors: ["ben"], createdAt: null },
+            ],
+          },
         },
       },
     });
@@ -134,17 +141,6 @@ test("undated email omits unknown origin dates instead of formatting substitute 
   await view.unmount();
 });
 
-test("offers the next document of the thread, and no previous one at its start", async () => {
-  const view = await renderViewer("PLAIN", "text", null);
-
-  const links = [...view.container.querySelectorAll("nav[aria-label=Thread] a")];
-  assert.deepEqual(
-    links.map((link) => [link.getAttribute("rel"), link.getAttribute("href"), link.textContent]),
-    [["next", "/view?id=e", "Next in thread →"]],
-  );
-  await view.unmount();
-});
-
 test("excludes the whole thread after confirmation and says what happened", async (t) => {
   t.mock.method(window, "confirm", () => true);
   const operations: Operation[] = [];
@@ -160,5 +156,18 @@ test("excludes the whole thread after confirmation and says what happened", asyn
   assert.deepEqual(exclude?.variables, { id: "d", wholeThread: true });
   assert.match(view.container.querySelector("[role=status]")?.textContent ?? "", /3 documents removed/);
   assert.match(view.container.textContent ?? "", /Its connection won.t ingest it again/);
+  await view.unmount();
+});
+
+test("the thread outline marks the viewed document among the others and says when it's a window", async () => {
+  const view = await renderViewer("PLAIN", "text", null);
+  const outline = view.container.querySelector("nav[aria-label='Thread']")!;
+
+  assert.match(outline.querySelector("[aria-current]")?.textContent ?? "", /thies.*Re: Lunch\?/);
+  assert.deepEqual(
+    [...outline.querySelectorAll("a")].map((link) => link.getAttribute("href")),
+    ["/view?id=c", "/view?id=e"],
+  );
+  assert.match(outline.textContent ?? "", /3 of 1,500 documents, around this one/);
   await view.unmount();
 });

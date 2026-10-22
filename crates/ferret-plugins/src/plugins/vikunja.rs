@@ -265,6 +265,7 @@ fn to_document(
         text,
         url: Some(format!("{links}/tasks/{}", task.id)),
         thread: None,
+        parent: None,
         authors,
         created_at: Some(task.created),
         modified_at: Some(modified_at),

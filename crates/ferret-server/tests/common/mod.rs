@@ -314,6 +314,7 @@ pub fn document(source: &str, external_id: &str, text: &str) -> DocumentPut {
         text: text.to_owned(),
         url: None,
         thread: None,
+        parent: None,
         authors: vec!["someone".to_owned()],
         created_at: Some(day(1)),
         modified_at: Some(day(1)),

@@ -3,7 +3,7 @@ use crate::common;
 use common::{day, document, json_body, start_server};
 use ferret_api::{ContentType, PutResponse};
 use reqwest::{Method, StatusCode, header};
-use serde_json::json;
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -89,6 +89,7 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
     note.content_type = ContentType::Markdown;
     note.url = Some("obsidian://open?vault=main&file=plan".to_owned());
     note.thread = Some("planning".to_owned());
+    note.parent = Some("kickoff.md".to_owned());
     note.meta = json!({"tags": ["work"]}).as_object().unwrap().clone();
     note.modified_at = Some(day(2));
 
@@ -112,6 +113,7 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
             "text": "# Plan\n\nShip it.",
             "url": "obsidian://open?vault=main&file=plan",
             "thread": "planning",
+            "parent": "kickoff.md",
             "authors": ["someone"],
             "created_at": "2026-01-01T12:00:00Z",
             "modified_at": "2026-01-02T12:00:00Z",
@@ -172,6 +174,11 @@ async fn nul_content_is_normalized_before_storage_hashing_and_chunking(pool: PgP
     let mut stored = serde_json::to_value(stored).unwrap();
     stored.as_object_mut().unwrap().remove("id");
     stored.as_object_mut().unwrap().remove("writer");
+    // A put leaves an unset parent out, a read-back says null.
+    assert_eq!(
+        stored.as_object_mut().unwrap().remove("parent"),
+        Some(Value::Null)
+    );
     assert_eq!(stored, serde_json::to_value(&clean).unwrap());
 
     let chunks: Vec<(Uuid, String, i32, i32, Option<String>)> = sqlx::query_as(

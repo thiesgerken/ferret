@@ -213,6 +213,7 @@ fn document(
         text,
         url: Some(url),
         thread: None,
+        parent: None,
         authors: Vec::new(),
         created_at,
         // Registries do not timestamp every definition, membership or recognized relation change.

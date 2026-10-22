@@ -341,6 +341,7 @@ impl<'a> Indexer<'a> {
                 .map(|template| file_url(template, path, &self.checkout.head)),
             text,
             thread: None,
+            parent: None,
             authors: vec![file_history.author.clone()],
             created_at: Some(file_history.created_at),
             modified_at: Some(file_history.modified_at),
