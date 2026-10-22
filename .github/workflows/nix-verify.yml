@@ -21,6 +21,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+          # cache-nix-action cannot restore hard links into /nix/store/.links.
+          extra-conf: |
+            auto-optimise-store = false
       - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           primary-key: nix-x64-${{ hashFiles('flake.lock', 'Cargo.lock', 'frontend/pnpm-lock.yaml') }}-${{ github.sha }}
