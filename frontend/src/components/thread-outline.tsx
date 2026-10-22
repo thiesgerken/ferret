@@ -79,13 +79,14 @@ function EntryLine({ entry, current }: { entry: Entry; current: boolean }) {
   const format = useFormatter();
   const content = (
     <>
-      <span className="shrink-0">{entry.authors.join(", ")}</span>
+      {/* Capped, so a long address can't squeeze the title to nothing on a phone. */}
+      <span className="max-w-2/5 shrink-0 truncate">{entry.authors.join(", ")}</span>
       {entry.createdAt && (
         <span className="shrink-0 text-muted-foreground">
           {format.dateTime(new Date(entry.createdAt), { dateStyle: "short", timeStyle: "short" })}
         </span>
       )}
-      <span className="truncate text-muted-foreground">{entry.title || t("untitled")}</span>
+      <span className="min-w-0 truncate text-muted-foreground">{entry.title || t("untitled")}</span>
     </>
   );
   const line = "flex gap-2 rounded px-1 py-0.5";

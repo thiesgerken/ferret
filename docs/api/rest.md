@@ -80,7 +80,7 @@ Returns the full stored document: `id`, `source`, `external_id`, `content_type`,
 
 ## Read a thread: `GET /api/documents?source=&thread=`
 
-Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id, with unknown creation dates last (id breaks ties among them). Viewer previous/next navigation follows the same ordering. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
+Same read scopes. Both query parameters are required; source is exact, not recursive. Returns `{"documents":[...]}` with full documents ordered by creation time then id, with unknown creation dates last (id breaks ties among them). The viewer's thread outline follows the same ordering. Empty/unauthorized scope yields an empty list. This endpoint has no page parameter and is not a general collection listing.
 
 ```sh
 curl --fail-with-body -sS -G "$FERRET_URL/api/documents" \
