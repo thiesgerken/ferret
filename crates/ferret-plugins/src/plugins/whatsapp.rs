@@ -23,7 +23,14 @@ use super::{Outcome, PluginError, Run};
 pub const NAME: &str = "whatsapp";
 const MAX_REQUESTS: usize = 20_000;
 const SEGMENT_CHARS: usize = 8_000;
-const PAUSE_SECONDS: i64 = 3_600;
+/// About one segment per day of conversation, but a conversation running past midnight stays in
+/// one segment.
+const PAUSE_SECONDS: i64 = 24 * 3_600;
+const CURSOR_VERSION: u32 = 3;
+const MESSAGE_SEPARATOR: &str = "\n\n";
+/// Markdown's hard line break as two trailing spaces: unlike a trailing backslash, it stays
+/// invisible in search snippets.
+const LINE_BREAK: &str = "  \n";
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -207,7 +214,7 @@ impl ArchiveClient {
         chat: &Chat,
         stats: &mut RunStats,
     ) -> Result<(), PluginError> {
-        let mut segments = Segments::new(&run.source, chat)?;
+        let mut segments = Segments::new(&run.source, chat);
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
@@ -303,7 +310,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             .map_err(|_| "WhatsApp saved cursor is invalid")?;
         match cursor.version {
             1 => return Err("WhatsApp cursor uses the old index layout; delete/recreate the WhatsApp connection to rebuild the flat index (indexed documents and remembered exclusions will be cleared; the native archive is untouched)".into()),
-            2 => Some(cursor),
+            2 => {
+                run.log.line("Saved cursor predates the Markdown rendering and day-scale segments; re-rendering every chat with a full authoritative reconciliation");
+                None
+            }
+            CURSOR_VERSION => Some(cursor),
             _ => return Err("WhatsApp saved cursor version is unsupported".into()),
         }
     };
@@ -428,7 +439,7 @@ async fn reconcile(
         chats.len()
     ));
     Ok(serde_json::to_value(Cursor {
-        version: 2,
+        version: CURSOR_VERSION,
         checkpoint: end.high,
         settings: Settings {
             url: settings.url.clone(),
@@ -473,52 +484,85 @@ fn timestamp(ts: i64) -> Result<DateTime<Utc>, PluginError> {
         .ok_or_else(|| "WhatsApp message timestamp is out of range".into())
 }
 
-fn message_text(message: &Message) -> Result<(String, String), PluginError> {
-    let sender = if message.from_me {
-        "Me"
+/// One message as a Markdown block: a bold sender line, then attachment, text and caption, joined
+/// by hard line breaks because the viewer renders single newlines as spaces.
+fn message_block(message: &Message, sender: &str, at: DateTime<Utc>, with_date: bool) -> String {
+    let stamp = at.format(if with_date {
+        "%Y-%m-%d %H:%M UTC"
     } else {
-        message
-            .sender_name
-            .as_deref()
-            .filter(|name| !name.is_empty())
-            .or(message.sender_jid.as_deref())
-            .unwrap_or("Unknown sender")
-    }
-    .to_owned();
-    let mut text = format!("[{}] {}", timestamp(message.ts)?.to_rfc3339(), sender);
-    if let Some(jid) = &message.sender_jid {
-        write!(text, " ({jid})")?;
-    }
-    if message.edited {
-        text.push_str(" [edited]");
-    }
-    text.push('\n');
-    if let Some(body) = message
+        "%H:%M"
+    });
+    let edited = if message.edited { " (edited)" } else { "" };
+    let mut lines = vec![format!("**{}** · {stamp}{edited}", escape_inline(sender))];
+    lines.extend(attachment_line(message));
+    let body = message
         .text
         .as_deref()
         .filter(|text| !text.is_empty())
-        .or(message.display_text.as_deref())
-    {
-        writeln!(text, "{body}")?;
+        .or(message.display_text.as_deref());
+    let caption = message
+        .media_caption
+        .as_deref()
+        .filter(|caption| Some(*caption) != message.text.as_deref());
+    for text in [body, caption].into_iter().flatten() {
+        // Untrimmed indentation would turn a line after a blank one into a code block.
+        lines.extend(
+            text.trim()
+                .lines()
+                .map(|line| escape_block_start(line.trim())),
+        );
     }
-    if let Some(caption) = &message.media_caption
-        && Some(caption.as_str()) != message.text.as_deref()
-    {
-        writeln!(text, "Caption: {caption}")?;
+    lines.join(LINE_BREAK)
+}
+
+fn attachment_line(message: &Message) -> Option<String> {
+    let size = message.file_length.filter(|size| *size > 0).map(human_size);
+    let parts: Vec<_> = [&message.media_type, &message.filename, &message.mime_type]
+        .into_iter()
+        .flatten()
+        .map(|part| escape_inline(part))
+        .chain(size)
+        .collect();
+    (!parts.is_empty()).then(|| format!("Attachment: {}", parts.join(" · ")))
+}
+
+fn human_size(bytes: i64) -> String {
+    if bytes < 1_000 {
+        return format!("{bytes} B");
     }
-    if let Some(kind) = &message.media_type {
-        writeln!(text, "Attachment type: {kind}")?;
+    let mut size = bytes as f64 / 1_000.0;
+    for unit in ["kB", "MB", "GB"] {
+        if size < 1_000.0 {
+            return format!("{size:.1} {unit}");
+        }
+        size /= 1_000.0;
     }
-    if let Some(filename) = &message.filename {
-        writeln!(text, "Filename: {filename}")?;
+    format!("{size:.1} TB")
+}
+
+/// Keeps a line of user text from opening a Markdown block (heading, list, quote, code fence,
+/// table, HTML, thematic break): each of those starts with ASCII punctuation or, for an ordered
+/// list, with digits and `.` or `)`. Inline emphasis stays, WhatsApp's own `*bold*` is close enough.
+fn escape_block_start(line: &str) -> String {
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    match line[digits..].chars().next() {
+        Some(first) if digits == 0 && first.is_ascii_punctuation() => format!("\\{line}"),
+        Some('.' | ')') if digits > 0 => format!("{}\\{}", &line[..digits], &line[digits..]),
+        _ => line.to_owned(),
     }
-    if let Some(mime) = &message.mime_type {
-        writeln!(text, "MIME type: {mime}")?;
+}
+
+/// Keeps text inside our own Markdown (the bold sender, attachment metadata) from closing it or
+/// starting code, links or emphasis.
+fn escape_inline(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\\' | '`' | '*' | '_' | '~' | '[' | ']' | '<') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
     }
-    if let Some(size) = message.file_length.filter(|size| *size > 0) {
-        writeln!(text, "Size: {size} bytes")?;
-    }
-    Ok((text, sender))
+    escaped
 }
 
 struct Segments<'a> {
@@ -526,15 +570,13 @@ struct Segments<'a> {
     chat: &'a Chat,
     chat_hash: String,
     name: String,
-    header: String,
-    header_chars: usize,
     current: Option<DocumentPut>,
-    previous_ts: Option<i64>,
     current_chars: usize,
+    previous: Option<DateTime<Utc>>,
 }
 
 impl<'a> Segments<'a> {
-    fn new(source: &'a str, chat: &'a Chat) -> Result<Self, PluginError> {
+    fn new(source: &'a str, chat: &'a Chat) -> Self {
         let name: String = chat
             .name
             .as_deref()
@@ -542,66 +584,97 @@ impl<'a> Segments<'a> {
             .chars()
             .take(256)
             .collect();
-        let header = format!("WhatsApp chat: {name}\nChat ID: {}\n\n", chat.jid);
-        let header_chars = header.chars().count();
-        if header_chars >= SEGMENT_CHARS {
-            return Err("WhatsApp chat ID is too long".into());
-        }
-        Ok(Self {
+        Self {
             source,
             chat,
             chat_hash: digest_id(&chat.jid),
             name,
-            header,
-            header_chars,
             current: None,
-            previous_ts: None,
             current_chars: 0,
-        })
+            previous: None,
+        }
+    }
+
+    /// A direct chat's JID is the chat ID itself, and wacli stores it as the sender of my own
+    /// history-synced messages there, so a JID only names an otherwise unnamed group member.
+    fn sender(&self, message: &Message) -> String {
+        let name = message
+            .sender_name
+            .as_deref()
+            .filter(|name| !name.is_empty());
+        if message.from_me {
+            "Me"
+        } else if self.chat.kind == "dm" {
+            name.unwrap_or(&self.name)
+        } else {
+            name.or(message.sender_jid.as_deref())
+                .unwrap_or("Unknown sender")
+        }
+        .to_owned()
     }
 
     fn push(&mut self, message: &Message) -> Result<Option<DocumentPut>, PluginError> {
-        let (rendered, sender) = message_text(message)?;
-        let message_chars = rendered.chars().count();
-        let pause = self
-            .previous_ts
-            .is_some_and(|ts| message.ts.saturating_sub(ts) >= PAUSE_SECONDS);
-        let mut completed = None;
-        if self.current.is_none() || pause || self.current_chars + message_chars > SEGMENT_CHARS {
-            completed = self.current.take();
-            self.current = Some(DocumentPut {
-                source: self.source.to_owned(),
-                external_id: format!("{}/{}", self.chat_hash, digest_id(&message.msg_id)),
-                content_type: ContentType::Plain,
-                title: Some(self.name.clone()),
-                text: self.header.clone(),
-                url: None,
-                thread: Some(self.chat.jid.clone()),
-                parent: None,
-                authors: Vec::new(),
-                created_at: Some(timestamp(message.ts)?),
-                modified_at: None,
-                meta: json!({"chat_id": self.chat.jid, "chat_kind": self.chat.kind,
-                    "first_message_id": message.msg_id, "first_message_rowid": message.rowid})
-                .as_object()
-                .expect("object")
-                .clone(),
+        let at = timestamp(message.ts)?;
+        let sender = self.sender(message);
+        let continuation = self
+            .previous
+            .filter(|previous| (at - *previous).num_seconds() < PAUSE_SECONDS)
+            .map(|previous| {
+                message_block(
+                    message,
+                    &sender,
+                    at,
+                    at.date_naive() != previous.date_naive(),
+                )
+            })
+            .filter(|block| {
+                self.current_chars + MESSAGE_SEPARATOR.len() + block.chars().count()
+                    <= SEGMENT_CHARS
             });
-            self.current_chars = self.header_chars;
-        }
-        // One oversized message stays intact; the server's ordinary chunker handles its size.
+        let completed = match continuation {
+            Some(block) => {
+                let doc = self.current.as_mut().expect("segment");
+                doc.text.push_str(MESSAGE_SEPARATOR);
+                doc.text.push_str(&block);
+                self.current_chars += MESSAGE_SEPARATOR.len() + block.chars().count();
+                None
+            }
+            // One oversized message stays intact; the server's ordinary chunker handles its size.
+            None => {
+                let block = message_block(message, &sender, at, true);
+                self.current_chars = block.chars().count();
+                self.current.replace(self.segment(message, at, block))
+            }
+        };
         let doc = self.current.as_mut().expect("segment");
-        doc.text.push_str(&rendered);
-        self.current_chars += message_chars;
         if !doc.authors.contains(&sender) {
             doc.authors.push(sender);
         }
-        doc.meta.insert(
-            "last_message_at".to_owned(),
-            json!(timestamp(message.ts)?.to_rfc3339()),
-        );
-        self.previous_ts = Some(message.ts);
+        doc.meta
+            .insert("last_message_at".to_owned(), json!(at.to_rfc3339()));
+        self.previous = Some(at);
         Ok(completed)
+    }
+
+    fn segment(&self, first: &Message, at: DateTime<Utc>, text: String) -> DocumentPut {
+        DocumentPut {
+            source: self.source.to_owned(),
+            external_id: format!("{}/{}", self.chat_hash, digest_id(&first.msg_id)),
+            content_type: ContentType::Markdown,
+            title: Some(self.name.clone()),
+            text,
+            url: None,
+            thread: Some(self.chat.jid.clone()),
+            parent: None,
+            authors: Vec::new(),
+            created_at: Some(at),
+            modified_at: None,
+            meta: json!({"chat_id": self.chat.jid, "chat_kind": self.chat.kind,
+                "first_message_id": first.msg_id, "first_message_rowid": first.rowid})
+            .as_object()
+            .expect("object")
+            .clone(),
+        }
     }
 }
 
@@ -611,7 +684,7 @@ fn documents(
     chat: &Chat,
     messages: &[Message],
 ) -> Result<Vec<DocumentPut>, PluginError> {
-    let mut segments = Segments::new(source, chat)?;
+    let mut segments = Segments::new(source, chat);
     let mut documents = Vec::new();
     for message in messages {
         documents.extend(segments.push(message)?);
@@ -643,71 +716,187 @@ mod tests {
         }
     }
 
+    fn chat(jid: &str, kind: &str, name: Option<&str>) -> Chat {
+        Chat {
+            jid: jid.to_owned(),
+            kind: kind.to_owned(),
+            name: name.map(str::to_owned),
+        }
+    }
+
+    fn ts(rfc3339: &str) -> i64 {
+        DateTime::parse_from_rfc3339(rfc3339).unwrap().timestamp()
+    }
+
     #[test]
-    fn segments_are_unicode_safe_pause_bounded_and_deterministic_without_run_time() {
-        let chat = Chat {
-            jid: "1@s.whatsapp.net".to_owned(),
-            kind: "dm".to_owned(),
-            name: Some("Alice".to_owned()),
-        };
+    fn segments_are_unicode_safe_day_scale_and_deterministic_without_run_time() {
+        let alice = chat("1@s.whatsapp.net", "dm", Some("Alice"));
+        let last_night = ts("2026-02-21T23:30:00Z");
+        let next_evening = last_night + 3_600 + PAUSE_SECONDS - 1;
         let messages = vec![
-            message("first", 100, "First"),
-            message("second", 101, "Second"),
-            message("pause", 3_701, "After pause"),
-            message("large", 3_702, &"🦡漢字".repeat(4_000)),
+            message("first", last_night, "First"),
+            message("after-midnight", last_night + 3_600, "After midnight"),
+            message("next-evening", next_evening, "Next evening"),
+            message("pause", next_evening + PAUSE_SECONDS, "After pause"),
+            message(
+                "large",
+                next_evening + PAUSE_SECONDS + 1,
+                &"🦡漢字".repeat(4_000),
+            ),
         ];
-        let docs = documents("chat/example", &chat, &messages).unwrap();
-        assert!(docs[0].text.contains("First") && docs[0].text.contains("Second"));
+        let docs = documents("chat/example", &alice, &messages).unwrap();
+        assert_eq!(docs.len(), 3);
+        for text in ["First", "After midnight", "Next evening"] {
+            assert!(docs[0].text.contains(text));
+        }
         assert!(docs[1].text.contains("After pause"));
-        assert!(
-            docs[..docs.len() - 1]
-                .iter()
-                .all(|doc| doc.text.chars().count() <= SEGMENT_CHARS)
-        );
-        assert!(docs.last().unwrap().text.contains(&"🦡漢字".repeat(4_000)));
+        assert!(docs[0].text.chars().count() <= SEGMENT_CHARS);
+        assert!(docs[1].text.chars().count() <= SEGMENT_CHARS);
+        assert!(docs[2].text.contains(&"🦡漢字".repeat(4_000)));
         let first = serde_json::to_value(&docs).unwrap();
         assert_eq!(
             first,
-            serde_json::to_value(documents("chat/example", &chat, &messages).unwrap()).unwrap()
-        );
-        assert_eq!(
-            docs.iter()
-                .map(|doc| doc.text.matches('🦡').count())
-                .sum::<usize>(),
-            4_000
+            serde_json::to_value(documents("chat/example", &alice, &messages).unwrap()).unwrap()
         );
         assert!(docs.iter().all(|doc| doc.modified_at.is_none()));
     }
 
     #[test]
-    fn attachment_sizes_omit_unknown_and_zero_but_preserve_positive_values() {
-        let mut attachment = message("attachment", 100, "Photo");
-        for size in [None, Some(0)] {
-            attachment.file_length = size;
-            let (text, _) = message_text(&attachment).unwrap();
-            assert!(!text.contains("Size:"));
-        }
-        attachment.file_length = Some(1_024);
+    fn segments_close_before_exceeding_the_size_cap() {
+        let alice = chat("1@s.whatsapp.net", "dm", Some("Alice"));
+        let messages: Vec<_> = (0..20)
+            .map(|n| message(&format!("m{n}"), 100 + n, &"x".repeat(1_000)))
+            .collect();
+        let docs = documents("chat/example", &alice, &messages).unwrap();
+        assert!(docs.len() > 2);
         assert!(
-            message_text(&attachment)
-                .unwrap()
-                .0
-                .contains("Size: 1024 bytes")
+            docs.iter()
+                .all(|doc| doc.text.chars().count() <= SEGMENT_CHARS)
+        );
+        assert_eq!(
+            docs.iter()
+                .map(|doc| doc.text.matches(&"x".repeat(1_000)).count())
+                .sum::<usize>(),
+            20
+        );
+        // Every segment names its first message's full date.
+        assert!(
+            docs.iter()
+                .all(|doc| doc.text.starts_with("**Alice** · 1970-01-01 00:"))
         );
     }
 
     #[test]
+    fn messages_render_as_markdown_with_dates_only_at_segment_start_and_day_change() {
+        let alex = chat("49@s.whatsapp.net", "dm", Some("Alex Example"));
+        let mut mine = message(
+            "mine",
+            ts("2026-03-14T18:30:12Z"),
+            "Shall we continue with the shelves this afternoon?",
+        );
+        mine.from_me = true;
+        // wacli records the chat as the sender of my own history-synced direct messages.
+        mine.sender_jid = Some(alex.jid.clone());
+        mine.sender_name = Some("Alex Example".to_owned());
+        let mut reply = message("reply", ts("2026-03-14T18:30:40Z"), "Sure! 🙂");
+        reply.sender_name = Some("Alex Example".to_owned());
+        reply.sender_jid = Some(alex.jid.clone());
+        let mut next_day = message(
+            "next-day",
+            ts("2026-03-15T09:05:00Z"),
+            "Line one\n\nLine two\n",
+        );
+        next_day.sender_name = None;
+        next_day.edited = true;
+        let docs = documents("chats", &alex, &[mine, reply, next_day]).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].content_type, ContentType::Markdown);
+        assert_eq!(
+            docs[0].text,
+            "**Me** · 2026-03-14 18:30 UTC  \nShall we continue with the shelves this afternoon?\n\n\
+             **Alex Example** · 18:30  \nSure! 🙂\n\n\
+             **Alex Example** · 2026-03-15 09:05 UTC (edited)  \nLine one  \n  \nLine two"
+        );
+        assert_eq!(docs[0].authors, ["Me", "Alex Example"]);
+    }
+
+    #[test]
+    fn group_senders_show_a_jid_only_without_a_name() {
+        let group = chat("friends@g.us", "group", Some("Friends"));
+        let mut mine = message("mine", 100, "Mine");
+        mine.from_me = true;
+        let named = message("named", 101, "Named");
+        let mut unnamed = message("unnamed", 102, "Unnamed");
+        unnamed.sender_name = Some(String::new());
+        unnamed.sender_jid = Some("2@s.whatsapp.net".to_owned());
+        let mut unknown = message("unknown", 103, "Unknown");
+        unknown.sender_name = None;
+        unknown.sender_jid = None;
+        let docs = documents("chats", &group, &[mine, named, unnamed, unknown]).unwrap();
+        assert_eq!(
+            docs[0].authors,
+            ["Me", "Alice", "2@s.whatsapp.net", "Unknown sender"]
+        );
+        assert!(docs[0].text.contains("**Me** · "));
+        assert!(docs[0].text.contains("**Alice** · "));
+        assert!(!docs[0].text.contains("1@s.whatsapp.net"));
+        assert!(docs[0].text.contains("**2@s.whatsapp.net** · "));
+    }
+
+    #[test]
+    fn user_text_cannot_open_markdown_blocks_or_break_our_markup() {
+        let group = chat("friends@g.us", "group", Some("Friends"));
+        let mut tricky = message(
+            "tricky",
+            100,
+            "# Heading\n- item\n1. first\n2024) note\n  > quote\n<div>x</div>\n---\n|a|b|\n\n    indented\n```\n+49 170 *bold* 3.5 kg",
+        );
+        tricky.sender_name = Some("A*B_`C".to_owned());
+        tricky.media_type = Some("document".to_owned());
+        tricky.filename = Some("__init__.py".to_owned());
+        let text = &documents("chats", &group, &[tricky]).unwrap()[0].text;
+        assert_eq!(
+            text,
+            "**A\\*B\\_\\`C** · 1970-01-01 00:01 UTC  \nAttachment: document · \\_\\_init\\_\\_.py  \n\
+             \\# Heading  \n\\- item  \n1\\. first  \n2024\\) note  \n\\> quote  \n\\<div>x</div>  \n\
+             \\---  \n\\|a|b|  \n  \nindented  \n\\```  \n\\+49 170 *bold* 3.5 kg"
+        );
+    }
+
+    #[test]
+    fn attachments_render_compactly_and_omit_unknown_and_zero_sizes() {
+        let mut attachment = message("attachment", 100, "Photo");
+        attachment.media_type = Some("image".to_owned());
+        attachment.filename = Some("beach.jpg".to_owned());
+        attachment.mime_type = Some("image/jpeg".to_owned());
+        attachment.media_caption = Some("Sunset".to_owned());
+        for size in [None, Some(0)] {
+            attachment.file_length = size;
+            assert_eq!(
+                attachment_line(&attachment).unwrap(),
+                "Attachment: image · beach.jpg · image/jpeg"
+            );
+        }
+        attachment.file_length = Some(1_234_567);
+        assert_eq!(
+            attachment_line(&attachment).unwrap(),
+            "Attachment: image · beach.jpg · image/jpeg · 1.2 MB"
+        );
+        let block = message_block(&attachment, "Alice", timestamp(100).unwrap(), false);
+        assert_eq!(
+            block,
+            "**Alice** · 00:01  \nAttachment: image · beach.jpg · image/jpeg · 1.2 MB  \nPhoto  \nSunset"
+        );
+        assert_eq!(attachment_line(&message("plain", 100, "Text")), None);
+        assert_eq!(human_size(999), "999 B");
+        assert_eq!(human_size(12_345), "12.3 kB");
+        assert_eq!(human_size(5_000_000_000), "5.0 GB");
+    }
+
+    #[test]
     fn flat_segments_keep_chat_identity_and_actual_speakers_separate() {
-        let alice = Chat {
-            jid: "alice@s.whatsapp.net".to_owned(),
-            kind: "dm".to_owned(),
-            name: Some("Alice".to_owned()),
-        };
-        let group = Chat {
-            jid: "friends@g.us".to_owned(),
-            kind: "group".to_owned(),
-            name: Some("Friends".to_owned()),
-        };
+        let alice = chat("alice@s.whatsapp.net", "dm", Some("Alice"));
+        let group = chat("friends@g.us", "group", Some("Friends"));
         let mut outgoing = message("same-first-id", 100, "Outgoing only");
         outgoing.from_me = true;
         let dm = documents("chats", &alice, &[outgoing.clone()]).unwrap();
@@ -728,5 +917,16 @@ mod tests {
         assert_eq!(group_docs[0].thread.as_deref(), Some(group.jid.as_str()));
         assert_eq!(group_docs[0].title.as_deref(), Some("Friends"));
         assert_eq!(group_docs[0].authors, ["Me", "Alice", "Bob"]);
+    }
+
+    #[test]
+    fn unnamed_direct_counterparts_are_named_like_the_chat() {
+        let unnamed = chat("49@s.whatsapp.net", "dm", None);
+        let mut incoming = message("incoming", 100, "Hi");
+        incoming.sender_name = None;
+        incoming.sender_jid = Some(unnamed.jid.clone());
+        let docs = documents("chats", &unnamed, &[incoming]).unwrap();
+        assert_eq!(docs[0].title.as_deref(), Some("49@s.whatsapp.net"));
+        assert_eq!(docs[0].authors, ["49@s.whatsapp.net"]);
     }
 }
