@@ -1,0 +1,19 @@
+{
+  "source": "demo/mail",
+  "external_id": "dave-2@example.org",
+  "content_type": "email",
+  "title": "Re: Team offsite in May",
+  "text": "Addendum: an HDMI adapter would be good too.",
+  "thread": "offsite@example.org",
+  "parent": "dave-1@example.org",
+  "authors": [
+    "Dave Probe"
+  ],
+  "created_at": "2026-03-03T10:00:00Z",
+  "modified_at": "2026-03-03T10:00:00Z",
+  "meta": {
+    "to": [
+      "team@example.org"
+    ]
+  }
+}

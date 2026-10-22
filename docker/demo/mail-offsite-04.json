@@ -1,0 +1,19 @@
+{
+  "source": "demo/mail",
+  "external_id": "anna-2@example.org",
+  "content_type": "email",
+  "title": "Re: Team offsite in May",
+  "text": "Then let's take the week before: May 14 to 15.",
+  "thread": "offsite@example.org",
+  "parent": "ben-1@example.org",
+  "authors": [
+    "Anna Example"
+  ],
+  "created_at": "2026-03-02T13:05:00Z",
+  "modified_at": "2026-03-02T13:05:00Z",
+  "meta": {
+    "to": [
+      "team@example.org"
+    ]
+  }
+}

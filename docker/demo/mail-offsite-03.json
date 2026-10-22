@@ -1,0 +1,19 @@
+{
+  "source": "demo/mail",
+  "external_id": "carla-1@example.org",
+  "content_type": "email",
+  "title": "Re: Team offsite in May",
+  "text": "The Harz sounds great. Do we need a room with a projector, or is a big table enough?",
+  "thread": "offsite@example.org",
+  "parent": "offsite@example.org",
+  "authors": [
+    "Carla Test"
+  ],
+  "created_at": "2026-03-02T11:40:00Z",
+  "modified_at": "2026-03-02T11:40:00Z",
+  "meta": {
+    "to": [
+      "team@example.org"
+    ]
+  }
+}
