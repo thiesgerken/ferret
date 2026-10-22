@@ -1,16 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Alegreya, Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { AppProviders } from "@/components/app-providers";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const geistSans = localFont({
+  src: "../fonts/geist-latin-variable.woff2",
+  variable: "--font-geist-sans",
+  weight: "100 900",
 });
-const alegreya = Alegreya({
+const geistMono = localFont({
+  src: "../fonts/geist-mono-latin-variable.woff2",
+  variable: "--font-geist-mono",
+  weight: "100 900",
+});
+const alegreya = localFont({
+  src: "../fonts/alegreya-latin-600.woff2",
   variable: "--font-alegreya",
-  subsets: ["latin"],
   weight: "600",
 });
 

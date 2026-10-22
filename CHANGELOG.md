@@ -1,6 +1,74 @@
 # CHANGELOG
 
 
+## v0.32.0 (2026-10-21)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #182 from thiesgerken/feat/181-nix-builds
+  ([`f9a748d`](https://github.com/thiesgerken/ferret/commit/f9a748d8d1671ba1909520506630dfaf0e3e96f3))
+
+- ✨ feat(build): adopt Nix builds and hardened runtime images
+  ([`f9a748d`](https://github.com/thiesgerken/ferret/commit/f9a748d8d1671ba1909520506630dfaf0e3e96f3))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(ci): retry transient connection resets in the image smoke
+  ([`6014259`](https://github.com/thiesgerken/ferret/commit/6014259aed406508917a98430cb5ad459b9bd8cf))
+
+- 🐛 fix(ci): close archive smoke fixture before container startup
+  ([`bd3705e`](https://github.com/thiesgerken/ferret/commit/bd3705ecfe8b4a951d0ec2297903d3bcaeb414b5))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(nix): add direnv flake shell
+  ([`e71a6d9`](https://github.com/thiesgerken/ferret/commit/e71a6d98614634c8757992b455e023daeb30870f))
+
+### Other
+
+
+- 📝 docs: tighten quickstart prerequisites and Renovate notes
+  ([`5d62a2f`](https://github.com/thiesgerken/ferret/commit/5d62a2fef3a141d1cafc885eefc7ff37486e7c97))
+
+- 🔀 chore(merge): integrate main after #191
+  ([`93836fe`](https://github.com/thiesgerken/ferret/commit/93836fed865ba9d5d02a7f52eadd550f2b7a1182))
+
+- Merge pull request #191 from thiesgerken/fix/files-plugin-test-cap
+  ([`d59ad31`](https://github.com/thiesgerken/ferret/commit/d59ad31818223320eb914f8accd745bed772aeb8))
+
+  ✅ test(files): match the capped directory listing
+
+- ✅ test(files): match the capped directory listing
+  ([`d4fc315`](https://github.com/thiesgerken/ferret/commit/d4fc3158b4bf468ac692eaedc62df304d4291c9d))
+
+- 📝 docs(nix): restore contributor context and document release defaults
+  ([`befd5c8`](https://github.com/thiesgerken/ferret/commit/befd5c845f958d152c4bdcabb5aee806d8fdd946))
+
+- 📝 docs(nix): tighten local development and runtime guides
+  ([`93ed82e`](https://github.com/thiesgerken/ferret/commit/93ed82e75d1eda79022490bd8f7dd61edae6da75))
+
+- 🔀 chore: integrate main 0.31.3
+  ([`7e3b6ee`](https://github.com/thiesgerken/ferret/commit/7e3b6ee218364bcf21882214673c210d5b5d29f1))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(nix): unify dependency hash refresh without GitHub auth
+  ([`cbc56c2`](https://github.com/thiesgerken/ferret/commit/cbc56c2b7e210d6740c3554044ed0cc3586eb236))
+
+- ♻️ refactor(ci): use trusted preview event provenance directly
+  ([`7c3219b`](https://github.com/thiesgerken/ferret/commit/7c3219b5293b98d7c60241227b6a1c186899e848))
+
+- ♻️ refactor(nix): simplify runtime images and image verification
+  ([`696d198`](https://github.com/thiesgerken/ferret/commit/696d1983b9e373fdafe164059f5bba51931c10d2))
+
+- ♻️ refactor(deploy): share local images and runtime restrictions
+  ([`b355ca5`](https://github.com/thiesgerken/ferret/commit/b355ca5ae9eb6dc8f838d4ade158de6648908795))
+
 ## v0.31.3 (2026-10-21)
 
 
@@ -10,6 +78,12 @@
 - Merge pull request #188 from thiesgerken/fix/renovate-helm-digest-pinning
   ([`235790d`](https://github.com/thiesgerken/ferret/commit/235790d0bc22e203c5ea36e1e34cb68ed92a996a))
 
+- ✅ test(files): avoid coupling to listing summary copy
+  ([`dc17735`](https://github.com/thiesgerken/ferret/commit/dc177356f6844c51e6aba5cec73fa49a7bba6937))
+
+- 🔀 chore(merge): integrate 0.31.2 and preserve mounted-files coverage
+  ([`36e8034`](https://github.com/thiesgerken/ferret/commit/36e8034c20a89f0eac1afd3f24cb51b12ac16670))
+
 ### 🔧 Configuration
 
 
@@ -18,6 +92,9 @@
 
 - 🔧 chore(renovate): fix Helm values digest pinning rule
   ([`0a2cc77`](https://github.com/thiesgerken/ferret/commit/0a2cc7795a5472188f073a7363c84e148c6b5407))
+
+- 🔧 fix: keep image smoke fixtures on native Linux
+  ([`de7605a`](https://github.com/thiesgerken/ferret/commit/de7605a28d4ca239b1124c805336da2feb5b6a95))
 
 ## v0.31.2 (2026-10-21)
 
@@ -78,6 +155,12 @@
 
 - 🐛 fix(files): cap directory listing text at 1 MiB
   ([`94d9142`](https://github.com/thiesgerken/ferret/commit/94d9142f6f763f5dc66da2f0b4eccc11e0079576))
+
+### Other
+
+
+- 🔀 chore(merge): integrate main and native WhatsApp archive builds
+  ([`b826390`](https://github.com/thiesgerken/ferret/commit/b8263908eee116032e5b1c29e2898c0da93b8bb1))
 
 ## v0.31.0 (2026-10-21)
 
@@ -172,11 +255,41 @@
 - ✨ feat(files): index mounted directories and selected text
   ([`9751dfe`](https://github.com/thiesgerken/ferret/commit/9751dfe0cf9b0696d9b92a425c4521d9a5d3823c))
 
+- ✨ feat(build): adopt Nix builds and hardened runtime images
+  ([`5e46f85`](https://github.com/thiesgerken/ferret/commit/5e46f850882282642205b89610af5c27cfdded13))
+
 ### Other
 
 
 - ✅ test(files): remove tautological listing assertion
   ([`7d2393a`](https://github.com/thiesgerken/ferret/commit/7d2393aab0726ce09977dcc8bd6aad91f7151ad2))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(docs): activate pinned dependency refresh tools
+  ([`f68cb54`](https://github.com/thiesgerken/ferret/commit/f68cb541455e05c71e243bfd8ba6d6f37514d817))
+
+- 🐛 fix(build): finish sandboxed integration check lifecycle
+  ([`527b77f`](https://github.com/thiesgerken/ferret/commit/527b77f6fada73f3a363b14c8a3509a0a031e692))
+
+- 🐛 fix(build): complete disposable checks and image conversion
+  ([`d96906e`](https://github.com/thiesgerken/ferret/commit/d96906e265a93c3583d996da76086793de051919))
+
+- 🐛 fix(build): pin compatible native search extension packages
+  ([`ec7ea11`](https://github.com/thiesgerken/ferret/commit/ec7ea111cd886b7f1903515b38e86097e97a8e65))
+
+- 🐛 fix(frontend): distribute bundled font license notices
+  ([`8596bd2`](https://github.com/thiesgerken/ferret/commit/8596bd2738908caebd23079ecfea3544558a850c))
+
+- 🐛 fix(build): bundle licensed font inputs for sandboxed frontend builds
+  ([`1fc8cb9`](https://github.com/thiesgerken/ferret/commit/1fc8cb9669da3a99ff9a97622aa16ef9e1ee8f58))
+
+### ⚡ Performance
+
+
+- ⚡️ perf(build): reuse evaluated CI outputs and tool profiles
+  ([`3a17d1c`](https://github.com/thiesgerken/ferret/commit/3a17d1c8b543fe0568f4c5d7fa600bc3fdd50d85))
 
 ## v0.28.0 (2026-10-20)
 

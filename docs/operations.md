@@ -2,6 +2,19 @@
 
 Operate the index, origins and model-serving infrastructure as separate failure domains. Ferret exposes health and Activity but does not provide a database backup scheduler, HA database operator or universal repair endpoint.
 
+## Runtime images and writable state
+
+Ferret's Nix-built runtime images publish for Linux x64 and run as UID/GID 65532. Compose gives
+the server, worker and frontend read-only roots, dropped capabilities, no privilege escalation
+and a writable `/tmp` tmpfs. Worker Git clones use this disposable space. The frontend listens
+on container port 8080. Upstream database, TEI and proxy images have separate runtime requirements.
+
+For deployment restrictions, see the [chart README](../charts/ferret/README.md#runtime-security-and-images);
+the [independent archive guide](plugins/whatsapp.md) covers its directory/token mounts and storage-owner UID.
+Compose uses public development credentials; follow the [quickstart](quickstart.md) only for local use.
+The Compose ParadeDB image uses PostgreSQL 18, with `pgdata` mounted at `/var/lib/postgresql`.
+Nix integration checks use separate sandbox-local databases, never developer volumes.
+
 ## Health and logs
 
 `GET /healthz` on server port 8080 executes `select 1`: 200 means database reachable, 503 means not. It is unauthenticated but need not be exposed by the reverse proxy. It does not test model inference, worker availability or origin credentials. The Helm server liveness/startup probes use TCP; readiness uses this database check, avoiding pointless server restarts during a database outage.

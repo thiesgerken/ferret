@@ -75,12 +75,8 @@ async fn documents(pool: &PgPool) -> Vec<(String, String, String, Option<String>
 
 #[sqlx::test(migrations = false)]
 async fn mounted_files_reconcile_contents_filters_links_and_failed_runs(pool: PgPool) {
-    let Ok(root) = std::env::var("FERRET_TEST_FILES_ROOT") else {
-        eprintln!(
-            "mounted files integration requires an empty isolated Linux mount at FERRET_TEST_FILES_ROOT"
-        );
-        return;
-    };
+    let root = std::env::var("FERRET_TEST_FILES_ROOT")
+        .expect("mounted files integration requires an empty isolated Linux mount at FERRET_TEST_FILES_ROOT");
     let root = Path::new(&root);
     assert_eq!(
         fs::read_dir(root).unwrap().count(),

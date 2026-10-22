@@ -17,8 +17,13 @@ version. The release pipeline updates both version sources together.
 
 ## Development
 
+Compose is the primary environment; see the repository [quickstart](../docs/quickstart.md).
+For optional fast native iteration, run `nix develop` at the repository root before the commands
+below. It provides Node 24 and the exact pnpm selected by `packageManager`, including native macOS
+tooling on Apple Silicon.
+
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
@@ -26,11 +31,19 @@ Open [http://localhost:3000](http://localhost:3000). `pnpm dev` proxies `/graphq
 `/auth/*` to `FERRET_SERVER_URL`. The default, `http://127.0.0.1:8380`, is the server from the
 repository's docker-compose.
 
-- `pnpm lint`, `pnpm test` (`node --test`, React components render into jsdom), `pnpm build`
-  (static export into `out/`, served by nginx in the Docker image).
+- `pnpm lint`, `pnpm test` and `pnpm build` are convenient iteration commands. The authoritative
+  sandboxed lint/test/codegen/production-build/type-check definitions live in the root Nix flake.
+  Image runtime restrictions are documented in the [chart README](../charts/ferret/README.md#runtime-security-and-images).
 - `pnpm codegen` generates typed GraphQL documents into `src/gql/` (ignored by git) from
   `schema.graphql`, the SDL the server prints. It runs automatically before `dev`, `build` and
   `test`. Write queries with `graphql()` from `@/gql`.
+
+## Local fonts
+
+`next/font/local` bundles Latin WOFF2 assets without Google Fonts requests: Geist and Geist Mono
+at variable weights 100–900, Alegreya at weight 600. Vendored from
+[google/fonts@47d54ca](https://github.com/google/fonts/tree/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl)
+(OFL), notices in `public/fonts`.
 
 ## Code style
 
