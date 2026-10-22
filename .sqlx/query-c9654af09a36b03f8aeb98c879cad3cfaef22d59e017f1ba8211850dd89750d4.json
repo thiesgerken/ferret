@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "insert into documents\n                     (id, user_id, source, external_id, content_type, title, url, thread,\n                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id)\n                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14)\n                 returning id",
+  "query": "insert into documents\n                     (id, user_id, source, external_id, content_type, title, url, thread,\n                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id,\n                      parent)\n                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14,\n                         $15)\n                 returning id",
   "describe": {
     "columns": [
       {
@@ -30,12 +30,13 @@
         "Jsonb",
         "Text",
         "Bytea",
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "e460edd86b99cf37e3559bf1f14f46ea449a8a1b0517e9fa3cdbbee5dbfd300d"
+  "hash": "c9654af09a36b03f8aeb98c879cad3cfaef22d59e017f1ba8211850dd89750d4"
 }

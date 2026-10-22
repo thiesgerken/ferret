@@ -157,6 +157,9 @@ pub struct FullDocument {
     created_at: Option<DateTime<Utc>>,
     modified_at: Option<DateTime<Utc>>,
     thread: Option<String>,
+    /// The `external_id` of the document in the thread this one answers, e.g. the mail it
+    /// replies to.
+    parent: Option<String>,
     /// The whole text.
     text: String,
     /// Whatever else the origin knows, e.g. a mail's recipients.
@@ -286,6 +289,7 @@ impl Ferret {
             created_at: document.created_at,
             modified_at: document.modified_at,
             thread: document.thread,
+            parent: document.parent,
             text: document.text,
             meta: document.meta,
         }))

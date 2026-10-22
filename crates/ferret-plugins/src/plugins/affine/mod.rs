@@ -189,6 +189,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
             text: page.markdown,
             url: Some(links.url(&doc.id)),
             thread: None,
+            parent: None,
             authors: Vec::new(),
             created_at: doc.created_at,
             modified_at: Some(updated_at),

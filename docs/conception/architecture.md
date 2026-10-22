@@ -302,9 +302,10 @@ locale. Server error messages and the plugins' config descriptions (from their J
 English and are shown verbatim.
 
 **The viewer** is shared by Search and Explore. It renders a document by content type (Markdown,
-plain text, email with headers), scrolled to the hit. Documents with a `thread` get previous and
-next navigation within it, which turns chat segments into a scrollable conversation and mails into
-a thread. It always shows the link back to the origin when there is one.
+plain text, email with headers), scrolled to the hit. Documents with a `thread` get its outline below:
+the thread's documents as a tree by `parent`, oldest first, the viewed one marked. A chain of only
+replies stays flat, each fork starts an indented strand, and a thread without parents (a chat) is a
+plain list. A thread beyond 1000 documents shows the 1000 around the viewed one and says so. It always shows the link back to the origin when there is one.
 
 Routes that carry an id use query parameters (`/view?id=…&start=…&end=…`, the hit's character
 offsets), not path segments: the static export has no page per document, so only such a route

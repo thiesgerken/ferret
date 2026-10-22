@@ -25,6 +25,11 @@ An ordered sequence of documents that belong together, such as the mails of a co
 segments of a chat.
 _Avoid_: conversation, chain, channel
 
+**Parent**:
+The document in the same thread that a document answers, such as the mail it replies to. It makes a
+thread a tree; a thread without parents is a flat sequence.
+_Avoid_: reply-to, ancestor
+
 **Segment**:
 A stretch of a chat conversation, bounded by pauses, that a chat plugin turns into one document.
 _Avoid_: window, session

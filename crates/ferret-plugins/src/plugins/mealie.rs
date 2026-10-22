@@ -476,6 +476,7 @@ fn to_document(
         text,
         url: Some(recipe_url(links, group, &recipe.slug)),
         thread: None,
+        parent: None,
         authors: Vec::new(),
         created_at: Some(recipe.created_at),
         modified_at: Some(modified_at),

@@ -302,10 +302,10 @@ impl Query {
         else {
             return Ok(None);
         };
-        let neighbors = documents::thread_neighbors(&context.pool, context.user.id, &document)
+        let outline = documents::thread_outline(&context.pool, context.user.id, &document)
             .await
             .map_err(internal)?;
-        Ok(Some(Document::new(document, neighbors)))
+        Ok(Some(Document::new(document, outline)))
     }
 
     /// The plugins that registered workers offer, with their config schemas.
@@ -1286,30 +1286,55 @@ struct Document {
     authors: Vec<String>,
     created_at: Option<DateTime<Utc>>,
     modified_at: Option<DateTime<Utc>>,
-    /// The document before this one in its thread, null at its start or without a thread.
-    previous_in_thread: Option<ThreadNeighbor>,
-    /// The document after this one in its thread, null at its end or without a thread.
-    next_in_thread: Option<ThreadNeighbor>,
+    /// The `externalId` of the document in the thread this one answers.
+    parent: Option<String>,
+    /// The thread's documents to draw it, null without a thread.
+    thread_outline: Option<ThreadOutline>,
 }
 
-/// Enough of a thread's neighboring document to link to it.
+/// A thread's documents: all of them, or a window around the viewed one in a long thread.
 #[derive(GraphQLObject)]
-struct ThreadNeighbor {
-    id: ID,
-    title: Option<String>,
+struct ThreadOutline {
+    /// How many documents the whole thread holds, also beyond `entries`.
+    total: i32,
+    /// Oldest first.
+    entries: Vec<ThreadEntry>,
 }
 
-impl From<documents::ThreadNeighbor> for ThreadNeighbor {
-    fn from(neighbor: documents::ThreadNeighbor) -> Self {
+/// Enough of a thread's document to place it in the thread and link to it.
+#[derive(GraphQLObject)]
+struct ThreadEntry {
+    id: ID,
+    external_id: String,
+    /// The `externalId` of the document this one answers.
+    parent: Option<String>,
+    title: Option<String>,
+    authors: Vec<String>,
+    created_at: Option<DateTime<Utc>>,
+}
+
+impl From<documents::ThreadOutline> for ThreadOutline {
+    fn from(outline: documents::ThreadOutline) -> Self {
         Self {
-            id: ID::new(neighbor.id.to_string()),
-            title: neighbor.title,
+            total: i32::try_from(outline.total).expect("a thread holds fewer than 2^31 documents"),
+            entries: outline
+                .entries
+                .into_iter()
+                .map(|entry| ThreadEntry {
+                    id: ID::new(entry.id.to_string()),
+                    external_id: entry.external_id,
+                    parent: entry.parent,
+                    title: entry.title,
+                    authors: entry.authors,
+                    created_at: entry.created_at,
+                })
+                .collect(),
         }
     }
 }
 
 impl Document {
-    fn new(document: ferret_api::Document, neighbors: documents::ThreadNeighbors) -> Self {
+    fn new(document: ferret_api::Document, outline: Option<documents::ThreadOutline>) -> Self {
         Self {
             id: ID::new(document.id.to_string()),
             writer: document.writer.map(Writer::from),
@@ -1323,8 +1348,8 @@ impl Document {
             authors: document.authors,
             created_at: document.created_at,
             modified_at: document.modified_at,
-            previous_in_thread: neighbors.previous.map(ThreadNeighbor::from),
-            next_in_thread: neighbors.next.map(ThreadNeighbor::from),
+            parent: document.parent,
+            thread_outline: outline.map(ThreadOutline::from),
         }
     }
 }

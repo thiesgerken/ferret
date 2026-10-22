@@ -510,6 +510,7 @@ fn document(
         text,
         url: Some(origin_url(prefix, relative, directory)),
         thread: None,
+        parent: None,
         authors: Vec::new(),
         created_at: None,
         modified_at,

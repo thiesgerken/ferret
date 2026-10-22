@@ -72,6 +72,7 @@ pub fn document(
             )
         }),
         thread: Some(thread(&message).unwrap_or_else(|| id.to_owned())),
+        parent: parent(&message).filter(|parent| parent != id),
         authors: message.from().into_iter().flat_map(names).collect(),
         created_at: Some(created_at),
         modified_at: Some(created_at),
@@ -88,6 +89,20 @@ fn thread(message: &Message) -> Option<String> {
         _ => None,
     };
     first(message.references()).or_else(|| first(message.in_reply_to()))
+}
+
+/// The mail this one replies to: `In-Reply-To`, else the last Message-ID of `References`, which
+/// clients that drop `In-Reply-To` still fill.
+fn parent(message: &Message) -> Option<String> {
+    match message.in_reply_to() {
+        HeaderValue::Text(id) => Some(message_id(id)),
+        HeaderValue::TextList(ids) => ids.first().map(|id| message_id(id)),
+        _ => match message.references() {
+            HeaderValue::Text(id) => Some(message_id(id)),
+            HeaderValue::TextList(ids) => ids.last().map(|id| message_id(id)),
+            _ => None,
+        },
+    }
 }
 
 /// The body's text without quotes. Forwards keep theirs: the forwarded mail is new to the reader.
@@ -234,6 +249,28 @@ mod tests {
             fixture("10-original-message").thread.as_deref(),
             Some("termin@alice.example")
         );
+    }
+
+    #[test]
+    fn a_reply_answers_the_mail_it_replies_to() {
+        assert_eq!(fixture("01-original").parent, None);
+        assert_eq!(
+            fixture("04-outlook-reply").parent.as_deref(),
+            Some("5F2C1A9E-7D3B-4C1E-9A6F-0B1D2E3F4A5B@example.com"),
+            "In-Reply-To, although References skips that mail"
+        );
+        let without_in_reply_to = b"Message-ID: <c@example.org>\r\n\
+            References: <a@example.org> <b@example.org>\r\n\
+            Subject: Re: x\r\n\r\nText\r\n";
+        let reply = document(
+            without_in_reply_to,
+            "c@example.org",
+            DateTime::UNIX_EPOCH,
+            "mail/test",
+            None,
+        )
+        .unwrap();
+        assert_eq!(reply.parent.as_deref(), Some("b@example.org"));
     }
 
     #[test]

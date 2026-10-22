@@ -66,6 +66,7 @@ create table documents (
     title         text,
     url           text,                    -- deep link to the origin, null = ferret's viewer is the origin
     thread        text,                    -- groups documents into a sequence: chat channel, email thread
+    parent        text,                    -- external_id of the document in the thread this one answers
     authors       text[] not null,
     created_at    timestamptz,            -- unknown origin date stays null
     modified_at   timestamptz,            -- independently unknown
@@ -162,6 +163,7 @@ Body of a PUT:
   "text": "...",
   "url": "obsidian://open?vault=main&file=...",
   "thread": null,
+  "parent": null,
   "authors": ["..."],
   "created_at": "...",
   "modified_at": "...",
@@ -180,7 +182,11 @@ chunks it. There is no chat-specific structure, see [Chats](#chats).
   spaces and control characters and inner tabs or line breaks ignored, as browsers read it): a
   `400`. A denylist rather than an allowlist, because origins use custom schemes (`obsidian:`,
   `mid:`, `zotero:`). The UI applies the same rule before rendering any `url` as a link.
-- `title` and `thread` are optional too, `meta` defaults to `{}`. Creation and modification timestamp keys are required but independently nullable for unknown origin dates. Everything else is required.
+- `parent` is the `external_id` of the document in the same thread this one answers, which turns
+  a thread into a tree (a mail's reply target). It needs `thread` and can't name the document
+  itself (a `400`). It's a loose reference: the parent may be excluded, deleted or never indexed,
+  and the viewer then shows the document as a root.
+- `title`, `thread` and `parent` are optional too, `meta` defaults to `{}`. Creation and modification timestamp keys are required but independently nullable for unknown origin dates. Everything else is required.
 - Missing required fields and unknown fields (a typo like `titel`) are a 4xx, never a silent
   default. `source` must be a well-formed path, `external_id` must not be empty.
 

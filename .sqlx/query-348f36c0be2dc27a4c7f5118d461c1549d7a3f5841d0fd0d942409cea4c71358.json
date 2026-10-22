@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, source, external_id, content_type, title, text, url, thread, authors,\n                  created_at, modified_at, api_key_id,\n                  meta as \"meta: Jsonb<serde_json::Map<String, serde_json::Value>>\"\n           from documents\n           where id = $1 and user_id = $2\n             and ($3::text[] is null or exists (\n                  select 1 from unnest($3::text[]) root where source_covers(root, source)))",
+  "query": "select id, source, external_id, content_type, title, text, url, thread, parent, authors,\n                  created_at, modified_at, api_key_id,\n                  meta as \"meta: Jsonb<serde_json::Map<String, serde_json::Value>>\"\n           from documents\n           where user_id = $1 and source = $2 and thread = $3\n             and ($4::text[] is null or exists (\n                  select 1 from unnest($4::text[]) root where source_covers(root, source)))\n           order by created_at, id",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,17 @@
       },
       {
         "ordinal": 8,
+        "name": "parent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "documents",
+            "name": "parent"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "authors",
         "type_info": "TextArray",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "modified_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "api_key_id",
         "type_info": "Uuid",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "meta: Jsonb<serde_json::Map<String, serde_json::Value>>",
         "type_info": "Jsonb",
         "origin": {
@@ -150,7 +161,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
+        "Text",
+        "Text",
         "TextArray"
       ]
     },
@@ -163,6 +175,7 @@
       false,
       true,
       true,
+      true,
       false,
       true,
       true,
@@ -170,5 +183,5 @@
       false
     ]
   },
-  "hash": "e62a19f1d2aa7be99d664384ecc04d3181f67820f4571f2c35239f1c4e106ecd"
+  "hash": "348f36c0be2dc27a4c7f5118d461c1549d7a3f5841d0fd0d942409cea4c71358"
 }

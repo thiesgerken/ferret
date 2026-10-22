@@ -294,6 +294,7 @@ fn to_document(
         text,
         url: Some(url.into()),
         thread: None,
+        parent: None,
         authors,
         created_at: Some(bookmark.created_at),
         modified_at: Some(modified_at),

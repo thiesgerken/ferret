@@ -87,6 +87,9 @@ fn normalize_document(document: &mut DocumentPut) -> Result<(), ApiError> {
     if let Some(thread) = &document.thread {
         reject_nul(thread, "thread")?;
     }
+    if let Some(parent) = &document.parent {
+        reject_nul(parent, "parent")?;
+    }
     if let Some(url) = &document.url {
         reject_nul(url, "url")?;
     }
@@ -98,6 +101,17 @@ fn normalize_document(document: &mut DocumentPut) -> Result<(), ApiError> {
     }
     if document.external_id.is_empty() {
         return Err(ApiError::bad_request("external_id must not be empty"));
+    }
+    if let Some(parent) = &document.parent {
+        if document.thread.is_none() {
+            return Err(ApiError::bad_request("parent needs a thread"));
+        }
+        if parent.is_empty() {
+            return Err(ApiError::bad_request("parent must not be empty"));
+        }
+        if *parent == document.external_id {
+            return Err(ApiError::bad_request("a document can't be its own parent"));
+        }
     }
     if let Some(url) = &document.url
         && let Some(scheme) = dangerous_scheme(url)
@@ -213,7 +227,7 @@ pub async fn find(
 ) -> Result<Option<Document>, sqlx::Error> {
     let document = sqlx::query_as!(
         DocumentRow,
-        r#"select id, source, external_id, content_type, title, text, url, thread, authors,
+        r#"select id, source, external_id, content_type, title, text, url, thread, parent, authors,
                   created_at, modified_at, api_key_id,
                   meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
            from documents
@@ -247,7 +261,7 @@ pub async fn thread(
     // want paging by `created_at`.
     let documents = sqlx::query_as!(
         DocumentRow,
-        r#"select id, source, external_id, content_type, title, text, url, thread, authors,
+        r#"select id, source, external_id, content_type, title, text, url, thread, parent, authors,
                   created_at, modified_at, api_key_id,
                   meta as "meta: Jsonb<serde_json::Map<String, serde_json::Value>>"
            from documents
@@ -271,60 +285,74 @@ pub async fn thread(
     }))
 }
 
-/// The documents before and after one in its thread.
-pub struct ThreadNeighbors {
-    pub previous: Option<ThreadNeighbor>,
-    pub next: Option<ThreadNeighbor>,
+/// How many documents of a thread the viewer draws at most. A chat channel can hold thousands.
+pub const THREAD_OUTLINE_LIMIT: i32 = 1000;
+
+/// A thread's documents, enough of each to draw the thread.
+pub struct ThreadOutline {
+    /// How many documents the whole thread holds, also beyond `entries`.
+    pub total: i64,
+    /// Ordered like the thread listing.
+    pub entries: Vec<ThreadEntry>,
 }
 
-pub struct ThreadNeighbor {
+pub struct ThreadEntry {
     pub id: Uuid,
+    pub external_id: String,
+    pub parent: Option<String>,
     pub title: Option<String>,
+    pub authors: Vec<String>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
-/// `document`'s neighbors in its thread, ordered like the thread listing.
-pub async fn thread_neighbors(
+/// `document`'s thread, ordered like the thread listing: all of it, or the
+/// [`THREAD_OUTLINE_LIMIT`] documents around `document`. `None` without a thread.
+pub async fn thread_outline(
     pool: &PgPool,
     user_id: Uuid,
     document: &Document,
-) -> Result<ThreadNeighbors, sqlx::Error> {
+) -> Result<Option<ThreadOutline>, sqlx::Error> {
     let Some(thread) = &document.thread else {
-        return Ok(ThreadNeighbors {
-            previous: None,
-            next: None,
-        });
+        return Ok(None);
     };
-    let previous = sqlx::query_as!(
-        ThreadNeighbor,
-        "select id, title from documents
-         where user_id = $1 and source = $2 and thread = $3
-           and (($4::timestamptz is null and created_at is not null)
-             or created_at < $4 or (created_at is not distinct from $4 and id < $5))
-         order by created_at desc nulls first, id desc limit 1",
+    let rows = sqlx::query!(
+        r#"with ordered as (
+               select id, external_id, parent, title, authors, created_at,
+                      row_number() over (order by created_at, id) as position,
+                      count(*) over () as total
+               from documents
+               where user_id = $1 and source = $2 and thread = $3
+           ), window_start as (
+               select greatest(0, least(position - 1 - $5 / 2, total - $5)) as skipped
+               from ordered where id = $4
+           )
+           select id, external_id, parent, title, authors, created_at, total as "total!"
+           from ordered, window_start
+           where position > skipped
+           order by position
+           limit $5"#,
         user_id,
         document.source,
         thread,
-        document.created_at,
         document.id,
+        THREAD_OUTLINE_LIMIT,
     )
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
-    let next = sqlx::query_as!(
-        ThreadNeighbor,
-        "select id, title from documents
-         where user_id = $1 and source = $2 and thread = $3
-           and (($4::timestamptz is not null and created_at is null)
-             or created_at > $4 or (created_at is not distinct from $4 and id > $5))
-         order by created_at nulls last, id limit 1",
-        user_id,
-        document.source,
-        thread,
-        document.created_at,
-        document.id,
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(ThreadNeighbors { previous, next })
+    Ok(Some(ThreadOutline {
+        total: rows.first().map_or(0, |row| row.total),
+        entries: rows
+            .into_iter()
+            .map(|row| ThreadEntry {
+                id: row.id,
+                external_id: row.external_id,
+                parent: row.parent,
+                title: row.title,
+                authors: row.authors,
+                created_at: row.created_at,
+            })
+            .collect(),
+    }))
 }
 
 struct DocumentRow {
@@ -336,6 +364,7 @@ struct DocumentRow {
     text: String,
     url: Option<String>,
     thread: Option<String>,
+    parent: Option<String>,
     authors: Vec<String>,
     created_at: Option<DateTime<Utc>>,
     modified_at: Option<DateTime<Utc>>,
@@ -356,6 +385,7 @@ impl DocumentRow {
             text: row.text,
             url: row.url,
             thread: row.thread,
+            parent: row.parent,
             authors: row.authors,
             created_at: row.created_at,
             modified_at: row.modified_at,
@@ -402,7 +432,7 @@ async fn upsert(
                 "update documents set
                      content_type = $2, title = $3, url = $4, thread = $5, authors = $6,
                      created_at = $7, modified_at = $8, meta = $9, text = $10,
-                     content_hash = $11, seen_at = now(), api_key_id = $12
+                     content_hash = $11, seen_at = now(), api_key_id = $12, parent = $13
                  where id = $1",
                 stored.id,
                 content_type::as_str(document.content_type),
@@ -416,6 +446,7 @@ async fn upsert(
                 document.text,
                 content_hash,
                 api_key_id,
+                document.parent,
             )
             .execute(&mut *tx)
             .await?;
@@ -427,8 +458,10 @@ async fn upsert(
             let id = sqlx::query_scalar!(
                 "insert into documents
                      (id, user_id, source, external_id, content_type, title, url, thread,
-                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id)
-                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14)
+                      authors, created_at, modified_at, meta, text, content_hash, seen_at, api_key_id,
+                      parent)
+                 values (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14,
+                         $15)
                  returning id",
                 user_id,
                 document.source,
@@ -444,6 +477,7 @@ async fn upsert(
                 document.text,
                 content_hash,
                 api_key_id,
+                document.parent,
             )
             .fetch_one(&mut *tx)
             .await?;

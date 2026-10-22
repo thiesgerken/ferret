@@ -577,6 +577,7 @@ impl<'a> Segments<'a> {
                 text: self.header.clone(),
                 url: None,
                 thread: Some(self.chat.jid.clone()),
+                parent: None,
                 authors: Vec::new(),
                 created_at: Some(timestamp(message.ts)?),
                 modified_at: None,

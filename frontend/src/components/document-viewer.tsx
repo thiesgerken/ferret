@@ -13,9 +13,9 @@ import type { ViewDocumentQuery } from "@/gql/graphql";
 import { errorMessage } from "@/lib/graphql";
 import { linkableUrl } from "@/lib/safe-url";
 import { rehypeMarkHit, toHitRange, type HitRange } from "@/lib/hit-range";
-import { viewerHref } from "@/lib/viewer-url";
 import { HomeLink } from "@/components/brand-mark";
 import { SourceName } from "@/components/source-name";
+import { ThreadOutline } from "@/components/thread-outline";
 import { useConnectionRoots } from "@/lib/connection-roots";
 
 const ViewDocumentQueryDocument = graphql(`
@@ -37,13 +37,16 @@ const ViewDocumentQueryDocument = graphql(`
       authors
       createdAt
       modifiedAt
-      previousInThread {
-        id
-        title
-      }
-      nextInThread {
-        id
-        title
+      threadOutline {
+        total
+        entries {
+          id
+          externalId
+          parent
+          title
+          authors
+          createdAt
+        }
       }
     }
   }
@@ -111,7 +114,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
         )}
       </header>
       <DocumentBody document={document} range={range} />
-      <ThreadNavigation previous={document.previousInThread} next={document.nextInThread} />
+      {document.threadOutline && <ThreadOutline outline={document.threadOutline} currentId={document.id} />}
       <ExcludeControls document={document} onExcluded={setExcluded} />
     </div>
   );
@@ -217,32 +220,6 @@ function MarkdownBody({ text, range }: { text: string; range: HitRange | null })
         {text}
       </ReactMarkdown>
     </div>
-  );
-}
-
-type ThreadNeighbor = ViewedDocument["previousInThread"];
-
-/** Steps through the document's thread: a chat channel reads as a conversation, mails as a thread. */
-function ThreadNavigation({ previous, next }: { previous: ThreadNeighbor; next: ThreadNeighbor }) {
-  const t = useTranslations("viewer");
-  if (!previous && !next) {
-    return null;
-  }
-  return (
-    <nav aria-label={t("thread")} className="flex justify-between gap-4 border-t border-border pt-4 text-sm">
-      {previous ? (
-        <Link href={viewerHref(previous.id)} rel="prev" className="text-brand hover:underline">
-          ← {previous.title || t("previous")}
-        </Link>
-      ) : (
-        <span />
-      )}
-      {next && (
-        <Link href={viewerHref(next.id)} rel="next" className="text-right text-brand hover:underline">
-          {next.title || t("next")} →
-        </Link>
-      )}
-    </nav>
   );
 }
 

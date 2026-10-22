@@ -239,6 +239,7 @@ fn to_document(
         text: document.content,
         url: Some(format!("{base_url}/documents/{}/details", document.id)),
         thread: None,
+        parent: None,
         authors: correspondent.into_iter().collect(),
         // Paperless keeps only the date. Noon UTC keeps that date in every time zone from UTC-11
         // to UTC+11.

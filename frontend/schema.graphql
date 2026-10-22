@@ -227,10 +227,10 @@ type Document {
   authors: [String!]!
   createdAt: DateTime
   modifiedAt: DateTime
-  "The document before this one in its thread, null at its start or without a thread."
-  previousInThread: ThreadNeighbor
-  "The document after this one in its thread, null at its end or without a thread."
-  nextInThread: ThreadNeighbor
+  "The `externalId` of the document in the thread this one answers."
+  parent: String
+  "The thread's documents to draw it, null without a thread."
+  threadOutline: ThreadOutline
 }
 
 """
@@ -700,10 +700,23 @@ type TextPart {
   highlight: Boolean!
 }
 
-"Enough of a thread's neighboring document to link to it."
-type ThreadNeighbor {
+"Enough of a thread's document to place it in the thread and link to it."
+type ThreadEntry {
   id: ID!
+  externalId: String!
+  "The `externalId` of the document this one answers."
+  parent: String
   title: String
+  authors: [String!]!
+  createdAt: DateTime
+}
+
+"A thread's documents: all of them, or a window around the viewed one in a long thread."
+type ThreadOutline {
+  "How many documents the whole thread holds, also beyond `entries`."
+  total: Int!
+  "Oldest first."
+  entries: [ThreadEntry!]!
 }
 
 type User {
