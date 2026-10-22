@@ -96,8 +96,15 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
   }
 
   const originUrl = linkableUrl(document.url);
+  const outline = document.threadOutline && document.threadOutline.total > 1 ? document.threadOutline : null;
+  // With a thread, wide screens get a sticky side column for its outline, so jumping between
+  // entries of different lengths leaves the outline where it was. The fourth row (the exclusion
+  // controls) absorbs any height the outline needs beyond the document's.
+  const layout = outline
+    ? "flex flex-col gap-6 lg:grid lg:max-w-6xl lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_auto_auto_1fr] lg:gap-x-10"
+    : "space-y-6";
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+    <div className={`mx-auto max-w-3xl px-4 py-6 ${layout}`}>
       <HomeLink />
       <header className="space-y-1 border-b border-border pb-4">
         <h1 className="text-xl font-semibold">{document.title || t("viewer.untitled")}</h1>
@@ -113,8 +120,12 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
           </a>
         )}
       </header>
+      {outline && (
+        <aside className="lg:col-start-2 lg:row-span-4 lg:row-start-1">
+          <ThreadOutline outline={outline} currentId={document.id} />
+        </aside>
+      )}
       <DocumentBody document={document} range={range} />
-      {document.threadOutline && <ThreadOutline outline={document.threadOutline} currentId={document.id} />}
       <ExcludeControls document={document} onExcluded={setExcluded} />
     </div>
   );
