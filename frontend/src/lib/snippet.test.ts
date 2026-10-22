@@ -40,6 +40,11 @@ test("words with underscores and stars in prose survive", () => {
   assert.deepEqual(plainMarkdown(parts), [plain("snake_case_name costs 3 * 4 and 2*3, alt text done")]);
 });
 
+test("backslash escapes go, the escaped characters stay", () => {
+  const parts = [plain("**Me** · 11:50  \n\\# no heading  \n\\+49 170 and C:\\Users\\\\")];
+  assert.deepEqual(plainMarkdown(parts), [plain("Me · 11:50  \n# no heading  \n+49 170 and C:\\Users\\")]);
+});
+
 test("a highlight made of syntax alone disappears", () => {
   assert.deepEqual(plainMarkdown([plain("Intro\n"), hit("##"), plain(" Notes")]), [plain("Intro\n"), plain("Notes")]);
 });
