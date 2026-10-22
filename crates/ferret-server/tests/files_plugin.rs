@@ -1,6 +1,4 @@
-#![cfg(target_os = "linux")]
-
-mod common;
+use crate::common;
 
 use common::{TestServer, start_server};
 use ferret_api::{

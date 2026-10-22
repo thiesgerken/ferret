@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use chrono::{TimeZone, Utc};
 use common::{TestServer, document, start_server};

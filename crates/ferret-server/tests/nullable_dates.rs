@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{day, document, start_semantic_server};
 use ferret_api::{PutResponse, SearchMode, SearchQuery, ThreadQuery};

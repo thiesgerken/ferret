@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{
     DOCUMENT_PREFIX, MODEL, QUERY_PREFIX, document, embedding_config, eventually,

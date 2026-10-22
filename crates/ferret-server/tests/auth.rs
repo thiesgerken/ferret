@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{ADMIN_PASSWORD, json_body, set_cookie, start_server};
 use reqwest::{Method, header};
