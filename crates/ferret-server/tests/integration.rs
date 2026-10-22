@@ -1,5 +1,5 @@
-//! The server's black-box tests, one module per area. They link into a single test binary:
-//! each binary links the whole server, so one per file made linking dominate the build.
+//! The server's black-box tests, one module per area. One binary keeps the build from linking
+//! the whole server once per area.
 
 mod common;
 
