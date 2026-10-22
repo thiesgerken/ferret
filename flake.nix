@@ -34,6 +34,7 @@
         "aarch64-linux"
       ];
       forLinux = nixpkgs.lib.genAttrs linuxSystems;
+      linuxFor = system: if system == "aarch64-darwin" then "aarch64-linux" else system;
       project = forSystems (
         system:
         let
@@ -132,7 +133,7 @@
       ciBuilds = forSystems (
         system:
         let
-          linux = if system == "aarch64-darwin" then "aarch64-linux" else system;
+          linux = linuxFor system;
           p = project.${linux};
         in
         self.checks.${linux}
@@ -148,7 +149,7 @@
         system:
         let
           inherit (project.${system}) pkgs rust tools;
-          linux = if system == "aarch64-darwin" then "aarch64-linux" else system;
+          linux = linuxFor system;
         in
         {
           default = pkgs.mkShell {

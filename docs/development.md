@@ -128,15 +128,7 @@ For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux
 
 | Output | Command |
 | --- | --- |
-| Rust formatting | `nix build .#checks.<system>.rust-fmt` |
-| Rust Clippy | `nix build .#checks.<system>.rust-clippy` |
-| Rust tests | `nix build .#checks.<system>.rust-test` |
-| SQLx metadata | `nix build .#checks.<system>.sqlx` |
-| GraphQL schema | `nix build .#checks.<system>.graphql-schema` |
-| Frontend lint | `nix build .#checks.<system>.frontend-lint` |
-| Frontend tests | `nix build .#checks.<system>.frontend-test` |
-| Frontend build | `nix build .#checks.<system>.frontend-build` |
-| Helm | `nix build .#checks.<system>.helm` |
+| Checks: `rust-fmt`, `rust-clippy`, `rust-test`, `sqlx`, `graphql-schema`, `frontend-lint`, `frontend-test`, `frontend-build`, `helm` | `nix build .#checks.<system>.<check>` |
 | Packages and images | `nix build .#packages.<system>.{server,plugins,whatsapp-archive,frontend}{,-image}` |
 
 Bootstrap the locked runner:
