@@ -1,6 +1,92 @@
 # CHANGELOG
 
 
+## v0.32.1 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #190 from thiesgerken/fix/whatsapp-flat-threads
+  ([`c8d86de`](https://github.com/thiesgerken/ferret/commit/c8d86de6c5dcf9e48fc78080308e3f2deed2d97c))
+
+- Merge remote-tracking branch 'origin/main' into fix/whatsapp-flat-threads
+  ([`eb18925`](https://github.com/thiesgerken/ferret/commit/eb18925b84957363a53672e932858b8e3101af03))
+
+- Merge remote-tracking branch 'origin/main' into fix/whatsapp-flat-threads
+  ([`b947f23`](https://github.com/thiesgerken/ferret/commit/b947f2300201f503e8697188a2293b1533c4dc9b))
+
+  # Conflicts: #	crates/ferret-server/tests/files_plugin.rs
+
+- ✅ test(files): reconcile beyond capped directory listings
+  ([`b83892c`](https://github.com/thiesgerken/ferret/commit/b83892ccef21dc7def0c9c31b1d6b0d2df2ef856))
+
+- Merge pull request #192 from thiesgerken/chore/devshell-banner
+  ([`afe8d3b`](https://github.com/thiesgerken/ferret/commit/afe8d3ba3f91902ec1c431dae3bfa553a3311055))
+
+- Merge pull request #194 from thiesgerken/renovate/jsonschema-0.x
+  ([`8315709`](https://github.com/thiesgerken/ferret/commit/831570980affe6eb7ec9ecdfcc128e8f5ef166af))
+
+- Merge pull request #193 from thiesgerken/fix/nix-cache-hardlinks
+  ([`005ae66`](https://github.com/thiesgerken/ferret/commit/005ae6694f75be37e361036edfada084c6514b90))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(whatsapp): index each connection under one source
+  ([`c8d86de`](https://github.com/thiesgerken/ferret/commit/c8d86de6c5dcf9e48fc78080308e3f2deed2d97c))
+
+- 🐛 fix(whatsapp): index flat sources with separate thread filters
+  ([`3447ebd`](https://github.com/thiesgerken/ferret/commit/3447ebd4b06726b5c129dd5347cc0fe6ad47fb67))
+
+- 🐛 fix(ci): disable store optimisation for the cached Nix store
+  ([`005ae66`](https://github.com/thiesgerken/ferret/commit/005ae6694f75be37e361036edfada084c6514b90))
+
+- 🐛 fix(ci): disable store optimisation for the cached Nix store
+  ([`1f0be80`](https://github.com/thiesgerken/ferret/commit/1f0be808d90fc2f570bad4fd76b726de947d3a67))
+
+### 🩹 Patches
+
+
+- 🩹 fix(whatsapp): address ingestion review
+  ([`446afe2`](https://github.com/thiesgerken/ferret/commit/446afe2a42a89b825ead612c09deb9df5fcfaae0))
+
+- 🩹 fix(search): distinguish thread chips on narrow screens
+  ([`17598d3`](https://github.com/thiesgerken/ferret/commit/17598d38334a0f6048395af1b66c9ccfa6020456))
+
+### 🗑️ Deprecations
+
+
+- 🗑️ chore(whatsapp): remove unrelated thread filters
+  ([`09ae437`](https://github.com/thiesgerken/ferret/commit/09ae4376d9396352fe3fb34f4ec5426c1aa6f248))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(whatsapp): use manual clean index cutover
+  ([`5be4ec4`](https://github.com/thiesgerken/ferret/commit/5be4ec4af0ec8a831023b1ad671a708c766f9ee2))
+
+- ♻️ refactor(nix): share Linux target mapping and condense check notes
+  ([`21b5b2a`](https://github.com/thiesgerken/ferret/commit/21b5b2ab7973c0d0ccfad8340fff25d3359190a2))
+
+### 🔧 Configuration
+
+
+- 🔧 chore(nix): print a brief dev shell banner
+  ([`afe8d3b`](https://github.com/thiesgerken/ferret/commit/afe8d3ba3f91902ec1c431dae3bfa553a3311055))
+
+- 🔧 chore(nix): print a brief dev shell banner
+  ([`4f51297`](https://github.com/thiesgerken/ferret/commit/4f512979b00fb44c0a59852e313ac687bb6a4768))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade Rust crate jsonschema to 0.60.0
+  ([`8315709`](https://github.com/thiesgerken/ferret/commit/831570980affe6eb7ec9ecdfcc128e8f5ef166af))
+
+- ⬆️ chore: upgrade Rust crate jsonschema to 0.60.0
+  ([`37fbeeb`](https://github.com/thiesgerken/ferret/commit/37fbeeb8aaaee53ce652e93c43d54e9c58e77caf))
+
 ## v0.32.0 (2026-10-21)
 
 
