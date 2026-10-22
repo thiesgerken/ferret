@@ -93,19 +93,30 @@ let
       cargoExtraArgs = "--workspace --locked --no-run";
     }
   );
-  package =
+  # One cargo invocation, so the workspace crates the binaries share compile once.
+  binaries = craneLib.buildPackage (
+    common
+    // {
+      inherit cargoArtifacts;
+      pname = "ferret-binaries";
+      cargoExtraArgs = "--locked -p ferret-server -p ferret-plugins -p ferret-whatsapp-archive";
+      doCheck = false;
+    }
+  );
+  # Each image carries only its own binary, never the combined build.
+  binary =
     name:
-    craneLib.buildPackage (
-      common
-      // {
-        inherit cargoArtifacts;
-        cargoExtraArgs = "--locked -p ${name}";
-        doCheck = false;
+    pkgs.runCommand "${name}-${version}"
+      {
+        disallowedReferences = [ binaries ];
+        meta.mainProgram = name;
       }
-    );
-  server = package "ferret-server";
-  plugins = package "ferret-plugins";
-  whatsapp-archive = package "ferret-whatsapp-archive";
+      ''
+        install -Dm755 ${binaries}/bin/${name} $out/bin/${name}
+      '';
+  server = binary "ferret";
+  plugins = binary "ferret-plugins";
+  whatsapp-archive = binary "ferret-whatsapp-archive";
   services = {
     nativeBuildInputs = common.nativeBuildInputs ++ [
       postgres
