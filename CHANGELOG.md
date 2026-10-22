@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v0.32.2 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #195 from thiesgerken/perf/ci-test-build
+  ([`f50f669`](https://github.com/thiesgerken/ferret/commit/f50f6694646748e47b7606b20ba9dd40901b6585))
+
+- 📝 docs(tests): state why server tests share one binary
+  ([`2cb10d0`](https://github.com/thiesgerken/ferret/commit/2cb10d049bb941ed3fd9b12ebe295e68ae0a11f7))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### ⚡ Performance
+
+
+- ⚡ perf(ci): build checks in the dev profile and link integration tests once
+  ([`f50f669`](https://github.com/thiesgerken/ferret/commit/f50f6694646748e47b7606b20ba9dd40901b6585))
+
+- ⚡ perf(tests): link server integration tests into one binary
+  ([`c540c66`](https://github.com/thiesgerken/ferret/commit/c540c66a9f16680e5dadd05197765d0bbaffb185))
+
+  Each of the 39 files in crates/ferret-server/tests was its own test binary, and each one linked the whole server. They are now modules of a single `integration` test target, so the server links once.
+
+  The files stay where they are, so relative `include_str!` paths keep working. The Linux-only files-plugin module moves its cfg to its `mod` item, and the shared helpers no longer need `allow(dead_code)`.
+
+  Running one area now takes a module filter, e.g. `cargo test -p ferret-server --test integration gitea_plugin::`.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- ⚡ perf(nix): build checks in the dev profile
+  ([`e2137c0`](https://github.com/thiesgerken/ferret/commit/e2137c06eef6a41099918e4c82587b15c55a2d54))
+
+  Clippy, the integration-test build, the test run and the sqlx check ship nothing, yet compiled the workspace with release optimizations. They now build in cargo's dev profile without debug info, on dev-profile dependency artifacts of their own. The release dependency artifacts only feed the shipped packages, so they no longer build the tests' dev-dependencies.
+
+  `cargo sqlx prepare --check` always ran in the dev profile and so got no reuse from the release dependency artifacts; it now shares the dev ones.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.32.1 (2026-10-22)
 
 
