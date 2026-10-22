@@ -205,10 +205,9 @@ impl ArchiveClient {
         &self,
         run: &Run,
         chat: &Chat,
-        source: &str,
         stats: &mut RunStats,
     ) -> Result<(), PluginError> {
-        let mut segments = Segments::new(source, chat)?;
+        let mut segments = Segments::new(&run.source, chat)?;
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
@@ -302,10 +301,11 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     } else {
         let cursor: Cursor = serde_json::from_value(run.state.clone())
             .map_err(|_| "WhatsApp saved cursor is invalid")?;
-        if cursor.version != 1 {
-            return Err("WhatsApp saved cursor version is unsupported".into());
+        match cursor.version {
+            1 => return Err("WhatsApp cursor uses the old index layout; delete/recreate the WhatsApp connection to rebuild the flat index (indexed documents and remembered exclusions will be cleared; the native archive is untouched)".into()),
+            2 => Some(cursor),
+            _ => return Err("WhatsApp saved cursor version is unsupported".into()),
         }
-        Some(cursor)
     };
     let mut stats = RunStats::default();
     match reconcile(run, &client, &settings, previous.as_ref(), &mut stats).await {
@@ -349,10 +349,6 @@ fn digest_id(value: &str) -> String {
         write!(hex, "{byte:02x}").expect("formatting into a string");
     }
     hex
-}
-
-fn source(root: &str, jid: &str) -> String {
-    format!("{root}/chats/{}", digest_id(jid))
 }
 
 fn metadata_changes(
@@ -432,7 +428,7 @@ async fn reconcile(
         chats.len()
     ));
     Ok(serde_json::to_value(Cursor {
-        version: 1,
+        version: 2,
         checkpoint: end.high,
         settings: Settings {
             url: settings.url.clone(),
@@ -454,11 +450,10 @@ async fn rebuild(
     stats: &mut RunStats,
 ) -> Result<(), PluginError> {
     for jid in affected {
-        let source = source(&run.source, jid);
-        let sync = run.api.start_sync(&source).await?.sync_id;
+        let sync = run.api.start_thread_sync(&run.source, jid).await?.sync_id;
         syncs.push(sync);
         if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
-            client.ingest_chat(run, chat, &source, stats).await?;
+            client.ingest_chat(run, chat, stats).await?;
         }
     }
     Ok(())
@@ -520,7 +515,7 @@ fn message_text(message: &Message) -> Result<(String, String), PluginError> {
     if let Some(mime) = &message.mime_type {
         writeln!(text, "MIME type: {mime}")?;
     }
-    if let Some(size) = message.file_length {
+    if let Some(size) = message.file_length.filter(|size| *size > 0) {
         writeln!(text, "Size: {size} bytes")?;
     }
     Ok((text, sender))
@@ -529,6 +524,7 @@ fn message_text(message: &Message) -> Result<(String, String), PluginError> {
 struct Segments<'a> {
     source: &'a str,
     chat: &'a Chat,
+    chat_hash: String,
     name: String,
     header: String,
     header_chars: usize,
@@ -554,6 +550,7 @@ impl<'a> Segments<'a> {
         Ok(Self {
             source,
             chat,
+            chat_hash: digest_id(&chat.jid),
             name,
             header,
             header_chars,
@@ -574,13 +571,9 @@ impl<'a> Segments<'a> {
             completed = self.current.take();
             self.current = Some(DocumentPut {
                 source: self.source.to_owned(),
-                external_id: digest_id(&message.msg_id),
+                external_id: format!("{}/{}", self.chat_hash, digest_id(&message.msg_id)),
                 content_type: ContentType::Plain,
-                title: Some(format!(
-                    "{} · {}",
-                    self.name,
-                    timestamp(message.ts)?.to_rfc3339()
-                )),
+                title: Some(self.name.clone()),
                 text: self.header.clone(),
                 url: None,
                 thread: Some(self.chat.jid.clone()),
@@ -683,5 +676,56 @@ mod tests {
             4_000
         );
         assert!(docs.iter().all(|doc| doc.modified_at.is_none()));
+    }
+
+    #[test]
+    fn attachment_sizes_omit_unknown_and_zero_but_preserve_positive_values() {
+        let mut attachment = message("attachment", 100, "Photo");
+        for size in [None, Some(0)] {
+            attachment.file_length = size;
+            let (text, _) = message_text(&attachment).unwrap();
+            assert!(!text.contains("Size:"));
+        }
+        attachment.file_length = Some(1_024);
+        assert!(
+            message_text(&attachment)
+                .unwrap()
+                .0
+                .contains("Size: 1024 bytes")
+        );
+    }
+
+    #[test]
+    fn flat_segments_keep_chat_identity_and_actual_speakers_separate() {
+        let alice = Chat {
+            jid: "alice@s.whatsapp.net".to_owned(),
+            kind: "dm".to_owned(),
+            name: Some("Alice".to_owned()),
+        };
+        let group = Chat {
+            jid: "friends@g.us".to_owned(),
+            kind: "group".to_owned(),
+            name: Some("Friends".to_owned()),
+        };
+        let mut outgoing = message("same-first-id", 100, "Outgoing only");
+        outgoing.from_me = true;
+        let dm = documents("chats", &alice, &[outgoing.clone()]).unwrap();
+        let mut bob = message("bob", 102, "Bob speaks");
+        bob.sender_name = Some("Bob".to_owned());
+        let group_docs = documents(
+            "chats",
+            &group,
+            &[outgoing, message("alice", 101, "Alice speaks"), bob],
+        )
+        .unwrap();
+        assert_eq!(dm[0].source, "chats");
+        assert_eq!(group_docs[0].source, "chats");
+        assert_ne!(dm[0].external_id, group_docs[0].external_id);
+        assert_eq!(dm[0].thread.as_deref(), Some(alice.jid.as_str()));
+        assert_eq!(dm[0].title.as_deref(), Some("Alice"));
+        assert_eq!(dm[0].authors, ["Me"]);
+        assert_eq!(group_docs[0].thread.as_deref(), Some(group.jid.as_str()));
+        assert_eq!(group_docs[0].title.as_deref(), Some("Friends"));
+        assert_eq!(group_docs[0].authors, ["Me", "Alice", "Bob"]);
     }
 }

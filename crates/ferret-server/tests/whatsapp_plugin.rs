@@ -16,8 +16,8 @@ use axum::{
 };
 use common::{TestServer, start_server};
 use ferret_api::{
-    Client, Document, SearchQuery,
-    internal::{RunFinish, RunResult},
+    Client, Document, PutResponse, SearchQuery,
+    internal::{RunFinish, RunResult, RunStats},
 };
 use ferret_plugins::{
     plugins::{self, Log, PluginOptions, Run},
@@ -271,6 +271,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     assert!(log.contains("logged_out") && log.contains("Some(1)"));
     let docs = documents(&server).await;
     assert_eq!(docs.len(), 3);
+    assert!(docs.iter().all(|doc| doc.source == "chat/archive"));
     let alice: Vec<_> = docs
         .iter()
         .filter(|doc| doc.thread.as_deref() == Some(ALICE))
@@ -362,7 +363,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
             .iter()
             .any(|doc| doc.text.contains("Oldbackfillsentinel"))
     );
-    // An identity move rebuilds and sweeps both source namespaces without duplicating content.
+    // An identity move rebuilds and sweeps both thread identities without duplicating content.
     update(&server, &id, archive.config(&[], &[])).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
     archive.sql("INSERT INTO chats(jid,kind,name) VALUES('555@s.whatsapp.net','dm','Alice canonical'); UPDATE messages SET chat_jid='555@s.whatsapp.net' WHERE chat_jid='111@s.whatsapp.net'; DELETE FROM chats WHERE jid='111@s.whatsapp.net';").await;
@@ -533,22 +534,11 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
             .await
             .unwrap();
     assert_eq!(unchanged_pin, pin);
-    let roots_before: i64 =
-        sqlx::query_scalar("select count(*) from syncs where source='chat/archive'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
     let mut replacement = archive.config(&[], &[]);
     replacement["expected_store_id"] = json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     replacement.as_object_mut().unwrap().remove("token");
     update(&server, &id, replacement).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let roots_after: i64 =
-        sqlx::query_scalar("select count(*) from syncs where source='chat/archive'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(roots_after, roots_before + 1);
     let reconciled = documents(&server).await;
     assert_eq!(reconciled.len(), 1);
     assert!(reconciled[0].text.contains("Replacementsentinel"));
@@ -561,6 +551,53 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
         saved["settings"]["expected_store_id"],
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+
+    // Only a root sweep can remove content outside the current chat inventory.
+    due(&server, &id).await;
+    let claimed = worker
+        .internal
+        .claim(wid, Duration::ZERO)
+        .await
+        .unwrap()
+        .unwrap();
+    let api = Client::new(server.public_url()).with_api_key(claimed.token);
+    let leftover = common::document(
+        "chat/archive/retired",
+        "leftover",
+        "WhatsApp retired archive content",
+    );
+    assert!(matches!(
+        api.put_document(&leftover).await.unwrap(),
+        PutResponse::Created { .. }
+    ));
+    worker
+        .internal
+        .finish(
+            claimed.run_id,
+            &RunFinish {
+                result: RunResult::Succeeded {
+                    state: claimed.state,
+                    stats: RunStats {
+                        put: 1,
+                        ..RunStats::default()
+                    },
+                },
+                log_lines: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(documents(&server).await.len(), 2);
+    archive
+        .sql("UPDATE retrieval_state SET store_id='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';")
+        .await;
+    let mut replacement = archive.config(&[], &[]);
+    replacement["expected_store_id"] = json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    update(&server, &id, replacement).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let root_reconciled = documents(&server).await;
+    assert_eq!(root_reconciled.len(), 1);
+    assert_eq!(root_reconciled[0].id, reconciled[0].id);
 }
 
 #[sqlx::test(migrations = false)]
@@ -638,4 +675,83 @@ async fn required_expected_identity_is_validated_before_any_ingestion(pool: PgPo
         .unwrap();
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+}
+
+#[sqlx::test(migrations = false)]
+async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_independent(
+    pool: PgPool,
+) {
+    let archive = ArchiveServer::new().await;
+    archive
+        .message(ALICE, "outgoing", 100, "Outgoingonlysentinel", true)
+        .await;
+    archive
+        .message(GROUP, "alice", 200, "Alicesentinel", false)
+        .await;
+    archive
+        .message(GROUP, "bob", 201, "Bobsentinel", false)
+        .await;
+    archive.message(GROUP, "me", 202, "Mesentinel", true).await;
+    archive.sql("UPDATE messages SET file_length=0; UPDATE messages SET sender_name='Alice' WHERE msg_id='alice'; UPDATE messages SET sender_name='Bob',file_length=2048 WHERE msg_id='bob';").await;
+    let server = start_server(pool.clone()).await;
+    let (worker, wid, connection) = setup(&server, archive.config(&[], &[])).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let docs = documents(&server).await;
+    assert_eq!(docs.len(), 2);
+    assert!(
+        docs.iter()
+            .all(|doc| doc.source == "chat/archive" && !doc.text.contains("Size: 0 bytes"))
+    );
+    let outgoing = docs
+        .iter()
+        .find(|doc| doc.thread.as_deref() == Some(ALICE))
+        .unwrap();
+    assert_eq!(outgoing.authors, ["Me"]);
+    assert_eq!(outgoing.title.as_deref(), Some("Alice"));
+    let group = docs
+        .iter()
+        .find(|doc| doc.thread.as_deref() == Some(GROUP))
+        .unwrap();
+    assert_eq!(group.authors, ["Alice", "Bob", "Me"]);
+    assert_eq!(group.title.as_deref(), Some("Team"));
+    assert!(group.text.contains("Size: 2048 bytes"));
+    archive
+        .sql("UPDATE messages SET text='Changedgroupsentinel' WHERE msg_id='bob'")
+        .await;
+    due(&server, &connection).await;
+    let changed = execute(&worker, wid, &pool).await;
+    assert_eq!(changed.0, "succeeded");
+    assert_eq!(changed.2["put"], 1);
+    let after = documents(&server).await;
+    assert_eq!(after.len(), 2);
+    assert!(
+        after
+            .iter()
+            .any(|doc| doc.id == outgoing.id && doc.text == outgoing.text)
+    );
+    assert!(
+        after
+            .iter()
+            .any(|doc| doc.id == group.id && doc.text.contains("Changedgroupsentinel"))
+    );
+    sqlx::query("update connections set state = jsonb_set(state, '{version}', '1')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before_syncs: i64 = sqlx::query_scalar("select count(*) from syncs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    due(&server, &connection).await;
+    let legacy = execute(&worker, wid, &pool).await;
+    assert_eq!(legacy.0, "failed");
+    assert!(legacy.1.unwrap().contains("delete/recreate"));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from syncs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        before_syncs
+    );
+    assert_eq!(documents(&server).await.len(), 2);
 }

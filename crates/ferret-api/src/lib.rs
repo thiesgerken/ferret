@@ -283,8 +283,10 @@ pub struct TextPart {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SyncStart {
-    /// The root to sweep at the commit: this source and everything below it.
+    /// Without `thread`, this source and everything below it. With `thread`, this exact source.
     pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -480,10 +482,29 @@ impl Client {
 
     /// Starts a sync over `source` and everything below it. Needs the `ingest:write` scope.
     pub async fn start_sync(&self, source: &str) -> Result<SyncStarted, reqwest::Error> {
+        self.start(&SyncStart {
+            source: source.to_owned(),
+            thread: None,
+        })
+        .await
+    }
+
+    /// Starts a sync of one exact source/thread. Needs the `ingest:write` scope.
+    pub async fn start_thread_sync(
+        &self,
+        source: &str,
+        thread: &str,
+    ) -> Result<SyncStarted, reqwest::Error> {
+        self.start(&SyncStart {
+            source: source.to_owned(),
+            thread: Some(thread.to_owned()),
+        })
+        .await
+    }
+
+    async fn start(&self, body: &SyncStart) -> Result<SyncStarted, reqwest::Error> {
         self.api(reqwest::Method::POST, "/api/syncs")
-            .json(&SyncStart {
-                source: source.to_owned(),
-            })
+            .json(body)
             .send()
             .await?
             .error_for_status()?

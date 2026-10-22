@@ -175,3 +175,49 @@ async fn a_sweep_leaves_other_users_documents_alone(pool: PgPool) {
     assert_eq!(committed.deleted, 0);
     assert_eq!(stored(&pool).await, ["paperless/bobs"]);
 }
+
+#[sqlx::test(migrations = false)]
+async fn thread_sync_sweeps_only_its_exact_source_and_thread(pool: PgPool) {
+    let server = start_server(pool.clone()).await;
+    let api = server.admin_api().await;
+    for (source, id, thread) in [
+        ("chats", "kept", Some("alice")),
+        ("chats", "gone", Some("alice")),
+        ("chats", "bob", Some("bob")),
+        ("chats", "unthreaded", None),
+        ("chats/child", "same-thread", Some("alice")),
+    ] {
+        let mut doc = document(source, id, "Thread sync fixture");
+        doc.thread = thread.map(str::to_owned);
+        api.put_document(&doc).await.unwrap();
+    }
+    let sync = api
+        .start_thread_sync("chats", "alice")
+        .await
+        .unwrap()
+        .sync_id;
+    assert_eq!(
+        api.sync_seen(sync, "chats", &["kept", "bob", "unthreaded"])
+            .await
+            .unwrap()
+            .seen,
+        1
+    );
+    assert_eq!(
+        api.sync_seen(sync, "chats/child", &["same-thread"])
+            .await
+            .unwrap_err()
+            .status(),
+        Some(StatusCode::BAD_REQUEST)
+    );
+    assert_eq!(api.commit_sync(sync).await.unwrap().deleted, 1);
+    assert_eq!(
+        stored(&pool).await,
+        [
+            "chats/bob",
+            "chats/child/same-thread",
+            "chats/kept",
+            "chats/unthreaded"
+        ]
+    );
+}

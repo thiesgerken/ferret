@@ -141,6 +141,8 @@ All three operations require `ingest:write`. JSON request types reject unknown f
 
 Start validates a complete authorized sweep root. Seen's exact source must be the root or a descendant; unknown external ids are ignored and not counted. Commit sweeps all root/descendant documents not put/seen since start and closes the sync. A repeated seen/commit after closure returns 409. Missing syncs return 404. Sync access is user/root-bound rather than exclusive to the creating key. Puts do not take a sync-id parameter. The [ingester workflow](../ingestion.md) explains why enumeration failure must never reach commit.
 
+An optional non-null `thread` on start narrows the sync to **that exact `(source,thread)` pair**. Its `seen` calls must name the exact source; ids from other threads are ignored, and commit cannot sweep sibling threads or descendant sources. Omitted/null `thread` retains the whole-subtree behavior.
+
 ## Plugin inventory
 
 Only live plugin run tokens may use these endpoints; ordinary API keys receive 403. Inventory is

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select source, committed_at is not null as \"committed!\"\n         from syncs where id = $1 and user_id = $2",
+  "query": "select source, thread, committed_at is not null as \"committed!\"\n         from syncs where id = $1 and user_id = $2",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "thread",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "syncs",
+            "name": "thread"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "committed!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -29,8 +40,9 @@
     },
     "nullable": [
       false,
+      true,
       null
     ]
   },
-  "hash": "901e189279854a2f220e8f936417907fca8e90f3317e607eba89b2a15fa28abb"
+  "hash": "84beb323be622663f1092ec03cfec19580940ad3428b50c900e1899999cd71eb"
 }

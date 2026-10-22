@@ -57,17 +57,18 @@ First authenticate to `GET /v1/archive` on the private API and copy its `store_i
 
 `expected_store_id` is required, nonsecret and exactly 32 lowercase hexadecimal characters. Replace the example with the authenticated archive's actual ID, not a guessed value or an ID copied from another connection. The plugin compares it before starting any sync or writing any document, and sends the same expected ID throughout enumeration, replay and pre-commit checks. It is stored only in ordinary connection configuration, so failed/lost runs and cursor/exclusion resets do not discard the pin. There is no automatic first-use adoption.
 
-Obtain IDs from authenticated `GET /v1/chats?store_id=<id>` after reading `GET /v1/archive`. Every configured ID must exist in the current inventory. Unknown, deleted or normalized IDs fail the run with an actionable filter error, rather than silently permitting a formerly blocked identity. wacli's LID-to-phone normalization removes the old chat identity, and its journal is not a permanent alias registry. Update affected filter IDs explicitly after inspecting the inventory. With no filter reference to the old identity, journal replay rebuilds both old and new namespaces and removes obsolete segments. A configuration change triggers full reconciliation; re-including a chat imports its retained history.
+Obtain IDs from authenticated `GET /v1/chats?store_id=<id>` after reading `GET /v1/archive`. Every configured ID must exist in the current inventory. Unknown, deleted or normalized IDs fail the run with an actionable filter error, rather than silently permitting a formerly blocked identity. wacli's LID-to-phone normalization removes the old chat identity, and its journal is not a permanent alias registry. Update affected filter IDs explicitly after inspecting the inventory. With no filter reference to the old identity, journal replay rebuilds both old and new threads and removes obsolete segments. A configuration change triggers full reconciliation; re-including a chat imports its retained history.
 
 ## Documents and privacy boundaries
 
-- Direct/group messages include text, captions and available attachment type/name/MIME/size metadata. The renderer includes chat ID/name, sender, direction (`Me` for sent messages), UTC message date and an edit indicator.
+- Direct/group messages include text, captions and available attachment type/name/MIME/size metadata. Unknown or zero attachment sizes are omitted; positive sizes remain. The renderer includes chat ID/name, sender, direction (`Me` for sent messages), UTC message date and an edit indicator.
 - Status broadcasts, newsletters, call history and Signal are not indexed. There is no binary download, OCR, transcription or sending. Media retrieval keys and paths are not returned by the API or indexed.
 - Readable retained ephemeral/view-once messages are eligible. There is **no automatic ephemeral exclusion or expiry**. Explicit recorded deletions are honored. Decide whether the retained archive is appropriate for your privacy policy before connecting it.
 - Segments are chronological, split between messages at pauses of at least one hour or approximately 8,000 Unicode characters. A single oversized message stays intact in one segment; ferret's normal chunker handles it. There are no segmentation configuration knobs.
-- Each chat uses source `<root>/chats/<sha256-of-chat-id>` and a thread identified by the chat ID. Segment external IDs hash the first message ID. Documents use `plain` content and ferret's normal viewer, without fabricated WhatsApp links.
+- Every document uses exactly the connection's source root. Its thread is the stable raw chat ID. Segment external IDs are `<sha256-of-chat-id>/<sha256-of-first-message-id>`, avoiding collisions when different chats reuse message IDs. The title is the chat name (or raw ID), with dates stored separately. Documents use `plain` content and ferret's normal viewer, without fabricated WhatsApp links.
+- **Authors** are distinct actual speakers in that segment, including `Me`. An outgoing-only direct segment is authored by Me, not its counterparty. A group name or silent participant is not an author.
 - `created_at` is the first message's exact archive timestamp; `modified_at` is unknown, not the run's time. Equal-second message order uses the archive rowid during rendering. The ordinary viewer orders equal-time documents by its document ID, so size-bound segments with equal-second starts have no stronger viewer tie-order guarantee. Metadata retains the first message ID/rowid and last message date.
-- Edits, metadata changes, backfill and identity moves rebuild affected chats. Unchanged chats are skipped. Regrouping can change segment IDs and trigger reindexing. An exact segment exclusion does not exclude regrouped text under a different ID. Use the chat blocklist for reliable whole-chat filtering.
+- Edits, metadata changes, backfill and identity moves rebuild affected chats. Unchanged chats are skipped. Regrouping can change segment IDs and trigger reindexing. An exact segment exclusion does not exclude regrouped text under a different ID. Whole-thread exclusions cover every segment of that same stable chat ID; exact chat blocklist filters also remain available.
 - Historical payload memory is limited to one API page and the open segment (plus chat inventory/message-ID deduplication metadata). Completed segments are put immediately, but sweeping still waits for complete traversal and replay.
 
 ## Reconciliation, status and replacement
@@ -77,6 +78,21 @@ The first run imports all retained local history. A successful run saves only it
 Before full enumeration, the plugin captures a journal position. After traversal it captures a fixed end boundary, drains changes and rebuilds affected/new/removed chats. All pages must succeed before any sweep. Retention and store identity are checked again before destructive commits. Requests/drains are bounded; a continuously writing collector cannot keep the run draining forever. Writes after the fixed boundary are processed next run.
 
 The journal retains at most 30 days or 100,000 references. Expired checkpoints automatically restart full local reconciliation and report a **lost replay range** in Activity. A failed/lost run receives empty disposable state next time and safely reconciles again. A fully completed local reconciliation is authoritative: messages absent from this archive and obsolete segments may be removed even without the original WhatsApp deletion event. A partial/failed traversal cannot authorize sweeping or checkpoint advancement. None of this claims the archive contains complete WhatsApp history.
+
+### Layout and rendering cutover
+
+This is a **manual clean rebuild**, not an automatic data/exclusion migration. Before enabling new workers for an existing WhatsApp connection:
+
+1. Disable the connection and wait for its active run to finish. Record its name, source root, schedule, `url`, `expected_store_id`, `allow_chats` and `block_chats`. Obtain the archive token from the original Secret; stored credentials are write-only and cannot be exported.
+2. Upgrade the server and **all** plugin workers. Do not let old workers claim the recreated connection.
+3. Delete the old connection through Connections, confirming its source root. This intentionally clears its indexed documents, remembered document/thread exclusions and run history. It does **not** change or delete the native wacli archive.
+4. Recreate the WhatsApp connection with the same root and recorded settings, re-entering the original archive token. The new connection performs a full import using flat sources and current text rendering, including historical zero-size removal.
+
+Old viewer UUID links and exclusions are not preserved. Reapply any desired exclusions after rebuilding; configured allow/blocklists and the explicit archive pin must be copied into the new connection.
+
+A version-1 cursor fails the run with these instructions.
+
+### Archive identity and collector status
 
 An archive whose authenticated `store_id` differs from `expected_store_id` fails before ingestion or sweep, even on an empty state or after a failed first run. For intentional replacement, inspect the new authenticated archive and explicitly edit `expected_store_id` through the ordinary connection configuration flow. Changing only this pin preserves the stored token. This authorizes a full authoritative reconciliation against the new archive and may remove content previously indexed under this source. Consider the retained history, source contents and exclusions before changing the pin. Archive identity is plugin configuration, not separate server-owned state.
 
