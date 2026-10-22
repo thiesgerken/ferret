@@ -541,12 +541,23 @@ fn human_size(bytes: i64) -> String {
 }
 
 /// Keeps a line of user text from opening a Markdown block (heading, list, quote, code fence,
-/// table, HTML, thematic break): each of those starts with ASCII punctuation or, for an ordered
-/// list, with digits and `.` or `)`. Inline emphasis stays, WhatsApp's own `*bold*` is close enough.
+/// table, HTML, thematic break, setext underline, link definition). Other punctuation like `:)`
+/// stays unescaped, since agents read this text raw. Inline emphasis stays too, WhatsApp's own
+/// `*bold*` is close enough.
 fn escape_block_start(line: &str) -> String {
     let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    // A table's delimiter row may also start with the alignment colon.
+    let delimiter_row = line.contains('-')
+        && line
+            .chars()
+            .all(|c| matches!(c, '|' | ':' | '-' | ' ' | '\t'));
     match line[digits..].chars().next() {
-        Some(first) if digits == 0 && first.is_ascii_punctuation() => format!("\\{line}"),
+        Some('#' | '>' | '-' | '+' | '*' | '=' | '_' | '`' | '~' | '|' | '<' | '[')
+            if digits == 0 =>
+        {
+            format!("\\{line}")
+        }
+        Some(':') if delimiter_row => format!("\\{line}"),
         Some('.' | ')') if digits > 0 => format!("{}\\{}", &line[..digits], &line[digits..]),
         _ => line.to_owned(),
     }
@@ -849,7 +860,7 @@ mod tests {
         let mut tricky = message(
             "tricky",
             100,
-            "# Heading\n- item\n1. first\n2024) note\n  > quote\n<div>x</div>\n---\n|a|b|\n\n    indented\n```\n+49 170 *bold* 3.5 kg",
+            "# Heading\n- item\n1. first\n2024) note\n  > quote\n<div>x</div>\n---\n|a|b|\n:-|-:\n\n    indented\n```\n+49 170 *bold* 3.5 kg\n:) \"Hallo\" (@Bob) :-)",
         );
         tricky.sender_name = Some("A*B_`C".to_owned());
         tricky.media_type = Some("document".to_owned());
@@ -859,7 +870,8 @@ mod tests {
             text,
             "**A\\*B\\_\\`C** · 1970-01-01 00:01 UTC  \nAttachment: document · \\_\\_init\\_\\_.py  \n\
              \\# Heading  \n\\- item  \n1\\. first  \n2024\\) note  \n\\> quote  \n\\<div>x</div>  \n\
-             \\---  \n\\|a|b|  \n  \nindented  \n\\```  \n\\+49 170 *bold* 3.5 kg"
+             \\---  \n\\|a|b|  \n\\:-|-:  \n  \nindented  \n\\```  \n\\+49 170 *bold* 3.5 kg  \n\
+             :) \"Hallo\" (@Bob) :-)"
         );
     }
 
