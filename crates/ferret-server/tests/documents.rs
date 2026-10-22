@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{day, document, json_body, start_server};
 use ferret_api::{ContentType, PutResponse};

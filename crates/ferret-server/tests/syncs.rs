@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{document, start_server};
 use ferret_api::Client;

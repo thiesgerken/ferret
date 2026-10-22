@@ -27,17 +27,32 @@ let
       pkgs.cmake
     ];
   };
+  # Only the shipped packages build on these, so they skip the tests' dev-dependencies.
   cargoArtifacts = craneLib.buildDepsOnly (
     common
+    // {
+      cargoExtraArgs = "--workspace --locked";
+      doCheck = false;
+    }
+  );
+  # The checks ship nothing, so they skip release optimization and debug info, which dominate
+  # compiling and linking the test binaries. Their deps need artifacts of their own: cargo
+  # fingerprints differ per profile and env.
+  dev = common // {
+    CARGO_PROFILE = "";
+    CARGO_PROFILE_DEV_DEBUG = "0";
+  };
+  devArtifacts = craneLib.buildDepsOnly (
+    dev
     // {
       cargoExtraArgs = "--workspace --locked";
     }
   );
   # Service-fixture changes must not discard compiled integration-test artifacts.
   testArtifacts = craneLib.cargoTest (
-    common
+    dev
     // {
-      inherit cargoArtifacts;
+      cargoArtifacts = devArtifacts;
       cargoExtraArgs = "--workspace --locked --no-run";
     }
   );
@@ -79,15 +94,15 @@ in
   checks = {
     rust-fmt = craneLib.cargoFmt common;
     rust-clippy = craneLib.cargoClippy (
-      common
+      dev
       // {
-        inherit cargoArtifacts;
+        cargoArtifacts = devArtifacts;
         cargoExtraArgs = "--workspace --all-targets --locked";
         cargoClippyExtraArgs = "-- -D warnings";
       }
     );
     rust-test = craneLib.cargoTest (
-      common
+      dev
       // services
       // {
         cargoArtifacts = testArtifacts;
@@ -103,10 +118,10 @@ in
       }
     );
     sqlx = craneLib.mkCargoDerivation (
-      common
+      dev
       // services
       // {
-        inherit cargoArtifacts;
+        cargoArtifacts = devArtifacts;
         buildPhaseCargoCommand = ''
           cargo sqlx migrate run --source crates/ferret-server/migrations
           SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --locked

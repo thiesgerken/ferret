@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::start_server;
 use sqlx::PgPool;

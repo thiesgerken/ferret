@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{document, session_cookie, start_server};
 use ferret_server::{AppState, ConfigKey, SessionKey, WorkerSecret};

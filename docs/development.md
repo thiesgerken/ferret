@@ -20,7 +20,7 @@ The shell includes Rust, Node, pnpm, sqlx, Git, Helm and Skopeo. Compose v2.24.4
 | --- | --- |
 | `crates/ferret-server/src` | axum routers, GraphQL, auth, ingestion, search, scheduling and embed pump |
 | `crates/ferret-server/migrations` | embedded sqlx migrations, applied before startup listens |
-| `crates/ferret-server/tests` | real-Postgres HTTP integration tests plus fixtures/helpers |
+| `crates/ferret-server/tests` | real-Postgres HTTP integration tests, one module per area in the single `integration` test binary, plus fixtures/helpers |
 | `crates/ferret-api` | shared public/internal wire types and clients |
 | `crates/ferret-plugins` | worker orchestration, schemas and origin implementations |
 | `frontend/src` | static Next.js UI, GraphQL operations and unit tests |
@@ -160,7 +160,7 @@ The smoke uses disposable volumes and dynamic ports. It checks server health/log
 
 For focused host tests, `.cargo/config.toml` supplies development database/mailbox defaults. Start `paradedb` and `docker compose up -d --scale dovecot=1 dovecot`, then use `cargo test --workspace --locked`. Linux files-plugin tests additionally require `FERRET_TEST_FILES_ROOT` to name an empty disposable mount. Nix checks supply their own isolated tmpfs. Never use personal files as test fixtures.
 
-The Gitea regression suite (`cargo test -p ferret-server --test gitea_plugin`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
+The Gitea regression suite (`cargo test -p ferret-server --test integration gitea_plugin::`) uses the real Ferret server/ParadeDB, temporary Git repositories served over authenticated HTTP, and deterministic Gitea API responses. It does not need a Gitea account or container. It covers discovery pagination, repository/file patterns, threaded discussions/reviews, edits/deletions, rename/exclusion behavior and the connection-wide sweep/cursor failure gate.
 
 ## Migrations and generated contracts
 

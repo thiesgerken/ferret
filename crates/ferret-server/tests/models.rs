@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{TestServer, document, fake_endpoint::FakeEndpoint, model, start_server_with};
 use ferret_api::SearchQuery;

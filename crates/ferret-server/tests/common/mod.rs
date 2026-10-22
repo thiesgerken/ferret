@@ -4,9 +4,6 @@
 //! database in the ParadeDB that `DATABASE_URL` points at, and leaves migrating to the server's
 //! own startup.
 
-// Every test file compiles its own copy of this module and uses only part of it.
-#![allow(dead_code)]
-
 pub mod fake_endpoint;
 
 use std::{

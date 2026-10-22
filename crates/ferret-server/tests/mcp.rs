@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{TestServer, document, start_server};
 use rmcp::{
