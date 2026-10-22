@@ -34,6 +34,7 @@
         "aarch64-linux"
       ];
       forLinux = nixpkgs.lib.genAttrs linuxSystems;
+      linuxFor = system: if system == "aarch64-darwin" then "aarch64-linux" else system;
       project = forSystems (
         system:
         let
@@ -132,7 +133,7 @@
       ciBuilds = forSystems (
         system:
         let
-          linux = if system == "aarch64-darwin" then "aarch64-linux" else system;
+          linux = linuxFor system;
           p = project.${linux};
         in
         self.checks.${linux}
@@ -148,6 +149,7 @@
         system:
         let
           inherit (project.${system}) pkgs rust tools;
+          linux = linuxFor system;
         in
         {
           default = pkgs.mkShell {
@@ -164,6 +166,16 @@
               pkgs.skopeo
               tools.sqlx
             ];
+            shellHook = ''
+              cat <<'EOF'
+              ferret dev shell: rust ${rust.version}, node ${tools.nodejs.version}, pnpm ${tools.pnpm.version}
+                cargo clippy --workspace --all-targets
+                cargo test --workspace (needs Compose paradedb + dovecot)
+                pnpm --dir frontend dev
+                nix build .#checks.${linux}.<check>
+                more: docs/development.md#tests-and-checks
+              EOF
+            '';
           };
         }
       );

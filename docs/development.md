@@ -124,6 +124,13 @@ Next serves port 3000 and proxies API requests to the Compose server at 8380. Se
 
 `ciBuilds.<host-system>` contains every mandatory check, runtime package/image and CI/release tool profile. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
 
+For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux` (also on Apple Silicon):
+
+| Output | Command |
+| --- | --- |
+| Checks: `rust-fmt`, `rust-clippy`, `rust-test`, `sqlx`, `graphql-schema`, `frontend-lint`, `frontend-test`, `frontend-build`, `helm` | `nix build .#checks.<system>.<check>` |
+| Packages and images | `nix build .#packages.<system>.{server,plugins,whatsapp-archive,frontend}{,-image}` |
+
 Bootstrap the locked runner:
 
 ```sh
