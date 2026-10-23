@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.34.2 (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #201 from thiesgerken/ci/cachix
+  ([`b2cc2f5`](https://github.com/thiesgerken/ferret/commit/b2cc2f5d6849121b061dcdb30aab65f12430eace))
+
+### ⚡ Performance
+
+
+- ⚡ perf(ci): pull and push Nix builds through Cachix
+  ([`b2cc2f5`](https://github.com/thiesgerken/ferret/commit/b2cc2f5d6849121b061dcdb30aab65f12430eace))
+
+- ⚡ perf(ci): pull and push Nix builds through Cachix
+  ([`504e1ed`](https://github.com/thiesgerken/ferret/commit/504e1eda1b5421722452fd7f980e5e1f06da3e59))
+
+  Replace the GitHub Actions store tarball (7 GB, 1.5 to 10 minute restores, two minute saves, evicted at 10 GB) with the thiesgerken Cachix cache. Every workflow reads it; only release runs push, through the daemon so intermediate dependency artifacts are cached too. nix-fast-build skips outputs already in the cache. The flake offers the cache to local builds.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_011E7iMxc3j29x4jSHzXVjAB
+
 ## v0.34.1 (2026-10-23)
 
 
