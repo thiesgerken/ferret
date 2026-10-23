@@ -38,10 +38,6 @@ use crate::{
     writer_stats,
 };
 
-mod json_object;
-
-use json_object::JsonObject;
-
 pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
 
 pub fn schema() -> Schema {
@@ -1292,8 +1288,9 @@ struct Document {
     modified_at: Option<DateTime<Utc>>,
     /// The `externalId` of the document in the thread this one answers.
     parent: Option<String>,
-    /// What its writer recorded about it beyond the fixed fields, `{}` when nothing.
-    meta: JsonObject,
+    /// What its writer recorded about it beyond the fixed fields: a JSON-encoded object, `{}`
+    /// when nothing.
+    meta: String,
     /// The thread's documents to draw it, null without a thread.
     thread_outline: Option<ThreadOutline>,
 }
@@ -1355,7 +1352,7 @@ impl Document {
             created_at: document.created_at,
             modified_at: document.modified_at,
             parent: document.parent,
-            meta: JsonObject(document.meta),
+            meta: serde_json::Value::Object(document.meta).to_string(),
             thread_outline: outline.map(ThreadOutline::from),
         }
     }

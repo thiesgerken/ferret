@@ -55,7 +55,7 @@ async function renderViewer(
           url,
           authors: ["thies"],
           ...dates,
-          meta,
+          meta: JSON.stringify(meta),
           threadOutline: {
             __typename: "ThreadOutline",
             total: threadTotal,

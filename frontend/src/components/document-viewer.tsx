@@ -171,8 +171,8 @@ function Field({ term, children }: { term: string; children: ReactNode }) {
 }
 
 /** What the document's writer recorded about it, shown like a frontmatter. */
-function MetaFields({ meta }: { meta: ViewedDocument["meta"] }) {
-  const entries = Object.entries(meta);
+function MetaFields({ meta }: { meta: string }) {
+  const entries = Object.entries(JSON.parse(meta) as Record<string, unknown>);
   if (entries.length === 0) {
     return null;
   }

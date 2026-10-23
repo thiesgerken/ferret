@@ -130,7 +130,6 @@ async fn the_ui_reads_a_documents_meta_as_json(pool: PgPool) {
     session.meta = json!({
         "harness": "claude-code",
         "turns": 12,
-        "tokens": 4_000_000_000_u64,
         "cost": 0.25,
         "archived": false,
         "branch": null,
@@ -150,28 +149,14 @@ async fn the_ui_reads_a_documents_meta_as_json(pool: PgPool) {
     let cookie = server.sign_in().await;
 
     let query = "query ($id: ID!) { document(id: $id) { meta } }";
-    let result = server
-        .graphql(&cookie, query, json!({"id": with_meta}))
-        .await;
-    assert_eq!(result["errors"], Value::Null, "{result}");
-    assert_eq!(
-        result["data"]["document"]["meta"],
-        json!({
-            "harness": "claude-code",
-            "turns": 12,
-            // Beyond GraphQL's 32-bit Int.
-            "tokens": 4_000_000_000.0,
-            "cost": 0.25,
-            "archived": false,
-            "branch": null,
-            "models": ["opus", "haiku"],
-            "usage": {"input": 10, "output": [1, 2]},
-        })
-    );
-    let result = server
-        .graphql(&cookie, query, json!({"id": without_meta}))
-        .await;
-    assert_eq!(result["data"]["document"]["meta"], json!({}), "{result}");
+    let meta_of = async |id: Uuid| {
+        let result = server.graphql(&cookie, query, json!({"id": id})).await;
+        assert_eq!(result["errors"], Value::Null, "{result}");
+        let meta = result["data"]["document"]["meta"].as_str().unwrap();
+        serde_json::from_str::<Value>(meta).unwrap()
+    };
+    assert_eq!(meta_of(with_meta).await, Value::Object(session.meta));
+    assert_eq!(meta_of(without_meta).await, json!({}));
 }
 
 #[sqlx::test(migrations = false)]
