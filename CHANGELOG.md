@@ -1,6 +1,82 @@
 # CHANGELOG
 
 
+## v0.34.0 (2026-10-23)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #198 from thiesgerken/feat/whatsapp-markdown
+  ([`95e9c89`](https://github.com/thiesgerken/ferret/commit/95e9c89c4e0c1a000573a928d2a41f6ccb4ad9f0))
+
+- ✨ feat(whatsapp): render chat segments as Markdown, about one per day
+  ([`95e9c89`](https://github.com/thiesgerken/ferret/commit/95e9c89c4e0c1a000573a928d2a41f6ccb4ad9f0))
+
+- ✨ feat(whatsapp): render chat segments as Markdown, about one per day
+  ([`1393422`](https://github.com/thiesgerken/ferret/commit/1393422628415453a856019a6c7b9da249fef2b4))
+
+  Segments now split after 24 hours of silence (was one hour), still capped at about 8,000 characters, and render as Markdown: a bold sender line with the UTC time (full date on a segment's first message and on a new UTC day), hard line breaks inside messages, one compact attachment line, and escaped line starts so user text cannot form headings, lists, quotes, code or HTML. The `WhatsApp chat: … / Chat ID: …` header is gone (title and meta carry it).
+
+  JIDs no longer appear for `Me` or in direct chats: wacli stores the chat JID as the sender of history-synced outgoing direct messages. In groups a JID only names a member without a name.
+
+  The cursor moves to version 3; a version-2 cursor triggers a full authoritative reconciliation that re-renders, regroups and sweeps obsolete segment IDs. Integration tests list documents from the database instead of searching for the dropped "WhatsApp" header word.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_016JUhj7nSjp77hx4RNvyyWX
+
+### 🩹 Patches
+
+
+- 🩹 fix(whatsapp): escape only real Markdown block starts
+  ([`f73e0e7`](https://github.com/thiesgerken/ferret/commit/f73e0e7ff8161eb86f5931dc829f16b272299bc8))
+
+  Leading punctuation like `:)` or `"` stays as written, since agents read segment text raw; only characters that can open a block (and a table delimiter row starting with its alignment colon) get a backslash. The docs now say that an unnamed direct chat's counterpart shows as the raw chat ID.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_016JUhj7nSjp77hx4RNvyyWX
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): hide Markdown backslash escapes in snippets
+  ([`aee7132`](https://github.com/thiesgerken/ferret/commit/aee71324161c700aa6647fec7e36828ff51e87d9))
+
+  Generated Markdown escapes literal user text (the WhatsApp segments escape line starts like `\+49` or `\# not a heading`). Snippets now show the escaped character without its backslash, like the viewer does.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_016JUhj7nSjp77hx4RNvyyWX
+
+- 💄 style(frontend): show the thread outline as a sticky explorer-style tree
+  ([`4f10420`](https://github.com/thiesgerken/ferret/commit/4f104209fbf363a0066405adc347fd9c70a453ad))
+
+- 💄 style(frontend): pin the thread outline to the left edge on wide screens
+  ([`e3621ac`](https://github.com/thiesgerken/ferret/commit/e3621ac219ada2d293380e1d19e4c24c6b063905))
+
+  Instead of a centered two-column block, the outline is a full-height pane on the viewport's left edge with its own scroll box, and the document keeps its reading width centered in the remaining space.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_016JUhj7nSjp77hx4RNvyyWX
+
+- 💄 style(frontend): show the thread outline as a sticky explorer-style tree
+  ([`32d84e6`](https://github.com/thiesgerken/ferret/commit/32d84e6db7afbe504f3e26ed5ce4d47bf5997133))
+
+  On wide screens the viewer's thread outline moves into a sticky side column with its own scroll box, so jumping between entries of different lengths no longer moves it. On narrow screens it sits between the header and the body instead of at the bottom. Forks get file-explorer connectors: a guide line per nesting level and elbows to each child, the last child's guide line ending at its elbow.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_016JUhj7nSjp77hx4RNvyyWX
+
+### Other
+
+
+- Merge pull request #199 from thiesgerken/feat/thread-sidebar
+  ([`4f10420`](https://github.com/thiesgerken/ferret/commit/4f104209fbf363a0066405adc347fd9c70a453ad))
+
 ## v0.33.0 (2026-10-22)
 
 
