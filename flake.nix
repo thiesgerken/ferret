@@ -167,14 +167,13 @@
               tools.sqlx
             ];
             shellHook = ''
-              cat <<'EOF'
-              ferret dev shell: rust ${rust.version}, node ${tools.nodejs.version}, pnpm ${tools.pnpm.version}
-                cargo clippy --workspace --all-targets
-                cargo test --workspace (needs Compose paradedb + dovecot)
-                pnpm --dir frontend dev
-                nix build .#checks.${linux}.<check>
-                more: docs/development.md#tests-and-checks
-              EOF
+              printf '\033[1;36m🦦 ferret dev shell\033[0m \033[2mRust ${rust.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version}\033[0m\n'
+              printf '  \033[32mcargo clippy --workspace --all-targets\033[0m\n'
+              printf '  \033[32mcargo test --workspace\033[0m \033[2m(needs Compose paradedb + dovecot)\033[0m\n'
+              printf '  \033[32m%s\033[0m\n' \
+                'pnpm --dir frontend dev' \
+                'nix build .#checks.${linux}.<check>'
+              printf '  \033[2m📖 more: docs/development.md#tests-and-checks\033[0m\n'
             '';
           };
         }
