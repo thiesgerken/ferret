@@ -16,7 +16,7 @@ use axum::{
 };
 use common::{TestServer, start_server};
 use ferret_api::{
-    Client, Document, PutResponse, SearchQuery,
+    Client, ContentType, Document, PutResponse,
     internal::{RunFinish, RunResult, RunStats},
 };
 use ferret_plugins::{
@@ -191,21 +191,15 @@ async fn execute(
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
     sqlx::query_as("select status,error,jsonb_build_object('put',put,'unchanged',unchanged,'deleted',deleted) from plugin_runs order by started_at desc limit 1").fetch_one(pool).await.unwrap()
 }
-async fn documents(server: &TestServer) -> Vec<Document> {
-    let api = server.admin_api().await;
-    let hits = api
-        .search(&SearchQuery {
-            q: "WhatsApp".into(),
-            collapse: Some(false),
-            k: Some(100),
-            ..Default::default()
-        })
+async fn documents(server: &TestServer, pool: &PgPool) -> Vec<Document> {
+    let ids: Vec<Uuid> = sqlx::query_scalar("select id from documents")
+        .fetch_all(pool)
         .await
-        .unwrap()
-        .hits;
+        .unwrap();
+    let api = server.admin_api().await;
     let mut docs = Vec::new();
-    for hit in hits {
-        docs.push(api.document(hit.document_id).await.unwrap());
+    for id in ids {
+        docs.push(api.document(id).await.unwrap());
     }
     docs.sort_by(|a, b| {
         a.source
@@ -236,7 +230,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
         .message(ALICE, "sent", 200, "Sentsentinel", true)
         .await;
     archive
-        .message(ALICE, "pause", 4_000, "Pausesentinel", false)
+        .message(ALICE, "pause", 100_000, "Pausesentinel", false)
         .await;
     archive
         .message(GROUP, "file", 300, "Captionsentinel", false)
@@ -269,7 +263,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
             .await
             .unwrap();
     assert!(log.contains("logged_out") && log.contains("Some(1)"));
-    let docs = documents(&server).await;
+    let docs = documents(&server, &pool).await;
     assert_eq!(docs.len(), 3);
     assert!(docs.iter().all(|doc| doc.source == "chat/archive"));
     let alice: Vec<_> = docs
@@ -277,8 +271,14 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
         .filter(|doc| doc.thread.as_deref() == Some(ALICE))
         .collect();
     assert_eq!(alice.len(), 2);
-    assert!(alice[0].text.contains("Sender (444@s.whatsapp.net)"));
-    assert!(alice[0].text.contains("Me (444@s.whatsapp.net)"));
+    assert!(
+        alice
+            .iter()
+            .all(|doc| doc.content_type == ContentType::Markdown)
+    );
+    assert!(alice[0].text.contains("**Sender** · "));
+    assert!(alice[0].text.contains("**Me** · "));
+    assert!(!alice[0].text.contains("444@s.whatsapp.net"));
     assert!(alice[0].text.contains("Receivedsentinel"));
     assert!(alice[0].text.contains("Sentsentinel"));
     assert_eq!(alice[0].created_at.unwrap().timestamp(), 100);
@@ -292,7 +292,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
         "Captionmetadata",
         "agenda.pdf",
         "application/pdf",
-        "12345 bytes",
+        "12.3 kB",
     ] {
         assert!(attachment.text.contains(expected));
     }
@@ -312,7 +312,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     assert_eq!(unchanged.2["put"], 0);
     assert_eq!(
         identities,
-        documents(&server)
+        documents(&server, &pool)
             .await
             .iter()
             .map(|doc| doc.id)
@@ -324,7 +324,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
         .await;
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let changed = documents(&server).await;
+    let changed = documents(&server, &pool).await;
     assert!(
         changed
             .iter()
@@ -344,14 +344,14 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     update(&server, &id, archive.config(&[ALICE, GROUP], &[ALICE])).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
     assert!(
-        documents(&server)
+        documents(&server, &pool)
             .await
             .iter()
             .all(|doc| doc.thread.as_deref() == Some(GROUP))
     );
     update(&server, &id, archive.config(&[ALICE], &[])).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let restored = documents(&server).await;
+    let restored = documents(&server, &pool).await;
     assert!(!restored.is_empty());
     assert!(
         restored
@@ -369,7 +369,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     archive.sql("INSERT INTO chats(jid,kind,name) VALUES('555@s.whatsapp.net','dm','Alice canonical'); UPDATE messages SET chat_jid='555@s.whatsapp.net' WHERE chat_jid='111@s.whatsapp.net'; DELETE FROM chats WHERE jid='111@s.whatsapp.net';").await;
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let moved = documents(&server).await;
+    let moved = documents(&server, &pool).await;
     assert!(!moved.iter().any(|doc| doc.thread.as_deref() == Some(ALICE)));
     assert_eq!(
         moved
@@ -382,7 +382,7 @@ async fn registered_worker_imports_segments_reconciles_mutations_filters_and_ret
     let failed = execute(&worker, wid, &pool).await;
     assert_eq!(failed.0, "failed");
     assert!(failed.1.unwrap().contains("missing chat ID"));
-    assert_eq!(moved.len(), documents(&server).await.len());
+    assert_eq!(moved.len(), documents(&server, &pool).await.len());
 }
 
 #[sqlx::test(migrations = false)]
@@ -403,7 +403,7 @@ async fn concurrent_wal_pages_replay_backfill_and_failed_pages_never_authorize_s
     let (worker, wid, id) = setup(&server, archive.config(&[], &[])).await;
     archive.mode.store(2, Ordering::SeqCst);
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let docs = documents(&server).await;
+    let docs = documents(&server, &pool).await;
     assert!(docs.iter().any(|doc| doc.text.contains("Backfillsentinel")));
     assert!(docs.iter().any(|doc| doc.text.contains("Editsentinel")));
     assert!(
@@ -430,7 +430,7 @@ async fn concurrent_wal_pages_replay_backfill_and_failed_pages_never_authorize_s
         failed.2["unchanged"].as_u64().unwrap() > 1,
         "completed first-page segments must be put before requesting the failing page"
     );
-    let after = documents(&server).await;
+    let after = documents(&server, &pool).await;
     assert!(
         before
             .iter()
@@ -464,7 +464,7 @@ async fn concurrent_wal_pages_replay_backfill_and_failed_pages_never_authorize_s
             .unwrap();
     assert!(log.contains("lost replay range"));
     assert!(
-        documents(&server)
+        documents(&server, &pool)
             .await
             .iter()
             .all(|doc| !doc.text.contains("number 500"))
@@ -496,7 +496,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
     archive.mode.store(0, Ordering::SeqCst);
     due(&server, &id).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let before = documents(&server).await;
+    let before = documents(&server, &pool).await;
     let syncs_before: i64 = sqlx::query_scalar("select count(*) from syncs")
         .fetch_one(&pool)
         .await
@@ -520,7 +520,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
             "mismatch must fail before starting any sync"
         );
         assert_eq!(
-            documents(&server)
+            documents(&server, &pool)
                 .await
                 .iter()
                 .map(|doc| doc.id)
@@ -539,7 +539,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
     replacement.as_object_mut().unwrap().remove("token");
     update(&server, &id, replacement).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let reconciled = documents(&server).await;
+    let reconciled = documents(&server, &pool).await;
     assert_eq!(reconciled.len(), 1);
     assert!(reconciled[0].text.contains("Replacementsentinel"));
     assert!(!reconciled[0].text.contains("Contentsentinel"));
@@ -587,7 +587,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
         )
         .await
         .unwrap();
-    assert_eq!(documents(&server).await.len(), 2);
+    assert_eq!(documents(&server, &pool).await.len(), 2);
     archive
         .sql("UPDATE retrieval_state SET store_id='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';")
         .await;
@@ -595,7 +595,7 @@ async fn configured_pin_survives_failed_runs_and_deliberate_edit_reconciles_repl
     replacement["expected_store_id"] = json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     update(&server, &id, replacement).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let root_reconciled = documents(&server).await;
+    let root_reconciled = documents(&server, &pool).await;
     assert_eq!(root_reconciled.len(), 1);
     assert_eq!(root_reconciled[0].id, reconciled[0].id);
 }
@@ -613,7 +613,7 @@ async fn required_expected_identity_is_validated_before_any_ingestion(pool: PgPo
     let failed = execute(&worker, wid, &pool).await;
     assert_eq!(failed.0, "failed");
     assert!(failed.1.unwrap().contains("expected_store_id"));
-    assert!(documents(&server).await.is_empty());
+    assert!(documents(&server, &pool).await.is_empty());
     let syncs: i64 = sqlx::query_scalar("select count(*) from syncs")
         .fetch_one(&pool)
         .await
@@ -658,7 +658,7 @@ async fn required_expected_identity_is_validated_before_any_ingestion(pool: PgPo
             .await
             .unwrap();
         assert_eq!(syncs, 0, "invalid pin must not start ingestion");
-        assert!(documents(&server).await.is_empty());
+        assert!(documents(&server, &pool).await.is_empty());
     }
     worker
         .internal
@@ -696,11 +696,11 @@ async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_
     let server = start_server(pool.clone()).await;
     let (worker, wid, connection) = setup(&server, archive.config(&[], &[])).await;
     assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
-    let docs = documents(&server).await;
+    let docs = documents(&server, &pool).await;
     assert_eq!(docs.len(), 2);
     assert!(
         docs.iter()
-            .all(|doc| doc.source == "chat/archive" && !doc.text.contains("Size: 0 bytes"))
+            .all(|doc| doc.source == "chat/archive" && !doc.text.contains(" 0 B"))
     );
     let outgoing = docs
         .iter()
@@ -714,7 +714,7 @@ async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_
         .unwrap();
     assert_eq!(group.authors, ["Alice", "Bob", "Me"]);
     assert_eq!(group.title.as_deref(), Some("Team"));
-    assert!(group.text.contains("Size: 2048 bytes"));
+    assert!(group.text.contains("2.0 kB"));
     archive
         .sql("UPDATE messages SET text='Changedgroupsentinel' WHERE msg_id='bob'")
         .await;
@@ -722,7 +722,7 @@ async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_
     let changed = execute(&worker, wid, &pool).await;
     assert_eq!(changed.0, "succeeded");
     assert_eq!(changed.2["put"], 1);
-    let after = documents(&server).await;
+    let after = documents(&server, &pool).await;
     assert_eq!(after.len(), 2);
     assert!(
         after
@@ -734,6 +734,36 @@ async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_
             .iter()
             .any(|doc| doc.id == group.id && doc.text.contains("Changedgroupsentinel"))
     );
+    // A version-2 cursor regroups every chat: a segment ID that layout left behind is swept.
+    sqlx::query("update documents set external_id = external_id || '-v2' where thread = $1")
+        .bind(ALICE)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("update connections set state = jsonb_set(state, '{version}', '2')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    due(&server, &connection).await;
+    assert_eq!(execute(&worker, wid, &pool).await.0, "succeeded");
+    let log: String =
+        sqlx::query_scalar("select log from plugin_runs order by started_at desc limit 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(log.contains("full authoritative reconciliation"));
+    let regrouped = documents(&server, &pool).await;
+    assert_eq!(regrouped.len(), 2);
+    assert!(
+        regrouped
+            .iter()
+            .all(|doc| !doc.external_id.ends_with("-v2"))
+    );
+    let version: Value = sqlx::query_scalar("select state -> 'version' from connections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(version, 3);
     sqlx::query("update connections set state = jsonb_set(state, '{version}', '1')")
         .execute(&pool)
         .await
@@ -753,5 +783,5 @@ async fn flat_chat_segments_keep_speakers_sizes_and_incremental_sibling_threads_
             .unwrap(),
         before_syncs
     );
-    assert_eq!(documents(&server).await.len(), 2);
+    assert_eq!(documents(&server, &pool).await.len(), 2);
 }

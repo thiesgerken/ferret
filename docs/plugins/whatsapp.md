@@ -61,11 +61,22 @@ Obtain IDs from authenticated `GET /v1/chats?store_id=<id>` after reading `GET /
 
 ## Documents and privacy boundaries
 
-- Direct/group messages include text, captions and available attachment type/name/MIME/size metadata. Unknown or zero attachment sizes are omitted; positive sizes remain. The renderer includes chat ID/name, sender, direction (`Me` for sent messages), UTC message date and an edit indicator.
+- Direct/group messages include text, captions and available attachment type/name/MIME/size metadata. Segments are Markdown: each message starts with a bold sender line and its UTC time, followed by its text, with line breaks kept:
+
+  ```text
+  **Me** · 2026-02-21 11:50 UTC
+  Shall we continue with the shelves this afternoon?
+
+  **Alex Example** · 11:52 (edited)
+  Attachment: image · shelf.jpg · image/jpeg · 1.2 MB
+  Sure, see the photo
+  ```
+
+  The full date appears on a segment's first message and whenever the UTC day changes, otherwise only the time. Attachments take one line; unknown or zero sizes are omitted. Sent messages are by `Me`. A direct chat's other messages are by the sender's name, or else the chat's title (the raw chat ID for an unnamed chat); a group member without a name shows as their raw ID. No other JIDs appear in the text: the chat name is the title and the chat ID is in metadata. Message text cannot form Markdown headings, lists, quotes, code blocks, tables or HTML: a line starting with such syntax is escaped, other leading punctuation stays as written. Inline emphasis does render, so WhatsApp's `*bold*` shows as italics.
 - Status broadcasts, newsletters, call history and Signal are not indexed. There is no binary download, OCR, transcription or sending. Media retrieval keys and paths are not returned by the API or indexed.
 - Readable retained ephemeral/view-once messages are eligible. There is **no automatic ephemeral exclusion or expiry**. Explicit recorded deletions are honored. Decide whether the retained archive is appropriate for your privacy policy before connecting it.
-- Segments are chronological, split between messages at pauses of at least one hour or approximately 8,000 Unicode characters. A single oversized message stays intact in one segment; ferret's normal chunker handles it. There are no segmentation configuration knobs.
-- Every document uses exactly the connection's source root. Its thread is the stable raw chat ID. Segment external IDs are `<sha256-of-chat-id>/<sha256-of-first-message-id>`, avoiding collisions when different chats reuse message IDs. The title is the chat name (or raw ID), with dates stored separately. Documents use `plain` content and ferret's normal viewer, without fabricated WhatsApp links.
+- Segments are chronological, split between messages at pauses of at least 24 hours or approximately 8,000 Unicode characters. That is about one segment per day of conversation, without splitting a conversation at midnight. A single oversized message stays intact in one segment; ferret's normal chunker handles it. There are no segmentation configuration knobs.
+- Every document uses exactly the connection's source root. Its thread is the stable raw chat ID. Segment external IDs are `<sha256-of-chat-id>/<sha256-of-first-message-id>`, avoiding collisions when different chats reuse message IDs. The title is the chat name (or raw ID), with dates stored separately. Documents use `markdown` content and ferret's normal viewer, without fabricated WhatsApp links.
 - **Authors** are distinct actual speakers in that segment, including `Me`. An outgoing-only direct segment is authored by Me, not its counterparty. A group name or silent participant is not an author.
 - `created_at` is the first message's exact archive timestamp; `modified_at` is unknown, not the run's time. Equal-second message order uses the archive rowid during rendering. The ordinary viewer orders equal-time documents by its document ID, so size-bound segments with equal-second starts have no stronger viewer tie-order guarantee. Metadata retains the first message ID/rowid and last message date.
 - Edits, metadata changes, backfill and identity moves rebuild affected chats. Unchanged chats are skipped. Regrouping can change segment IDs and trigger reindexing. An exact segment exclusion does not exclude regrouped text under a different ID. Whole-thread exclusions cover every segment of that same stable chat ID; exact chat blocklist filters also remain available.
@@ -79,18 +90,18 @@ Before full enumeration, the plugin captures a journal position. After traversal
 
 The journal retains at most 30 days or 100,000 references. Expired checkpoints automatically restart full local reconciliation and report a **lost replay range** in Activity. A failed/lost run receives empty disposable state next time and safely reconciles again. A fully completed local reconciliation is authoritative: messages absent from this archive and obsolete segments may be removed even without the original WhatsApp deletion event. A partial/failed traversal cannot authorize sweeping or checkpoint advancement. None of this claims the archive contains complete WhatsApp history.
 
-### Layout and rendering cutover
+### Layout and rendering cutovers
 
-This is a **manual clean rebuild**, not an automatic data/exclusion migration. Before enabling new workers for an existing WhatsApp connection:
+**From plain-text rendering and one-hour segments (cursor version 2)** the upgrade to Markdown and 24-hour segments is automatic. The first run after upgrading the plugin workers re-renders and regroups every chat in a full authoritative reconciliation and sweeps segment IDs that no longer exist. Activity logs this. It re-embeds the whole WhatsApp source once. Exclusions of single segments are lost wherever regrouping changes a segment's ID, so reapply them afterwards. Whole-thread exclusions and chat filters remain, because the chat ID is unchanged.
+
+**From the old index layout (cursor version 1)** a **manual clean rebuild** is required, not an automatic data/exclusion migration. Such a cursor fails the run with these instructions. Before enabling new workers for an existing WhatsApp connection:
 
 1. Disable the connection and wait for its active run to finish. Record its name, source root, schedule, `url`, `expected_store_id`, `allow_chats` and `block_chats`. Obtain the archive token from the original Secret; stored credentials are write-only and cannot be exported.
 2. Upgrade the server and **all** plugin workers. Do not let old workers claim the recreated connection.
 3. Delete the old connection through Connections, confirming its source root. This intentionally clears its indexed documents, remembered document/thread exclusions and run history. It does **not** change or delete the native wacli archive.
-4. Recreate the WhatsApp connection with the same root and recorded settings, re-entering the original archive token. The new connection performs a full import using flat sources and current text rendering, including historical zero-size removal.
+4. Recreate the WhatsApp connection with the same root and recorded settings, re-entering the original archive token. The new connection performs a full import with the current layout and rendering.
 
 Old viewer UUID links and exclusions are not preserved. Reapply any desired exclusions after rebuilding; configured allow/blocklists and the explicit archive pin must be copied into the new connection.
-
-A version-1 cursor fails the run with these instructions.
 
 ### Archive identity and collector status
 

@@ -23,6 +23,8 @@ const MARKDOWN_SYNTAX = [
   /(^|[^\w*])(\*)([^*\s](?:[^*\n]*[^*\s])?)(\*)(?![\w*])/g,
   /(^|\W)(_)([^_\s](?:[^_\n]*[^_\s])?)(_)(?!\w)/g,
   /()(`+)([^`\n]+?)(\2)/g,
+  // Backslash escapes: the escaped character stays.
+  /()(\\)([!-\/:-@[-`{-~])()/g,
 ];
 
 /**
