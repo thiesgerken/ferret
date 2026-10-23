@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.35.0 (2026-10-23)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #202 from thiesgerken/feat/document-meta
+  ([`26f27bd`](https://github.com/thiesgerken/ferret/commit/26f27bde52522c878cdb0d29ca6816040912a13f))
+
+- ✨ feat(viewer): show a document's meta
+  ([`26f27bd`](https://github.com/thiesgerken/ferret/commit/26f27bde52522c878cdb0d29ca6816040912a13f))
+
+- ✨ feat(viewer): show a document's meta
+  ([`ccdcd77`](https://github.com/thiesgerken/ferret/commit/ccdcd779eb10f7f64a1a7626d06bddc1fa5fc893))
+
+  A block of keys and values above the body, styled like an email's headers (which now share its markup). Scalars show inline, lists of scalars comma-joined, anything nested as compact JSON. Empty meta shows no block.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01KF1AtyKmd3extqG9waGLeU
+
+- ✨ feat(server): expose a document's meta in GraphQL
+  ([`0df8b37`](https://github.com/thiesgerken/ferret/commit/0df8b378d62eb363c605ea7344d8d16008957a31))
+
+  Document.meta returns the writer's free-form object as a JSONObject scalar, so the viewer can show it. juniper's scalar derive only resolves to a single scalar value, so the scalar's traits are written by hand.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01KF1AtyKmd3extqG9waGLeU
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(server): send a document's meta as a JSON string
+  ([`f106918`](https://github.com/thiesgerken/ferret/commit/f106918a7244e7688e9bb400d356d49679891a62))
+
+  The hand-written JSONObject scalar leaned on juniper's doc-hidden reflect traits, which can break on any juniper bump. A JSON-encoded string needs none of that, keeps every number as stored, and the viewer parses it once. The schema is regenerated from the code.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01KF1AtyKmd3extqG9waGLeU
+
 ## v0.34.2 (2026-10-23)
 
 
