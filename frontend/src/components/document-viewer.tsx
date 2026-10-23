@@ -3,7 +3,7 @@
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useFormatter, useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
@@ -37,6 +37,7 @@ const ViewDocumentQueryDocument = graphql(`
       authors
       createdAt
       modifiedAt
+      meta
       threadOutline {
         total
         entries {
@@ -121,6 +122,7 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
           <ThreadOutline outline={outline} currentId={document.id} />
         </aside>
       )}
+      <MetaFields meta={document.meta} />
       <DocumentBody document={document} range={range} />
       <ExcludeControls document={document} onExcluded={setExcluded} />
     </div>
@@ -139,20 +141,65 @@ function DocumentBody({ document, range }: { document: ViewedDocument; range: Hi
     case "EMAIL":
       return (
         <div className="space-y-4">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-muted p-3 text-sm">
-            <dt className="text-muted-foreground">{t("from")}</dt>
-            <dd>{document.authors.join(", ")}</dd>
-            <dt className="text-muted-foreground">{t("subject")}</dt>
-            <dd>{document.title}</dd>
-            {document.createdAt && <>
-              <dt className="text-muted-foreground">{t("date")}</dt>
-              <dd>{format.dateTime(new Date(document.createdAt), { dateStyle: "medium", timeStyle: "short" })}</dd>
-            </>}
-          </dl>
+          <FieldList>
+            <Field term={t("from")}>{document.authors.join(", ")}</Field>
+            <Field term={t("subject")}>{document.title}</Field>
+            {document.createdAt && (
+              <Field term={t("date")}>
+                {format.dateTime(new Date(document.createdAt), { dateStyle: "medium", timeStyle: "short" })}
+              </Field>
+            )}
+          </FieldList>
           <PlainBody text={document.text} range={range} />
         </div>
       );
   }
+}
+
+/** A grey block of labelled values, such as an email's headers or a document's meta. */
+function FieldList({ children }: { children: ReactNode }) {
+  return <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-muted p-3 text-sm">{children}</dl>;
+}
+
+function Field({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{term}</dt>
+      <dd className="wrap-anywhere">{children}</dd>
+    </>
+  );
+}
+
+/** What the document's writer recorded about it, shown like a frontmatter. */
+function MetaFields({ meta }: { meta: string }) {
+  const entries = Object.entries(JSON.parse(meta) as Record<string, unknown>);
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <FieldList>
+      {entries.map(([key, value]) => (
+        <Field key={key} term={key}>
+          <MetaValue value={value} />
+        </Field>
+      ))}
+    </FieldList>
+  );
+}
+
+function MetaValue({ value }: { value: unknown }) {
+  if (isScalar(value)) {
+    return String(value);
+  }
+  // An empty list would join to nothing and look like a missing value; as JSON it reads `[]`.
+  if (Array.isArray(value) && value.length > 0 && value.every(isScalar)) {
+    return value.join(", ");
+  }
+  return <code className="font-mono text-xs">{JSON.stringify(value)}</code>;
+}
+
+function isScalar(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
 function PlainBody({ text, range }: { text: string; range: HitRange | null }) {

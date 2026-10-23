@@ -123,6 +123,43 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
+async fn the_ui_reads_a_documents_meta_as_json(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let mut session = document("agents/claude", "session.jsonl", "A session");
+    session.meta = json!({
+        "harness": "claude-code",
+        "turns": 12,
+        "cost": 0.25,
+        "archived": false,
+        "branch": null,
+        "models": ["opus", "haiku"],
+        "usage": {"input": 10, "output": [1, 2]},
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    let with_meta = api.put_document(&session).await.unwrap().id().unwrap();
+    let without_meta = api
+        .put_document(&document("notes", "plain.md", "No meta"))
+        .await
+        .unwrap()
+        .id()
+        .unwrap();
+    let cookie = server.sign_in().await;
+
+    let query = "query ($id: ID!) { document(id: $id) { meta } }";
+    let meta_of = async |id: Uuid| {
+        let result = server.graphql(&cookie, query, json!({"id": id})).await;
+        assert_eq!(result["errors"], Value::Null, "{result}");
+        let meta = result["data"]["document"]["meta"].as_str().unwrap();
+        serde_json::from_str::<Value>(meta).unwrap()
+    };
+    assert_eq!(meta_of(with_meta).await, Value::Object(session.meta));
+    assert_eq!(meta_of(without_meta).await, json!({}));
+}
+
+#[sqlx::test(migrations = false)]
 async fn nul_content_is_normalized_before_storage_hashing_and_chunking(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let api = server.admin_api().await;

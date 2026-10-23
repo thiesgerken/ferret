@@ -229,6 +229,11 @@ type Document {
   modifiedAt: DateTime
   "The `externalId` of the document in the thread this one answers."
   parent: String
+  """
+    What its writer recorded about it beyond the fixed fields: a JSON-encoded object, `{}`
+    when nothing.
+  """
+  meta: String!
   "The thread's documents to draw it, null without a thread."
   threadOutline: ThreadOutline
 }
