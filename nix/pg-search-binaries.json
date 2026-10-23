@@ -1,5 +1,5 @@
 {
-  "version": "0.26.2",
+  "version": "0.26.3",
   "platforms": {
     "aarch64-linux": {
       "asset": "postgresql-18-pg-search_0.26.2-1PARADEDB-bookworm_arm64.deb",
