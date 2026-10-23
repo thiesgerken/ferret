@@ -31,7 +31,7 @@ export function ThreadOutline({ outline, currentId }: { outline: Outline; curren
   return (
     <nav
       aria-label={t("thread")}
-      className="flex flex-col gap-2 border-b border-border pb-4 text-sm lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:border-b-0 lg:border-l lg:pb-0 lg:pl-4"
+      className="flex flex-col gap-2 border-b border-border pb-4 text-sm lg:h-full lg:border-b-0 lg:px-4 lg:py-6"
     >
       <h2 className="text-xs font-medium text-muted-foreground">{t("thread")}</h2>
       {outline.entries.length < outline.total && (
