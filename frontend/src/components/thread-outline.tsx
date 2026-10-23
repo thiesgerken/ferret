@@ -10,7 +10,10 @@ import { viewerHref } from "@/lib/viewer-url";
 type Outline = NonNullable<NonNullable<ViewDocumentQuery["document"]>["threadOutline"]>;
 type Entry = Outline["entries"][number];
 
-/** The viewed document's thread as a tree of who answered what, with the document marked. */
+/**
+ * The viewed document's thread as a tree of who answered what, with the document marked. Only
+ * for a thread of more than one document.
+ */
 export function ThreadOutline({ outline, currentId }: { outline: Outline; currentId: string }) {
   const t = useTranslations("viewer");
   const roots = useMemo(() => threadTree(outline.entries), [outline]);
@@ -19,21 +22,24 @@ export function ThreadOutline({ outline, currentId }: { outline: Outline; curren
   useEffect(() => {
     const current = box.current?.querySelector<HTMLElement>("[aria-current]");
     if (box.current && current) {
-      box.current.scrollTop = current.offsetTop - box.current.clientHeight / 2;
+      // By position on screen: the tree's positioned items make offsetTop relative to them.
+      const offset = current.getBoundingClientRect().top - box.current.getBoundingClientRect().top;
+      box.current.scrollTop += offset - (box.current.clientHeight - current.offsetHeight) / 2;
     }
   }, [currentId]);
 
-  if (outline.total <= 1) {
-    return null;
-  }
   return (
-    <nav aria-label={t("thread")} className="space-y-2 border-t border-border pt-4 text-sm">
+    <nav
+      aria-label={t("thread")}
+      className="flex flex-col gap-2 border-b border-border pb-4 text-sm lg:h-full lg:border-b-0 lg:px-4 lg:py-6"
+    >
+      <h2 className="text-xs font-medium text-muted-foreground">{t("thread")}</h2>
       {outline.entries.length < outline.total && (
         <p className="text-xs text-muted-foreground">
           {t("threadWindow", { shown: outline.entries.length, total: outline.total })}
         </p>
       )}
-      <div ref={box} className="relative max-h-80 overflow-y-auto">
+      <div ref={box} className="max-h-80 min-h-0 overflow-y-auto lg:max-h-none">
         <ul>
           {roots.map((root) => (
             <li key={root.entry.id}>
@@ -62,9 +68,9 @@ function Strand({ node, currentId }: { node: ThreadNode<Entry>; currentId: strin
         <EntryLine key={link.entry.id} entry={link.entry} current={link.entry.id === currentId} />
       ))}
       {fork.length > 0 && (
-        <ul className="ml-3 space-y-1 py-1">
+        <ul className="ml-2">
           {fork.map((child) => (
-            <li key={child.entry.id} className="border-l border-border pl-2">
+            <li key={child.entry.id} className={branch}>
               <Strand node={child} currentId={currentId} />
             </li>
           ))}
@@ -73,6 +79,17 @@ function Strand({ node, currentId }: { node: ThreadNode<Entry>; currentId: strin
     </>
   );
 }
+
+/**
+ * A fork's child, drawn like a file explorer's tree: an elbow from the parent's guide line to the
+ * child's first entry (half an entry line down), and the guide line running on past the child's
+ * whole strand unless it's the last child (├ versus └).
+ */
+const branch = [
+  "relative pl-4",
+  "before:absolute before:top-0 before:left-0 before:h-3 before:w-3 before:border-b before:border-l before:border-muted-foreground/40",
+  "after:absolute after:inset-y-0 after:left-0 after:border-l after:border-muted-foreground/40 last:after:hidden",
+].join(" ");
 
 function EntryLine({ entry, current }: { entry: Entry; current: boolean }) {
   const t = useTranslations("viewer");

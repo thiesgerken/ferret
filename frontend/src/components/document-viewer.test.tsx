@@ -20,6 +20,7 @@ async function renderViewer(
     createdAt: "2026-01-01T12:00:00Z",
     modifiedAt: "2026-01-02T12:00:00Z",
   },
+  threadTotal = 1500,
 ) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const client = createGraphqlClient(async (_url, init) => {
@@ -47,7 +48,7 @@ async function renderViewer(
           ...dates,
           threadOutline: {
             __typename: "ThreadOutline",
-            total: 1500,
+            total: threadTotal,
             entries: [
               { __typename: "ThreadEntry", id: "c", externalId: "start", parent: null, title: "Lunch?", authors: ["anna"], createdAt: null },
               { __typename: "ThreadEntry", id: "d", externalId: "reply", parent: "start", title: "Re: Lunch?", authors: ["thies"], createdAt: null },
@@ -170,4 +171,20 @@ test("the thread outline marks the viewed document among the others and says whe
   );
   assert.match(outline.textContent ?? "", /3 of 1,500 documents, around this one/);
   await view.unmount();
+});
+
+test("the thread outline comes between the header and the body, and not at all for a lone document", async () => {
+  const threaded = await renderViewer("PLAIN", "the body", null);
+  const outline = threaded.container.querySelector("nav[aria-label='Thread']")!;
+  const header = threaded.container.querySelector("header")!;
+  const body = threaded.container.querySelector("pre")!;
+  assert.ok(header.compareDocumentPosition(outline) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(outline.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING);
+  await threaded.unmount();
+
+  const dates = { createdAt: null, modifiedAt: null };
+  const lone = await renderViewer("PLAIN", "the body", null, [], "obsidian://open?file=note.md", dates, 1);
+  assert.equal(lone.container.querySelector("nav[aria-label='Thread']"), null);
+  assert.equal(lone.container.querySelector("aside"), null);
+  await lone.unmount();
 });

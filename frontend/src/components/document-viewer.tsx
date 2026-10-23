@@ -96,7 +96,8 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
   }
 
   const originUrl = linkableUrl(document.url);
-  return (
+  const outline = document.threadOutline && document.threadOutline.total > 1 ? document.threadOutline : null;
+  const page = (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
       <HomeLink />
       <header className="space-y-1 border-b border-border pb-4">
@@ -113,11 +114,18 @@ export function DocumentViewer({ id, hit }: { id: string; hit: HitOffsets | null
           </a>
         )}
       </header>
+      {/* On wide screens a pane pinned to the left edge, so jumping between entries of different
+          lengths leaves the outline where it was. */}
+      {outline && (
+        <aside className="lg:fixed lg:inset-y-0 lg:left-0 lg:w-92 lg:border-r lg:border-border">
+          <ThreadOutline outline={outline} currentId={document.id} />
+        </aside>
+      )}
       <DocumentBody document={document} range={range} />
-      {document.threadOutline && <ThreadOutline outline={document.threadOutline} currentId={document.id} />}
       <ExcludeControls document={document} onExcluded={setExcluded} />
     </div>
   );
+  return outline ? <div className="lg:pl-92">{page}</div> : page;
 }
 
 function DocumentBody({ document, range }: { document: ViewedDocument; range: HitRange | null }) {
