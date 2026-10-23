@@ -10,7 +10,7 @@ const config: CodegenConfig = {
         // String unions instead of TypeScript enums, so code and tests can write "SEARCH_READ".
         enumsAsTypes: true,
         // RFC 3339 strings on the wire.
-        scalars: { DateTime: "string" },
+        scalars: { DateTime: "string", JSONObject: "Record<string, unknown>" },
       },
     },
   },

@@ -9,18 +9,27 @@ import { DocumentViewer } from "./document-viewer";
 
 type Operation = { operationName: string; variables: Record<string, unknown> };
 
+type Fixture = {
+  /** Collects every operation the viewer sends. */
+  operations: Operation[];
+  url: string;
+  dates: { createdAt: string | null; modifiedAt: string | null };
+  threadTotal: number;
+  meta: Record<string, unknown>;
+};
+
 /** Serves the document, and answers an exclusion like the server does for a connection's thread. */
 async function renderViewer(
   contentType: string,
   text: string,
   hit: { start: number; end: number } | null,
-  operations: Operation[] = [],
-  url = "obsidian://open?file=note.md",
-  dates: { createdAt: string | null; modifiedAt: string | null } = {
-    createdAt: "2026-01-01T12:00:00Z",
-    modifiedAt: "2026-01-02T12:00:00Z",
-  },
-  threadTotal = 1500,
+  {
+    operations = [],
+    url = "obsidian://open?file=note.md",
+    dates = { createdAt: "2026-01-01T12:00:00Z", modifiedAt: "2026-01-02T12:00:00Z" },
+    threadTotal = 1500,
+    meta = {},
+  }: Partial<Fixture> = {},
 ) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const client = createGraphqlClient(async (_url, init) => {
@@ -46,6 +55,7 @@ async function renderViewer(
           url,
           authors: ["thies"],
           ...dates,
+          meta,
           threadOutline: {
             __typename: "ThreadOutline",
             total: threadTotal,
@@ -77,7 +87,7 @@ test("plain text marks the hit by character offsets", async () => {
 });
 
 test("an origin url with a dangerous scheme isn't a link", async () => {
-  const view = await renderViewer("PLAIN", "text", null, [], "javascript:alert(document.cookie)");
+  const view = await renderViewer("PLAIN", "text", null, { url: "javascript:alert(document.cookie)" });
 
   assert.doesNotMatch(view.container.textContent ?? "", /Open in origin/);
   assert.equal(view.container.querySelector("a[href^='javascript:']"), null);
@@ -132,9 +142,9 @@ test("email shows its headers above the body", async () => {
 });
 
 test("undated email omits unknown origin dates instead of formatting substitute dates", async () => {
-  const view = await renderViewer("EMAIL", "Undated cobalt correspondence", null, [], "https://example.test", {
-    createdAt: null,
-    modifiedAt: null,
+  const view = await renderViewer("EMAIL", "Undated cobalt correspondence", null, {
+    url: "https://example.test",
+    dates: { createdAt: null, modifiedAt: null },
   });
   assert.doesNotMatch(view.container.querySelector("header")?.textContent ?? "", /modified|1970|Jan 1|Jan 2/i);
   assert.deepEqual([...view.container.querySelectorAll("dt")].map((element) => element.textContent), ["From", "Subject"]);
@@ -145,7 +155,7 @@ test("undated email omits unknown origin dates instead of formatting substitute 
 test("excludes the whole thread after confirmation and says what happened", async (t) => {
   t.mock.method(window, "confirm", () => true);
   const operations: Operation[] = [];
-  const view = await renderViewer("PLAIN", "text", null, operations);
+  const view = await renderViewer("PLAIN", "text", null, { operations });
   const button = [...view.container.querySelectorAll("button")].find((b) => b.textContent === "Its whole thread")!;
 
   await act(async () => {
@@ -182,9 +192,46 @@ test("the thread outline comes between the header and the body, and not at all f
   assert.ok(outline.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING);
   await threaded.unmount();
 
-  const dates = { createdAt: null, modifiedAt: null };
-  const lone = await renderViewer("PLAIN", "the body", null, [], "obsidian://open?file=note.md", dates, 1);
+  const lone = await renderViewer("PLAIN", "the body", null, { dates: { createdAt: null, modifiedAt: null }, threadTotal: 1 });
   assert.equal(lone.container.querySelector("nav[aria-label='Thread']"), null);
   assert.equal(lone.container.querySelector("aside"), null);
   await lone.unmount();
+});
+
+test("the document's meta shows above the body in the server's key order, nested values as JSON", async () => {
+  const meta = {
+    harness: "claude-code",
+    turns: 12,
+    archived: false,
+    models: ["opus", "haiku"],
+    tags: [],
+    usage: { input: 10, output: [1, 2] },
+  };
+  const view = await renderViewer("MARKDOWN", "The body.", null, { meta });
+  const fields = view.container.querySelector("dl")!;
+
+  assert.deepEqual([...fields.querySelectorAll("dt")].map((term) => term.textContent), Object.keys(meta));
+  assert.deepEqual(
+    [...fields.querySelectorAll("dd")].map((value) => value.textContent),
+    ["claude-code", "12", "false", "opus, haiku", "[]", '{"input":10,"output":[1,2]}'],
+  );
+  assert.equal(fields.querySelector("code")?.textContent, "[]", "an empty list reads as JSON, not as nothing");
+  assert.equal(fields.querySelectorAll("code").length, 2);
+  assert.ok(fields.compareDocumentPosition(view.container.querySelector(".prose")!) & Node.DOCUMENT_POSITION_FOLLOWING);
+  await view.unmount();
+});
+
+test("a document without meta shows no block for it", async () => {
+  const view = await renderViewer("PLAIN", "The body.", null);
+  assert.equal(view.container.querySelector("dl"), null);
+  await view.unmount();
+});
+
+test("an email shows its meta apart from its headers", async () => {
+  const view = await renderViewer("EMAIL", "Hello.", null, { meta: { folder: "INBOX" } });
+  const [meta, headers] = view.container.querySelectorAll("dl");
+
+  assert.equal(meta.textContent, "folderINBOX");
+  assert.match(headers.textContent ?? "", /^FromthiesSubjectA noteDate/);
+  await view.unmount();
 });
