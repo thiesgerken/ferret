@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.34.1 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #200 from thiesgerken/style/devshell-motd
+  ([`5b12b3c`](https://github.com/thiesgerken/ferret/commit/5b12b3c0a07b3c20f5b9a216f0747037227c5cdd))
+
+### 💄 UI/UX
+
+
+- 💄 style(devshell): brighten the welcome message
+  ([`5b12b3c`](https://github.com/thiesgerken/ferret/commit/5b12b3c0a07b3c20f5b9a216f0747037227c5cdd))
+
+- 💄 style(devshell): brighten the welcome message
+  ([`30e1ed6`](https://github.com/thiesgerken/ferret/commit/30e1ed69969b8d9b1657c0227fe92b9e0c46e19a))
+
 ## v0.34.0 (2026-10-23)
 
 
