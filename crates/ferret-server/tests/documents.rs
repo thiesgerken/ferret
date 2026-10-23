@@ -123,6 +123,58 @@ async fn a_document_can_be_read_back_whole(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
+async fn the_ui_reads_a_documents_meta_as_json(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let mut session = document("agents/claude", "session.jsonl", "A session");
+    session.meta = json!({
+        "harness": "claude-code",
+        "turns": 12,
+        "tokens": 4_000_000_000_u64,
+        "cost": 0.25,
+        "archived": false,
+        "branch": null,
+        "models": ["opus", "haiku"],
+        "usage": {"input": 10, "output": [1, 2]},
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    let with_meta = api.put_document(&session).await.unwrap().id().unwrap();
+    let without_meta = api
+        .put_document(&document("notes", "plain.md", "No meta"))
+        .await
+        .unwrap()
+        .id()
+        .unwrap();
+    let cookie = server.sign_in().await;
+
+    let query = "query ($id: ID!) { document(id: $id) { meta } }";
+    let result = server
+        .graphql(&cookie, query, json!({"id": with_meta}))
+        .await;
+    assert_eq!(result["errors"], Value::Null, "{result}");
+    assert_eq!(
+        result["data"]["document"]["meta"],
+        json!({
+            "harness": "claude-code",
+            "turns": 12,
+            // Beyond GraphQL's 32-bit Int.
+            "tokens": 4_000_000_000.0,
+            "cost": 0.25,
+            "archived": false,
+            "branch": null,
+            "models": ["opus", "haiku"],
+            "usage": {"input": 10, "output": [1, 2]},
+        })
+    );
+    let result = server
+        .graphql(&cookie, query, json!({"id": without_meta}))
+        .await;
+    assert_eq!(result["data"]["document"]["meta"], json!({}), "{result}");
+}
+
+#[sqlx::test(migrations = false)]
 async fn nul_content_is_normalized_before_storage_hashing_and_chunking(pool: PgPool) {
     let server = start_server(pool.clone()).await;
     let api = server.admin_api().await;

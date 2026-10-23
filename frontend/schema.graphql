@@ -164,6 +164,9 @@ input UserUpdate {
 """
 scalar DateTime
 
+"A JSON object, its keys in the order they are stored."
+scalar JSONObject
+
 type ApiKey {
   id: ID!
   name: String!
@@ -229,6 +232,8 @@ type Document {
   modifiedAt: DateTime
   "The `externalId` of the document in the thread this one answers."
   parent: String
+  "What its writer recorded about it beyond the fixed fields, `{}` when nothing."
+  meta: JSONObject!
   "The thread's documents to draw it, null without a thread."
   threadOutline: ThreadOutline
 }
