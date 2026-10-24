@@ -34,6 +34,11 @@ _Avoid_: reply-to, ancestor
 A stretch of a chat conversation, bounded by pauses, that a chat plugin turns into one document.
 _Avoid_: window, session
 
+**Turn**:
+A user message to an agent and everything up to the next one, which an agent session's plugin
+turns into one document.
+_Avoid_: exchange, round, message (for the whole turn)
+
 ## Ingestion
 
 **Source**:
