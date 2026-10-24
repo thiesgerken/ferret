@@ -114,28 +114,6 @@ carapace itself.
 This couples the plugin to carapace's render format. Parser tests run against fixtures rendered
 by carapace, and a line that doesn't parse fails the run instead of being skipped.
 
-**Session archives** (`conversation.json`, written by `src/carapace/session/archive.py`) hold a
-session's whole event history: `schema_version` (1), `session` (`session_id`, `channel_type`,
-`title`, `created_at`, ...) and `history`, whose list index is an event's `seq`. The plugin finds
-them by file name, like carapace does, since `path_prefix` is configurable. It renders one document
-per turn, after [ferret-ingest-agents](https://github.com/jkuball/ferret-ingest-agents)' default
-turn format:
-
-- A turn is a conversational user message and everything up to the next one. A user line starting
-  with `/` is a slash command, left out, only if a `command` event follows it (carapace's own
-  `memory/input.py` rule). Events before the first user message are dropped.
-- `**<YYYY-MM-DD HH:MM UTC> · User**` and `**… · Agent (<model>)**` headers, a `---` rule between
-  them (never at the top, where it would read as front matter), the text as written, attachments as
-  `[attachment: <mime>, <name>]` lines.
-- Tool calls as `- **<tool>** `<detail>``, the detail being `command`, `path`, `file_path`,
-  `pattern`, `url` or `code`, else the arguments as JSON, on one line and cut at 300 characters.
-  Below it `ok|failed · N lines, X KB` from the result paired by `tool_id` (failed: nonzero
-  `exit_code`), or `no result`. Results without a `tool_id` pair with the oldest open call of the
-  same tool, as carapace does for old events. No tool output: it repeats files that live elsewhere
-  and would match every search for them.
-- Thinking, approvals and carapace's security checks (`proxy_domain`, `credential_access` and
-  `git_push` calls) are left out. Compaction only annotates events, so there is no summary to show.
-
 **v2: JSON sidecars.** The mirror writes `ExtractionRecord` and `DigestRecord` as
 `model_dump_json()` next to every Markdown file, and the plugin switches to those. carapace can then
 change its rendering freely.
@@ -168,12 +146,13 @@ change its rendering freely.
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
 - Incremental like the git plugin. The state stores the indexed commit and the indexing settings
-  (`carapace_url`, the rule for files and skills, the layout of sessions, the title rule). A run diffs against that commit and puts the changed
-  files' documents. A changed session file can lose facts, so the plugin also reads every changed or
-  deleted file's version at the cursor (`git show <cursor>:<path>`) and deletes whatever that
-  version held but the new one doesn't. This assumes a document comes from one path only, which holds since
-  turns come from the archive and the summary from the Markdown: a session copied to a second file
-  whose old copy is deleted in a later commit loses its documents until the next full sync.
+  (`carapace_url`, the rule for files and skills, the layout of sessions, the title rule). A run
+  diffs against that commit and puts the changed files' documents. A changed session file can lose
+  facts, so the plugin also reads every changed or deleted file's version at the cursor
+  (`git show <cursor>:<path>`) and deletes whatever that version held but the new one doesn't. This
+  assumes a document comes from one path only, which holds since turns come from the archive and
+  the summary from the Markdown: a session copied to a second file whose old copy is deleted in a
+  later commit loses its documents until the next full sync.
 - Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the first
   run, after a force push, when the indexing settings changed (a new `carapace_url` changes every
   link, a new rule for files or a new layout of sessions must sweep what the old one let in), and
@@ -187,6 +166,31 @@ change its rendering freely.
 - The git and carapace plugins share the repository handling in one module (`repo.rs`): a fresh
   full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
   a commit. Archives skip the size check: they are mostly tool output, which no turn shows.
+
+**Session archives** (`conversation.json`, written by `src/carapace/session/archive.py`) hold a
+session's whole event history: `schema_version` (1), `session` (`session_id`, `channel_type`,
+`title`, `created_at`, ...) and `history`, whose list index is an event's `seq`. The plugin finds
+them by file name, like carapace does, since `path_prefix` is configurable. It renders one document
+per turn, after [ferret-ingest-agents](https://github.com/jkuball/ferret-ingest-agents)' default
+turn format:
+
+- A turn is a conversational user message and everything up to the next one. A user line starting
+  with `/` is a slash command, left out, only if a `command` event follows it (carapace's own
+  `memory/input.py` rule). Events before the first user message are dropped.
+- `**<YYYY-MM-DD HH:MM UTC> · User**` and `**… · Agent (<model>)**` headers, a `---` rule between
+  them (never at the top, where it would read as front matter), the text as written, attachments as
+  `[attachment: <mime>, <name>]` lines.
+- Tool calls as `- **<tool>** `<detail>``, the detail being `command`, `path`, `file_path`,
+  `pattern`, `url` or `code`, else the arguments as JSON, on one line and cut at 300 characters.
+  Below it `ok|failed · N lines, X KB` from the result paired by `tool_id` (failed: nonzero
+  `exit_code`), or `no result`. Results without a `tool_id` pair with the oldest open call of the
+  same tool, as carapace does for old events. No tool output: it repeats files that live elsewhere
+  and would match every search for them.
+- Thinking, approvals and carapace's security checks (`proxy_domain`, `credential_access` and
+  `git_push` calls) are left out. Compaction only annotates events, so there is no summary to show.
+- A turn's text is cut at 1,000,000 bytes, marked `…(truncated)`. A document goes to the server as
+  one request under its 2 MB body limit, and a turn that fails its put would fail every run until
+  carapace rewrote the archive.
 
 ## After v1
 
