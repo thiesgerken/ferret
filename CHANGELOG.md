@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v0.36.0 (2026-10-24)
+
+
+### Other
+
+
+- Merge pull request #204 from thiesgerken/feat/carapace-transcripts
+  ([`692debf`](https://github.com/thiesgerken/ferret/commit/692debf54a28be590d9e30d2f0f15e6cf81e852f))
+
+- 📝 docs(conception): set carapace session archives apart from the mirror
+  ([`62e4cd5`](https://github.com/thiesgerken/ferret/commit/62e4cd53ec0c10ef8c9edb9df7d741423aeb23f9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SgtZv7mbxnqcskMxA6JoEc
+
+- 📝 docs(plugins): document carapace session turns
+  ([`7a40f1b`](https://github.com/thiesgerken/ferret/commit/7a40f1b28f8fbbbe77983b8a970b4f55e64d816d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SgtZv7mbxnqcskMxA6JoEc
+
+### ✨ Features
+
+
+- ✨ feat(plugins): index carapace sessions turn by turn
+  ([`692debf`](https://github.com/thiesgerken/ferret/commit/692debf54a28be590d9e30d2f0f15e6cf81e852f))
+
+- ✨ feat(plugins): index carapace sessions turn by turn
+  ([`8940162`](https://github.com/thiesgerken/ferret/commit/8940162d8a942e473a591d34ccdaa20b6f039343))
+
+  Every conversation.json session archive in the knowledge repository becomes one carapace/sessions document per turn, rendered like ferret-ingest-agents: messages as written, tool calls as what went in and how much came back, no tool output. The session summary joins the turns' thread as summary:<id>. The changed indexing settings make existing connections run a full sync, which sweeps the summaries' old identities.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SgtZv7mbxnqcskMxA6JoEc
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): cut carapace turns at 1 MB
+  ([`08db37c`](https://github.com/thiesgerken/ferret/commit/08db37cb91868a1f2f08b11d8d62ab040f8d3c11))
+
+  A turn above the server's 2 MB body limit would fail its put and so every run until carapace rewrote the archive. Also asserts that security checks stay out of a turn.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SgtZv7mbxnqcskMxA6JoEc
+
 ## v0.35.0 (2026-10-23)
 
 
