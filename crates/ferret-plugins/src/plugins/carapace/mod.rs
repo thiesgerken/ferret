@@ -1,7 +1,10 @@
 //! carapace: the user's knowledge repository, with carapace's memory mirror parsed into sessions,
-//! facts and digests, each under its own source below the connection's root.
+//! facts and digests, and its session archives into the sessions' turns, each under its own source
+//! below the connection's root.
 
+mod archive;
 mod mirror;
+mod transcript;
 
 use std::collections::{HashMap, HashSet};
 
@@ -16,12 +19,13 @@ use super::{
     Log, Outcome, PluginError, Run, git,
     repo::{Change, Checkout, FileHistory},
 };
+use archive::Archive;
 use mirror::{Digest, Fact, Session};
 
 pub const NAME: &str = "carapace";
 
-/// Indexes a carapace knowledge repository: its memory as sessions, facts and digests, and its
-/// other Markdown files.
+/// Indexes a carapace knowledge repository: its memory as sessions, facts and digests, its session
+/// archives as the sessions' turns, and its other Markdown files.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "carapace")]
@@ -65,11 +69,12 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     };
 
     // Documents link to carapace, so a new URL needs every document put again. `files` names the
-    // rule for which other files are indexed: a new rule needs a full sync to sweep what the old
-    // one let in.
+    // rule for which other files are indexed, `sessions` how a session becomes documents: a new
+    // rule needs a full sync to sweep what the old one let in.
     let indexing = json!({
         "carapace_url": repository.target.carapace_url,
         "files": "markdown, skills/ apart",
+        "sessions": "summary and turns in one thread",
         "titles": git::TITLES,
     });
     let stats = match repository.changes(&indexing).await? {
@@ -96,8 +101,8 @@ type Key = (String, String);
 ///
 /// This relies on a document coming from one path only: a key that a changed or deleted path held
 /// and no changed path puts again is deleted, even if an unchanged path holds it too. carapace
-/// keeps a session in one file, and moving it shows up as a deletion and an addition in one
-/// commit.
+/// keeps a session's summary in one file and its turns in another, and moving either shows up as a
+/// deletion and an addition in one commit.
 struct Changes {
     /// Added or modified, to put.
     changed: Vec<String>,
@@ -157,7 +162,7 @@ impl Repository<'_> {
     }
 
     /// The keys of the documents the file at `path` held at `commit`, or why they can't be told:
-    /// a session or digest this plugin no longer parses.
+    /// a session, digest or archive this plugin no longer parses.
     async fn keys_at(
         &self,
         commit: &str,
@@ -192,6 +197,12 @@ impl Repository<'_> {
                 Some(text) => parse(
                     mirror::parse_digest(&text)
                         .map(|digest| vec![digest_document(&digest, &self.target)]),
+                ),
+            },
+            Kind::Archive => match self.checkout.text_at(commit, path).await? {
+                None => Ok(Ok(Vec::new())),
+                Some(text) => parse(
+                    archive::parse(&text).map(|archive| turn_documents(&archive, &self.target)),
                 ),
             },
         }
@@ -236,8 +247,9 @@ impl Repository<'_> {
         Ok(stats)
     }
 
-    /// The documents the file at `path` holds now. A session or digest that can't be read fails
-    /// the run, since what it held would be deleted. Other files that can't be indexed hold none.
+    /// The documents the file at `path` holds now. A session, digest or archive that can't be read
+    /// fails the run, since what it held would be deleted. Other files that can't be indexed hold
+    /// none.
     async fn documents(&self, path: &str) -> Result<Vec<DocumentPut>, PluginError> {
         let kind = kind(path);
         if kind == Kind::Ignored {
@@ -247,7 +259,13 @@ impl Repository<'_> {
             .modes
             .get(path)
             .ok_or_else(|| format!("{path} is in the diff but not tracked"))?;
-        let text = match self.checkout.text(path, mode).await? {
+        // An archive is mostly tool output, which no turn shows, so its size says little about
+        // theirs.
+        let text = match kind {
+            Kind::Archive => self.checkout.text_of_any_size(path, mode).await?,
+            _ => self.checkout.text(path, mode).await?,
+        };
+        let text = match text {
             Ok(text) => text,
             Err(skipped) if !matches!(kind, Kind::File(_)) => {
                 return Err(format!("{path}: {skipped}").into());
@@ -268,6 +286,7 @@ impl Repository<'_> {
                 &mirror::parse_digest(&text).map_err(in_file)?,
                 &self.target,
             )],
+            Kind::Archive => turn_documents(&archive::parse(&text).map_err(in_file)?, &self.target),
             Kind::File(files) => {
                 let history = self.history.get(path).ok_or_else(|| {
                     format!("{path} is tracked but no commit in the log touched it")
@@ -294,9 +313,10 @@ impl Repository<'_> {
 enum Kind {
     Session,
     Digest,
-    /// `memory/facts/*.md` repeats the facts of the session files. Files other than Markdown are
-    /// skills' code, lockfiles and configuration, and carapace's raw session dumps
-    /// (`conversation.json`), which the sessions and facts distill.
+    /// A session's `conversation.json`, wherever carapace's configurable prefix puts it.
+    Archive,
+    /// `memory/facts/*.md` repeats the facts of the session files. Other files than Markdown are
+    /// skills' code, lockfiles and configuration.
     Ignored,
     File(Files),
 }
@@ -319,7 +339,9 @@ impl Files {
 
 fn kind(path: &str) -> Kind {
     let markdown = path.ends_with(".md");
-    if markdown && path.starts_with("memory/sessions/") {
+    if path.rsplit('/').next() == Some("conversation.json") {
+        Kind::Archive
+    } else if markdown && path.starts_with("memory/sessions/") {
         Kind::Session
     } else if markdown && (path.starts_with("memory/weeks/") || path.starts_with("memory/months/"))
     {
@@ -362,8 +384,9 @@ const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-/// The session's document and one document per fact. A fact carapace extracted twice (under
-/// different categories, say) has the same id, so only its first occurrence counts.
+/// The session's summary, which joins the session's thread after its turns, and one document per
+/// fact. A fact carapace extracted twice (under different categories, say) has the same id, so
+/// only its first occurrence counts.
 fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<DocumentPut> {
     let url = target.url("/memory/sessions", "session", &session.session_id);
     let mut text = session.abstract_text.clone();
@@ -376,12 +399,12 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
     meta.insert("provenance".to_owned(), session.provenance.clone());
     let mut documents = vec![DocumentPut {
         source: target.source("sessions"),
-        external_id: session.session_id.clone(),
+        external_id: format!("summary:{}", session.session_id),
         content_type: ContentType::Markdown,
         title: Some(session.title.clone()),
         text,
         url: Some(url.clone()),
-        thread: None,
+        thread: Some(session.session_id.clone()),
         parent: None,
         authors: Vec::new(),
         created_at: Some(session.created_at),
@@ -415,6 +438,46 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
             created_at: Some(session.created_at),
             modified_at: Some(session.created_at),
             meta: fact_meta(fact, &session.session_id),
+        });
+    }
+    documents
+}
+
+/// One document per turn of the session, each going on from the one before.
+fn turn_documents(archive: &Archive, target: &Target) -> Vec<DocumentPut> {
+    let session = &archive.session;
+    let turns = transcript::turns(&archive.history);
+    let mut models: Vec<&String> = Vec::new();
+    for model in turns.iter().flat_map(|turn| &turn.models) {
+        if !models.contains(&model) {
+            models.push(model);
+        }
+    }
+    let mut meta = Map::new();
+    meta.insert("session".to_owned(), json!(session.session_id));
+    meta.insert("session_title".to_owned(), json!(session.title));
+    meta.insert("session_started".to_owned(), json!(session.created_at));
+    meta.insert("channel_type".to_owned(), json!(session.channel_type));
+    meta.insert("models".to_owned(), json!(models));
+    let url = target.url("/", "session", &session.session_id);
+    let mut documents: Vec<DocumentPut> = Vec::new();
+    for turn in turns {
+        let parent = documents
+            .last()
+            .map(|previous| previous.external_id.clone());
+        documents.push(DocumentPut {
+            source: target.source("sessions"),
+            external_id: format!("turn:{}:{}", session.session_id, turn.seq),
+            content_type: ContentType::Markdown,
+            title: turn.title,
+            text: turn.text,
+            url: Some(url.clone()),
+            thread: Some(session.session_id.clone()),
+            parent,
+            authors: turn.models,
+            created_at: turn.created_at,
+            modified_at: turn.modified_at,
+            meta: meta.clone(),
         });
     }
     documents
@@ -541,6 +604,8 @@ mod tests {
     const TALOS: &str =
         include_str!("../../../fixtures/carapace/memory/sessions/2026/09/s-talos.md");
     const WEEK: &str = include_str!("../../../fixtures/carapace/memory/weeks/2026-W36.md");
+    const ARCHIVE: &str =
+        include_str!("../../../fixtures/carapace/sessions/2026/09/s-trip/conversation.json");
 
     const TARGET: Target = Target {
         root: "carapace",
@@ -548,7 +613,7 @@ mod tests {
     };
 
     #[test]
-    fn paths_sort_into_sessions_digests_ignored_facts_and_files() {
+    fn paths_sort_into_sessions_digests_archives_ignored_facts_and_files() {
         assert_eq!(kind("memory/sessions/2026/09/s-talos.md"), Kind::Session);
         assert_eq!(kind("memory/weeks/2026-W36.md"), Kind::Digest);
         assert_eq!(kind("memory/months/2026-09.md"), Kind::Digest);
@@ -556,8 +621,15 @@ mod tests {
         assert_eq!(kind("memory/README.md"), Kind::File(Files::Other));
         assert_eq!(
             kind("sessions/2026/04/2026-04-11-13-43-0cebc9fa/conversation.json"),
-            Kind::Ignored
+            Kind::Archive
         );
+        assert_eq!(
+            kind("archive/2026/04/s-1/conversation.json"),
+            Kind::Archive,
+            "under another path prefix"
+        );
+        assert_eq!(kind("conversation.json.bak"), Kind::Ignored);
+        assert_eq!(kind("sessions/2026/04/s-1/notes.json"), Kind::Ignored);
         assert_eq!(kind("skills/brag/uv.lock"), Kind::Ignored);
         assert_eq!(kind("skills/brag/src/cli.py"), Kind::Ignored);
         assert_eq!(kind("skills/brag/SKILL.md"), Kind::File(Files::Skill));
@@ -579,8 +651,10 @@ mod tests {
         let session = &documents[0];
         assert_eq!(
             (session.source.as_str(), session.external_id.as_str()),
-            ("carapace/sessions", "s-talos")
+            ("carapace/sessions", "summary:s-talos")
         );
+        assert_eq!(session.thread.as_deref(), Some("s-talos"));
+        assert_eq!(session.parent, None);
         assert_eq!(
             session.url.as_deref(),
             Some("https://carapace.example/memory/sessions?session=s-talos")
@@ -626,6 +700,47 @@ mod tests {
             cluster.text,
             "The home cluster runs Talos 1.10.\n\nSubject: home cluster\nCategory: surroundings"
         );
+    }
+
+    #[test]
+    fn an_archive_becomes_a_thread_of_turns_next_to_the_summary() {
+        let documents = turn_documents(&archive::parse(ARCHIVE).unwrap(), &TARGET);
+
+        assert_eq!(
+            documents
+                .iter()
+                .map(|turn| (turn.external_id.as_str(), turn.parent.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("turn:s-trip:1", None),
+                ("turn:s-trip:15", Some("turn:s-trip:1")),
+                ("turn:s-trip:19", Some("turn:s-trip:15")),
+            ]
+        );
+        let first = &documents[0];
+        assert_eq!(first.source, "carapace/sessions");
+        assert_eq!(first.thread.as_deref(), Some("s-trip"));
+        assert_eq!(
+            first.title.as_deref(),
+            Some("Plan a weekend trip with Anna to the coast.")
+        );
+        assert_eq!(
+            first.url.as_deref(),
+            Some("https://carapace.example/?session=s-trip")
+        );
+        assert_eq!(first.authors, ["anthropic:claude-sonnet-4-5"]);
+        assert_eq!(first.created_at, None, "no fallback to the session's start");
+        assert_eq!(
+            Value::Object(first.meta.clone()),
+            json!({
+                "session": "s-trip",
+                "session_title": "Weekend trip",
+                "session_started": "2026-09-06T17:57:00Z",
+                "channel_type": "cli",
+                "models": ["anthropic:claude-sonnet-4-5", "openai:gpt-5"],
+            })
+        );
+        assert!(documents[2].authors.is_empty(), "the user isn't an author");
     }
 
     #[test]

@@ -13,7 +13,7 @@ const FIXTURES: &str = concat!(
 );
 const TALOS: &str = "memory/sessions/2026/09/s-talos.md";
 const TRIP: &str = "memory/sessions/2026/09/s-trip.md";
-const DUMP: &str = "sessions/2026/09/s-trip/conversation.json";
+const ARCHIVE: &str = "sessions/2026/09/s-trip/conversation.json";
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -49,11 +49,16 @@ fn commit(repo: &Path, message: &str) {
     );
 }
 
-/// A knowledge repository: carapace's rendered mirror, a skill with its lockfile, and a raw session
-/// dump.
+/// A knowledge repository: carapace's rendered mirror, a session archive, and a skill with its
+/// lockfile.
 fn repository(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
-    for entry in walk(&Path::new(FIXTURES).join("memory")) {
+    for entry in [
+        walk(&Path::new(FIXTURES).join("memory")),
+        walk(&Path::new(FIXTURES).join("sessions")),
+    ]
+    .concat()
+    {
         let target = dir.join(entry.strip_prefix(FIXTURES).unwrap());
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::copy(&entry, target).unwrap();
@@ -65,8 +70,6 @@ fn repository(dir: &Path) {
     )
     .unwrap();
     std::fs::write(dir.join("skills/brag/uv.lock"), "version = 1\n").unwrap();
-    std::fs::create_dir_all(dir.join("sessions/2026/09/s-trip")).unwrap();
-    std::fs::write(dir.join(DUMP), r#"[{"role": "user", "content": "trip"}]"#).unwrap();
     commit(dir, "mirror");
 }
 
@@ -91,6 +94,18 @@ async fn documents_per_source(pool: &PgPool) -> BTreeMap<String, i64> {
         .unwrap()
         .into_iter()
         .collect()
+}
+
+/// The external ids and parents of a session's thread.
+async fn thread(pool: &PgPool, session_id: &str) -> Vec<(String, Option<String>)> {
+    sqlx::query_as(
+        "select external_id, parent from documents
+         where source = 'carapace/sessions' and thread = $1 order by external_id",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
 }
 
 async fn run_now(server: &TestServer, cookie: &str, id: &Value) {
@@ -150,17 +165,32 @@ async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(po
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
     assert_eq!(latest_run(&server, &cookie).await["status"], "SUCCEEDED");
-    // Two sessions with 4 + 1 distinct facts, a week and a month, the mirror's README and the skill. The
-    // per-category facts files repeat the session facts and stay out, so do files other than
-    // Markdown.
+    // Two session summaries with 4 + 1 distinct facts, the trip's three turns, a week and a month,
+    // the mirror's README and the skill. The per-category facts files repeat the session facts and
+    // stay out, so do the skill's lockfile and other files than Markdown.
     assert_eq!(
         documents_per_source(&pool).await,
         BTreeMap::from([
             ("carapace/digests".to_owned(), 2),
             ("carapace/facts".to_owned(), 5),
             ("carapace/files".to_owned(), 1),
-            ("carapace/sessions".to_owned(), 2),
+            ("carapace/sessions".to_owned(), 5),
             ("carapace/skills".to_owned(), 1),
+        ])
+    );
+    // The summary shares the thread with the turns, which go on from each other.
+    let expected_thread = |ids: &[(&str, Option<&str>)]| -> Vec<(String, Option<String>)> {
+        ids.iter()
+            .map(|(id, parent)| (id.to_string(), parent.map(str::to_owned)))
+            .collect()
+    };
+    assert_eq!(
+        thread(&pool, "s-trip").await,
+        expected_thread(&[
+            ("summary:s-trip", None),
+            ("turn:s-trip:1", None),
+            ("turn:s-trip:15", Some("turn:s-trip:1")),
+            ("turn:s-trip:19", Some("turn:s-trip:15")),
         ])
     );
     let (skill_title, skill_url): (String, String) = sqlx::query_as(
@@ -173,6 +203,30 @@ async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(po
     assert_eq!(
         skill_url,
         "https://carapace.example/knowledge?path=skills%2Fbrag%2FSKILL.md"
+    );
+
+    // carapace rewrites the archive without the last turn, e.g. after a reset.
+    let archive = repo.path().join(ARCHIVE);
+    let full_archive = std::fs::read_to_string(&archive).unwrap();
+    let mut shortened: Value = serde_json::from_str(&full_archive).unwrap();
+    shortened["history"].as_array_mut().unwrap().pop();
+    let shortened = serde_json::to_string_pretty(&shortened).unwrap();
+    std::fs::write(&archive, &shortened).unwrap();
+    commit(repo.path(), "reset the last turn");
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    assert_eq!(
+        latest_run(&server, &cookie).await["stats"],
+        json!({"put": 0, "unchanged": 2, "deleted": 1})
+    );
+    assert_eq!(
+        thread(&pool, "s-trip").await,
+        expected_thread(&[
+            ("summary:s-trip", None),
+            ("turn:s-trip:1", None),
+            ("turn:s-trip:15", Some("turn:s-trip:1")),
+        ])
     );
 
     // carapace re-renders the session without one of its facts (listed under two categories).
@@ -244,33 +298,59 @@ async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(po
     );
     assert_eq!(documents_per_source(&pool).await["carapace/facts"], 4);
 
+    // Nor does an archive the plugin can't parse.
     std::fs::write(&talos, &without_anna).unwrap();
+    std::fs::write(&archive, &shortened[..shortened.len() / 2]).unwrap();
+    commit(repo.path(), "repair the session, tear the archive");
+    run_now(&server, &cookie, &id).await;
+    assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
+
+    let torn = latest_run(&server, &cookie).await;
+    assert_eq!(torn["status"], "FAILED");
+    assert!(
+        torn["error"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{ARCHIVE}: ")),
+        "{torn}"
+    );
+    assert_eq!(documents_per_source(&pool).await["carapace/sessions"], 4);
+
+    std::fs::write(&archive, &shortened).unwrap();
     std::fs::remove_file(repo.path().join(TRIP)).unwrap();
-    commit(repo.path(), "repair, forget the trip");
+    commit(repo.path(), "repair the archive, forget the trip's summary");
     run_now(&server, &cookie, &id).await;
     assert!(worker.work_once(worker_id, Duration::ZERO).await.unwrap());
 
     let documents = documents_per_source(&pool).await;
     assert_eq!(
         (documents["carapace/sessions"], documents["carapace/facts"]),
-        (1, 3)
+        (3, 3),
+        "the Talos summary and the trip's two turns"
     );
 
-    // A run under other indexing settings, e.g. one that still indexed every file, makes the next
-    // run a full sync, which puts everything again and sweeps what the old settings let in.
-    // Inserted directly: a connection's source takes documents from its runs only.
-    sqlx::query(
-        "insert into documents
-             (id, user_id, source, external_id, content_type, authors, created_at, modified_at,
-              meta, text, content_hash, seen_at)
-         select gen_random_uuid(), user_id, 'carapace/files', $1, 'plain', '{}', now(), now(),
-                '{}', 'trip', '\\x00', now()
-         from connections",
-    )
-    .bind(DUMP)
-    .execute(&pool)
-    .await
-    .unwrap();
+    // A run under other indexing settings makes the next run a full sync, which puts everything
+    // again and sweeps what the old settings let in: one that still indexed every file, or one
+    // that keyed a session's summary by the session id alone. Inserted directly: a connection's
+    // source takes documents from its runs only.
+    for (source, external_id) in [
+        ("carapace/files", ARCHIVE),
+        ("carapace/sessions", "s-talos"),
+    ] {
+        sqlx::query(
+            "insert into documents
+                 (id, user_id, source, external_id, content_type, authors, created_at, modified_at,
+                  meta, text, content_hash, seen_at)
+             select gen_random_uuid(), user_id, $1, $2, 'plain', '{}', now(), now(),
+                    '{}', 'stale', '\\x00', now()
+             from connections",
+        )
+        .bind(source)
+        .bind(external_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
     sqlx::query(
         "update connections set state = jsonb_set(state, '{indexing}', '{\"carapace_url\": \"https://carapace.example\"}')",
     )
@@ -288,15 +368,14 @@ async fn a_knowledge_repository_lands_in_five_sources_and_follows_its_changes(po
             .contains("full sync: the indexing settings changed"),
         "{full}"
     );
-    let dumps: i64 = sqlx::query_scalar("select count(*) from documents where external_id = $1")
-        .bind(DUMP)
+    let stale: i64 = sqlx::query_scalar("select count(*) from documents where text = 'stale'")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(dumps, 0);
+    assert_eq!(stale, 0);
     assert_eq!(
-        full["stats"]["unchanged"], 8,
-        "1 session, 3 facts, 2 digests, 2 files"
+        full["stats"]["unchanged"], 10,
+        "1 session, 3 facts, 2 digests, 2 files, 2 turns"
     );
 
     // carapace moves the session to another month's directory. The file's documents are put
