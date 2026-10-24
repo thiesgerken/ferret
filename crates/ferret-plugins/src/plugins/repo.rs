@@ -151,6 +151,25 @@ impl Checkout {
         path: &str,
         mode: &str,
     ) -> Result<Result<String, String>, PluginError> {
+        self.read_text(path, mode, Some(MAX_FILE_BYTES)).await
+    }
+
+    /// Like [`Self::text`], whatever the file's size: for a file a plugin parses into documents of
+    /// its own, whose size says little about theirs.
+    pub async fn text_of_any_size(
+        &self,
+        path: &str,
+        mode: &str,
+    ) -> Result<Result<String, String>, PluginError> {
+        self.read_text(path, mode, None).await
+    }
+
+    async fn read_text(
+        &self,
+        path: &str,
+        mode: &str,
+        max_bytes: Option<u64>,
+    ) -> Result<Result<String, String>, PluginError> {
         // Symlinks (120000) would let a repository read the worker's own files, submodules
         // (160000) have no content here. git never checks a regular file out below a symlink,
         // so a regular file's path stays inside the checkout.
@@ -162,8 +181,10 @@ impl Checkout {
         if !metadata.is_file() {
             return Err(format!("{path} is a regular file in git but not in the checkout").into());
         }
-        if metadata.len() > MAX_FILE_BYTES {
-            return Ok(Err(format!("larger than {MAX_FILE_BYTES} bytes")));
+        if let Some(max_bytes) = max_bytes
+            && metadata.len() > max_bytes
+        {
+            return Ok(Err(format!("larger than {max_bytes} bytes")));
         }
         let bytes = tokio::fs::read(file).await?;
         Ok(String::from_utf8(bytes)

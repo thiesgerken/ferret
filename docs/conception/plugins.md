@@ -120,43 +120,77 @@ change its rendering freely.
 
 | Source | Documents | `external_id` | Text |
 |---|---|---|---|
-| `carapace/sessions` | one per session | `{session_id}` | abstract, outcomes, open loops, on my mind |
+| `carapace/sessions` | one summary per session | `summary:{session_id}` | abstract, outcomes, open loops, on my mind |
+| `carapace/sessions` | one per turn of a session archive | `turn:{session_id}:{seq}` | the rendered turn |
 | `carapace/facts` | one per fact | `{session_id}/{hash of subject and statement}` | the fact, plus subject and category |
 | `carapace/digests` | one per week and month | `{level}:{period_key}` | summary, highlights, open loops |
 | `carapace/skills` | one per Markdown file under `skills/` | `{path}` | as in the git plugin, titled by the front matter's `name` |
 | `carapace/files` | the repo's other Markdown files (workspace notes, research) | `{path}` | as in the git plugin |
 
 - Fact `meta`: `category`, `subject`, `source_kind`, `confidence`, `durability`, `valid_until`,
-  `session_id`. Session `meta`: `week_key`, `month_key`,
-  `provenance`. Digest `meta`: `level`, `period_key`, `provenance`.
-- `created_at` (and `modified_at`) of sessions, facts and digests is when carapace extracted the
-  record, the only timestamp the mirror has. A re-extraction moves it.
+  `session_id`. Summary `meta`: `week_key`, `month_key`,
+  `provenance`. Turn `meta`: `session`, `session_title`, `session_started`, `channel_type`, `models`
+  (the session's). Digest `meta`: `level`, `period_key`, `provenance`.
+- A session's summary and turns share the source and the thread (`session_id`), since hits collapse
+  per source and thread. Each turn's `parent` is the turn before it; the summary has none.
+- A turn's `title` is the user message on one line (120 characters), its `authors` the models that
+  answered in it (not the user), `created_at` the user message's timestamp (null for events
+  carapace stored before stamping them, no fallback) and `modified_at` its latest event's.
+- `created_at` (and `modified_at`) of summaries, facts and digests is when carapace extracted the
+  record, the only timestamp the mirror has. A re-extraction moves it. A summary therefore sorts
+  after its session's turns, as an epilogue.
 - A fact that appears twice in one session (under two categories, say) is indexed once.
 - `memory/facts/*.md` is ignored: it repeats the facts of the session files. So is every file
-  other than Markdown: skills' code, lockfiles and configuration, and carapace's raw session dumps
-  (`conversation.json`), which the sessions and facts distill.
+  other than Markdown and `conversation.json`: skills' code, lockfiles and configuration.
 - Facts have no id of their own in carapace (`#<seq>` refers to source messages, several facts
   share them). The hash of subject and statement is stable as long as the fact is, and a reworded
   fact is a different fact.
 - Incremental like the git plugin. The state stores the indexed commit and the indexing settings
-  (`carapace_url`, the rule for files and skills, the title rule). A run diffs against that commit and puts the changed
-  files' documents. A changed session file can lose facts, so the plugin also reads every changed or
-  deleted file's version at the cursor (`git show <cursor>:<path>`) and deletes whatever that
-  version held but the new one doesn't. This assumes a document comes from one path only: a session
-  copied to a second file whose old copy is deleted in a later commit loses its documents until the
-  next full sync.
+  (`carapace_url`, the rule for files and skills, the layout of sessions, the title rule). A run
+  diffs against that commit and puts the changed files' documents. A changed session file can lose
+  facts, so the plugin also reads every changed or deleted file's version at the cursor
+  (`git show <cursor>:<path>`) and deletes whatever that version held but the new one doesn't. This
+  assumes a document comes from one path only, which holds since turns come from the archive and
+  the summary from the Markdown: a session copied to a second file whose old copy is deleted in a
+  later commit loses its documents until the next full sync.
 - Full sync (one sync over the root, every document put, the sweep deletes what's gone) on the first
   run, after a force push, when the indexing settings changed (a new `carapace_url` changes every
-  link, a new rule for files must sweep what the old one let in), and when an old version doesn't
-  parse (a render format this plugin no longer reads).
+  link, a new rule for files or a new layout of sessions must sweep what the old one let in), and
+  when an old version doesn't parse (a render format this plugin no longer reads).
 - Config: `remote`, `branch`, `token` (write-only) like the git plugin, and `carapace_url`, the web
   UI that documents link to.
-- `url` (relative to the configured carapace base URL): sessions
-  `/memory/sessions?session={session_id}`, facts link to their session, digests
+- `url` (relative to the configured carapace base URL): summaries
+  `/memory/sessions?session={session_id}`, turns the chat at `/?session={session_id}`, facts link to
+  their session's summary, digests
   `/memory/timeline?period={period_key}`, files `/knowledge?path={path}`.
 - The git and carapace plugins share the repository handling in one module (`repo.rs`): a fresh
   full clone per run, per-file history, the regular-file, size and UTF-8 checks, and the diff since
-  a commit.
+  a commit. Archives skip the size check: they are mostly tool output, which no turn shows.
+
+**Session archives** (`conversation.json`, written by `src/carapace/session/archive.py`) hold a
+session's whole event history: `schema_version` (1), `session` (`session_id`, `channel_type`,
+`title`, `created_at`, ...) and `history`, whose list index is an event's `seq`. The plugin finds
+them by file name, like carapace does, since `path_prefix` is configurable. It renders one document
+per turn, after [ferret-ingest-agents](https://github.com/jkuball/ferret-ingest-agents)' default
+turn format:
+
+- A turn is a conversational user message and everything up to the next one. A user line starting
+  with `/` is a slash command, left out, only if a `command` event follows it (carapace's own
+  `memory/input.py` rule). Events before the first user message are dropped.
+- `**<YYYY-MM-DD HH:MM UTC> · User**` and `**… · Agent (<model>)**` headers, a `---` rule between
+  them (never at the top, where it would read as front matter), the text as written, attachments as
+  `[attachment: <mime>, <name>]` lines.
+- Tool calls as `- **<tool>** `<detail>``, the detail being `command`, `path`, `file_path`,
+  `pattern`, `url` or `code`, else the arguments as JSON, on one line and cut at 300 characters.
+  Below it `ok|failed · N lines, X KB` from the result paired by `tool_id` (failed: nonzero
+  `exit_code`), or `no result`. Results without a `tool_id` pair with the oldest open call of the
+  same tool, as carapace does for old events. No tool output: it repeats files that live elsewhere
+  and would match every search for them.
+- Thinking, approvals and carapace's security checks (`proxy_domain`, `credential_access` and
+  `git_push` calls) are left out. Compaction only annotates events, so there is no summary to show.
+- A turn's text is cut at 1,000,000 bytes, marked `…(truncated)`. A document goes to the server as
+  one request under its 2 MB body limit, and a turn that fails its put would fail every run until
+  carapace rewrote the archive.
 
 ## After v1
 
