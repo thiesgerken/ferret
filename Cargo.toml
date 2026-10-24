@@ -23,7 +23,7 @@ getrandom = "0.4"
 globset = "0.4"
 jsonschema = { version = "0.60", default-features = false }
 lol_html = "3"
-mail-parser = "0.11"
+mail-parser = "1.0"
 parking_lot = "0.13"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
