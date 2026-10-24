@@ -15,6 +15,9 @@ use serde_json::{Map, Value};
 use super::archive::{Event, ToolCall, ToolResult, UserMessage};
 
 const TITLE_CHARS: usize = 120;
+/// Longer turns are cut. A document goes to the server as one request, bound by its 2 MB body
+/// limit, and a turn whose put fails would fail every run until carapace rewrote the archive.
+const MAX_TEXT_BYTES: usize = 1_000_000;
 const DETAIL_CHARS: usize = 300;
 /// The arguments that say what a tool call did, in the order they're looked for. Any other call
 /// shows all its arguments.
@@ -145,11 +148,22 @@ fn turn(
     Turn {
         seq,
         title: Some(one_line(&message.content, TITLE_CHARS)).filter(|title| !title.is_empty()),
-        text,
+        text: cap(text),
         models,
         created_at: message.timestamp,
         modified_at,
     }
+}
+
+/// `text` cut to [`MAX_TEXT_BYTES`] at a character boundary, marked as cut.
+fn cap(mut text: String) -> String {
+    if text.len() <= MAX_TEXT_BYTES {
+        return text;
+    }
+    let end = text.floor_char_boundary(MAX_TEXT_BYTES);
+    text.truncate(end);
+    text.push_str("\n\n…(truncated)");
+    text
 }
 
 /// `**2026-09-06 18:00 UTC · User**`, without the time for an event that has none.
@@ -333,6 +347,10 @@ mod tests {
              - **search** `{\"limit\":5,\"query\":\"coast hotels\"}`\n  - no result\n\n\
              Saturday looks best: sunny at the coast. Shall I look for a place to stay?"
         );
+        assert!(
+            !turns[0].text.contains("proxy_domain"),
+            "the security check of the curl call"
+        );
     }
 
     #[test]
@@ -348,6 +366,23 @@ mod tests {
              - **exec** `cat /etc/hosts`\n  - ok · 2 lines, 36 B\n\n\
              It maps the router's own name to a wrong address."
         );
+    }
+
+    #[test]
+    fn an_oversized_turn_is_cut_at_a_character_boundary() {
+        // Two-byte characters, so the limit falls inside one unless the cut moves to a boundary.
+        let archive = json!({
+            "schema_version": 1,
+            "session": {"session_id": "s-1", "channel_type": "cli", "title": null,
+                        "created_at": "2026-09-06T00:00:00Z"},
+            "history": [{"role": "user", "content": "ä".repeat(MAX_TEXT_BYTES)}],
+        });
+
+        let turns = turns(&archive::parse(&archive.to_string()).unwrap().history);
+
+        let text = turns[0].text.strip_suffix("\n\n…(truncated)").unwrap();
+        assert!(text.len() <= MAX_TEXT_BYTES && text.len() > MAX_TEXT_BYTES - 2);
+        assert!(text.starts_with("**User**\n\nää"));
     }
 
     #[test]
