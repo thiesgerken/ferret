@@ -90,9 +90,9 @@ export function HitItem({
               key={index}
               className={cn(
                 "bg-transparent text-foreground",
-                // A typo match reads weaker than an exact one, and its dotted underline tells them
-                // apart without relying on weight alone.
-                part.highlight === "EXACT" ? "font-semibold" : "font-medium underline decoration-dotted underline-offset-2",
+                // A typo match gets its own colour, and a dotted underline so telling it apart
+                // doesn't rely on colour alone.
+                part.highlight === "EXACT" ? "font-semibold" : "font-medium text-brand underline decoration-dotted underline-offset-2",
               )}
             >
               {part.text}
