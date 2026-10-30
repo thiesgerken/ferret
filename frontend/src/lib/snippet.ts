@@ -1,4 +1,7 @@
-export type TextPart = { text: string; highlight: boolean };
+import type { HighlightKind } from "@/gql/graphql";
+
+/** `highlight` says how the part matches the query, null when it doesn't. */
+export type TextPart = { text: string; highlight: HighlightKind | null };
 
 /**
  * Markdown syntax to hide in a snippet, each as four groups: what precedes the syntax, the opening
@@ -63,7 +66,7 @@ export function plainMarkdown(parts: TextPart[]): TextPart[] {
  */
 export function snippet(parts: TextPart[], maxChars = 320, lead = 80): TextPart[] {
   const text = parts.map((part) => part.text).join("");
-  const firstHighlight = parts.findIndex((part) => part.highlight);
+  const firstHighlight = parts.findIndex((part) => part.highlight !== null);
   const highlightAt = parts.slice(0, Math.max(firstHighlight, 0)).reduce((n, part) => n + part.text.length, 0);
   const start = Math.max(0, Math.min(highlightAt - lead, text.length - maxChars));
   const end = Math.min(text.length, start + maxChars);

@@ -1,4 +1,4 @@
-/** The search's state lives in the URL (`/?q=...&source=...&author=...&range=...&model=...&mode=...`), so
+/** The search's state lives in the URL (`/?q=...&source=...&author=...&range=...&model=...&mode=...&typos=off`), so
  * results survive reloads and can be linked. */
 export type SearchState = {
   q: string;
@@ -9,6 +9,8 @@ export type SearchState = {
   model: string | null;
   /** Which half of the search runs: both, or only keyword or only semantic matching. */
   mode: SearchMode;
+  /** Whether keyword matching tolerates one typo per long word. */
+  typoTolerance: boolean;
 };
 
 export const SEARCH_MODES = ["hybrid", "keyword", "semantic"] as const;
@@ -48,6 +50,7 @@ export function parseSearch(params: URLSearchParams): SearchState {
     range: range in TIME_RANGES ? (range as TimeRange) : "any",
     model: params.get("model"),
     mode: SEARCH_MODES.includes(mode as SearchMode) ? (mode as SearchMode) : "hybrid",
+    typoTolerance: params.get("typos") !== "off",
   };
 }
 
@@ -58,6 +61,7 @@ export function searchHref(state: SearchState): string {
   if (state.range !== "any") params.set("range", state.range);
   if (state.model) params.set("model", state.model);
   if (state.mode !== "hybrid") params.set("mode", state.mode);
+  if (!state.typoTolerance) params.set("typos", "off");
   return `/?${params}`;
 }
 
