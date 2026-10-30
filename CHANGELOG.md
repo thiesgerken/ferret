@@ -1,6 +1,63 @@
 # CHANGELOG
 
 
+## v0.37.0 (2026-10-30)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #209 from thiesgerken/feat/typo-tolerance
+  ([`fdf3b8f`](https://github.com/thiesgerken/ferret/commit/fdf3b8feb818971b8de680997d7b049310baa5c6))
+
+- ✨ feat(search): typo-tolerant keyword search
+  ([`fdf3b8f`](https://github.com/thiesgerken/ferret/commit/fdf3b8feb818971b8de680997d7b049310baa5c6))
+
+- ✨ feat(frontend): add the Typos chip and mark typo matches
+  ([`b03d072`](https://github.com/thiesgerken/ferret/commit/b03d072ada47fcfe76b6e4b719617233e9c5a287))
+
+  A Typos chip in the Matching group switches typo tolerance off (URL `typos=off`), disabled while keyword matching is. Fuzzy highlights read weaker than exact ones and carry a dotted underline.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+- ✨ feat(search): match keyword words one typo away
+  ([`015c04c`](https://github.com/thiesgerken/ferret/commit/015c04cd09c685cb0e2e6cecb9329a84dda6a4c4))
+
+  Words of 5 or more letters outside phrases also match the new unstemmed text_plain and title_plain fields at edit distance 1 (a transposition counts as one), boosted low so exact matches keep outranking typo-only ones. `typo_tolerance` (REST and GraphQL, default on) switches it off. Highlights become a kind: exact, or fuzzy for words one typo away.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+### Other
+
+
+- 📝 docs(search): explain what the typo boost does, cover the unstemmed fields
+  ([`b67b41f`](https://github.com/thiesgerken/ferret/commit/b67b41f7d6d97375b345f198ce1b3529f1ea3f54))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+- 📝 docs(search): document typo tolerance and highlight kinds
+  ([`42fd4a9`](https://github.com/thiesgerken/ferret/commit/42fd4a9a435ffa36f2d0d33dc2e1e79ab42d62c9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): colour typo highlights in the brand tone
+  ([`0050b86`](https://github.com/thiesgerken/ferret/commit/0050b861947ba78b7e1fe671c49e28f3b8db35fe))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
 ## v0.36.0 (2026-10-24)
 
 
