@@ -46,7 +46,13 @@ async fn a_query_without_keyword_overlap_finds_a_semantic_match_once_embedded(po
 
     // The test model's `min_similarity` is 0, so the unrelated document trails.
     assert_eq!(ids(&hits), ["car", "weather"]);
-    assert!(hits[0].chunk.parts.iter().all(|part| !part.highlight));
+    assert!(
+        hits[0]
+            .chunk
+            .parts
+            .iter()
+            .all(|part| part.highlight.is_none())
+    );
 }
 
 #[sqlx::test(migrations = false)]

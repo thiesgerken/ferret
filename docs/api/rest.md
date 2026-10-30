@@ -39,6 +39,7 @@ Requires `search:read`.
 | `offset` | unsigned number of ranked hits to skip, default 0 |
 | `model` | configured model name, otherwise user/configured default |
 | `collapse` | boolean, default true; collapse same-source threads |
+| `typo_tolerance` | boolean, default true; keyword words of 5+ letters also match one typo away ([rule](../search.md#typo-tolerance)) |
 | `mode` | `hybrid` (default), `keyword`, `semantic` |
 
 Unknown search parameters are rejected. Values are URL-encoded; arrays are repeated keys, not JSON/comma-delimited values.
@@ -54,7 +55,7 @@ curl --fail-with-body -sS -G "$FERRET_URL/api/search" \
 Response fields:
 
 - `hits`: best-first documents with `document_id`, source/external id, content type, nullable title/url/thread, authors, independently nullable origin `created_at`/`modified_at`, nullable writer, keyword_score/similarity, collapsed count and best `chunk`.
-- `chunk`: `start_offset`, `end_offset` in Unicode scalar values and `parts`, each `{text, highlight}`. Highlighted parts are data, not HTML. Join all parts for the matched passage.
+- `chunk`: `start_offset`, `end_offset` in Unicode scalar values and `parts`, each `{text, highlight}`. `highlight` is `"exact"` (same word, stem variant or compound), `"fuzzy"` (one typo away, under typo tolerance) or `null`. Highlighted parts are data, not HTML. Join all parts for the matched passage.
 - `writer`: nullable `{kind: "connection"|"api_key", id, name, icon}`.
 - `total`, `total_is_lower_bound`, `documents_in_scope`, `has_more`, `facets`, `took_ms`, `semantic_unavailable` and selected `model`.
 - `facets.sources`: `{value,count,writer}`; `facets.authors`: `{value,count}`; `facets.are_lower_bounds` indicates candidate-bounded counts.

@@ -1,7 +1,7 @@
 use crate::common;
 
 use common::{day, document, start_server};
-use ferret_api::{Client, ContentType, Hit, SearchQuery};
+use ferret_api::{Client, ContentType, HighlightKind, Hit, SearchQuery};
 use reqwest::{Method, StatusCode, header};
 use sqlx::PgPool;
 
@@ -25,12 +25,28 @@ fn ids(hits: &[Hit]) -> Vec<&str> {
 }
 
 fn highlighted(hit: &Hit) -> Vec<&str> {
+    highlighted_as(hit, HighlightKind::Exact)
+}
+
+fn highlighted_as(hit: &Hit, kind: HighlightKind) -> Vec<&str> {
     hit.chunk
         .parts
         .iter()
-        .filter(|part| part.highlight)
+        .filter(|part| part.highlight == Some(kind))
         .map(|part| part.text.as_str())
         .collect()
+}
+
+async fn search_exactly(api: &Client, q: &str) -> Vec<Hit> {
+    search_with(
+        api,
+        SearchQuery {
+            q: q.to_owned(),
+            typo_tolerance: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 #[sqlx::test(migrations = false)]
@@ -217,6 +233,79 @@ async fn exclusions_apply_before_the_candidate_limit(pool: PgPool) {
     // The precondition: without the exclusion, Telekom's chunks crowd out the other invoice.
     assert_eq!(ids(&search(&api, "Rechnung").await), ["telekom"]);
     assert_eq!(ids(&search(&api, "Rechnung -Telekom").await), ["strom"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn words_match_one_typo_or_transposition_away(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for (id, text) in [
+        ("rechnung", "Die Rechnung ist bezahlt."),
+        ("kuendigung", "Ihre Kündigung ist eingegangen."),
+        ("invoice", "The invoice is due."),
+        ("mail", "We receive mail daily."),
+    ] {
+        api.put_document(&document("notes", id, text))
+            .await
+            .unwrap();
+    }
+
+    for (query, id, word) in [
+        ("Rechnug", "rechnung", "Rechnung"),
+        ("Kündigng", "kuendigung", "Kündigung"),
+        ("invoce", "invoice", "invoice"),
+        ("recieve", "mail", "receive"),
+    ] {
+        let hits = search(&api, query).await;
+        assert_eq!(ids(&hits), [id], "{query}");
+        assert_eq!(highlighted_as(&hits[0], HighlightKind::Fuzzy), [word]);
+        assert_eq!(ids(&search_exactly(&api, query).await), Vec::<&str>::new());
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn short_words_numbers_ids_exclusions_and_phrases_stay_exact(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "notes",
+        "a",
+        "Der Mond über der Kfz-Versicherung 12345678. Running shoes are great.",
+    ))
+    .await
+    .unwrap();
+
+    for query in ["Mund", "12345679", "Kfz-Versicherunk", r#""runnign shoes""#] {
+        assert_eq!(
+            ids(&search(&api, query).await),
+            Vec::<&str>::new(),
+            "{query}"
+        );
+    }
+    assert_eq!(ids(&search(&api, "shoes -graet").await), ["a"]);
+}
+
+/// More typo-only chunks than the candidate limit: the exact match must still rank first, ahead
+/// of all of them.
+#[sqlx::test(migrations = false)]
+async fn exact_matches_outrank_typos_within_the_candidate_limit(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    let paragraph = "Rechnug Telekom Rechnug Telekom. ".repeat(40);
+    let typos = vec![paragraph; 1100].join("\n\n");
+    api.put_document(&document("paperless", "telekom", &typos))
+        .await
+        .unwrap();
+    let filler = "Nichts weiter. ".repeat(100);
+    api.put_document(&document(
+        "paperless",
+        "strom",
+        &format!("{filler} Rechnung {filler}"),
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(ids(&search(&api, "Rechnung").await), ["strom", "telekom"]);
 }
 
 #[sqlx::test(migrations = false)]

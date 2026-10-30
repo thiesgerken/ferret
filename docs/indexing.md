@@ -32,7 +32,7 @@ flowchart TD
 
 ## Keyword and vector indexes
 
-The ParadeDB BM25 index covers chunk text and title in German-stemmed, English-stemmed and trigram forms, along with filter columns. A word may match one form while another word matches another form. Titles are repeated on chunks so title matches can find a document even when a particular passage lacks that word. Empty documents have no searchable chunk, even if they have a title.
+The ParadeDB BM25 index covers chunk text and title in German-stemmed, English-stemmed, trigram and unstemmed forms, along with filter columns. The unstemmed form serves [typo tolerance](search.md#typo-tolerance): pg_search stems a fuzzy query before matching, which would miss typos in strippable suffixes. A word may match one form while another word matches another form. Titles are repeated on chunks so title matches can find a document even when a particular passage lacks that word. Empty documents have no searchable chunk, even if they have a title.
 
 `chunk_embeddings` stores one half-precision vector per chunk/model, with denormalized user/source/filter data. Startup creates a model-specific partial HNSW cosine index with the configured dimension. The shared `embedding_cache` is keyed by model and hash of the exact prefixed input, for both documents and queries. It is not the live document corpus and is shared across users. `embedding_models` registers every model with stored vectors and its dimension; vector, cache and failure rows reference it and are deleted with it when an admin deletes a model that is no longer configured ([stored embeddings](embeddings.md#stored-embeddings-and-the-model-registry)). [Embeddings](embeddings.md) describes model identity and pump behavior.
 

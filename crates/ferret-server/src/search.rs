@@ -214,11 +214,17 @@ pub async fn find(
         (request.mode == SearchMode::Hybrid && query_hash.is_none()).then_some(unavailable);
 
     let collapse = request.collapse.unwrap_or(true);
+    let typo_tolerant = if request.typo_tolerance.unwrap_or(true) {
+        query.typo_tolerant_words()
+    } else {
+        vec![]
+    };
     let hybrid = Hybrid {
         model,
         keyword: request.mode != SearchMode::Semantic,
         query_hash: query_hash.as_deref(),
         words: &query.words,
+        typo_tolerant: &typo_tolerant,
         collapse,
     };
     // `total` and the facets come from every match rather than the page, so they stay the same on
@@ -302,6 +308,7 @@ pub async fn find(
                 parts: highlight(
                     &row.chunk_text.expect("the page's rows carry their chunk"),
                     &query.words,
+                    &typo_tolerant,
                 ),
             },
         })
@@ -329,6 +336,8 @@ struct Hybrid<'a> {
     /// `None` without the semantic half.
     query_hash: Option<&'a [u8]>,
     words: &'a [String],
+    /// The words that also match one typo away.
+    typo_tolerant: &'a [&'a str],
     collapse: bool,
 }
 
@@ -426,8 +435,13 @@ impl Hybrid<'_> {
         // Every word must match in at least one field, so a compound and an inflected word can
         // match the same chunk in different fields.
         for word in self.words {
-            sql.push(" and ");
+            sql.push(" and (");
             push_word_match(sql, "c.", word);
+            if self.typo_tolerant.contains(&word.as_str()) {
+                sql.push(" or ");
+                push_typo_match(sql, "c.", word);
+            }
+            sql.push(")");
         }
         // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
         // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
@@ -767,6 +781,20 @@ fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
             .push_bind(word.to_owned());
     }
     sql.push(")");
+}
+
+/// `word`, or a word one typo away (a transposition counts as one), matches a chunk's unstemmed
+/// text or title. Exact matches satisfy this too and so outrank typo-only ones at any boost. The
+/// low boost keeps it from reordering the exact matches, not all of which satisfy it: `Rechnungen`
+/// matches `Rechnung` by stem but is two edits away.
+fn push_typo_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
+    sql.push(format!("({table}text::pdb.alias('text_plain') &&& "))
+        .push_bind(word.to_owned())
+        .push(format!(
+            "::pdb.fuzzy(1, f, t)::pdb.boost(0.5) or {table}title::pdb.alias('title_plain') &&& "
+        ))
+        .push_bind(word.to_owned())
+        .push("::pdb.fuzzy(1, f, t)::pdb.boost(0.5))");
 }
 
 fn offset(stored: i32) -> u32 {

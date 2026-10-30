@@ -55,8 +55,10 @@ const hit = (id: string, source: string, authors: string[]) => ({
     startOffset: 10,
     endOffset: 40,
     parts: [
-      { __typename: "TextPart", text: "Pay the ", highlight: false },
-      { __typename: "TextPart", text: "invoice", highlight: true },
+      { __typename: "TextPart", text: "Pay the ", highlight: null },
+      { __typename: "TextPart", text: "invoice", highlight: "EXACT" },
+      { __typename: "TextPart", text: ", not the ", highlight: null },
+      { __typename: "TextPart", text: "invoce", highlight: "FUZZY" },
     ],
   },
 });
@@ -184,17 +186,22 @@ const CHIPS = "nav[aria-label=Filters] button[aria-pressed]";
 const label = (button: Element) => button.querySelector("span.truncate")?.textContent;
 /** The source and author chips, without the matching toggles ahead of them. */
 const facetChips = (root: Element, selector = CHIPS) =>
-  [...root.querySelectorAll<HTMLButtonElement>(selector)].filter((b) => !["Keyword", "Semantic"].includes(label(b) ?? ""));
+  [...root.querySelectorAll<HTMLButtonElement>(selector)].filter((b) => !["Keyword", "Semantic", "Typos"].includes(label(b) ?? ""));
 
-const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null, mode: "hybrid" };
+const STATE: SearchState = { q: "invoice", sources: [], authors: [], range: "any", model: null, mode: "hybrid", typoTolerance: true };
 
 test("shows one hit per document with its highlighted snippet and links", async () => {
   const { view, variables } = await renderResults(STATE);
 
-  assert.deepEqual(variables[0], { input: { q: "invoice", sources: null, authors: null, range: null, model: null, mode: null } });
+  assert.deepEqual(variables[0], {
+    input: { q: "invoice", sources: null, authors: null, range: null, model: null, mode: null, typoTolerance: null },
+  });
   const items = view.container.querySelectorAll("article");
   assert.equal(items.length, 2);
-  assert.equal(items[0].querySelector("mark")?.textContent, "invoice");
+  const [exact, typo] = items[0].querySelectorAll("mark");
+  assert.equal(exact.textContent, "invoice");
+  assert.equal(typo.textContent, "invoce");
+  assert.notEqual(exact.className, typo.className, "a typo match looks different from an exact one");
   assert.equal(items[0].querySelector("a")?.getAttribute("href"), "/view?id=a&start=10&end=40");
   assert.equal(items[0].querySelector("a")?.textContent, "a.md", "the external id stands in for a missing title");
   assert.ok(items[0].querySelector("a[aria-label='Open in origin']"));
@@ -334,7 +341,7 @@ test("a ✓ judges the hit for this search, a second click takes it back", async
   await settle();
 
   assert.equal(check().getAttribute("aria-pressed"), "false");
-  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null, mode: null };
+  const search = { q: "invoice", sources: ["notes"], authors: null, range: null, model: null, mode: null, typoTolerance: null };
   assert.deepEqual(variables.slice(1), [
     { input: { search, documentId: "a", judged: true } },
     { input: { search, documentId: "a", judged: false } },
@@ -472,4 +479,21 @@ test("keyword and semantic matching switch off one at a time, never both", async
   assert.deepEqual(changes.at(-1), { ...STATE, mode: "semantic" });
   assert.match(text(), /37 semantic matches/);
   await view.unmount();
+});
+
+test("typo tolerance switches off, and only applies with keyword matching", async () => {
+  const { view, variables, changes } = await renderResults(STATE);
+  const typos = () => [...view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => label(button) === "Typos")!;
+  assert.equal(typos().getAttribute("aria-pressed"), "true");
+
+  await act(async () => typos().click());
+  await settle();
+  assert.deepEqual(changes.at(-1), { ...STATE, typoTolerance: false });
+  assert.equal((variables.at(-1) as { input: { typoTolerance: boolean } }).input.typoTolerance, false);
+  await view.unmount();
+
+  const semantic = await renderResults({ ...STATE, mode: "semantic" });
+  const chip = [...semantic.view.container.querySelectorAll<HTMLButtonElement>(CHIPS)].find((button) => label(button) === "Typos")!;
+  assert.equal(chip.disabled, true);
+  await semantic.view.unmount();
 });

@@ -86,7 +86,15 @@ export function HitItem({
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
           part.highlight ? (
-            <mark key={index} className="bg-transparent font-semibold text-foreground">
+            <mark
+              key={index}
+              className={cn(
+                "bg-transparent text-foreground",
+                // A typo match gets its own colour, and a dotted underline so telling it apart
+                // doesn't rely on colour alone.
+                part.highlight === "EXACT" ? "font-semibold" : "font-medium text-brand underline decoration-dotted underline-offset-2",
+              )}
+            >
               {part.text}
             </mark>
           ) : (

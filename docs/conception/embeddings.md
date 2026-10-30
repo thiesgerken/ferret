@@ -301,8 +301,8 @@ A search may have several right hits, each its own judgment: recall@10 and MRR h
   flip it twice.
 - `query` is the query as typed, with whitespace collapsed. `filters` is the search's filters in
   canonical form: sources, authors and content types sorted without duplicates, `from`/`to` as
-  absolute times. The same search in another chip order is the same judgment. `k` and `collapse`
-  aren't part of it, and neither is `model`: evaluation (post-v1, #21) is to replay a judged
+  absolute times. The same search in another chip order is the same judgment. `k`, `collapse`
+  and `typo_tolerance` aren't part of it, and neither is `model`: evaluation (post-v1, #21) is to replay a judged
   search with every model. A search `search` would reject can't be judged.
 - A relative time range ("Past week", `range` in GraphQL's `SearchInput`) is stored as its preset
   instead of the `from` it resolved to, so the same search tomorrow still shows its ✓ and a

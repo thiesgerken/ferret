@@ -11,6 +11,28 @@ pub struct ParsedQuery {
     pub excluded: Vec<String>,
 }
 
+/// Shorter words have too many neighbours one typo away, and numbers or IDs are meant exactly.
+const MIN_TYPO_TOLERANT_CHARS: usize = 5;
+
+impl ParsedQuery {
+    /// The words that also match one typo away: those of 5 or more letters, outside phrases,
+    /// which match exactly.
+    pub fn typo_tolerant_words(&self) -> Vec<&str> {
+        self.words
+            .iter()
+            .map(String::as_str)
+            .filter(|word| {
+                word.chars().count() >= MIN_TYPO_TOLERANT_CHARS
+                    && word.chars().all(char::is_alphabetic)
+                    && !self
+                        .phrases
+                        .iter()
+                        .any(|phrase| phrase.split(' ').any(|part| part == *word))
+            })
+            .collect()
+    }
+}
+
 pub fn parse(query: &str) -> ParsedQuery {
     let mut parsed = ParsedQuery::default();
     let mut rest = query.trim_start();
@@ -72,5 +94,16 @@ mod tests {
             }
         );
         assert_eq!(parse("-only -excluded").words, Vec::<String>::new());
+    }
+
+    #[test]
+    fn typo_tolerant_words_are_long_letter_runs_outside_phrases() {
+        assert_eq!(
+            parse(
+                r#"Rechnung Kündigung haus 2026 Kfz-Versicherung invoice42 -Steuer "running shoes""#
+            )
+            .typo_tolerant_words(),
+            ["Rechnung", "Kündigung"]
+        );
     }
 }

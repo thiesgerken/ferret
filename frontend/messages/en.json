@@ -100,6 +100,9 @@
       "keywordHint": "Every word found in the document, ranked by BM25",
       "semanticHint": "The meaning close to the query, by embedding similarity",
       "lastMatching": "At least one kind of matching stays on",
+      "typos": "Typos",
+      "typosHint": "Words of 5 or more letters also match with one typo",
+      "typosNeedKeyword": "Typo tolerance applies to keyword matching only",
       "time": "Time",
       "timeRange": "Time range",
       "ranges": {
