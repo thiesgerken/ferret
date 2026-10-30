@@ -4,7 +4,7 @@ Use search to discover what exists and where it lives, then open the origin to w
 
 ## UI workflow
 
-Enter a query on the home page. **Keyword** and **Semantic** are independent toggles; both on means hybrid, only Keyword means keyword search, only Semantic means meaning search. At least one stays on. Start with keyword mode for names, ids and exact phrases, or when a model is unavailable.
+Enter a query on the home page. **Keyword** and **Semantic** are independent toggles; both on means hybrid, only Keyword means keyword search, only Semantic means meaning search. At least one stays on. Start with keyword mode for names, ids and exact phrases, or when a model is unavailable. **Typos** (on by default, disabled while Keyword is off) lets keyword matching tolerate one typo per long word; turn it off for strictly exact matching. A copied URL carries `typos=off`.
 
 Source and author facets narrow results. A source includes descendants; several selected sources/authors are alternatives within that filter, while different filter kinds combine. Time filters use document **creation** time, not modification or ingestion time. The UI also offers Explore for browsing without a query. A copied search URL preserves query/filter choices. The API additionally accepts content types and explicit timestamps.
 
@@ -23,11 +23,15 @@ Click the hit title to open the local viewer at its best passage. **Open in orig
 
 At least one positive word is required; an all-exclusion or empty query is invalid. An unclosed quote runs to the end. There is no boolean `OR`/`AND`, regex, field-colon or wildcard language in the parser. Filters are separate parameters, not `source:mail` syntax. Do not assume stemming makes a quoted phrase loose: the phrase check is more literal than the BM25 word matching.
 
+### Typo tolerance
+
+With typo tolerance on (the default), a positive word of 5 or more characters, all of them letters, also matches words one edit away: one inserted, deleted or substituted letter, or two swapped neighbours. `Rechnug` finds "Rechnung", `Kündigng` "Kündigung", `recieve` "receive". The typo match runs on the unstemmed text and title, so it doesn't depend on the language. Shorter words, words with digits or punctuation (`2026`, `RE-2026-0042`, `Kfz-Versicherung`), `-excluded` words and words inside `"phrases"` match exactly. Within the keyword ranking an exact match always outranks a typo-only one; after fusion the semantic half can still lift a typo-only hit. Hits highlight typo matches as `fuzzy`, set apart from `exact` matches. `typo_tolerance=false` (REST), `typoTolerance: false` (GraphQL) or the **Typos** chip turns it off.
+
 For meaning search, the model receives positive words joined without operators. Phrase and exclusion filters still constrain candidates. Semantic-only does not require every positive keyword to occur literally. Exact phrase filtering checks chunk text, so a phrase spanning a chunk boundary or appearing only in a title can fail the phrase constraint.
 
 ## Ranking and scores
 
-The keyword half ranks up to 1000 chunk candidates using BM25 over German/English stemmed and trigram title/text fields. The semantic half requests up to 100 HNSW nearest chunk vectors for the selected model, then drops candidates below its cosine-similarity threshold. HNSW is approximate and model coverage may still be incomplete.
+The keyword half ranks up to 1000 chunk candidates using BM25 over German/English stemmed and trigram title/text fields, plus unstemmed ones for typo matches at a lower weight. The semantic half requests up to 100 HNSW nearest chunk vectors for the selected model, then drops candidates below its cosine-similarity threshold. HNSW is approximate and model coverage may still be incomplete.
 
 Hybrid uses reciprocal rank fusion with constant 60: each chunk contributes `1 / (60 + rank)` from each half where it appears. It does **not** add raw BM25 to cosine similarity. The best fused chunk supplies the snippet; reported keyword/similarity values are the document's best values among retrieved candidates, not necessarily that snippet's values. Similarity bars are a presentation aid, not a calibrated probability that a document is correct.
 
@@ -48,7 +52,7 @@ looks only far enough into the eligible scope to establish whether more than the
 nearest candidates exist. Facets apply all filters except their own so alternative choices remain
 visible. Author facets include the twenty most frequent values plus selected values.
 
-REST pages use `k` (default 10, range 1–100) and `offset`; subsequent requests should retain query/filter/model/mode/collapse choices. Each request has a consistent database snapshot for its hits, matching totals and facets; the informational scope count may be older. Successive pages are not a persistent snapshot across ingestion.
+REST pages use `k` (default 10, range 1–100) and `offset`; subsequent requests should retain query/filter/model/mode/collapse/typo_tolerance choices. Each request has a consistent database snapshot for its hits, matching totals and facets; the informational scope count may be older. Successive pages are not a persistent snapshot across ingestion.
 
 Hybrid returns keyword-only results with `semantic_unavailable` if query embedding is unavailable. Semantic-only returns service unavailable; keyword makes no query-embedding request. An unknown model is invalid, even for keyword requests. A successful semantic query may still return few results while the model's document backlog is pending. Inspect [embedding progress](embeddings.md) rather than treating every empty result as an ingestion failure.
 
