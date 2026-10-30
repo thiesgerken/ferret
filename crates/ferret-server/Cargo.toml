@@ -37,6 +37,7 @@ serde-saphyr.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
+strsim.workspace = true
 subtle.workspace = true
 text-splitter.workspace = true
 tokio.workspace = true
