@@ -784,7 +784,9 @@ fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
 }
 
 /// `word`, or a word one typo away (a transposition counts as one), matches a chunk's unstemmed
-/// text or title. Exact matches match here too, so the low boost keeps them above typo-only ones.
+/// text or title. Exact matches satisfy this too and so outrank typo-only ones at any boost. The
+/// low boost keeps it from reordering the exact matches, not all of which satisfy it: `Rechnungen`
+/// matches `Rechnung` by stem but is two edits away.
 fn push_typo_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
     sql.push(format!("({table}text::pdb.alias('text_plain') &&& "))
         .push_bind(word.to_owned())
