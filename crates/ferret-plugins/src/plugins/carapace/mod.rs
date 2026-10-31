@@ -74,7 +74,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let indexing = json!({
         "carapace_url": repository.target.carapace_url,
         "files": "markdown, skills/ apart",
-        "sessions": "summary and turns in one thread",
+        "sessions": "summary and own turns in one thread",
         "titles": git::TITLES,
     });
     let stats = match repository.changes(&indexing).await? {
