@@ -74,7 +74,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let indexing = json!({
         "carapace_url": repository.target.carapace_url,
         "files": "markdown, skills/ apart",
-        "sessions": "summary and turns in one thread",
+        "sessions": "summary and own turns in one thread",
         "titles": git::TITLES,
     });
     let stats = match repository.changes(&indexing).await? {
@@ -443,10 +443,18 @@ fn session_documents(session: &Session, target: &Target, log: &Log) -> Vec<Docum
     documents
 }
 
-/// One document per turn of the session, each going on from the one before.
+/// One document per turn of the session, each going on from the one before. A copied session's
+/// inherited turns belong to the session they were written in, which indexes them already.
 fn turn_documents(archive: &Archive, target: &Target) -> Vec<DocumentPut> {
     let session = &archive.session;
-    let turns = transcript::turns(&archive.history);
+    let inherited = session
+        .forked_from
+        .as_ref()
+        .map_or(0, |fork| fork.event_count);
+    let turns: Vec<_> = transcript::turns(&archive.history)
+        .into_iter()
+        .filter(|turn| turn.seq >= inherited)
+        .collect();
     let mut models: Vec<&String> = Vec::new();
     for model in turns.iter().flat_map(|turn| &turn.models) {
         if !models.contains(&model) {
@@ -741,6 +749,32 @@ mod tests {
             })
         );
         assert!(documents[2].authors.is_empty(), "the user isn't an author");
+    }
+
+    #[test]
+    fn a_copied_session_leaves_its_inherited_turns_to_the_original() {
+        let copy = ARCHIVE.replace(
+            "\"session_id\": \"s-trip\",",
+            "\"session_id\": \"s-trip\", \"forked_from\": {\"session_id\": \"s-origin\", \"event_count\": 15},",
+        );
+
+        let documents = turn_documents(&archive::parse(&copy).unwrap(), &TARGET);
+
+        assert_eq!(
+            documents
+                .iter()
+                .map(|turn| (turn.external_id.as_str(), turn.parent.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("turn:s-trip:15", None),
+                ("turn:s-trip:19", Some("turn:s-trip:15")),
+            ]
+        );
+        assert_eq!(
+            documents[0].meta["models"],
+            json!(["openai:gpt-5"]),
+            "only the models that answered in the copy"
+        );
     }
 
     #[test]
