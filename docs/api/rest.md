@@ -30,7 +30,7 @@ Requires `search:read`.
 
 | Parameter | Contract |
 | --- | --- |
-| `q` | required positive words, quoted phrases, `-excluded` tokens |
+| `q` | positive words ([how many must match](../search.md#query-syntax)), quoted phrases, `-excluded` tokens |
 | repeated `source` | optional source roots and descendants; omit for all authorized roots |
 | repeated `author` | any selected author |
 | repeated `content_type` | `markdown`, `plain`, `email` |
