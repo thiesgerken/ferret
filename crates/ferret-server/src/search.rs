@@ -432,17 +432,27 @@ impl Hybrid<'_> {
                  where ",
         );
         filters.push(sql, "c");
-        // Every word must match in at least one field, so a compound and an inflected word can
-        // match the same chunk in different fields.
-        for word in self.words {
-            sql.push(" and (");
-            push_word_match(sql, "c.", word);
-            if self.typo_tolerant.contains(&word.as_str()) {
-                sql.push(" or ");
-                push_typo_match(sql, "c.", word);
+        // Each word may match in a different field, so a compound and an inflected word can match
+        // the same chunk. BM25 sums the matching words' scores, so chunks with more of them rank
+        // first.
+        sql.push(" and c.id @@@ paradedb.boolean(should => array[");
+        for (index, word) in self.words.iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
             }
-            sql.push(")");
+            if self.typo_tolerant.contains(&word.as_str()) {
+                sql.push("paradedb.boolean(should => array[");
+                push_word_query(sql, word);
+                sql.push(", ");
+                push_typo_query(sql, word);
+                sql.push("])");
+            } else {
+                push_word_query(sql, word);
+            }
         }
+        sql.push("], minimum_should_match => ")
+            .push_bind(min_matching_words(self.words.len()))
+            .push(")");
         // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
         // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
         sql.push(" order by score desc, c.id limit ")
@@ -720,8 +730,8 @@ impl Filters<'_> {
                 " and {table}.document_id not in (select document_id from chunks where user_id = "
             ))
             .push_bind(self.user_id)
-            .push(" and ");
-            push_word_match(sql, "", word);
+            .push(" and id @@@ ");
+            push_word_query(sql, word);
             sql.push(")");
         }
         if let Some(roots) = &self.roots {
@@ -759,42 +769,67 @@ impl Filters<'_> {
     }
 }
 
-/// `word` matches a chunk's text or its document's title in any of the BM25 index's fields.
-/// `table` qualifies the columns, e.g. `c.`.
-fn push_word_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
-    sql.push("(");
+/// How many of a query's positive words a chunk must match in the keyword half: all of one or two,
+/// all but one of three to five, three quarters (rounded down) of more. Natural queries often
+/// carry a word their document lacks, and requiring every word left the keyword half empty for
+/// them.
+fn min_matching_words(words: usize) -> i64 {
+    let matching = match words {
+        0..=2 => words,
+        3..=5 => words - 1,
+        _ => words * 3 / 4,
+    };
+    i64::try_from(matching).expect("a query has far fewer words than i64::MAX")
+}
+
+/// The pg_search query for `word` in a chunk's text or its document's title, in any of the BM25
+/// index's fields. Each field must match all of the word's tokens, so a compound's trigrams don't
+/// match on a few shared ones.
+fn push_word_query(sql: &mut QueryBuilder<Postgres>, word: &str) {
+    sql.push("paradedb.boolean(should => array[");
     for (index, field) in [
         "text",
-        "text::pdb.alias('text_en')",
-        "text::pdb.alias('text_ngram')",
+        "text_en",
+        "text_ngram",
         "title",
-        "title::pdb.alias('title_en')",
-        "title::pdb.alias('title_ngram')",
+        "title_en",
+        "title_ngram",
     ]
     .into_iter()
     .enumerate()
     {
         if index > 0 {
-            sql.push(" or ");
+            sql.push(", ");
         }
-        sql.push(format!("{table}{field} &&& "))
-            .push_bind(word.to_owned());
-    }
-    sql.push(")");
-}
-
-/// `word`, or a word one typo away (a transposition counts as one), matches a chunk's unstemmed
-/// text or title. Exact matches satisfy this too and so outrank typo-only ones at any boost. The
-/// low boost keeps it from reordering the exact matches, not all of which satisfy it: `Rechnungen`
-/// matches `Rechnung` by stem but is two edits away.
-fn push_typo_match(sql: &mut QueryBuilder<Postgres>, table: &str, word: &str) {
-    sql.push(format!("({table}text::pdb.alias('text_plain') &&& "))
-        .push_bind(word.to_owned())
-        .push(format!(
-            "::pdb.fuzzy(1, f, t)::pdb.boost(0.5) or {table}title::pdb.alias('title_plain') &&& "
+        sql.push(format!(
+            "paradedb.to_search_query_input('{field}', pdb.match("
         ))
         .push_bind(word.to_owned())
-        .push("::pdb.fuzzy(1, f, t)::pdb.boost(0.5))");
+        .push(", conjunction_mode => true))");
+    }
+    sql.push("])");
+}
+
+/// The pg_search query for `word`, or a word one typo away (a transposition counts as one), in a
+/// chunk's unstemmed text or title. Exact matches satisfy this too and so outrank typo-only ones
+/// at any boost. The low boost keeps it from reordering the exact matches, not all of which
+/// satisfy it: `Rechnungen` matches `Rechnung` by stem but is two edits away.
+fn push_typo_query(sql: &mut QueryBuilder<Postgres>, word: &str) {
+    sql.push("paradedb.boolean(should => array[");
+    for (index, field) in ["text_plain", "title_plain"].into_iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        sql.push(format!(
+            "paradedb.boost(0.5, paradedb.to_search_query_input('{field}', pdb.match("
+        ))
+        .push_bind(word.to_owned())
+        .push(
+            ", distance => 1, transposition_cost_one => true, prefix => false, \
+             conjunction_mode => true)))",
+        );
+    }
+    sql.push("])");
 }
 
 fn offset(stored: i32) -> u32 {
@@ -803,4 +838,15 @@ fn offset(stored: i32) -> u32 {
 
 fn millis_since(started: Instant) -> u32 {
     u32::try_from(started.elapsed().as_millis()).expect("a search takes less than 49 days")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_queries_need_every_word_longer_ones_most() {
+        let needed: Vec<i64> = (1..=10).map(min_matching_words).collect();
+        assert_eq!(needed, [1, 2, 2, 3, 4, 4, 5, 6, 6, 7]);
+    }
 }

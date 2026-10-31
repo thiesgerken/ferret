@@ -70,8 +70,8 @@
     "noMatches": "Keine Dokumente zu „{q}“",
     "filtersTooNarrow": "Vielleicht sind die Filter zu eng.",
     "tryOtherWords": {
-      "hybrid": "Versuch es mit weniger oder anderen Wörtern: Entweder müssen alle Wörter vorkommen oder die Bedeutung muss nah dran sein.",
-      "keyword": "Versuch es mit weniger oder anderen Wörtern: Alle Wörter müssen vorkommen.",
+      "hybrid": "Versuch es mit weniger oder anderen Wörtern: Entweder müssen die meisten Wörter vorkommen oder die Bedeutung muss nah dran sein.",
+      "keyword": "Versuch es mit weniger oder anderen Wörtern: Die meisten Wörter müssen vorkommen.",
       "semantic": "Versuch es mit anderen Wörtern: Die Bedeutung muss nah dran sein."
     },
     "clearFilters": "Filter zurücksetzen",
@@ -87,7 +87,7 @@
     "hit": {
       "moreInThread": "{count} weitere in diesem Thread",
       "similar": "{similarity, number, percent} ähnlich",
-      "allWordsFound": "alle Wörter gefunden (BM25 {score, number, ::.0})",
+      "wordsFound": "Wörter gefunden (BM25 {score, number, ::.0})",
       "judge": "Richtiger Treffer für diese Suche",
       "judged": "Als richtiger Treffer für diese Suche markiert",
       "unjudged": "Als richtigen Treffer für diese Suche markieren"
@@ -97,7 +97,7 @@
       "matching": "Suchart",
       "keyword": "Stichwörter",
       "semantic": "Bedeutung",
-      "keywordHint": "Alle Wörter kommen im Dokument vor, sortiert nach BM25",
+      "keywordHint": "Die meisten Wörter kommen im Dokument vor, sortiert nach BM25",
       "semanticHint": "Die Bedeutung liegt nah an der Anfrage, gemessen an der Embedding-Ähnlichkeit",
       "lastMatching": "Eine Suchart bleibt immer an",
       "typos": "Tippfehler",

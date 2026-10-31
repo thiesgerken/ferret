@@ -3,7 +3,8 @@
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ParsedQuery {
-    /// Every word a hit must match, the words of the phrases included.
+    /// The positive words, the words of the phrases included. A keyword hit matches most of
+    /// them, a short query all.
     pub words: Vec<String>,
     /// Must appear in the hit's chunk as they are, ignoring case and whitespace differences.
     pub phrases: Vec<String>,

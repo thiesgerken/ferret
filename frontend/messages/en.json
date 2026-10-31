@@ -70,8 +70,8 @@
     "noMatches": "No documents match “{q}”",
     "filtersTooNarrow": "The filters may be too narrow.",
     "tryOtherWords": {
-      "hybrid": "Try fewer or other words: every word has to match, or the meaning has to be close.",
-      "keyword": "Try fewer or other words: every word has to match.",
+      "hybrid": "Try fewer or other words: most words have to match, or the meaning has to be close.",
+      "keyword": "Try fewer or other words: most words have to match.",
       "semantic": "Try other words: the meaning has to be close."
     },
     "clearFilters": "Clear filters",
@@ -87,7 +87,7 @@
     "hit": {
       "moreInThread": "{count} more in this thread",
       "similar": "{similarity, number, percent} similar",
-      "allWordsFound": "all words found (BM25 {score, number, ::.0})",
+      "wordsFound": "words found (BM25 {score, number, ::.0})",
       "judge": "Right hit for this search",
       "judged": "Marked as the right hit for this search",
       "unjudged": "Mark as the right hit for this search"
@@ -97,7 +97,7 @@
       "matching": "Matching",
       "keyword": "Keyword",
       "semantic": "Semantic",
-      "keywordHint": "Every word found in the document, ranked by BM25",
+      "keywordHint": "Most words found in the document, ranked by BM25",
       "semanticHint": "The meaning close to the query, by embedding similarity",
       "lastMatching": "At least one kind of matching stays on",
       "typos": "Typos",

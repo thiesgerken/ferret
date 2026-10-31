@@ -16,22 +16,24 @@ Click the hit title to open the local viewer at its best passage. **Open in orig
 
 | Input | Meaning |
 | --- | --- |
-| `torque wrench` | keyword half requires every word to match a chunk's indexed text/title forms |
+| `torque wrench` | keyword half matches chunks containing most of the words in their indexed text/title forms (see below) |
 | `"torque wrench"` | phrase must occur in the candidate chunk text, ignoring case and whitespace differences |
 | `torque -invoice` | exclude documents containing the excluded word in the implemented text/title matching |
 | `"travel plan" -cancelled` | combine positive phrase and excluded token |
+
+The keyword half needs all of one or two positive words, all but one of three to five, and three quarters (rounded down) of six or more. Words inside phrases count as positive words, and the phrase itself must still match in full. A natural query often carries a word its document lacks ("Rechnung Drehmomentschlüssel 2020"), so longer queries don't come back empty for it. A hit highlights only the words it matched.
 
 At least one positive word is required; an all-exclusion or empty query is invalid. An unclosed quote runs to the end. There is no boolean `OR`/`AND`, regex, field-colon or wildcard language in the parser. Filters are separate parameters, not `source:mail` syntax. Do not assume stemming makes a quoted phrase loose: the phrase check is more literal than the BM25 word matching.
 
 ### Typo tolerance
 
-With typo tolerance on (the default), a positive word of 5 or more characters, all of them letters, also matches words one edit away: one inserted, deleted or substituted letter, or two swapped neighbours. `Rechnug` finds "Rechnung", `Kündigng` "Kündigung", `recieve` "receive". The typo match runs on the unstemmed text and title, so it doesn't depend on the language. Shorter words, words with digits or punctuation (`2026`, `RE-2026-0042`, `Kfz-Versicherung`), `-excluded` words and words inside `"phrases"` match exactly. Within the keyword ranking an exact match always outranks a typo-only one; after fusion the semantic half can still lift a typo-only hit. Hits highlight typo matches as `fuzzy`, set apart from `exact` matches. `typo_tolerance=false` (REST), `typoTolerance: false` (GraphQL) or the **Typos** chip turns it off.
+With typo tolerance on (the default), a positive word of 5 or more characters, all of them letters, also matches words one edit away: one inserted, deleted or substituted letter, or two swapped neighbours. `Rechnug` finds "Rechnung", `Kündigng` "Kündigung", `recieve` "receive". A typo match counts as a matching word. The typo match runs on the unstemmed text and title, so it doesn't depend on the language. Shorter words, words with digits or punctuation (`2026`, `RE-2026-0042`, `Kfz-Versicherung`), `-excluded` words and words inside `"phrases"` match exactly. Within the keyword ranking an exact match always outranks a typo-only one; after fusion the semantic half can still lift a typo-only hit. Hits highlight typo matches as `fuzzy`, set apart from `exact` matches. `typo_tolerance=false` (REST), `typoTolerance: false` (GraphQL) or the **Typos** chip turns it off.
 
 For meaning search, the model receives positive words joined without operators. Phrase and exclusion filters still constrain candidates. Semantic-only does not require every positive keyword to occur literally. Exact phrase filtering checks chunk text, so a phrase spanning a chunk boundary or appearing only in a title can fail the phrase constraint.
 
 ## Ranking and scores
 
-The keyword half ranks up to 1000 chunk candidates using BM25 over German/English stemmed and trigram title/text fields, plus unstemmed ones for typo matches at a lower weight. The semantic half requests up to 100 HNSW nearest chunk vectors for the selected model, then drops candidates below its cosine-similarity threshold. HNSW is approximate and model coverage may still be incomplete.
+The keyword half ranks up to 1000 chunk candidates using BM25 over German/English stemmed and trigram title/text fields, plus unstemmed ones for typo matches at a lower weight. A chunk's score sums those of the words it matches, so chunks with more of the words tend to rank above those missing one. The semantic half requests up to 100 HNSW nearest chunk vectors for the selected model, then drops candidates below its cosine-similarity threshold. HNSW is approximate and model coverage may still be incomplete.
 
 Hybrid uses reciprocal rank fusion with constant 60: each chunk contributes `1 / (60 + rank)` from each half where it appears. It does **not** add raw BM25 to cosine similarity. The best fused chunk supplies the snippet; reported keyword/similarity values are the document's best values among retrieved candidates, not necessarily that snippet's values. Similarity bars are a presentation aid, not a calibrated probability that a document is correct.
 

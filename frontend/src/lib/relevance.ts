@@ -7,7 +7,7 @@ export const RELEVANCE_BARS = 4;
 /**
  * How many of the four bars a hit fills: its similarity between the model's cut-off and
  * `SIMILARITY_FOR_ALL_BARS`, or for a keyword-only hit its BM25 score against the best one shown.
- * Every hit fills at least one: it passed the cut-off or matched every word.
+ * Every hit fills at least one: it passed the cut-off or matched the words.
  */
 export function relevanceBars(
   hit: { similarity?: number | null; keywordScore?: number | null },
