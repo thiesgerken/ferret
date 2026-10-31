@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v0.38.0 (2026-10-31)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #215 from thiesgerken/feat/keyword-min-should-match
+  ([`77da3c9`](https://github.com/thiesgerken/ferret/commit/77da3c9c678835b5e3c2d0fc68c3bf6b2d29e817))
+
+- ✨ feat(search): match most words in the keyword half
+  ([`77da3c9`](https://github.com/thiesgerken/ferret/commit/77da3c9c678835b5e3c2d0fc68c3bf6b2d29e817))
+
+- ✨ feat(search): match most words in the keyword half
+  ([`c2a26a1`](https://github.com/thiesgerken/ferret/commit/c2a26a1945fbb522536caba5f1b128da0ff4455e))
+
+  The keyword half required every positive word, so a natural query carrying one word its document lacks came back empty there, and hybrid silently fell back to semantic only. It now needs all of one or two words, all but one of three to five, and three quarters (rounded down) of six or more, as a pg_search boolean query with minimum_should_match. A typo match counts as the word matching; phrases and exclusions stay strict. BM25 sums the matched words' scores, so chunks with more of them rank first.
+
+  Excluded words use the same per-word query, which compiles to the same Tantivy match as the `&&&` operator before. UI texts no longer claim every word matched.
+
+  Closes #212
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+### Other
+
+
+- 📝 docs(search): link the matching rule from the REST docs, sharpen comments
+  ([`99956bc`](https://github.com/thiesgerken/ferret/commit/99956bc3227d95c85a1a389507c88533d608ea4f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+- ignore .env
+  ([`3db7415`](https://github.com/thiesgerken/ferret/commit/3db7415c23d939d52858799a9663903e03eb4e9b))
+
+### 🩹 Patches
+
+
+- 🩹 fix(search): count only free, distinct words towards the keyword quota
+  ([`e83b95e`](https://github.com/thiesgerken/ferret/commit/e83b95e66b529690b119527a234b8e856316619e))
+
+  Phrase words are required by the phrase check anyway, so counting them made the words outside the phrase optional (`"torque wrench" invoice` no longer required `invoice`). They are now `must` clauses, and the quota applies to the free words alone. Repeated words (ignoring case) are parsed once, so a repetition can't fill the quota either.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
 ## v0.37.1 (2026-10-31)
 
 
