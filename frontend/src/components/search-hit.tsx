@@ -113,16 +113,16 @@ export function HitItem({
 
 /**
  * Four signal bars instead of numbers: the document's best similarity (not necessarily the
- * snippet's), in the brand color when every word matched as well, grey when only the meaning did.
- * The exact values are in the tooltip.
+ * snippet's), in the brand color when keyword matching found it too, grey when only the meaning
+ * did. The exact values are in the tooltip.
  */
 function RelevanceBars({ hit, context }: { hit: Hit; context: RelevanceContext }) {
   const t = useTranslations("search.hit");
   const filled = relevanceBars(hit, context);
-  // "53% similar · all words found (BM25 51.6)"
+  // "53% similar · words found (BM25 51.6)"
   const label = [
     hit.similarity != null && t("similar", { similarity: hit.similarity }),
-    hit.keywordScore != null && t("allWordsFound", { score: hit.keywordScore }),
+    hit.keywordScore != null && t("wordsFound", { score: hit.keywordScore }),
   ]
     .filter(Boolean)
     .join(" · ");

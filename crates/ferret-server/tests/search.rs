@@ -85,7 +85,7 @@ async fn finds_a_document_by_keyword_with_its_best_chunk_highlighted(pool: PgPoo
 }
 
 #[sqlx::test(migrations = false)]
-async fn every_word_must_match_and_ids_and_numbers_are_found(pool: PgPool) {
+async fn both_of_two_words_must_match_and_ids_and_numbers_are_found(pool: PgPool) {
     let server = start_server(pool).await;
     let api = server.admin_api().await;
     api.put_document(&document(
@@ -102,6 +102,109 @@ async fn every_word_must_match_and_ids_and_numbers_are_found(pool: PgPool) {
     assert_eq!(ids(&search(&api, "invoice car").await), ["a"]);
     assert_eq!(ids(&search(&api, "RE-2026-0042").await), ["a"]);
     assert_eq!(ids(&search(&api, "invoice").await).len(), 2);
+}
+
+/// Natural queries often carry a word their document lacks: from three words on, one may be
+/// missing, from six on a quarter of them.
+#[sqlx::test(migrations = false)]
+async fn longer_queries_need_most_words_not_all(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "paperless",
+        "werkzeug",
+        "Die Rechnung für den Drehmomentschlüssel kam im März von Hoffmann.",
+    ))
+    .await
+    .unwrap();
+
+    for (query, expected) in [
+        ("Rechnung 2020", vec![]),
+        ("Rechnung Drehmomentschlüssel 2020", vec!["werkzeug"]),
+        ("Rechnung Drehmomentschlüssel 2020 Quittung", vec![]),
+        ("Rechnung Drehmomentschlüssel März 2020 Quittung", vec![]),
+        (
+            "Rechnung Drehmomentschlüssel März Hoffmann 2020 Quittung",
+            vec!["werkzeug"],
+        ),
+        (
+            "Rechnung Drehmomentschlüssel März 2020 Quittung Garage",
+            vec![],
+        ),
+    ] {
+        assert_eq!(ids(&search(&api, query).await), expected, "{query}");
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn documents_matching_more_words_rank_first(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    for (id, text) in [
+        ("some", "Torque wrench storage certificate"),
+        ("all", "Torque wrench calibration certificate"),
+        ("fewer", "Torque storage shelf certificate"),
+    ] {
+        api.put_document(&document("notes", id, text))
+            .await
+            .unwrap();
+    }
+
+    let hits = search(&api, "torque wrench calibration").await;
+
+    assert_eq!(ids(&hits), ["all", "some"]);
+    assert_eq!(highlighted(&hits[1]), ["Torque", "wrench"]);
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_typo_match_counts_as_a_matching_word(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "paperless",
+        "garage",
+        "Die Rechnung für die Garage ist bezahlt.",
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(ids(&search(&api, "Rechnug Garage 2020").await), ["garage"]);
+    assert_eq!(
+        ids(&search_exactly(&api, "Rechnug Garage 2020").await),
+        Vec::<&str>::new()
+    );
+}
+
+/// Phrases and excluded words stay strict when the other words need not all match, and a phrase
+/// doesn't make the words outside it optional.
+#[sqlx::test(migrations = false)]
+async fn phrases_and_exclusions_stay_strict_in_longer_queries(pool: PgPool) {
+    let server = start_server(pool).await;
+    let api = server.admin_api().await;
+    api.put_document(&document(
+        "paperless",
+        "phrase",
+        "Rechnung Garage Miete März",
+    ))
+    .await
+    .unwrap();
+    api.put_document(&document(
+        "paperless",
+        "reversed",
+        "Rechnung Miete Garage Strom März",
+    ))
+    .await
+    .unwrap();
+
+    for (query, expected) in [
+        (r#""Garage Miete" Rechnung"#, vec!["phrase"]),
+        (r#""Garage Miete" Rechnung 2020"#, vec![]),
+        (r#""Garage Miete" Rechnung März 2020"#, vec!["phrase"]),
+        ("Rechnung Garage 2020 -Strom", vec!["phrase"]),
+        ("Rechnung Garage 2020 -Miete", vec![]),
+    ] {
+        assert_eq!(ids(&search(&api, query).await), expected, "{query}");
+    }
 }
 
 #[sqlx::test(migrations = false)]

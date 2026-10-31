@@ -227,10 +227,10 @@ test("each hit shows its relevance as bars, the exact values on hover, and its w
   const bars = (item: Element) => item.querySelector("[aria-label][tabindex='0']")!;
   const filled = (item: Element) => bars(item).querySelectorAll(".bg-current").length;
 
-  assert.equal(bars(a).getAttribute("aria-label"), "83% similar · all words found (BM25 7.3)");
+  assert.equal(bars(a).getAttribute("aria-label"), "83% similar · words found (BM25 7.3)");
   assert.equal(filled(a), 4);
-  assert.match(bars(a).className, /text-brand/, "every word matched");
-  assert.equal(bars(b).getAttribute("aria-label"), "all words found (BM25 3.5)");
+  assert.match(bars(a).className, /text-brand/, "the words matched");
+  assert.equal(bars(b).getAttribute("aria-label"), "words found (BM25 3.5)");
   assert.equal(filled(b), 2, "keyword-only: its BM25 against the best one shown");
   assert.equal(a.querySelector("p span[title]")?.textContent, "Notes", "the connection's root is its name");
   assert.equal(b.querySelector("p span[title='mail/personal']")?.textContent, "mail import › mail › personal");
