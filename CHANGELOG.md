@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v0.37.1 (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #210 from thiesgerken/fix/exclude-ipynb-checkpoints
+  ([`9a7e68f`](https://github.com/thiesgerken/ferret/commit/9a7e68f24b3a04f996a3ed2c2ec5e3ed60edcdfc))
+
+### 🩹 Patches
+
+
+- 🩹 fix(plugins): exclude .ipynb_checkpoints in the files plugin
+  ([`9a7e68f`](https://github.com/thiesgerken/ferret/commit/9a7e68f24b3a04f996a3ed2c2ec5e3ed60edcdfc))
+
+- 🩹 fix(plugins): exclude .ipynb_checkpoints in the files plugin
+  ([`3b38a10`](https://github.com/thiesgerken/ferret/commit/3b38a1061060733f658659fe92def5fbee1f440e))
+
+  Jupyter's autosave copies duplicated notebooks in search results.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+### Other
+
+
+- Merge pull request #213 from thiesgerken/docs/adr-no-reranker
+  ([`6fddfa8`](https://github.com/thiesgerken/ferret/commit/6fddfa8cc4f19550a752204271c387e3f14144c2))
+
+  📝 docs(adr): no cross-encoder reranker yet
+
+- 📝 docs(adr): no cross-encoder reranker yet
+  ([`945e607`](https://github.com/thiesgerken/ferret/commit/945e607ffae4259a2378e1b9287b508b9ff7b3e8))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
 ## v0.37.0 (2026-10-30)
 
 
