@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.38.1 (2026-10-31)
+
+
+### Other
+
+
+- Merge pull request #214 from thiesgerken/fix/carapace-forked-turns
+  ([`2f8a7f7`](https://github.com/thiesgerken/ferret/commit/2f8a7f7fb5d74014f15164a43b8955286a30a05d))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): index a copied carapace session's inherited turns once
+  ([`2f8a7f7`](https://github.com/thiesgerken/ferret/commit/2f8a7f7fb5d74014f15164a43b8955286a30a05d))
+
+- 🐛 fix(plugins): resync carapace sessions under the own-turns rule
+  ([`b4eb8f0`](https://github.com/thiesgerken/ferret/commit/b4eb8f004962ff9c2040916d64178f83a16cfb7b))
+
+  Changing how a session becomes documents needs a full sync, so turns the old rule indexed for already archived copies get swept.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+- 🐛 fix(plugins): index a copied carapace session's inherited turns once
+  ([`b7cb56a`](https://github.com/thiesgerken/ferret/commit/b7cb56aaa7406915eb8782783a495cc7dc4034e8))
+
+  A carapace session copy repeats its source's history, so its archive produced every inherited turn a second time under the copy's id. Archives now name the fork origin (`session.forked_from.event_count`), and the plugin skips the turns that start in the inherited events. Archives without the field keep their previous behavior.
+
+  Closes #211
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
 ## v0.38.0 (2026-10-31)
 
 
