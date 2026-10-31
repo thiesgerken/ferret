@@ -175,34 +175,36 @@ async fn a_typo_match_counts_as_a_matching_word(pool: PgPool) {
     );
 }
 
-/// Phrases and excluded words stay strict when the other words need not all match.
+/// Phrases and excluded words stay strict when the other words need not all match, and a phrase
+/// doesn't make the words outside it optional.
 #[sqlx::test(migrations = false)]
 async fn phrases_and_exclusions_stay_strict_in_longer_queries(pool: PgPool) {
     let server = start_server(pool).await;
     let api = server.admin_api().await;
-    api.put_document(&document("paperless", "phrase", "Rechnung Garage Miete"))
-        .await
-        .unwrap();
+    api.put_document(&document(
+        "paperless",
+        "phrase",
+        "Rechnung Garage Miete März",
+    ))
+    .await
+    .unwrap();
     api.put_document(&document(
         "paperless",
         "reversed",
-        "Rechnung Miete Garage Strom",
+        "Rechnung Miete Garage Strom März",
     ))
     .await
     .unwrap();
 
-    assert_eq!(
-        ids(&search(&api, r#""Garage Miete" Rechnung 2020"#).await),
-        ["phrase"]
-    );
-    assert_eq!(
-        ids(&search(&api, "Rechnung Garage 2020 -Strom").await),
-        ["phrase"]
-    );
-    assert_eq!(
-        ids(&search(&api, "Rechnung Garage 2020 -Miete").await),
-        Vec::<&str>::new()
-    );
+    for (query, expected) in [
+        (r#""Garage Miete" Rechnung"#, vec!["phrase"]),
+        (r#""Garage Miete" Rechnung 2020"#, vec![]),
+        (r#""Garage Miete" Rechnung März 2020"#, vec!["phrase"]),
+        ("Rechnung Garage 2020 -Strom", vec!["phrase"]),
+        ("Rechnung Garage 2020 -Miete", vec![]),
+    ] {
+        assert_eq!(ids(&search(&api, query).await), expected, "{query}");
+    }
 }
 
 #[sqlx::test(migrations = false)]

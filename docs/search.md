@@ -21,7 +21,7 @@ Click the hit title to open the local viewer at its best passage. **Open in orig
 | `torque -invoice` | exclude documents containing the excluded word in the implemented text/title matching |
 | `"travel plan" -cancelled` | combine positive phrase and excluded token |
 
-The keyword half needs all of one or two positive words, all but one of three to five, and three quarters (rounded down) of six or more. Words inside phrases count as positive words, and the phrase itself must still match in full. A natural query often carries a word its document lacks ("Rechnung Drehmomentschlüssel 2020"), so longer queries don't come back empty for it. A hit highlights only the words it matched.
+The keyword half needs all of one or two positive words outside phrases, all but one of three to five, and three quarters (rounded down) of six or more. Words inside phrases don't count towards that: the phrase must match in full, and the other words still need their share. A word given twice counts once, ignoring case. A natural query often carries a word its document lacks ("Rechnung Drehmomentschlüssel 2020"), so longer queries don't come back empty for it. A hit highlights only the words it matched.
 
 At least one positive word is required; an all-exclusion or empty query is invalid. An unclosed quote runs to the end. There is no boolean `OR`/`AND`, regex, field-colon or wildcard language in the parser. Filters are separate parameters, not `source:mail` syntax. Do not assume stemming makes a quoted phrase loose: the phrase check is more literal than the BM25 word matching.
 

@@ -219,11 +219,17 @@ pub async fn find(
     } else {
         vec![]
     };
+    let (phrase_words, free_words): (Vec<&str>, Vec<&str>) = query
+        .words
+        .iter()
+        .map(String::as_str)
+        .partition(|word| query.in_phrase(word));
     let hybrid = Hybrid {
         model,
         keyword: request.mode != SearchMode::Semantic,
         query_hash: query_hash.as_deref(),
-        words: &query.words,
+        phrase_words: &phrase_words,
+        free_words: &free_words,
         typo_tolerant: &typo_tolerant,
         collapse,
     };
@@ -335,7 +341,10 @@ struct Hybrid<'a> {
     keyword: bool,
     /// `None` without the semantic half.
     query_hash: Option<&'a [u8]>,
-    words: &'a [String],
+    /// The positive words inside phrases, which a keyword hit must all match.
+    phrase_words: &'a [&'a str],
+    /// The positive words outside phrases, of which a keyword hit needs most.
+    free_words: &'a [&'a str],
     /// The words that also match one typo away.
     typo_tolerant: &'a [&'a str],
     collapse: bool,
@@ -434,13 +443,29 @@ impl Hybrid<'_> {
         filters.push(sql, "c");
         // Each word may match in a different field, so a compound and an inflected word can match
         // the same chunk. BM25 sums the matching words' scores, so chunks with more of them rank
-        // first.
-        sql.push(" and c.id @@@ paradedb.boolean(should => array[");
-        for (index, word) in self.words.iter().enumerate() {
+        // first. Phrase words are required rather than counted towards the free words' quota:
+        // the phrase check requires them anyway, so counting them would make free words optional.
+        sql.push(" and c.id @@@ paradedb.boolean(must => array[");
+        self.push_word_queries(sql, self.phrase_words);
+        sql.push("]::paradedb.searchqueryinput[], should => array[");
+        self.push_word_queries(sql, self.free_words);
+        sql.push("]::paradedb.searchqueryinput[], minimum_should_match => ")
+            .push_bind(min_matching_words(self.free_words.len()))
+            .push(")");
+        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
+        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
+        sql.push(" order by score desc, c.id limit ")
+            .push_bind(KEYWORD_CANDIDATES)
+            .push(") k");
+    }
+
+    /// A pg_search query per word, comma-separated, each with its typo variant if it has one.
+    fn push_word_queries(&self, sql: &mut QueryBuilder<Postgres>, words: &[&str]) {
+        for (index, word) in words.iter().enumerate() {
             if index > 0 {
                 sql.push(", ");
             }
-            if self.typo_tolerant.contains(&word.as_str()) {
+            if self.typo_tolerant.contains(word) {
                 sql.push("paradedb.boolean(should => array[");
                 push_word_query(sql, word);
                 sql.push(", ");
@@ -450,14 +475,6 @@ impl Hybrid<'_> {
                 push_word_query(sql, word);
             }
         }
-        sql.push("], minimum_should_match => ")
-            .push_bind(min_matching_words(self.words.len()))
-            .push(")");
-        // pg_search keeps its top-N scan with the id as second key, so ties at the candidate limit
-        // don't decide by chance. The vector half has no such key: HNSW is approximate anyway.
-        sql.push(" order by score desc, c.id limit ")
-            .push_bind(KEYWORD_CANDIDATES)
-            .push(") k");
     }
 
     /// Whether the hits may be short of all matches, as a boolean expression over the CTEs.
@@ -769,7 +786,7 @@ impl Filters<'_> {
     }
 }
 
-/// How many of a query's positive words a chunk must match in the keyword half: all of one or two,
+/// How many of a query's free words a chunk must match in the keyword half: all of one or two,
 /// all but one of three to five, three quarters (rounded down) of more. Natural queries often
 /// carry a word their document lacks, and requiring every word left the keyword half empty for
 /// them.
