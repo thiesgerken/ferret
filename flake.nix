@@ -175,13 +175,9 @@
               tools.sqlx
             ];
             shellHook = ''
-              printf '\033[1;36m🦦 ferret dev shell\033[0m \033[2mRust ${rust.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version}\033[0m\n'
-              printf '  \033[32mcargo clippy --workspace --all-targets\033[0m\n'
-              printf '  \033[32mcargo test --workspace\033[0m \033[2m(needs Compose paradedb + dovecot)\033[0m\n'
-              printf '  \033[32m%s\033[0m\n' \
-                'pnpm --dir frontend dev' \
-                'nix build .#checks.${linux}.<check>'
-              printf '  \033[2m📖 more: docs/development.md#tests-and-checks\033[0m\n'
+              printf '🦦 \033[1m\033[38;2;243;156;18mf\033[38;2;233;136;23me\033[38;2;223;116;28mr\033[38;2;212;97;33mr\033[38;2;202;77;38me\033[38;2;192;57;43mt\033[0m  \033[2m%s\033[0m\n' 'Rust ${rust.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version} · 📖 docs/development.md#tests-and-checks'
+              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'cargo clippy --workspace --all-targets' 'cargo test --workspace (Compose: paradedb + dovecot)'
+              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'pnpm --dir frontend dev' 'nix build .#checks.${linux}.<check>'
             '';
           };
         }
