@@ -45,7 +45,7 @@ services:
 
   # The UI at http://127.0.0.1:3380, routed like the cluster's HTTPRoute (docker/traefik-dynamic.yml).
   proxy:
-    image: traefik:v3.7@sha256:6d3e069ee484ab1da5adfdda555a75eb9b1545ef09096a0cc7c3043101986a20
+    image: traefik:v3.7@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:80"
@@ -58,7 +58,7 @@ services:
       - ./docker/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
 
   paradedb:
-    image: paradedb/paradedb:0.26.2-pg18@sha256:c552094b6b68dcb0a4e7a3969963d801eaec02490db4d2dd032dcb096bc86cf8
+    image: paradedb/paradedb:v0.26.5-pg18@sha256:f2f6d21864618fe2e61d43ed336f347bf0e0ef5c16ba38820966c94fdd1bde42
     restart: unless-stopped
     environment:
       POSTGRES_DB: ferret
