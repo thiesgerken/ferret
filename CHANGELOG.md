@@ -1,6 +1,76 @@
 # CHANGELOG
 
 
+## v0.38.2 (2026-11-10)
+
+
+### ♻️ Refactoring
+
+
+- ♻️Merge pull request #220 from thiesgerken/refactor/frontend-npm
+  ([`f940d11`](https://github.com/thiesgerken/ferret/commit/f940d114449c872c79548e2ff73eb22852e899e9))
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`f940d11`](https://github.com/thiesgerken/ferret/commit/f940d114449c872c79548e2ff73eb22852e899e9))
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`d801351`](https://github.com/thiesgerken/ferret/commit/d8013515ce4bcf6a4d3325eaffcbff61dd6564da))
+
+  Renovate cannot refresh the fetchPnpmDeps hash, so every frontend dependency PR failed the Nix build until someone ran scripts/update-nix-deps.py by hand. importNpmLock reads the integrity hashes straight from package-lock.json, which removes that hash and the pinned pnpm binaries. The script stays for the pg_search binary pins.
+
+  Locked versions are the ones the pnpm lock resolved. The pnpm build allowlist becomes npm's allowScripts, engines.npm keeps Renovate on the npm major that nodejs_24 ships, and an override lets eslint-config-next's plugins accept ESLint 10 so npm ci needs no registry access.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+### 🔧 Configuration
+
+
+- 🔧 chore(release): stop the release build_command on the first failure
+  ([`24ac968`](https://github.com/thiesgerken/ferret/commit/24ac96879434cf946f6753dc28e53c28e41db903))
+
+  Without set -e only the last command's status counted, so a failed jq (or cargo update) still went on to commit an empty lockfile. -o pipefail is left out: semantic-release runs the block with whatever shell it detects, falling back to /bin/sh, and the block has no pipes.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+- 🔧 chore(release): bump package-lock.json's version with each release
+  ([`83aae33`](https://github.com/thiesgerken/ferret/commit/83aae33ff17ecf80958c1e7d56294600b2fc5139))
+
+  semantic-release bumps frontend/package.json's version, but the lockfile records it too. Without the bump, the next local npm install after a release rewrites both fields and the noise lands in an unrelated PR. jq patches the two fields offline; the release tools have no npm, and an npm run there could reach the registry.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+### Other
+
+
+- 🚚 chore(scripts): point the docs at update-pg-search-pins.py
+  ([`e4dbaa7`](https://github.com/thiesgerken/ferret/commit/e4dbaa74a270b9a9ff20a38ff2e265624bbb75d7))
+
+  The script only refreshes the pg_search binary pins now, so it was renamed from update-nix-deps.py (the file move itself landed in the previous commit by accident).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+- Merge pull request #216 from thiesgerken/feat/devshell-banner
+  ([`2e9bd28`](https://github.com/thiesgerken/ferret/commit/2e9bd28ee5b6cacc92dd2635cad3c373ad537c9a))
+
+  Dev shell banner with the name in a gradient
+
+- Dev shell banner with the name in a gradient
+  ([`6a8760c`](https://github.com/thiesgerken/ferret/commit/6a8760ce1f3e7da68ac41fc29386ab5f7b172895))
+
+  The name stands out instead of "dev shell", and the commands sit on two lines with the versions and the docs link next to the name.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01EXNrax466QWCek61FCxHx9
+
 ## v0.38.1 (2026-10-31)
 
 
