@@ -46,6 +46,7 @@ in
       pkgs.uv
       pkgs.python315
       pkgs.git
+      pkgs.jq
       pkgs.cacert
     ];
     pathsToLink = [

@@ -8,10 +8,13 @@ version_variables = [
 ]
 allow_zero_version = true
 commit_parser = "emoji"
-# Cargo.lock records the workspace crates' versions too.
+# Cargo.lock and the frontend's package-lock.json record the versions too. The lockfile is
+# patched directly because the release tools have no npm, and an npm run might touch the registry.
 build_command = """
     cargo update --workspace
-    git add Cargo.lock
+    jq --arg version "$NEW_VERSION" '.version = $version | .packages[""].version = $version' frontend/package-lock.json > frontend/package-lock.json.new
+    mv frontend/package-lock.json.new frontend/package-lock.json
+    git add Cargo.lock frontend/package-lock.json
 """
 
 [semantic_release.commit_parser_options]
