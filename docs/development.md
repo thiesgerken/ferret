@@ -198,7 +198,7 @@ The `overrides` entry in `frontend/package.json` lets the ESLint plugins bundled
 `pg_search` uses SHA-256-pinned official PostgreSQL 18 binaries; the other packages come from stable nixpkgs. After a `pg_search` version change, refresh the binary pins inside the dev shell and commit them with the update:
 
 ```sh
-python3 scripts/update-nix-deps.py
+python3 scripts/update-pg-search-pins.py
 ```
 
 The refresh is manual on Renovate PRs, so `pg_search` updates are not auto-merged.

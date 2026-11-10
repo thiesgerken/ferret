@@ -44,7 +44,7 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
   sqlx CLI and a migrated database):
   `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
   then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`.
-- Refresh the `pg_search` binary pins after a version change: `python3 scripts/update-nix-deps.py` inside the dev shell.
+- Refresh the `pg_search` binary pins after a version change: `python3 scripts/update-pg-search-pins.py` inside the dev shell.
 
 ## Project structure
 
