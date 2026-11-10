@@ -69,7 +69,7 @@
           };
           frontend = import ./nix/frontend.nix {
             inherit pkgs;
-            inherit (tools) pnpm nodejs;
+            inherit (tools) nodejs;
           };
           images = import ./nix/images.nix {
             inherit pkgs;
@@ -96,14 +96,14 @@
           p = project.${system};
         in
         {
-          inherit (p.tools) pnpm sqlx;
+          inherit (p.tools) sqlx;
           ci-tools = p.tools.ci;
           release-tools = p.tools.release;
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
             inherit (p.backend) server plugins whatsapp-archive;
-            inherit (p.frontend) frontend pnpmDeps;
+            inherit (p.frontend) frontend;
             default = p.backend.server;
           }
           // p.images
@@ -164,7 +164,6 @@
             packages = [
               rust
               tools.nodejs
-              tools.pnpm
               pkgs.pkg-config
               pkgs.git
               pkgs.curl
@@ -175,9 +174,9 @@
               tools.sqlx
             ];
             shellHook = ''
-              printf '🦦 \033[1m\033[38;2;243;156;18mf\033[38;2;233;136;23me\033[38;2;223;116;28mr\033[38;2;212;97;33mr\033[38;2;202;77;38me\033[38;2;192;57;43mt\033[0m  \033[2m%s\033[0m\n' 'Rust ${rust.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version} · 📖 docs/development.md#tests-and-checks'
+              printf '🦦 \033[1m\033[38;2;243;156;18mf\033[38;2;233;136;23me\033[38;2;223;116;28mr\033[38;2;212;97;33mr\033[38;2;202;77;38me\033[38;2;192;57;43mt\033[0m  \033[2m%s\033[0m\n' 'Rust ${rust.version} · node ${tools.nodejs.version} · 📖 docs/development.md#tests-and-checks'
               printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'cargo clippy --workspace --all-targets' 'cargo test --workspace (Compose: paradedb + dovecot)'
-              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'pnpm --dir frontend dev' 'nix build .#checks.${linux}.<check>'
+              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'npm --prefix frontend run dev' 'nix build .#checks.${linux}.<check>'
             '';
           };
         }
