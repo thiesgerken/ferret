@@ -2,15 +2,17 @@
   "name": "frontend",
   "version": "0.38.1",
   "private": true,
-  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "npm": "^11.19.0"
+  },
   "scripts": {
     "codegen": "graphql-codegen",
-    "predev": "pnpm codegen",
+    "predev": "npm run codegen",
     "dev": "next dev",
-    "prebuild": "pnpm codegen",
+    "prebuild": "npm run codegen",
     "build": "next build",
     "lint": "eslint .",
-    "pretest": "pnpm codegen",
+    "pretest": "npm run codegen",
     "test": "node --import tsx --import ./test/dom.ts --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\""
   },
   "dependencies": {
@@ -44,5 +46,16 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "eslint-config-next": {
+      "eslint": "$eslint"
+    }
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "unrs-resolver": true,
+    "@parcel/watcher": false,
+    "@swc/core": false
   }
 }

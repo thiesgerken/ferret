@@ -47,10 +47,11 @@
       "pinDigests": false
     },
     {
-      "description": "pnpm and frontend lock updates require the documented Nix dependency-cache refresh before merge",
+      "description": "npm comes with the Node.js from nixpkgs, so its major moves together with nodejs_XX in nix/tools.nix, not on its own",
       "matchManagers": ["npm"],
-      "matchFileNames": ["frontend/package.json"],
-      "automerge": false
+      "matchDepTypes": ["engines"],
+      "matchPackageNames": ["npm"],
+      "enabled": false
     },
     {
       "description": "pg_search release updates require the documented official binary hash refresh and full database checks",
