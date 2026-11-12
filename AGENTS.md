@@ -38,13 +38,13 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
     (bge-m3) is scaled to 0: `docker compose up -d --scale tei-bge=1 tei-bge` starts it.
   - Test: `cargo test --workspace` (needs the Compose ParadeDB/Dovecot, see Testing).
   - Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
-  - Frontend: `pnpm --dir frontend dev`.
+  - Frontend: `npm --prefix frontend ci`, then `npm --prefix frontend run dev`.
 - Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`.
 - After changing a query or a migration, refresh the sqlx query metadata (using the dev shell's
   sqlx CLI and a migrated database):
   `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
   then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`.
-- Refresh dependency pins/hashes: `python3 scripts/update-nix-deps.py` inside the dev shell.
+- Refresh the `pg_search` binary pins after a version change: `python3 scripts/update-pg-search-pins.py` inside the dev shell.
 
 ## Project structure
 

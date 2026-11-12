@@ -1,6 +1,257 @@
 # CHANGELOG
 
 
+## v0.38.2 (2026-11-10)
+
+
+### ♻️ Refactoring
+
+
+- ♻️Merge pull request #220 from thiesgerken/refactor/frontend-npm
+  ([`f940d11`](https://github.com/thiesgerken/ferret/commit/f940d114449c872c79548e2ff73eb22852e899e9))
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`f940d11`](https://github.com/thiesgerken/ferret/commit/f940d114449c872c79548e2ff73eb22852e899e9))
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`d801351`](https://github.com/thiesgerken/ferret/commit/d8013515ce4bcf6a4d3325eaffcbff61dd6564da))
+
+  Renovate cannot refresh the fetchPnpmDeps hash, so every frontend dependency PR failed the Nix build until someone ran scripts/update-nix-deps.py by hand. importNpmLock reads the integrity hashes straight from package-lock.json, which removes that hash and the pinned pnpm binaries. The script stays for the pg_search binary pins.
+
+  Locked versions are the ones the pnpm lock resolved. The pnpm build allowlist becomes npm's allowScripts, engines.npm keeps Renovate on the npm major that nodejs_24 ships, and an override lets eslint-config-next's plugins accept ESLint 10 so npm ci needs no registry access.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+### 🔧 Configuration
+
+
+- 🔧 chore(release): stop the release build_command on the first failure
+  ([`24ac968`](https://github.com/thiesgerken/ferret/commit/24ac96879434cf946f6753dc28e53c28e41db903))
+
+  Without set -e only the last command's status counted, so a failed jq (or cargo update) still went on to commit an empty lockfile. -o pipefail is left out: semantic-release runs the block with whatever shell it detects, falling back to /bin/sh, and the block has no pipes.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+- 🔧 chore(release): bump package-lock.json's version with each release
+  ([`83aae33`](https://github.com/thiesgerken/ferret/commit/83aae33ff17ecf80958c1e7d56294600b2fc5139))
+
+  semantic-release bumps frontend/package.json's version, but the lockfile records it too. Without the bump, the next local npm install after a release rewrites both fields and the noise lands in an unrelated PR. jq patches the two fields offline; the release tools have no npm, and an npm run there could reach the registry.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+### Other
+
+
+- 🚚 chore(scripts): point the docs at update-pg-search-pins.py
+  ([`e4dbaa7`](https://github.com/thiesgerken/ferret/commit/e4dbaa74a270b9a9ff20a38ff2e265624bbb75d7))
+
+  The script only refreshes the pg_search binary pins now, so it was renamed from update-nix-deps.py (the file move itself landed in the previous commit by accident).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1sknHbPDywc3jVRfV
+
+- Merge pull request #216 from thiesgerken/feat/devshell-banner
+  ([`2e9bd28`](https://github.com/thiesgerken/ferret/commit/2e9bd28ee5b6cacc92dd2635cad3c373ad537c9a))
+
+  Dev shell banner with the name in a gradient
+
+- Dev shell banner with the name in a gradient
+  ([`6a8760c`](https://github.com/thiesgerken/ferret/commit/6a8760ce1f3e7da68ac41fc29386ab5f7b172895))
+
+  The name stands out instead of "dev shell", and the commands sit on two lines with the versions and the docs link next to the name.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01EXNrax466QWCek61FCxHx9
+
+## v0.38.1 (2026-10-31)
+
+
+### Other
+
+
+- Merge pull request #214 from thiesgerken/fix/carapace-forked-turns
+  ([`2f8a7f7`](https://github.com/thiesgerken/ferret/commit/2f8a7f7fb5d74014f15164a43b8955286a30a05d))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(plugins): index a copied carapace session's inherited turns once
+  ([`2f8a7f7`](https://github.com/thiesgerken/ferret/commit/2f8a7f7fb5d74014f15164a43b8955286a30a05d))
+
+- 🐛 fix(plugins): resync carapace sessions under the own-turns rule
+  ([`b4eb8f0`](https://github.com/thiesgerken/ferret/commit/b4eb8f004962ff9c2040916d64178f83a16cfb7b))
+
+  Changing how a session becomes documents needs a full sync, so turns the old rule indexed for already archived copies get swept.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+- 🐛 fix(plugins): index a copied carapace session's inherited turns once
+  ([`b7cb56a`](https://github.com/thiesgerken/ferret/commit/b7cb56aaa7406915eb8782783a495cc7dc4034e8))
+
+  A carapace session copy repeats its source's history, so its archive produced every inherited turn a second time under the copy's id. Archives now name the fork origin (`session.forked_from.event_count`), and the plugin skips the turns that start in the inherited events. Archives without the field keep their previous behavior.
+
+  Closes #211
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+## v0.38.0 (2026-10-31)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #215 from thiesgerken/feat/keyword-min-should-match
+  ([`77da3c9`](https://github.com/thiesgerken/ferret/commit/77da3c9c678835b5e3c2d0fc68c3bf6b2d29e817))
+
+- ✨ feat(search): match most words in the keyword half
+  ([`77da3c9`](https://github.com/thiesgerken/ferret/commit/77da3c9c678835b5e3c2d0fc68c3bf6b2d29e817))
+
+- ✨ feat(search): match most words in the keyword half
+  ([`c2a26a1`](https://github.com/thiesgerken/ferret/commit/c2a26a1945fbb522536caba5f1b128da0ff4455e))
+
+  The keyword half required every positive word, so a natural query carrying one word its document lacks came back empty there, and hybrid silently fell back to semantic only. It now needs all of one or two words, all but one of three to five, and three quarters (rounded down) of six or more, as a pg_search boolean query with minimum_should_match. A typo match counts as the word matching; phrases and exclusions stay strict. BM25 sums the matched words' scores, so chunks with more of them rank first.
+
+  Excluded words use the same per-word query, which compiles to the same Tantivy match as the `&&&` operator before. UI texts no longer claim every word matched.
+
+  Closes #212
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+### Other
+
+
+- 📝 docs(search): link the matching rule from the REST docs, sharpen comments
+  ([`99956bc`](https://github.com/thiesgerken/ferret/commit/99956bc3227d95c85a1a389507c88533d608ea4f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+- ignore .env
+  ([`3db7415`](https://github.com/thiesgerken/ferret/commit/3db7415c23d939d52858799a9663903e03eb4e9b))
+
+### 🩹 Patches
+
+
+- 🩹 fix(search): count only free, distinct words towards the keyword quota
+  ([`e83b95e`](https://github.com/thiesgerken/ferret/commit/e83b95e66b529690b119527a234b8e856316619e))
+
+  Phrase words are required by the phrase check anyway, so counting them made the words outside the phrase optional (`"torque wrench" invoice` no longer required `invoice`). They are now `must` clauses, and the quota applies to the free words alone. Repeated words (ignoring case) are parsed once, so a repetition can't fill the quota either.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+## v0.37.1 (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #210 from thiesgerken/fix/exclude-ipynb-checkpoints
+  ([`9a7e68f`](https://github.com/thiesgerken/ferret/commit/9a7e68f24b3a04f996a3ed2c2ec5e3ed60edcdfc))
+
+### 🩹 Patches
+
+
+- 🩹 fix(plugins): exclude .ipynb_checkpoints in the files plugin
+  ([`9a7e68f`](https://github.com/thiesgerken/ferret/commit/9a7e68f24b3a04f996a3ed2c2ec5e3ed60edcdfc))
+
+- 🩹 fix(plugins): exclude .ipynb_checkpoints in the files plugin
+  ([`3b38a10`](https://github.com/thiesgerken/ferret/commit/3b38a1061060733f658659fe92def5fbee1f440e))
+
+  Jupyter's autosave copies duplicated notebooks in search results.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+### Other
+
+
+- Merge pull request #213 from thiesgerken/docs/adr-no-reranker
+  ([`6fddfa8`](https://github.com/thiesgerken/ferret/commit/6fddfa8cc4f19550a752204271c387e3f14144c2))
+
+  📝 docs(adr): no cross-encoder reranker yet
+
+- 📝 docs(adr): no cross-encoder reranker yet
+  ([`945e607`](https://github.com/thiesgerken/ferret/commit/945e607ffae4259a2378e1b9287b508b9ff7b3e8))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+## v0.37.0 (2026-10-30)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #209 from thiesgerken/feat/typo-tolerance
+  ([`fdf3b8f`](https://github.com/thiesgerken/ferret/commit/fdf3b8feb818971b8de680997d7b049310baa5c6))
+
+- ✨ feat(search): typo-tolerant keyword search
+  ([`fdf3b8f`](https://github.com/thiesgerken/ferret/commit/fdf3b8feb818971b8de680997d7b049310baa5c6))
+
+- ✨ feat(frontend): add the Typos chip and mark typo matches
+  ([`b03d072`](https://github.com/thiesgerken/ferret/commit/b03d072ada47fcfe76b6e4b719617233e9c5a287))
+
+  A Typos chip in the Matching group switches typo tolerance off (URL `typos=off`), disabled while keyword matching is. Fuzzy highlights read weaker than exact ones and carry a dotted underline.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+- ✨ feat(search): match keyword words one typo away
+  ([`015c04c`](https://github.com/thiesgerken/ferret/commit/015c04cd09c685cb0e2e6cecb9329a84dda6a4c4))
+
+  Words of 5 or more letters outside phrases also match the new unstemmed text_plain and title_plain fields at edit distance 1 (a transposition counts as one), boosted low so exact matches keep outranking typo-only ones. `typo_tolerance` (REST and GraphQL, default on) switches it off. Highlights become a kind: exact, or fuzzy for words one typo away.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+### Other
+
+
+- 📝 docs(search): explain what the typo boost does, cover the unstemmed fields
+  ([`b67b41f`](https://github.com/thiesgerken/ferret/commit/b67b41f7d6d97375b345f198ce1b3529f1ea3f54))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+- 📝 docs(search): document typo tolerance and highlight kinds
+  ([`42fd4a9`](https://github.com/thiesgerken/ferret/commit/42fd4a9a435ffa36f2d0d33dc2e1e79ab42d62c9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): colour typo highlights in the brand tone
+  ([`0050b86`](https://github.com/thiesgerken/ferret/commit/0050b861947ba78b7e1fe671c49e28f3b8db35fe))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUzyp7xhMgLRfbZYJA2
+
 ## v0.36.0 (2026-10-24)
 
 

@@ -1,34 +1,23 @@
 {
   pkgs,
-  pnpm,
   nodejs,
 }:
 let
   manifest = builtins.fromJSON (builtins.readFile ../frontend/package.json);
   src = pkgs.lib.cleanSource ../frontend;
-  pnpmDeps = pkgs.fetchPnpmDeps {
-    pname = "ferret-frontend";
-    inherit (manifest) version;
-    inherit src pnpm;
-    fetcherVersion = 4;
-    hash = pkgs.lib.trim (builtins.readFile ./pnpm-deps-hash);
-  };
+  # importNpmLock fetches each package from the integrity hashes in package-lock.json,
+  # so dependency updates need no separate fixed-output hash.
+  npmDeps = pkgs.importNpmLock { npmRoot = ../frontend; };
   common = {
     pname = "ferret-frontend";
     inherit (manifest) version;
-    inherit src pnpmDeps;
+    inherit src npmDeps;
     nativeBuildInputs = [
       nodejs
-      pnpm
-      pkgs.pnpmConfigHook
+      pkgs.importNpmLock.npmConfigHook
     ];
     NEXT_TELEMETRY_DISABLED = "1";
     CI = "true";
-    env.HOME = "/tmp/ferret-frontend-home";
-    preConfigure = "mkdir -p $HOME";
-    preBuild = ''
-      pnpm rebuild
-    '';
   };
   check =
     name: command:
@@ -49,7 +38,7 @@ let
     // {
       buildPhase = ''
         runHook preBuild
-        pnpm run build
+        npm run build
         runHook postBuild
       '';
       installPhase = ''
@@ -60,10 +49,10 @@ let
   );
 in
 {
-  inherit frontend pnpmDeps;
+  inherit frontend;
   checks = {
-    frontend-lint = check "lint" "pnpm run lint";
-    frontend-test = check "test" "pnpm run test";
+    frontend-lint = check "lint" "npm run lint";
+    frontend-test = check "test" "npm run test";
     frontend-build = frontend;
   };
 }

@@ -11,9 +11,10 @@ test("search state round-trips through the URL", () => {
     range: "month" as const,
     model: "qwen3",
     mode: "keyword" as const,
+    typoTolerance: false,
   };
   const href = searchHref(state);
-  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fpersonal&author=Allianz&range=month&model=qwen3&mode=keyword");
+  assert.equal(href, "/?q=invoice+2026&source=paperless&source=mail%2Fpersonal&author=Allianz&range=month&model=qwen3&mode=keyword&typos=off");
   assert.deepEqual(parseSearch(new URLSearchParams(href.slice(2))), state);
 });
 
@@ -24,7 +25,12 @@ test("unknown ranges fall back to any time", () => {
 test("unknown or missing modes are hybrid, which stays out of the URL", () => {
   assert.equal(parseSearch(new URLSearchParams("q=x&mode=fuzzy")).mode, "hybrid");
   assert.equal(parseSearch(new URLSearchParams("q=x")).mode, "hybrid");
-  assert.equal(searchHref({ q: "x", sources: [], authors: [], range: "any", model: null, mode: "hybrid" }), "/?q=x");
+  assert.equal(searchHref({ q: "x", sources: [], authors: [], range: "any", model: null, mode: "hybrid", typoTolerance: true }), "/?q=x");
+});
+
+test("typo tolerance is on unless the URL switches it off", () => {
+  assert.equal(parseSearch(new URLSearchParams("q=x")).typoTolerance, true);
+  assert.equal(parseSearch(new URLSearchParams("q=x&typos=off")).typoTolerance, false);
 });
 
 test("keyword and semantic matching switch independently, but never both off", () => {

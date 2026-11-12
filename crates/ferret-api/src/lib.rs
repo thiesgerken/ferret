@@ -168,6 +168,9 @@ pub struct SearchQuery {
     pub model: Option<String>,
     /// Whether hits of one thread fold into the best one, `true` when `None`.
     pub collapse: Option<bool>,
+    /// Whether keyword matching tolerates one typo in words of 5 or more letters, `true` when
+    /// `None`.
+    pub typo_tolerance: Option<bool>,
     #[serde(default)]
     pub mode: SearchMode,
 }
@@ -284,7 +287,17 @@ pub struct HitChunk {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextPart {
     pub text: String,
-    pub highlight: bool,
+    /// How the part matches the query, `None` when it doesn't.
+    pub highlight: Option<HighlightKind>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HighlightKind {
+    /// The same word, a stem variant or a compound containing it.
+    Exact,
+    /// One typo away from a query word, under typo tolerance.
+    Fuzzy,
 }
 
 /// The body of `POST /api/syncs`.
@@ -478,6 +491,11 @@ impl Client {
             query
                 .collapse
                 .map(|collapse| ("collapse", collapse.to_string())),
+        );
+        params.extend(
+            query
+                .typo_tolerance
+                .map(|typo_tolerance| ("typo_tolerance", typo_tolerance.to_string())),
         );
         self.api(reqwest::Method::GET, "/api/search")
             .query(&params)

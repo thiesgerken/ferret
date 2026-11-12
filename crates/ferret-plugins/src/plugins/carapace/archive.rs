@@ -27,6 +27,17 @@ pub struct SessionInfo {
     /// `None` for a session carapace never titled.
     pub title: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Set for a session carapace copied from another one. Archives of other sessions, and those
+    /// written before carapace recorded it, lack it.
+    pub forked_from: Option<Fork>,
+}
+
+/// Where a copied session came from.
+#[derive(Debug, Deserialize)]
+pub struct Fork {
+    /// How many leading events of the history are the source session's, copied with their
+    /// timestamps.
+    pub event_count: usize,
 }
 
 /// One event of a session's history. Events stored before carapace stamped them on write have no
@@ -132,6 +143,7 @@ mod tests {
         assert_eq!(archive.session.session_id, "s-trip");
         assert_eq!(archive.session.channel_type, "cli");
         assert_eq!(archive.session.title.as_deref(), Some("Weekend trip"));
+        assert!(archive.session.forked_from.is_none());
         assert_eq!(archive.history.len(), 20);
         assert!(matches!(&archive.history[1], Event::User(message) if message.timestamp.is_none()));
         assert!(matches!(archive.history[2], Event::Other), "thinking");

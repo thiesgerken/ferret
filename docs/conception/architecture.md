@@ -362,4 +362,4 @@ so a database outage doesn't restart every server pod.
 
 docker-compose runs the same components for development. A traefik container stands in for the
 Ingress: it serves UI and server on one origin (`http://127.0.0.1:3380`) with the same routes. Next's
-dev server (`pnpm dev`) proxies the server paths to the compose server itself.
+dev server (`npm run dev`) proxies the server paths to the compose server itself.

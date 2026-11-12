@@ -638,6 +638,9 @@ struct SearchInput {
     model: Option<String>,
     /// Whether hits of one thread fold into the best one. Yes when left out.
     collapse: Option<bool>,
+    /// Whether keyword matching tolerates one typo in words of 5 or more letters. Yes when left
+    /// out. Judgments ignore it.
+    typo_tolerance: Option<bool>,
     /// Which halves run. `HYBRID` when left out. Judgments ignore it.
     mode: Option<SearchMode>,
 }
@@ -961,6 +964,7 @@ impl SearchInput {
                 .map_err(|_| invalid_input("offset can't be negative".to_owned()))?,
             model: self.model,
             collapse: self.collapse,
+            typo_tolerance: self.typo_tolerance,
             mode: self
                 .mode
                 .map(ferret_api::SearchMode::from)
@@ -1232,7 +1236,25 @@ struct HitChunk {
 #[derive(GraphQLObject)]
 struct TextPart {
     text: String,
-    highlight: bool,
+    /// How the part matches the query, null when it doesn't.
+    highlight: Option<HighlightKind>,
+}
+
+#[derive(GraphQLEnum)]
+enum HighlightKind {
+    /// The same word, a stem variant or a compound containing it.
+    Exact,
+    /// One typo away from a query word, under typo tolerance.
+    Fuzzy,
+}
+
+impl From<ferret_api::HighlightKind> for HighlightKind {
+    fn from(kind: ferret_api::HighlightKind) -> Self {
+        match kind {
+            ferret_api::HighlightKind::Exact => Self::Exact,
+            ferret_api::HighlightKind::Fuzzy => Self::Fuzzy,
+        }
+    }
 }
 
 impl From<ferret_api::Hit> for Hit {
@@ -1262,7 +1284,7 @@ impl From<ferret_api::Hit> for Hit {
                     .into_iter()
                     .map(|part| TextPart {
                         text: part.text,
-                        highlight: part.highlight,
+                        highlight: part.highlight.map(HighlightKind::from),
                     })
                     .collect(),
             },

@@ -66,6 +66,14 @@ export function SearchFilters({
             />
           );
         })}
+        <FilterButton
+          label={t("typos")}
+          title={matchingOn(state.mode, "keyword") ? t("typosHint") : t("typosNeedKeyword")}
+          count={null}
+          pressed={state.typoTolerance}
+          disabled={!matchingOn(state.mode, "keyword")}
+          onClick={() => onChange({ ...state, typoTolerance: !state.typoTolerance })}
+        />
       </FilterGroup>
       <FilterGroup title={t("time")}>
         <select

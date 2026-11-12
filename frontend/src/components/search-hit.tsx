@@ -86,7 +86,15 @@ export function HitItem({
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         {snippet(hit.contentType === "MARKDOWN" ? plainMarkdown(hit.chunk.parts) : hit.chunk.parts).map((part, index) =>
           part.highlight ? (
-            <mark key={index} className="bg-transparent font-semibold text-foreground">
+            <mark
+              key={index}
+              className={cn(
+                "bg-transparent text-foreground",
+                // A typo match gets its own colour, and a dotted underline so telling it apart
+                // doesn't rely on colour alone.
+                part.highlight === "EXACT" ? "font-semibold" : "font-medium text-brand underline decoration-dotted underline-offset-2",
+              )}
+            >
               {part.text}
             </mark>
           ) : (
@@ -105,16 +113,16 @@ export function HitItem({
 
 /**
  * Four signal bars instead of numbers: the document's best similarity (not necessarily the
- * snippet's), in the brand color when every word matched as well, grey when only the meaning did.
- * The exact values are in the tooltip.
+ * snippet's), in the brand color when keyword matching found it too, grey when only the meaning
+ * did. The exact values are in the tooltip.
  */
 function RelevanceBars({ hit, context }: { hit: Hit; context: RelevanceContext }) {
   const t = useTranslations("search.hit");
   const filled = relevanceBars(hit, context);
-  // "53% similar · all words found (BM25 51.6)"
+  // "53% similar · words found (BM25 51.6)"
   const label = [
     hit.similarity != null && t("similar", { similarity: hit.similarity }),
-    hit.keywordScore != null && t("allWordsFound", { score: hit.keywordScore }),
+    hit.keywordScore != null && t("wordsFound", { score: hit.keywordScore }),
   ]
     .filter(Boolean)
     .join(" · ");

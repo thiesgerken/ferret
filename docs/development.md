@@ -4,7 +4,7 @@ Use the [quickstart](quickstart.md) to try the app. The [contribution rules](../
 
 ## Tooling
 
-The committed Nix flake and lockfile own builds and checks. Rust comes from `rust-toolchain.toml`, pnpm from `frontend/package.json`, and Node from the locked nixpkgs. Enter the native host toolchain with:
+The committed Nix flake and lockfile own builds and checks. Rust comes from `rust-toolchain.toml`, Node (with npm) from the locked nixpkgs. Frontend dependencies come from `frontend/package-lock.json` through `importNpmLock`, which fetches each package by the integrity hash in the lockfile. Enter the native host toolchain with:
 
 ```sh
 nix develop
@@ -12,7 +12,7 @@ nix develop
 
 With direnv and nix-direnv, run `direnv allow` once per checkout or worktree to load the same shell automatically.
 
-The shell includes Rust, Node, pnpm, sqlx, Git, Helm and Skopeo. Compose v2.24.4 or newer provides the local service environment.
+The shell includes Rust, Node (with npm), sqlx, Git, Helm and Skopeo. Compose v2.24.4 or newer provides the local service environment.
 
 ## Repository map
 
@@ -114,8 +114,8 @@ Host listeners are fixed at public8080/internal8081. If another local app owns80
 For frontend iteration:
 
 ```sh
-pnpm --dir frontend install --frozen-lockfile
-pnpm --dir frontend dev
+npm --prefix frontend ci
+npm --prefix frontend run dev
 ```
 
 Next serves port 3000 and proxies API requests to the Compose server at 8380. Set `FERRET_SERVER_URL=http://127.0.0.1:8080` for a host server. Production is a static export served by nginx. GraphQL client artifacts regenerate before dev, build and test; do not edit `frontend/src/gql/`.
@@ -176,7 +176,7 @@ Commit `.sqlx/` with query/migration changes. Builds use offline metadata; regen
 
 ```sh
 cargo run --locked -q -p ferret-server -- schema > frontend/schema.graphql
-pnpm --dir frontend codegen
+npm --prefix frontend run codegen
 ```
 
 Update the relevant maintained [topic/API/plugin guide](README.md) with behavior changes.
@@ -187,12 +187,20 @@ See the [builder prerequisites and known issues](https://docs.determinate.system
 
 ## Dependency updates and CI
 
-[Renovate](../renovate.json) updates dependencies and `flake.lock`. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file. After changing pnpm, its lockfile or the `pg_search` version, refresh binary pins and the pnpm dependency hash inside the dev shell:
+[Renovate](../renovate.json) updates dependencies and `flake.lock`. Digest pinning is disabled for the `helm-values` manager in `charts/ferret/values.yaml` so the application images' empty tags keep selecting `Chart.AppVersion`. Version updates remain enabled for external chart images, and digest pinning remains enabled outside this file.
+
+Frontend updates need no Nix follow-up: the Nix build reads `frontend/package-lock.json` directly, so there is no separate dependency hash to refresh. npm blocks dependency install scripts unless `allowScripts` in `frontend/package.json` lists the package. When an update introduces a new install script, `npm install` names it; review it, then record the decision with `npm install-scripts approve --no-allow-scripts-pin <pkg>` or `npm install-scripts deny <pkg>`.
+
+`engines.npm` makes Renovate write the lockfile with npm 11, the major that ships with `nodejs_24` in the dev shell and the Nix build; without it, Renovate installs the latest npm. Raise the range together with the Node.js major in `nix/tools.nix`; a Renovate rule keeps it from moving on its own.
+
+The `overrides` entry in `frontend/package.json` lets the ESLint plugins bundled by `eslint-config-next` use the project's ESLint 10 although their peer ranges still end at 9. Without it, npm treats the conflict as unresolved and `npm ci` tries to reach the registry, which fails in the Nix sandbox. Drop it once those plugins declare ESLint 10 support.
+
+`pg_search` uses SHA-256-pinned official PostgreSQL 18 binaries; the other packages come from stable nixpkgs. After a `pg_search` version change, refresh the binary pins inside the dev shell and commit them with the update:
 
 ```sh
-python3 scripts/update-nix-deps.py
+python3 scripts/update-pg-search-pins.py
 ```
 
-The command selects native Linux outputs (ARM Linux on Apple Silicon); `--system` can select another supported Linux target. Commit its pin/hash changes with the dependency update. Hash refresh is manual on Renovate PRs; these updates are not auto-merged. `pg_search` uses SHA-256-pinned official PostgreSQL 18 binaries; the other packages come from stable nixpkgs.
+The refresh is manual on Renovate PRs, so `pg_search` updates are not auto-merged.
 
 [CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts only for PRs against `main`; [releases](../.github/workflows/release.yml) verify the version-bumped tag before publishing. Semantic-release is a known tooling exception: `uv tool run` pins its PyPI version, but not its transitive dependencies.

@@ -39,6 +39,7 @@ const EXCLUDED_DIRECTORIES: &[&str] = &[
     ".venv",
     "venv",
     "__pycache__",
+    ".ipynb_checkpoints",
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
@@ -177,9 +178,9 @@ pub struct FilesConfig {
     #[serde(default)]
     pub content_globs: Vec<String>,
     /// Additional share-relative exclusion globs. Mandatory names include .git, .hg, .svn,
-    /// node_modules, .venv, venv, __pycache__, .mypy_cache, .pytest_cache, .ruff_cache, .next,
-    /// .nuxt, .zfs, .snapshot, .stversions, .Trash, .Trashes, $RECYCLE.BIN, .DS_Store,
-    /// Thumbs.db and desktop.ini. These rules cannot be disabled. Match a directory itself
+    /// node_modules, .venv, venv, __pycache__, .ipynb_checkpoints, .mypy_cache, .pytest_cache,
+    /// .ruff_cache, .next, .nuxt, .zfs, .snapshot, .stversions, .Trash, .Trashes, $RECYCLE.BIN,
+    /// .DS_Store, Thumbs.db and desktop.ini. These rules cannot be disabled. Match a directory itself
     /// to prune it, e.g. **/private (not only **/private/**).
     #[serde(default)]
     pub exclude_globs: Vec<String>,

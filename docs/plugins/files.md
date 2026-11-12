@@ -83,7 +83,7 @@ Valid UTF-8 includes ASCII. Selected invalid-encoding, NUL-containing/binary or 
 
 Additional exclusions never disable these bundled rules at any depth:
 
-- Directories: `.git`, `.hg`, `.svn`, `node_modules`, `.venv`, `venv`, `__pycache__`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `.next`, `.nuxt`, `.zfs`, `.snapshot`, `.stversions`, `.Trash`, `.Trashes`, `$RECYCLE.BIN`.
+- Directories: `.git`, `.hg`, `.svn`, `node_modules`, `.venv`, `venv`, `__pycache__`, `.ipynb_checkpoints`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `.next`, `.nuxt`, `.zfs`, `.snapshot`, `.stversions`, `.Trash`, `.Trashes`, `$RECYCLE.BIN`.
 - Desktop metadata names: `.DS_Store`, `Thumbs.db`, `desktop.ini`.
 
 Excluded subtrees are pruned before traversal and excluded names do not appear in listings. Filesystem filters are distinct from the existing remembered document/thread exclusions in Connections. Remembered document exclusions do not recursively exclude filesystem directories.

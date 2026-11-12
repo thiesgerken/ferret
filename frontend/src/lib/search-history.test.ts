@@ -4,7 +4,7 @@ import test from "node:test";
 import { submitSearch, typeSearch } from "./search-history";
 import type { SearchState } from "./search-url";
 
-const search = (q: string): SearchState => ({ q, sources: [], authors: [], range: "any", model: null, mode: "hybrid" });
+const search = (q: string): SearchState => ({ q, sources: [], authors: [], range: "any", model: null, mode: "hybrid", typoTolerance: true });
 const url = () => window.location.search;
 
 /** Next's patched history: it adds its `__NA` marker to every entry's data and takes a call whose

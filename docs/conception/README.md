@@ -252,7 +252,7 @@ don't change.
 ## Search
 
 ```text
-GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=&mode=
+GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&collapse=&mode=&typo_tolerance=
 ```
 
 - **Hybrid**: the 1000 best BM25 chunks and the 100 nearest chunks by vector, fused with reciprocal
@@ -280,14 +280,21 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&col
   scans only filter on columns of the vector's own table, hence the denormalized filter columns.
   The author filter is rare and selective and stays a join.
 - **Languages**: German and English, often mixed in one text. Chunk text and the document's title
-  are each indexed three times in `pg_search`: German-stemmed, English-stemmed, and trigrams (for
-  compounds: "Versicherung" must find "Kfz-Versicherungsbeitrag"). Every query word must match the
-  chunk's text or title in at least one of the three: German or English stem, or all of its
-  trigrams. So the words of one query may match in different fields: `Versicherung Rechnungen`
-  finds "Kfz-Versicherungsbeitrag … Rechnung", and `Versicherung 312` finds a bill titled
-  "HUK Kfz-Versicherung Beitragsrechnung" whose text says "312 Euro". No
-  language detection. No typo tolerance in v1: the trigram match needs all trigrams, so a
-  misspelled word doesn't match (follow-up in #21).
+  are each indexed four times in `pg_search`: German-stemmed, English-stemmed, trigrams (for
+  compounds: "Versicherung" must find "Kfz-Versicherungsbeitrag") and unstemmed (for typos). Every
+  query word must match the chunk's text or title in at least one of the first three: German or
+  English stem, or all of its trigrams; or, with typo tolerance, one typo away in the unstemmed
+  field (below). So the words of one query may match in different fields: `Versicherung Rechnungen`
+  finds "Kfz-Versicherungsbeitrag … Rechnung", and `Versicherung 312` finds a bill titled "HUK
+  Kfz-Versicherung Beitragsrechnung" whose text says "312 Euro". No language detection. Typo
+  tolerance (on by default, `typo_tolerance=false` turns it off): a word of 5 or more letters,
+  outside phrases and exclusions, also matches the unstemmed fields at edit distance 1 (a
+  transposition counts as one). Exact matches satisfy the typo clause too, so they always outrank
+  typo-only ones. Its low boost keeps it from reordering the exact matches, not all of which satisfy
+  it (`Rechnungen` matches `Rechnung` by stem, two edits away). The typo field is unstemmed because
+  pg_search stems the query before the fuzzy match: a typo in a suffix the German stemmer would
+  strip stops the stripping (`kündigng` stays whole, two edits from the stem `kundig`), and short
+  English stems have huge distance-1 neighbourhoods.
 - **Query syntax**: every word must match. `"exact phrase"` must appear in the chunk as a
   substring, ignoring case and whitespace differences (so it also matches inside longer words).
   `-word` drops every document containing it in its text or title, compounds included. Phrases
@@ -303,15 +310,16 @@ GET /api/search?q=&source=&content_type=&author=&from=&to=&model=&k=&offset=&col
 - **Repeated filters**: `source=`, `content_type=` and `author=` may repeat, a document matches any
   of them.
 - **Result**: best chunk text with highlights, offsets, document id, source, content type, title,
-  authors, timestamps, `url`, `thread`. The chunk text comes as parts, each marked as highlighted
-  or not, so clients need no offset arithmetic. Highlights mark the chunk's words that equal a query
-  word, share its German or English stem, or contain it (compounds, for query words of three or
-  more characters). Each hit carries the best BM25 score among the document's chunks in the keyword
-  candidates (`keyword_score`) and the best cosine similarity to the query among its chunks in the
-  vector candidates above the cut-off (`similarity`), each null when none of its chunks is (or
-  without the semantic half). The fused score stays internal. Next to the hits, `model`
-  names the embedding model the semantic half used (or would have, when `semantic_unavailable`
-  says it couldn't run).
+  authors, timestamps, `url`, `thread`. The chunk text comes as parts, each with its highlight kind
+  (`exact`, `fuzzy` or none), so clients need no offset arithmetic. Exact highlights mark the
+  chunk's words that equal a query word, share its German or English stem, or contain it (compounds,
+  for query words of three or more characters). Fuzzy highlights mark words one typo away (optimal
+  string alignment distance 1) from a typo-tolerant query word. Each hit carries the best BM25 score
+  among the document's chunks in the keyword candidates (`keyword_score`) and the best cosine
+  similarity to the query among its chunks in the vector candidates above the cut-off
+  (`similarity`), each null when none of its chunks is (or without the semantic half). The fused
+  score stays internal. Next to the hits, `model` names the embedding model the semantic half used
+  (or would have, when `semantic_unavailable` says it couldn't run).
 - **Counts and timing**: `total` counts the matching documents after the cut-off, exclusions and
   collapsing, not only the `k` returned. `total_is_lower_bound` says it may be short: the keyword
   half filled its 1000 candidates, or all of the 100 nearest chunks passed the cut-off while the
@@ -433,7 +441,7 @@ chats and saved articles are on the roadmap. Details in [plugins.md](plugins.md)
   `/metrics` endpoint.
 - **Follow-up issues (#21)**: model evaluation (recall@10 and MRR per model from the judgments in
   Settings), UI i18n (German and English), model removal (dropping a removed model's index and
-  embeddings), a host allowlist for plugin targets, and typo tolerance in keyword search.
+  embeddings) and a host allowlist for plugin targets.
 
 ## Sizing
 

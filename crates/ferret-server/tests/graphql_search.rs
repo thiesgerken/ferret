@@ -67,7 +67,10 @@ async fn graphql_hits(server: &TestServer, cookie: &str, input: Value) -> Vec<Va
                 "chunk": {
                     "start_offset": chunk["startOffset"],
                     "end_offset": chunk["endOffset"],
-                    "parts": chunk["parts"],
+                    "parts": chunk["parts"].as_array().unwrap().iter().map(|part| json!({
+                        "text": part["text"],
+                        "highlight": part["highlight"].as_str().map(str::to_lowercase),
+                    })).collect::<Vec<_>>(),
                 },
             })
         })
@@ -119,6 +122,13 @@ async fn graphql_search_returns_the_same_hits_as_rest(pool: PgPool) {
 
     let cases = [
         (json!({"q": "invoice"}), SearchQuery::default()),
+        (
+            json!({"q": "invoice", "typoTolerance": false}),
+            SearchQuery {
+                typo_tolerance: Some(false),
+                ..Default::default()
+            },
+        ),
         (
             json!({"q": "invoice", "sources": ["paperless", "notes"]}),
             SearchQuery {

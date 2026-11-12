@@ -107,8 +107,9 @@ export function SearchResults({
       range: TIME_RANGES[state.range].preset,
       model: state.model,
       mode: state.mode === "hybrid" ? null : (state.mode.toUpperCase() as SearchModeInput),
+      typoTolerance: state.typoTolerance ? null : false,
     }),
-    [state.q, state.sources, state.authors, state.range, state.model, state.mode],
+    [state.q, state.sources, state.authors, state.range, state.model, state.mode, state.typoTolerance],
   );
   // Typing revisits queries all the time, and a cached answer would pass off an old `tookMs` and
   // `semanticUnavailable` as current.
