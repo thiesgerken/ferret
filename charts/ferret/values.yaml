@@ -143,7 +143,7 @@ postgres:
   image:
     registry: docker.io
     repository: paradedb/paradedb
-    tag: "0.26.2-pg18@sha256:c552094b6b68dcb0a4e7a3969963d801eaec02490db4d2dd032dcb096bc86cf8"
+    tag: "v0.26.6-pg18@sha256:4df3bcf9f19b32821446967f7874d1a40bee8b9550184cc0d70e93f51ee8af36"
     pullPolicy: IfNotPresent
   database: ferret
   username: ferret
