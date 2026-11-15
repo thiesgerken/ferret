@@ -38,13 +38,13 @@ Every PR must assess whether the maintained documentation (not `docs/conception/
     (bge-m3) is scaled to 0: `docker compose up -d --scale tei-bge=1 tei-bge` starts it.
   - Test: `cargo test --workspace` (needs the Compose ParadeDB/Dovecot, see Testing).
   - Lint: `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
-  - Frontend: `pnpm --dir frontend dev`.
+  - Frontend: `npm --prefix frontend ci`, then `npm --prefix frontend run dev`.
 - Regenerate the GraphQL schema for the frontend: `cargo run -p ferret-server -- schema > frontend/schema.graphql`.
 - After changing a query or a migration, refresh the sqlx query metadata (using the dev shell's
   sqlx CLI and a migrated database):
   `DATABASE_URL=postgres://ferret:ferret@localhost:5439/ferret cargo sqlx migrate run --source crates/ferret-server/migrations`,
   then the same `DATABASE_URL` with `cargo sqlx prepare --workspace`, and commit `.sqlx/`.
-- Refresh dependency pins/hashes: `python3 scripts/update-nix-deps.py` inside the dev shell.
+- Refresh the `pg_search` binary pins after a version change: `python3 scripts/update-pg-search-pins.py` inside the dev shell.
 
 ## Project structure
 
@@ -77,8 +77,11 @@ docker-compose.yml   development only, the deployment is the Helm chart
 
 `ci.yml` calls `nix-verify.yml`, which realizes `ciBuilds.x86_64-linux` and smokes the hardened
 runtime images. `publish-pr.yml` publishes verified PR images/charts with `pr<N>` and SHA tags.
-`release.yml` verifies version-bumped release tags before publishing. Publishing tools run from
-trusted refs; untrusted PRs do not receive publishing credentials or write the trusted cache.
+`release.yml` releases every push to `main` with Presswerk (declared in the flake's
+`presswerk.default`): the push run prepares and pushes the release commit, the dispatched
+candidate run verifies it with `nix-verify.yml` and publishes tag, images, chart and GitHub
+Release from Cachix. Publishing tools run from trusted refs; untrusted PRs do not receive
+publishing credentials or write the trusted cache.
 
 ## Conventions
 
@@ -99,7 +102,8 @@ trusted refs; untrusted PRs do not receive publishing credentials or write the t
 
 Commit messages and PR titles use [gitmoji](https://gitmoji.dev/) in the form
 `<emoji> <type>(<scope>): <message>`, e.g. `✨ feat(server): add health endpoint`. The release
-pipeline derives the version bump from the emoji (semantic-release's emoji parser):
+pipeline derives the version bump from the emoji (Presswerk's Gitmoji analyzer, with ♻️ and 👷
+raised to patch):
 
 | emoji | type | release |
 |---|---|---|
@@ -116,6 +120,10 @@ pipeline derives the version bump from the emoji (semantic-release's emoji parse
 | 💄 | `style` (UI) | patch |
 | 🗑️ | `chore` (deprecate, remove) | patch |
 | 👷 | `ci` | patch |
+| ⚗️ 👽️ ⬇️ 🍱 🗃️ 📈 🚸 💫 🥚 🌐 🥅 ➖ ➕ 📱 🏷️ 🔍️ 👔 📦️ 🛂 ✏️ 📌 ⏪️ 💬 🚩 ♿️ | other changes that ship | patch |
 | ✅ 📝 and others | `test`, `docs`, ... | none |
+
+[Presswerk's Gitmoji catalog](https://presswerk.dev/reference/analyzers/gitmoji/) is authoritative;
+the table mirrors it for v0.16.0.
 
 Keep commits isolated: one fix or feature per commit.
