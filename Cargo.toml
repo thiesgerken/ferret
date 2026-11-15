@@ -26,7 +26,7 @@ lol_html = "3"
 mail-parser = "0.11"
 parking_lot = "0.13"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
+juniper = { version = "0.18", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rmcp = { version = "3.5", default-features = false }
