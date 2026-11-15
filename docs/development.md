@@ -122,7 +122,7 @@ Next serves port 3000 and proxies API requests to the Compose server at 8380. Se
 
 ## Tests and checks
 
-`ciBuilds.<host-system>` contains every mandatory check, runtime package/image and CI/release tool profile. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
+`ciBuilds.<host-system>` contains every mandatory check, runtime package/image, the Helm chart archive and the CI tool profile; `ciBuilds.x86_64-linux` also holds the Presswerk CLI the release jobs run. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
 
 For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux` (also on Apple Silicon):
 
@@ -130,6 +130,7 @@ For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux
 | --- | --- |
 | Checks: `rust-fmt`, `rust-clippy`, `rust-test`, `sqlx`, `graphql-schema`, `frontend-lint`, `frontend-test`, `frontend-build`, `helm` | `nix build .#checks.<system>.<check>` |
 | Packages and images | `nix build .#packages.<system>.{server,plugins,whatsapp-archive,frontend}{,-image}` |
+| Helm chart archive | `nix build .#packages.<system>.chart` |
 
 Bootstrap the locked runner:
 
@@ -203,4 +204,16 @@ python3 scripts/update-pg-search-pins.py
 
 The refresh is manual on Renovate PRs, so `pg_search` updates are not auto-merged.
 
-[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts only for PRs against `main`; [releases](../.github/workflows/release.yml) verify the version-bumped tag before publishing. Semantic-release is a known tooling exception: `uv tool run` pins its PyPI version, but not its transitive dependencies.
+[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. [PR previews](../.github/workflows/publish-pr.yml) publish verified x64 images and charts only for PRs against `main`; [releases](../.github/workflows/release.yml) verify the release commit before publishing.
+
+## Releases
+
+Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer (see the commit table in [AGENTS.md](../AGENTS.md#commits)), the changelog, and the publishers (the four images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
+
+The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the images and the chart to Cachix, then `presswerk publish` fetches them from there and pushes the tag, the images, the chart and the GitHub Release. It checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
+
+```sh
+gh workflow run release.yml --ref main -f candidate=<full SHA of the release commit>
+```
+
+Until that candidate is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
