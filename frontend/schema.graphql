@@ -171,7 +171,7 @@ input UserUpdate {
   [1]: https://graphql-scalars.dev/docs/scalars/date-time
   [2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
 """
-scalar DateTime
+scalar DateTime @specifiedBy(url: "https://graphql-scalars.dev/docs/scalars/date-time")
 
 type ApiKey {
   id: ID!
