@@ -31,9 +31,9 @@ let
       pkgs.cmake
     ];
   };
-  # Every release bumps the workspace version, which would rebuild all
-  # dependencies. Their source pins every workspace member to 0.0.0 instead (cargo's default for a
-  # package without a version), in Cargo.toml and Cargo.lock alike, so `--locked` still holds.
+  # Every release bumps the workspace version, which would rebuild all dependencies. Their source
+  # pins every workspace member to 0.0.0 instead (cargo's default for a package without a version),
+  # in Cargo.toml and Cargo.lock alike, so `--locked` still holds.
   lock = builtins.readFile ../Cargo.lock;
   members = map (package: package.name) (
     builtins.filter (package: !(package ? source)) (builtins.fromTOML lock).package
