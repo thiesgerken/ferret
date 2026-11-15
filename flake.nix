@@ -76,6 +76,17 @@
             inherit (backend) server plugins whatsapp-archive;
             inherit (frontend) frontend;
           };
+          # The version comes from the committed Chart.yaml, which the release commit bumps.
+          chart =
+            pkgs.runCommand "ferret-chart.tgz"
+              {
+                nativeBuildInputs = [ pkgs.kubernetes-helm ];
+                src = ./charts/ferret;
+              }
+              ''
+                helm package "$src" --destination .
+                mv ferret-*.tgz "$out"
+              '';
         in
         {
           inherit
@@ -85,6 +96,7 @@
             backend
             frontend
             images
+            chart
             ;
         }
       );
@@ -104,6 +116,7 @@
           {
             inherit (p.backend) server plugins whatsapp-archive;
             inherit (p.frontend) frontend;
+            inherit (p) chart;
             default = p.backend.server;
           }
           // p.images
@@ -148,6 +161,7 @@
         // {
           inherit (p.backend) server plugins whatsapp-archive;
           inherit (p.frontend) frontend;
+          inherit (p) chart;
           tools = project.${system}.tools.ci;
           release-tools = project.${system}.tools.release;
         }
