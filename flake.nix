@@ -20,6 +20,9 @@
       url = "tarball+https://static.crates.io/crates/sqlx-cli/sqlx-cli-0.9.0.crate";
       flake = false;
     };
+    # The CLI runs from this input (`nix run --inputs-from . presswerk`), so CLI and declaration
+    # schema always move together. Its own nixpkgs stays, so the CLI substitutes from upstream's cache.
+    presswerk.url = "github:jkuball/presswerk/v0.16.0";
   };
 
   outputs =
@@ -29,6 +32,7 @@
       crane,
       rust-overlay,
       sqlx-src,
+      presswerk,
     }:
     let
       systems = [
@@ -195,5 +199,97 @@
           };
         }
       );
+      presswerk.default = presswerk.lib.mkRelease {
+        sourceRoot = self.outPath;
+        versionFiles = {
+          cargoWorkspace.ferret = { };
+          json = {
+            frontend = {
+              path = "frontend/package.json";
+              key = "version";
+            };
+            frontend-lock = {
+              path = "frontend/package-lock.json";
+              key = "version";
+            };
+            frontend-lock-root = {
+              path = "frontend/package-lock.json";
+              key = ''packages."".version'';
+            };
+          };
+          regex = {
+            chart = {
+              path = "charts/ferret/Chart.yaml";
+              pattern = ''^version: (?<version>\S+)$'';
+            };
+            chart-app = {
+              path = "charts/ferret/Chart.yaml";
+              pattern = ''^appVersion: "(?<version>[^"]+)"$'';
+            };
+          };
+        };
+        analyzer.gitmoji = {
+          enable = true;
+          # Refactorings and CI changes ship in the images, so they release a patch like fixes do.
+          catalog.recycle.semver = "patch";
+          catalog.construction_worker.semver = "patch";
+        };
+        # The format python-semantic-release wrote, so the existing sections stay recognized.
+        changelog.heading = "## v{version} ({date})";
+        publishers =
+          let
+            # The packages are public, so `plan` and `prepare` check the previous release anonymously.
+            ghcr = {
+              public = true;
+              username.secret = "GITHUB_ACTOR";
+              password.secret = "GITHUB_TOKEN";
+            };
+            artifacts = self.packages.x86_64-linux;
+          in
+          {
+            oci-image =
+              nixpkgs.lib.mapAttrs
+                (
+                  name: image:
+                  ghcr
+                  // {
+                    repository = "ghcr.io/thiesgerken/${name}";
+                    platforms."linux/amd64" = image;
+                    aliases = [ "latest" ];
+                  }
+                )
+                {
+                  ferret = artifacts.server-image;
+                  ferret-plugins = artifacts.plugins-image;
+                  ferret-whatsapp-archive = artifacts.whatsapp-archive-image;
+                  ferret-frontend = artifacts.frontend-image;
+                };
+            oci-helm.ferret = ghcr // {
+              repository = "ghcr.io/thiesgerken/charts/ferret";
+              inherit (artifacts) chart;
+            };
+            github-release.default = {
+              repository = "thiesgerken/ferret";
+              body = ''
+                {{ notes }}
+
+                ## Docker Images
+
+                ```
+                docker pull ghcr.io/thiesgerken/ferret:{{ version }}
+                docker pull ghcr.io/thiesgerken/ferret-plugins:{{ version }}
+                docker pull ghcr.io/thiesgerken/ferret-whatsapp-archive:{{ version }}
+                docker pull ghcr.io/thiesgerken/ferret-frontend:{{ version }}
+                ```
+
+                ## Helm Chart
+
+                ```
+                helm install ferret oci://ghcr.io/thiesgerken/charts/ferret --version {{ version }}
+                ```
+              '';
+            };
+          };
+      };
     };
 }
