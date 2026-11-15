@@ -51,13 +51,7 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          # v0.38.2 was released by python-semantic-release, so it has no declaration to verify.
-          # It stays the previous release until the first Presswerk release commit bumps the version.
-          trust=()
-          if test "$(nix eval --raw .#presswerk.default.version)" = 0.38.2; then
-            trust=(--trust-predecessor v0.38.2=761f695c65027adce50cef5baea7f2637da06b81)
-          fi
-          nix run --inputs-from . presswerk -- prepare "${trust[@]}"
+          nix run --inputs-from . presswerk -- prepare
           if test "$(git rev-parse HEAD)" != "$GITHUB_SHA"; then
             git push origin HEAD:main
             gh workflow run release.yml --ref main -f candidate="$(git rev-parse HEAD)"
