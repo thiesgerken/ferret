@@ -90,7 +90,11 @@ jobs:
         with:
           name: thiesgerken
       # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
+      # The tag is annotated, so it needs a tagger identity.
       - name: Publish the release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: nix run --inputs-from . presswerk -- publish HEAD
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          nix run --inputs-from . presswerk -- publish HEAD
