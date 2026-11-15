@@ -122,7 +122,7 @@ Next serves port 3000 and proxies API requests to the Compose server at 8380. Se
 
 ## Tests and checks
 
-`ciBuilds.<host-system>` contains every mandatory check, runtime package/image, the Helm chart archive and the CI tool profile. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
+`ciBuilds.<host-system>` contains every mandatory check, runtime package/image, the Helm chart archive and the CI tool profile; `ciBuilds.x86_64-linux` also holds the Presswerk CLI the release jobs run. Checks cover Rust fmt/Clippy/tests, SQLx metadata and GraphQL schema freshness, frontend lint/tests/build/type checking and Helm validation. Database tests use isolated PostgreSQL 18 with `pg_search`/`pgvector` and Dovecot inside the Nix sandbox, without Docker or existing developer data.
 
 For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux` (also on Apple Silicon):
 
