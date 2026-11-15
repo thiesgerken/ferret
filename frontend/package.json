@@ -32,8 +32,8 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.1",
-    "@graphql-codegen/cli": "^7.4.6",
-    "@graphql-codegen/client-preset": "^6.2.3",
+    "@graphql-codegen/cli": "^8.0.0",
+    "@graphql-codegen/client-preset": "^7.0.0",
     "@graphql-typed-document-node/core": "^3.2.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/jsdom": "^30.0.0",
