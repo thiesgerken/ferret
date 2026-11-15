@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.38.5 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore: Lock file maintenance
+
 ## v0.38.4 (2026-11-15)
 
 ### 🐛 Fix a bug
