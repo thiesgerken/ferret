@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.38.4 (2026-11-15)
+
+### 🐛 Fix a bug
+
+- fix(release): give the publish job a git identity for the annotated tag
+
+### 👷 Add or update CI build system
+
+- ci(release): drop the one-time v0.38.2 trust gate
+
 ## v0.38.3 (2026-11-15)
 
 ### 👷 Add or update CI build system
