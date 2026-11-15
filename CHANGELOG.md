@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.38.6 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(frontend): regenerate the GraphQL schema for juniper 0.18
+- chore: upgrade Rust crate juniper to 0.18.0
+- chore: upgrade Rust crate jsonschema to 0.61.2
+- chore: upgrade graphqlcodegenerator monorepo
+- chore: upgrade jsdom to 31.0.0
+- chore(nix): update rust-overlay for Rust 1.100.0
+- chore: upgrade Rust to 1.100.0
+- chore(nix): refresh pg_search binary pins for 0.26.6
+- chore: upgrade all routine dependency updates
+
 ## v0.38.5 (2026-11-15)
 
 ### ⬆️ Upgrade dependencies
