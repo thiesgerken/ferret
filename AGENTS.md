@@ -120,6 +120,10 @@ raised to patch):
 | 💄 | `style` (UI) | patch |
 | 🗑️ | `chore` (deprecate, remove) | patch |
 | 👷 | `ci` | patch |
-| ✅ 📝 and others | `test`, `docs`, ... | per [Presswerk's catalog](https://presswerk.dev/reference/gitmoji/), mostly none |
+| ⚗️ 👽️ ⬇️ 🍱 🗃️ 📈 🚸 💫 🥚 🌐 🥅 ➖ ➕ 📱 🏷️ 🔍️ 👔 📦️ 🛂 ✏️ 📌 ⏪️ 💬 🚩 ♿️ | other changes that ship | patch |
+| ✅ 📝 and others | `test`, `docs`, ... | none |
+
+[Presswerk's Gitmoji catalog](https://presswerk.dev/reference/analyzers/gitmoji/) is authoritative;
+the table mirrors it for v0.16.0.
 
 Keep commits isolated: one fix or feature per commit.
