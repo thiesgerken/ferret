@@ -21,7 +21,7 @@
       flake = false;
     };
     # The CLI runs from this input (`nix run --inputs-from . presswerk`), so CLI and declaration
-    # schema always move together. Its own nixpkgs stays, so the CLI substitutes from upstream's cache.
+    # schema always move together. Its own nixpkgs stays: that is the combination upstream tests.
     presswerk.url = "github:jkuball/presswerk/v0.16.0";
   };
 
@@ -167,6 +167,10 @@
           tools = project.${system}.tools.ci;
         }
         // p.images
+        # The release jobs run there and substitute the CLI from our cache, not a third party's.
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          presswerk = presswerk.packages.${system}.default;
+        }
       );
       devShells = forSystems (
         system:

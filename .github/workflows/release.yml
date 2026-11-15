@@ -35,11 +35,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
-      # jkuball serves the prebuilt Presswerk CLI.
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-          extraPullNames: jkuball
       - name: Prepare the release commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,7 +89,6 @@ jobs:
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-          extraPullNames: jkuball
       # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
       - name: Publish the release
         env:
