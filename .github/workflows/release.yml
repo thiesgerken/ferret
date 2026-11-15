@@ -1,110 +1,81 @@
 name: Release
 
-# Only main releases. Integration branches merge into main as a whole.
+# Presswerk's push run / candidate run flow (https://presswerk.dev/guide/github-actions/). A push to
+# main prepares the release commit, pushes it and dispatches this workflow with it as the candidate.
+# The candidate run verifies exactly that commit and only then publishes it. Pushes made with
+# GITHUB_TOKEN start no workflow runs, hence the dispatch. Only main releases; integration branches
+# merge into main as a whole.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full SHA of the release commit to verify and publish
+        type: string
+        required: true
 
 permissions:
   contents: read
 
+# One release at a time. A stale push run's push of its release commit is rejected (no force).
+concurrency: presswerk-release
+
 jobs:
-  version:
+  prepare:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    concurrency: release
     permissions:
+      actions: write
       contents: write
-    outputs:
-      released: ${{ steps.release.outputs.released }}
-      version: ${{ steps.release.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      # The tip of main, not the pushed commit: after back-to-back merges, the pushed commit is
-      # already behind and semantic-release would refuse to push. The earlier run then releases
-      # every merge and the later one finds nothing to release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
           fetch-depth: 0
-
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+      # jkuball serves the prebuilt Presswerk CLI.
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-
-      - name: Realize pinned version tools once
+          extraPullNames: jkuball
+      - name: Prepare the release commit
         run: |
-          time nix build .#release-tools --out-link result-release-tools --print-build-logs
-          echo "$PWD/result-release-tools/bin" >> "$GITHUB_PATH"
-          echo "SSL_CERT_FILE=$PWD/result-release-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-          echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.15" >> "$GITHUB_ENV"
-      # Not the python-semantic-release action: it builds its image with an
-      # unpinned `gitpython ~= 3.0`, and 3.1.60 dropped Actor.name_email_regex,
-      # which psr 10.6.1 still uses. Drop the --with once psr releases a fix.
-      - name: Semantic Release (version only)
-        id: release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          uv tool run
-          --from 'python-semantic-release==10.6.1'
-          --with 'gitpython<3.1.60'
-          semantic-release -c releaserc.toml -v version --no-vcs-release
+          set -euo pipefail
+          git fetch origin main
+          if test "$(git rev-parse origin/main)" != "$GITHUB_SHA"; then
+            echo "main moved on; the newer push run prepares"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          # v0.38.2 was released by python-semantic-release, so it has no declaration to verify.
+          # It stays the previous release until the first Presswerk release commit bumps the version.
+          trust=()
+          if test "$(nix eval --raw .#presswerk.default.version)" = 0.38.2; then
+            trust=(--trust-predecessor v0.38.2=761f695c65027adce50cef5baea7f2637da06b81)
+          fi
+          nix run --inputs-from . presswerk -- prepare "${trust[@]}"
+          if test "$(git rev-parse HEAD)" != "$GITHUB_SHA"; then
+            git push origin HEAD:main
+            gh workflow run release.yml --ref main -f candidate="$(git rev-parse HEAD)"
+          fi
 
-  nix:
-    needs: version
-    if: needs.version.outputs.released == 'true'
+  # Pushes the images and the chart to Cachix, where the publish job fetches them.
+  verify:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/nix-verify.yml
     with:
-      ref: v${{ needs.version.outputs.version }}
+      ref: ${{ inputs.candidate }}
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  images:
-    needs: [version, nix]
-    if: needs.version.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
-          persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          determinate: false
-      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
-        with:
-          name: thiesgerken
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: verified-x64-images
-          path: dist
-      - name: Prepare pinned publishing tools
-        run: |
-          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
-          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
-          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-      - name: Publish verified release images
-        env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
-          cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
-          trap cleanup_auth EXIT
-          printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
-          bash scripts/publish-images.sh "$VERSION" latest
-
   publish:
-    needs: [version, images]
-    if: needs.version.outputs.released == 'true'
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -112,55 +83,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: v${{ needs.version.outputs.version }}
-
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-      - name: Realize pinned publishing tools once
-        run: |
-          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
-          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
-          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-
-      - name: Push Helm chart to GHCR
-        run: |
-          version="${{ needs.version.outputs.version }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-          helm package charts/ferret --version "$version" --app-version "$version"
-          helm push "ferret-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
-
-      - name: Create GitHub Release
+          extraPullNames: jkuball
+      # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
+      - name: Publish the release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="${{ needs.version.outputs.version }}"
-          owner="${{ github.repository_owner }}"
-
-          # The latest changelog section
-          notes=$(awk '/^## v'"${version}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
-
-          notes="${notes}
-
-          ## Docker Images
-
-          \`\`\`
-          docker pull ghcr.io/${owner}/ferret:${version}
-          docker pull ghcr.io/${owner}/ferret-plugins:${version}
-          docker pull ghcr.io/${owner}/ferret-whatsapp-archive:${version}
-          docker pull ghcr.io/${owner}/ferret-frontend:${version}
-          \`\`\`
-
-          ## Helm Chart
-
-          \`\`\`
-          helm install ferret oci://ghcr.io/${owner}/charts/ferret --version ${version}
-          \`\`\`"
-
-          gh release create "v${version}" \
-            --repo "${{ github.repository }}" \
-            --title "v${version}" \
-            --notes "${notes}"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: nix run --inputs-from . presswerk -- publish HEAD
