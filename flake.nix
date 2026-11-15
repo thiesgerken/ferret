@@ -64,7 +64,6 @@
             inherit
               pkgs
               craneLib
-              rust
               sqlx-src
               ;
           };
@@ -114,7 +113,6 @@
         {
           inherit (p.tools) sqlx;
           ci-tools = p.tools.ci;
-          release-tools = p.tools.release;
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
@@ -167,7 +165,6 @@
           inherit (p.frontend) frontend;
           inherit (p) chart;
           tools = project.${system}.tools.ci;
-          release-tools = project.${system}.tools.release;
         }
         // p.images
       );

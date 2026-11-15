@@ -31,7 +31,7 @@ let
       pkgs.cmake
     ];
   };
-  # semantic-release bumps the workspace version with every release, which would rebuild all
+  # Every release bumps the workspace version, which would rebuild all
   # dependencies. Their source pins every workspace member to 0.0.0 instead (cargo's default for a
   # package without a version), in Cargo.toml and Cargo.lock alike, so `--locked` still holds.
   lock = builtins.readFile ../Cargo.lock;
