@@ -96,7 +96,7 @@ The presence of `external` disables the bundled PVC, Deployment and Service. All
 ### Database requirements
 
 The database must provide ParadeDB **`pg_search` compatible with the chart's pinned 0.26.x
-release** (currently 0.26.2), and **pgvector** (`vector`). Plain AWS RDS and Google Cloud SQL do
+release** (currently 0.26.6), and **pgvector** (`vector`). Plain AWS RDS and Google Cloud SQL do
 not offer `pg_search` and cannot serve as Ferret's database.
 
 Use a database owned by the Ferret user. If that user is not a superuser, an administrator must

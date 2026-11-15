@@ -540,16 +540,15 @@ dependencies = [
 
 [[package]]
 name = "compact_str"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dfdd1c2274d9aa354115b09dc9a901d6c5576818cdf70d14cae2bdb47df00ab"
+checksum = "79fcda08c33bb58b97008b2cdada6622500e949e060f5913361763121abd2416"
 dependencies = [
  "castaway",
  "cfg-if",
  "itoa",
- "rustversion",
- "ryu",
  "static_assertions",
+ "zmij",
 ]
 
 [[package]]
@@ -1191,9 +1190,9 @@ dependencies = [
 
 [[package]]
 name = "fancy-regex"
-version = "0.19.2"
+version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
+checksum = "0a2e16b9a584b602f1e0e5e22c30ca0906786088c27500653e432d086def8b53"
 dependencies = [
  "bit-set",
  "regex-automata",
@@ -1211,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-api"
-version = "0.38.4"
+version = "0.38.5"
 dependencies = [
  "chrono",
  "reqwest",
@@ -1223,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-plugins"
-version = "0.38.4"
+version = "0.38.5"
 dependencies = [
  "async-imap",
  "base64 0.23.1",
@@ -1255,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-server"
-version = "0.38.4"
+version = "0.38.5"
 dependencies = [
  "argon2",
  "async-imap",
@@ -1297,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-whatsapp-archive"
-version = "0.38.4"
+version = "0.38.5"
 dependencies = [
  "axum",
  "reqwest",
@@ -2009,15 +2008,6 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
@@ -2103,9 +2093,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.60.2"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a42a11b47492e6a2cc76e9c7bcc8077776cb31dac444e0795d7f61bcc6441c08"
+checksum = "0e37f27df77c7887edbc5f5a59ecd8e5ec4a669319266ec1b61068667a603183"
 dependencies = [
  "ahash",
  "bytecount",
@@ -2131,18 +2121,18 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.60.2"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "107aeb6ff14b8deb5610096a8ce5c554ec89806b521147eaeb3cae05b07edb7a"
+checksum = "7e41151614b6c927e21982be8bef5a26741ae5a0ae6a781eedee2aa930a980e6"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.60.2"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e281d6b177bb4834f2ffd6f92aa0443cffe29c996b251c8d94eb6f456186feba"
+checksum = "1515b9a91134ef67d7bac95c2d76fbc7e383c4c55ee544204ceec8088f881fef"
 dependencies = [
  "ahash",
  "bytecount",
@@ -2178,9 +2168,9 @@ dependencies = [
 
 [[package]]
 name = "juniper"
-version = "0.17.2"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ab1773fa41e0512d4686dc41066bb18c8c49875f30349aec1c5e428a42cad1"
+checksum = "571c64a26767dad86fe8271719cc43dd503a55607813c9ec3db5134bb2137270"
 dependencies = [
  "arcstr",
  "async-trait",
@@ -2192,7 +2182,7 @@ dependencies = [
  "futures",
  "graphql-parser",
  "indexmap",
- "itertools 0.14.0",
+ "itertools",
  "juniper_codegen",
  "ref-cast",
  "serde",
@@ -2202,14 +2192,14 @@ dependencies = [
 
 [[package]]
 name = "juniper_codegen"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8634f500d6d2ec5c91c115b83e15d998d9ea05645aaa43f7afec09e660c483ba"
+checksum = "efe73f508ada06adcf00ef6b149d93fe5aad0413def8865840230fb0d64196a0"
 dependencies = [
  "derive_more",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.10",
  "url",
 ]
 
@@ -2957,9 +2947,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.60.2"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f42818036d3b37cda6bd4c494543158a36e431cb717015ef7c93acc6ba214d3b"
+checksum = "a028057ef852c58a42d75e09da87b5e733f4030f4c7411728955e4f87203a577"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -4004,7 +3994,7 @@ dependencies = [
  "either",
  "icu_provider",
  "icu_segmenter",
- "itertools 0.15.0",
+ "itertools",
  "memchr",
  "pulldown-cmark",
  "strum 0.28.0",
