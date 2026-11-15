@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v0.38.7 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(server): adapt session keys to jsonwebtoken 12
+- chore: upgrade Rust crate jsonwebtoken to 12.0.0
+
 ## v0.38.6 (2026-11-15)
 
 ### ⬆️ Upgrade dependencies

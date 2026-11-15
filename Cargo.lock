@@ -1210,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-api"
-version = "0.38.6"
+version = "0.38.7"
 dependencies = [
  "chrono",
  "reqwest",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-plugins"
-version = "0.38.6"
+version = "0.38.7"
 dependencies = [
  "async-imap",
  "base64 0.23.1",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-server"
-version = "0.38.6"
+version = "0.38.7"
 dependencies = [
  "argon2",
  "async-imap",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "ferret-whatsapp-archive"
-version = "0.38.6"
+version = "0.38.7"
 dependencies = [
  "axum",
  "reqwest",
