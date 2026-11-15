@@ -77,8 +77,11 @@ docker-compose.yml   development only, the deployment is the Helm chart
 
 `ci.yml` calls `nix-verify.yml`, which realizes `ciBuilds.x86_64-linux` and smokes the hardened
 runtime images. `publish-pr.yml` publishes verified PR images/charts with `pr<N>` and SHA tags.
-`release.yml` verifies version-bumped release tags before publishing. Publishing tools run from
-trusted refs; untrusted PRs do not receive publishing credentials or write the trusted cache.
+`release.yml` releases every push to `main` with Presswerk (declared in the flake's
+`presswerk.default`): the push run prepares and pushes the release commit, the dispatched
+candidate run verifies it with `nix-verify.yml` and publishes tag, images, chart and GitHub
+Release from Cachix. Publishing tools run from trusted refs; untrusted PRs do not receive
+publishing credentials or write the trusted cache.
 
 ## Conventions
 
@@ -99,7 +102,8 @@ trusted refs; untrusted PRs do not receive publishing credentials or write the t
 
 Commit messages and PR titles use [gitmoji](https://gitmoji.dev/) in the form
 `<emoji> <type>(<scope>): <message>`, e.g. `✨ feat(server): add health endpoint`. The release
-pipeline derives the version bump from the emoji (semantic-release's emoji parser):
+pipeline derives the version bump from the emoji (Presswerk's Gitmoji analyzer, with ♻️ and 👷
+raised to patch):
 
 | emoji | type | release |
 |---|---|---|
@@ -116,6 +120,6 @@ pipeline derives the version bump from the emoji (semantic-release's emoji parse
 | 💄 | `style` (UI) | patch |
 | 🗑️ | `chore` (deprecate, remove) | patch |
 | 👷 | `ci` | patch |
-| ✅ 📝 and others | `test`, `docs`, ... | none |
+| ✅ 📝 and others | `test`, `docs`, ... | per [Presswerk's catalog](https://presswerk.dev/reference/gitmoji/), mostly none |
 
 Keep commits isolated: one fix or feature per commit.
