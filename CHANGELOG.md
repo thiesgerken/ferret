@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.38.8 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(plugins): port the IMAP mail parsing to mail-parser 1.0
+- chore: upgrade Rust crate mail-parser to 1.0.1
+
+### 📝 Add or update documentation
+
+- docs(plugins): note that a named HTML alternative is an attachment
+
 ## v0.38.7 (2026-11-15)
 
 ### ⬆️ Upgrade dependencies
