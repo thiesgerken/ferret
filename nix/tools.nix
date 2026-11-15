@@ -1,7 +1,6 @@
 {
   pkgs,
   craneLib,
-  rust,
   sqlx-src,
 }:
 let
@@ -31,23 +30,6 @@ in
       jq
       gh
       cacert
-    ];
-    pathsToLink = [
-      "/bin"
-      "/etc/ssl/certs"
-    ];
-  };
-  release = pkgs.buildEnv {
-    name = "ferret-release-tools";
-    paths = [
-      rust
-      pkgs.bash
-      pkgs.coreutils
-      pkgs.uv
-      pkgs.python315
-      pkgs.git
-      pkgs.jq
-      pkgs.cacert
     ];
     pathsToLink = [
       "/bin"
