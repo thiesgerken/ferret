@@ -14,8 +14,8 @@ The collector only receives what arrives after linking. Import older history onc
 
 1. Install Signal Desktop fresh on a workstation and link it with **Transfer Message History**.
 2. Settings > Chats > Export chat history, **without media**. Desktop writes `main.jsonl`.
-3. Copy `main.jsonl` into the `ferret-signal-archive` container and run `ferret-signal-archive import /path/to/main.jsonl` there (e.g. `kubectl cp`, then `kubectl exec`). It writes next to the running service and logs only counts. Re-running is a no-op.
-4. Delete the copied export and unlink Desktop from the phone.
+3. Stream it into the running `ferret-signal-archive` container: `kubectl exec -i <pod> -c <archive container> -- ferret-signal-archive import /dev/stdin < main.jsonl`. The image has no shell or `tar`, so `kubectl cp` does not work, and streaming keeps the export off the volume. The import writes next to the running service and logs only counts. Re-running is a no-op.
+4. Delete `main.jsonl` from the workstation and unlink Desktop from the phone.
 
 The next plugin run picks up the imported messages incrementally. The export lacks messages with a disappearing timer and view-once media, and an export with group chats is rejected for now; see the [import reference](../api/signal-archive.md#history-import) for what is imported and the counts it logs.
 
