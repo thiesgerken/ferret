@@ -40,8 +40,8 @@ impl Store {
         Ok(Self { pool, store_id })
     }
 
-    /// Records the account's own ACI on first use. A daemon serving another account is not this
-    /// chat archive's collector.
+    /// Records the account's own ACI on first use, and that its device is linked. A daemon
+    /// serving another account is not this chat archive's collector.
     pub(crate) async fn adopt_self_aci(&self, aci: &str) -> Result<(), crate::receiver::Fatal> {
         sqlx::query("UPDATE archive SET self_aci = ? WHERE self_aci IS NULL")
             .bind(aci)
@@ -53,6 +53,21 @@ impl Store {
         if stored != aci {
             return Err("signal-cli serves another account than the chat archive holds".into());
         }
+        sqlx::query("UPDATE archive SET unlinked = 0")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Records that signal-cli lists no account although this chat archive adopted one. signal-cli
+    /// v0.14.9 drops an account whose device was removed: on the server's authentication failure
+    /// `ReceiveHelper` marks it unregistered and closes its manager, which
+    /// `MultiAccountManagerImpl` then removes, and on restart `SignalAccountFiles` skips it.
+    /// Before the first link, no account is just not linked yet.
+    pub(crate) async fn mark_unlinked(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE archive SET unlinked = 1 WHERE self_aci IS NOT NULL")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 

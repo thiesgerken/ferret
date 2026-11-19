@@ -103,12 +103,17 @@ impl Service {
 }
 
 async fn archive(State(state): State<Arc<Service>>) -> Result<Json<Archive>, Error> {
-    let last_received_at = sqlx::query_scalar("SELECT last_received_at FROM archive")
-        .fetch_one(&state.store.pool)
-        .await?;
+    let (last_received_at, unlinked): (Option<i64>, bool) =
+        sqlx::query_as("SELECT last_received_at, unlinked FROM archive")
+            .fetch_one(&state.store.pool)
+            .await?;
     Ok(Json(Archive {
         store_id: state.store.store_id.clone(),
-        status: CollectorStatus::Unknown,
+        status: if unlinked {
+            CollectorStatus::Unlinked
+        } else {
+            CollectorStatus::Unknown
+        },
         last_received_at,
         high: state.high().await?,
     }))

@@ -64,7 +64,7 @@ The shape of the [WhatsApp archive API](../api/whatsapp-archive.md), so the plug
 
 The change journal is **never pruned**. At personal volume it stays small, and an unpruned journal removes WhatsApp's retention handling entirely: no 410, no lost replay range, no expiry restart.
 
-Collector `status` is `unlinked` once signal-cli reports the device as removed, otherwise `unknown`; `last_received_at` is the last envelope's arrival. Activity reports both, and a run succeeds while the collector is down, because the chat archive stays readable.
+Collector `status` is `unlinked` once signal-cli reports the device as removed, otherwise `unknown`. signal-cli sends no event for it: when the server rejects the device, signal-cli marks the account unregistered and closes it, after which `listAccounts` no longer lists it, also after a restart, and a `receive` naming it fails with "Specified account does not exist". So the receiver reports `unlinked` when `listAccounts` lacks the account whose ACI the chat archive adopted, and `unknown` again once it is listed. [C15][C16][C17][C18] `last_received_at` is the last envelope's arrival. Activity reports both, and a run succeeds while the collector is down, because the chat archive stays readable.
 
 ## Plugin
 
@@ -75,7 +75,6 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 ## Open points
 
 - Group chats in the history import. The one real export checked (2026-11-19) had no groups, so neither group events nor the mapping of a backup group (identified by its master key) to signal-cli's group ID could be verified; that ID is derived from the master key with zkgroup. The importer rejects exports containing groups until an export with groups is available.
-- How signal-cli reports an unlinked device over JSON-RPC, for `status`.
 - signal-cli's memory footprint, JVM versus native image (cluster nodes are amd64, which both official images support). [C13]
 
 ## Rejected alternatives
@@ -101,6 +100,10 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 - [C12: signal-cli issue #1747, no message history](https://github.com/AsamK/signal-cli/issues/1747)
 - [C13: signal-cli release workflow, container images](https://github.com/AsamK/signal-cli/blob/v0.14.9/.github/workflows/release.yml)
 - [C14: ReceiveCommand, JSON-RPC `receive` with `maxMessages` and `timeout`](https://github.com/AsamK/signal-cli/blob/v0.14.9/src/main/java/org/asamk/signal/commands/ReceiveCommand.java)
+- [C15: ReceiveHelper, authentication failure marks the account unregistered](https://github.com/AsamK/signal-cli/blob/v0.14.9/lib/src/main/java/org/asamk/signal/manager/helper/ReceiveHelper.java)
+- [C16: MultiAccountManagerImpl, closed managers leave the account list](https://github.com/AsamK/signal-cli/blob/v0.14.9/lib/src/main/java/org/asamk/signal/manager/internal/MultiAccountManagerImpl.java)
+- [C17: SignalAccountFiles, unregistered accounts are not loaded](https://github.com/AsamK/signal-cli/blob/v0.14.9/lib/src/main/java/org/asamk/signal/manager/SignalAccountFiles.java)
+- [C18: JSON-RPC handler, unknown account error](https://github.com/AsamK/signal-cli/blob/v0.14.9/src/main/java/org/asamk/signal/jsonrpc/SignalJsonRpcCommandHandler.java)
 - [P1: presage-store-sqlite schema](https://github.com/whisperfish/presage/blob/6f630791b2c7bf3d5b00c75f5a6c94131bf79c8c/presage-store-sqlite/migrations/20250112201436_init.sql)
 - [P2: presage issue #396, no history transfer](https://github.com/whisperfish/presage/issues/396)
 - [P3: presage PR #447, link-and-sync archive (open)](https://github.com/whisperfish/presage/pull/447)

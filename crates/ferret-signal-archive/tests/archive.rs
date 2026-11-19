@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use ferret_signal_archive::{
-    Archive, Attachment, ChangeOperation, ChangesPage, Chat, ChatKind, ChatsPage, ImportSummary,
-    MessageKey, MessagesPage, PAGE_SIZE, Store,
+    Archive, Attachment, ChangeOperation, ChangesPage, Chat, ChatKind, ChatsPage, CollectorStatus,
+    ImportSummary, MessageKey, MessagesPage, PAGE_SIZE, Store,
 };
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
@@ -1042,6 +1042,79 @@ async fn live_edits_and_deletes_resolve_imported_revisions() {
             .iter()
             .all(|message| message.key.sent_at != 1_750_000_200_000)
     );
+}
+
+/// A signal-cli daemon whose account is gone: it answers `listAccounts` with none.
+async fn daemon_without_accounts() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let request = BufReader::new(reader)
+            .lines()
+            .next_line()
+            .await
+            .unwrap()
+            .unwrap();
+        let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+        assert_eq!(request["method"], "listAccounts");
+        let response = serde_json::json!({"jsonrpc": "2.0", "id": request["id"], "result": []});
+        writer
+            .write_all(format!("{response}\n").as_bytes())
+            .await
+            .unwrap();
+        std::future::pending::<()>().await;
+    });
+    address
+}
+
+impl Api {
+    async fn await_status(&self, status: CollectorStatus) -> Archive {
+        for _ in 0..200 {
+            let archive = self.archive().await;
+            if archive.status == status {
+                return archive;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("collector status did not become {status:?}");
+    }
+}
+
+#[tokio::test]
+async fn collector_status_follows_whether_signal_cli_still_lists_the_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let api = Api::start(store.clone()).await;
+    let fresh = api.archive().await;
+    assert_eq!(fresh.status, CollectorStatus::Unknown);
+    assert_eq!(fresh.last_received_at, None);
+
+    let first_line = RECEIVED.lines().next().unwrap().to_owned();
+    let linked = tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        fake_daemon(ME, first_line).await,
+    ));
+    let received = api.await_high(1).await;
+    assert_eq!(received.status, CollectorStatus::Unknown);
+    assert!(received.last_received_at.is_some());
+    linked.abort();
+
+    let unlinked = tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        daemon_without_accounts().await,
+    ));
+    let archive = api.await_status(CollectorStatus::Unlinked).await;
+    assert_eq!(archive.last_received_at, received.last_received_at);
+    unlinked.abort();
+
+    // Linking the account again brings it back.
+    tokio::spawn(ferret_signal_archive::receive(
+        store,
+        fake_daemon(ME, String::new()).await,
+    ));
+    api.await_status(CollectorStatus::Unknown).await;
 }
 
 #[tokio::test]

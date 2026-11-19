@@ -53,7 +53,7 @@ No query fields. Returns:
 }
 ```
 
-`store_id` is 32 lowercase hex characters, random at database creation; a new database is a different chat archive. `status` is `unlinked` once signal-cli reports the device as removed, otherwise `unknown`; `unknown` does not prove the collector is connected. `last_received_at` is the last received envelope's arrival, or null. `high` is the change journal's highest sequence, 0 when empty.
+`store_id` is 32 lowercase hex characters, random at database creation; a new database is a different chat archive. `status` is `unlinked` once signal-cli no longer lists the account this chat archive belongs to, which is how it reports a removed device (unlinked from the phone, or idle for 45 days); otherwise `unknown`, also before the first link. `unknown` does not prove the collector is connected. `last_received_at` is the last received envelope's arrival, or null. `high` is the change journal's highest sequence, 0 when empty.
 
 ## `GET /v1/chats?store_id=<id>[&after=<chat>]`
 

@@ -74,7 +74,10 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
         serde_json::from_value(daemon.call("listAccounts", json!({})).await?)
             .map_err(|_| retry("unexpected listAccounts result"))?;
     let aci = match accounts.as_slice() {
-        [] => return Err(retry("signal-cli has no linked account yet")),
+        [] => {
+            store.mark_unlinked().await?;
+            return Err(retry("signal-cli has no linked account"));
+        }
         [Account { aci: Some(aci) }] => aci.clone(),
         [_] => return Err(retry("signal-cli's account has no ACI yet")),
         _ => {
