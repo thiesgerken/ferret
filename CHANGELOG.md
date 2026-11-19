@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.38.9 (2026-11-19)
+
+### ⬆️ Upgrade dependencies
+
+- chore: upgrade all routine dependency updates
+
+### 📝 Add or update documentation
+
+- docs(conception): design the Signal chat archive
+- docs(glossary): define chat archive and collector
+- docs(conception): research Signal archive options
+
 ## v0.38.8 (2026-11-15)
 
 ### ⬆️ Upgrade dependencies
