@@ -4,6 +4,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
@@ -64,6 +65,55 @@ pub struct Attachment<'a> {
     /// Bytes.
     pub size: Option<i64>,
     pub caption: Option<&'a str>,
+}
+
+/// Checks a connection to a chat archive API (private HTTP with a hexadecimal bearer secret,
+/// pinned to one store) and returns its URL without a trailing slash. `plugin` names the plugin in
+/// errors.
+pub fn validate_connection(
+    plugin: &str,
+    url: &str,
+    token: &str,
+    expected_store_id: &str,
+) -> Result<String, PluginError> {
+    let url = reqwest::Url::parse(url)
+        .map_err(|_| format!("{plugin} requires an absolute HTTP(S) archive URL"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(format!(
+            "{plugin} requires an HTTP(S) URL without credentials, query or fragment"
+        )
+        .into());
+    }
+    if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(
+            format!("{plugin} requires a 64-character hexadecimal archive bearer token").into(),
+        );
+    }
+    if expected_store_id.len() != 32
+        || !expected_store_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(format!(
+            "{plugin} expected_store_id must be 32 lowercase hexadecimal characters"
+        )
+        .into());
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+pub fn http_client() -> Result<reqwest::Client, PluginError> {
+    Ok(reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
 }
 
 pub fn digest_id(value: &str) -> String {

@@ -2,7 +2,7 @@
 
 For configuring built-ins use [files](files.md), [git](git.md), [Gitea](gitea.md), [Home Assistant](homeassistant.md), [Paperless](paperless.md), [carapace](carapace.md), [IMAP](imap.md), [AFFiNE](affine.md), [Vikunja](vikunja.md), [Karakeep](karakeep.md), [Mealie](mealie.md), [Moneta](moneta.md). This page is for adding a worker plugin. If your producer already runs independently, [HTTP ingestion](../ingestion.md) is simpler and does not require worker registration.
 
-The [WhatsApp archive](whatsapp.md) plugin additionally uses an independent read-only archive API container.
+The [WhatsApp archive](whatsapp.md) and [Signal chat archive](signal.md) plugins additionally use an independent read-only chat archive API.
 
 A plugin is code in a worker, not code dynamically loaded into the server. Registration advertises a name and JSON Schema; the server stores schemas for validation/UI forms. Workers claim only names they advertised. Third-party workers can implement the same protocol without linking the built-in Rust binary, but the PSK is a trusted cross-user credential.
 
