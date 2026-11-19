@@ -4,9 +4,23 @@
 
 All timestamps are Unix **milliseconds**: a message's sent timestamp is part of its Signal identity.
 
+## Running it
+
+Image: `ghcr.io/thiesgerken/ferret-signal-archive:<version>`, non-root, read-only root filesystem. It needs:
+
+| Environment | Value |
+|---|---|
+| `SIGNAL_ARCHIVE_DB` | Path of the SQLite database on a persistent, writable volume. Created and migrated at startup. |
+| `SIGNAL_ARCHIVE_TOKEN_FILE` | Mounted Secret holding the bearer token: 64 hexadecimal characters (32 random bytes), optionally newline-terminated. |
+| `SIGNAL_CLI_ADDRESS` | `host:port` of the collector, `signal-cli daemon --tcp=<host:port> --receive-mode manual`, without `-a`. |
+
+`--receive-mode manual` is required: only then does signal-cli leave messages queued on the Signal server while this service is down, instead of acknowledging and dropping them. The daemon runs in multi-account mode (no `-a`), because only there does `listAccounts` report the account's own ACI. On every connect the service requires exactly one linked account, records its ACI on first use and passes it as `account` on every call. It then pulls envelopes one at a time (`receive` with `maxMessages: 1`): signal-cli acknowledges an envelope to the Signal server before handing it over, so a crash loses at most the one envelope in flight. It reconnects every 5 seconds while the daemon is unreachable or has no linked account yet, and exits when the database cannot be written, the daemon serves several accounts, or the account differs from the recorded one: a different account is a different chat archive. The database is the only raw copy of everything received, so back it up.
+
+What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
+
 ## Authentication and errors
 
-Listen port: 8080. Every `/v1/*` request requires `Authorization: Bearer <token>` matching the mounted Secret. `GET /healthz` returns only HTTP 200; it is a process probe, not collector or archive freshness.
+Listen port: 8080. Every `/v1/*` request requires `Authorization: Bearer <token>` matching the mounted Secret, compared as fixed-length SHA-256 digests in constant time. `GET /healthz` returns only HTTP 200; it is a process probe, not collector or archive freshness.
 
 Errors have an allowlisted JSON code `{"code":"..."}`, never raw SQLite, message or credential details:
 
