@@ -63,6 +63,8 @@ pub struct Attachment {
     pub size: Option<i64>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub caption: Option<String>,
+    /// Signal's only attachment type that the MIME type does not carry.
+    pub voice_note: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,7 +100,7 @@ pub struct Change {
     pub operation: ChangeOperation,
     pub chat: String,
     #[serde(flatten)]
-    pub message: MessageKey,
+    pub key: MessageKey,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

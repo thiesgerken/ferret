@@ -60,14 +60,14 @@ Ascending `(sent_at, author)` keyset over one chat's messages, up to 500 per pag
     "author_number": "+15555550100",
     "from_me": false,
     "text": "See attached",
-    "attachments": [{"mime_type":"application/pdf","filename":"plan.pdf","size":48213,"caption":null}],
+    "attachments": [{"mime_type":"application/pdf","filename":"plan.pdf","size":48213,"caption":null,"voice_note":false}],
     "edited": false
   }],
   "next": {"sent_at": 1760000000000, "author": "a1b2c3d4-..."}
 }
 ```
 
-`(chat, author, sent_at)` identifies a message; `author` is the sender's ACI, the account's own for `from_me`. `author_number` is the sender's phone number if signal-cli knows it. `text` is null for attachment-only messages. Attachments carry metadata only; every attachment field is nullable. Disappearing and view-once messages are returned like any other: the chat archive never expires them. `next` is null when the chat is exhausted.
+`(chat, author, sent_at)` identifies a message; `author` is the sender's ACI, the account's own for `from_me`. `author_number` is the sender's phone number if signal-cli knows it. `text` is null for attachment-only messages. Attachments carry metadata only. Their type is the MIME type (stickers are not attachments in Signal); `voice_note` marks recorded voice messages, the one type MIME does not distinguish. `mime_type`, `filename`, `size` and `caption` are nullable. Disappearing and view-once messages are returned like any other: the chat archive never expires them. `next` is null when the chat is exhausted.
 
 ## `GET /v1/changes?store_id=<id>&after=<sequence>&through=<sequence>`
 
