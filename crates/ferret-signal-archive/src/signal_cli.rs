@@ -198,8 +198,14 @@ impl Envelope {
                 sent_at: delete.target_timestamp,
             }));
         }
-        // signal-cli drops admin deletes from senders who aren't admins of the group.
+        // signal-cli v0.14.9 drops a group's admin deletes from non-admins
+        // (`IncomingMessageHandler.isNotAllowedToSendToGroup`), but checks nothing outside a
+        // group, where an admin delete would let any contact delete others' messages.
         if let Some(delete) = data.admin_delete {
+            if kind != ChatKind::Group {
+                warn!("skipping an admin delete outside a group");
+                return None;
+            }
             let Some(target_author) = delete.target_author_uuid else {
                 warn!("skipping an admin delete without target author ACI");
                 return None;

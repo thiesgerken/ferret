@@ -552,6 +552,14 @@ async fn edits_and_deletes_resolve_any_revision_and_keep_identities_occupied() {
         // A delete ahead of its message leaves a tombstone the message cannot replace.
         envelope(ALICE, remote_delete(9_500, 9_000)),
         envelope(ALICE, serde_json::json!({"dataMessage": data(9_000, "Too late")})),
+        // Nobody edits or deletes another author's message, outside a group not even an admin.
+        envelope(ALICE, edit(4_000, 12_000, "Hijacked")),
+        envelope(ALICE, remote_delete(12_500, 4_000)),
+        envelope(
+            ALICE,
+            serde_json::json!({"dataMessage": {"timestamp": 13_000,
+                "adminDelete": {"targetAuthorUuid": ME, "targetTimestamp": 4_000}}}),
+        ),
         envelope(ALICE, serde_json::json!({"dataMessage": data(11_000, "Last")})),
     ]
     .join("\n");
