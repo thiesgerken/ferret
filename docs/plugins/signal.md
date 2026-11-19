@@ -30,7 +30,7 @@ Authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Cr
 
 ## Documents
 
-Chats become segments exactly as for [WhatsApp](whatsapp.md#documents-and-privacy-boundaries): Markdown with a bold sender line and UTC time per message, split at pauses of at least 24 hours or about 8,000 characters, one thread per chat (the raw chat ID), the chat name as title, the distinct speakers of a segment as its authors, ferret's viewer as the origin.
+Chats become segments exactly as for [WhatsApp](whatsapp.md#documents-and-privacy-boundaries): Markdown with a bold sender line and UTC time per message, split at pauses of at least 24 hours or about 8,000 characters, one thread per chat (the raw chat ID), the chat name (or raw chat ID) as title, the distinct speakers of a segment as its authors, ferret's viewer as the origin.
 
 - Indexed: text, captions, and attachment metadata (MIME type, file name, size, and whether it is a voice note). Binary media is never stored or indexed. Each attachment takes one line; captions follow the message text.
 - Senders are `Me` for own messages, otherwise the sender's phone number, or their ACI when the number is unknown.
