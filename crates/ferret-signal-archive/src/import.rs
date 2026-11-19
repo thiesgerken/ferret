@@ -22,6 +22,9 @@ pub struct ImportSummary {
     pub present: u64,
     /// Chat items the chat archive does not store (calls, stickers, deletes, updates, ...).
     pub skipped: u64,
+    /// Messages lost because their chat or author has no ACI to key them by, like a contact
+    /// known only by phone number.
+    pub unkeyed: u64,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +69,19 @@ struct ChatItem {
     revisions: Vec<ChatItem>,
     outgoing: Option<serde_json::Value>,
     standard_message: Option<StandardMessage>,
+    direct_story_reply_message: Option<DirectStoryReplyMessage>,
+}
+
+/// A reply to a story, shown as an ordinary message in its chat; emoji replies are reactions.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectStoryReplyMessage {
+    text_reply: Option<TextReply>,
+}
+
+#[derive(Deserialize)]
+struct TextReply {
+    text: Option<Text>,
 }
 
 #[derive(Deserialize)]
@@ -107,7 +123,14 @@ enum Party {
         aci: Option<String>,
         number: Option<String>,
     },
+    Group,
     Other,
+}
+
+enum Outcome {
+    Message(Received),
+    Skipped,
+    Unkeyed,
 }
 
 /// Imports `path` into the chat archive. Fails before writing anything if the receiver has never
@@ -132,14 +155,20 @@ pub async fn import(store: &Store, path: &Path) -> Result<ImportSummary, Fatal> 
                 party(recipient).map_err(|error| at_line(&error))?,
             );
         } else if let Some(chat) = frame.chat {
+            if let Some(Party::Group) = parties.get(&chat.recipient_id) {
+                // signal-cli names a group by an ID derived from its master key with zkgroup; no
+                // export with groups was available to verify a derivation against.
+                return Err(at_line(&"group chat import unsupported").into());
+            }
             chats.insert(chat.id, chat.recipient_id);
         } else if let Some(item) = frame.chat_item {
             match received(item, &parties, &chats, &self_aci).map_err(|error| at_line(&error))? {
-                Some(message) => match store.insert(message).await? {
+                Outcome::Message(message) => match store.insert(message).await? {
                     true => summary.inserted += 1,
                     false => summary.present += 1,
                 },
-                None => summary.skipped += 1,
+                Outcome::Skipped => summary.skipped += 1,
+                Outcome::Unkeyed => summary.unkeyed += 1,
             }
         }
     }
@@ -148,9 +177,7 @@ pub async fn import(store: &Store, path: &Path) -> Result<ImportSummary, Fatal> 
 
 fn party(recipient: Recipient) -> Result<Party, Fatal> {
     if recipient.group.is_some() {
-        // signal-cli names a group by an ID derived from its master key with zkgroup; no export
-        // with groups was available to verify a derivation against.
-        return Err("group import unsupported".into());
+        return Ok(Party::Group);
     }
     if recipient.own.is_some() {
         return Ok(Party::Account);
@@ -182,16 +209,14 @@ fn received(
     parties: &HashMap<String, Party>,
     chats: &HashMap<String, String>,
     self_aci: &str,
-) -> Result<Option<Received>, Fatal> {
-    let Some(message) = item.standard_message else {
-        return Ok(None);
+) -> Result<Outcome, Fatal> {
+    let (text, attachments) = match (item.standard_message, item.direct_story_reply_message) {
+        (Some(message), _) => (message.text, message.attachments),
+        (None, Some(reply)) => (reply.text_reply.and_then(|reply| reply.text), Vec::new()),
+        (None, None) => return Ok(Outcome::Skipped),
     };
-    let text = message
-        .text
-        .map(|text| text.body)
-        .filter(|body| !body.is_empty());
-    let attachments: Vec<Attachment> = message
-        .attachments
+    let text = text.map(|text| text.body).filter(|body| !body.is_empty());
+    let attachments: Vec<Attachment> = attachments
         .into_iter()
         .map(|attachment| Attachment {
             mime_type: attachment.pointer.content_type,
@@ -205,7 +230,7 @@ fn received(
         })
         .collect();
     if text.is_none() && attachments.is_empty() {
-        return Ok(None);
+        return Ok(Outcome::Skipped);
     }
     let lookup = |id: &str| {
         parties
@@ -225,13 +250,15 @@ fn received(
             numbers.extend(number.clone().map(|number| (aci.clone(), number)));
             (aci.clone(), ChatKind::Direct)
         }
-        Party::Contact { aci: None, .. } => return Err("chat with a contact without ACI".into()),
-        Party::Other => return Ok(None),
+        Party::Contact { aci: None, .. } => return Ok(Outcome::Unkeyed),
+        Party::Group => unreachable!("group chats are rejected when their chat frame is read"),
+        Party::Other => return Ok(Outcome::Skipped),
     };
     let author = match lookup(&item.author_id)? {
         Party::Account => self_aci.to_owned(),
         Party::Contact { aci: Some(aci), .. } => aci.clone(),
-        _ => return Err("chat item author without ACI".into()),
+        Party::Contact { aci: None, .. } => return Ok(Outcome::Unkeyed),
+        Party::Group | Party::Other => return Err("chat item author is not a person".into()),
     };
     // An edited item carries the latest revision's dateSent, but Signal (and signal-cli's live
     // stream) identifies a message by its original sent timestamp: the oldest revision's.
@@ -240,7 +267,7 @@ fn received(
         .revisions
         .first()
         .map_or(&item.date_sent, |original| &original.date_sent);
-    Ok(Some(Received {
+    Ok(Outcome::Message(Received {
         chat,
         kind,
         author,

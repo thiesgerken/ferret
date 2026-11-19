@@ -25,8 +25,12 @@ async fn main() -> Result<(), StartupError> {
                 inserted,
                 present,
                 skipped,
+                unkeyed,
             } = import(&store, path.as_ref()).await?;
-            info!(inserted, present, skipped, "imported the chat export");
+            info!(
+                inserted,
+                present, skipped, unkeyed, "imported the chat export"
+            );
             Ok(())
         }
         _ => Err("usage: ferret-signal-archive [import <main.jsonl>]".into()),
