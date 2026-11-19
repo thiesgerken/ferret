@@ -5,6 +5,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use chrono::DateTime;
 use ferret_api::internal::RunStats;
 use ferret_signal_archive::{
     Archive, ChangesPage, Chat, ChatKind, ChatsPage, CollectorStatus, Message, MessageKey,
@@ -99,14 +100,17 @@ impl ChatArchive for ArchiveClient {
             CollectorStatus::Unknown => "unknown",
             CollectorStatus::Unlinked => "unlinked",
         };
+        let last_received = archive
+            .last_received_at
+            .and_then(DateTime::from_timestamp_millis)
+            .map_or("never".to_owned(), |at| {
+                at.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+            });
         Ok(Journal {
             // The journal is never pruned.
             floor: 0,
             high: archive.high,
-            collector: format!(
-                "collector status {status}, last received envelope at {:?}",
-                archive.last_received_at
-            ),
+            collector: format!("collector status {status}, last received envelope {last_received}"),
         })
     }
 
