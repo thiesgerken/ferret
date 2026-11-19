@@ -132,12 +132,20 @@ async fn chats(
 ) -> Result<Json<ChatsPage>, Error> {
     let Query(query) = query.map_err(|_| INVALID_QUERY)?;
     state.same_store(&query.store_id)?;
-    let mut chats: Vec<Chat> =
-        sqlx::query_as("SELECT id, kind, name FROM chats WHERE id > ? ORDER BY id LIMIT ?")
-            .bind(query.after.unwrap_or_default())
-            .bind(PAGE_SIZE + 1)
-            .fetch_all(&state.store.pool)
-            .await?;
+    let mut chats: Vec<Chat> = sqlx::query_as(
+        "SELECT chats.id, chats.kind,
+                    CASE chats.kind
+                        WHEN 'group' THEN chats.name
+                        WHEN 'direct' THEN coalesce(recipients.name, recipients.number)
+                        WHEN 'note_to_self' THEN 'Note to Self'
+                    END AS name
+             FROM chats LEFT JOIN recipients ON recipients.aci = chats.id
+             WHERE chats.id > ? ORDER BY chats.id LIMIT ?",
+    )
+    .bind(query.after.unwrap_or_default())
+    .bind(PAGE_SIZE + 1)
+    .fetch_all(&state.store.pool)
+    .await?;
     let next = next_page(&mut chats).map(|chat| chat.id.clone());
     Ok(Json(ChatsPage { chats, next }))
 }
@@ -164,8 +172,9 @@ async fn messages(
     state.same_store(&query.store_id)?;
     let rows = sqlx::query(
         "SELECT sent_at, author, from_me, text, attachments, edited,
-                (SELECT number FROM recipients WHERE aci = author) AS author_number
-         FROM messages WHERE chat = ? AND NOT deleted AND (sent_at, author) > (?, ?)
+                recipients.name AS author_name, recipients.number AS author_number
+         FROM messages LEFT JOIN recipients ON recipients.aci = messages.author
+         WHERE chat = ? AND NOT deleted AND (sent_at, author) > (?, ?)
          ORDER BY sent_at, author LIMIT ?",
     )
     .bind(query.chat)
@@ -183,6 +192,7 @@ async fn messages(
                     sent_at: row.try_get("sent_at")?,
                     author: row.try_get("author")?,
                 },
+                author_name: row.try_get("author_name")?,
                 author_number: row.try_get("author_number")?,
                 from_me: row.try_get("from_me")?,
                 text: row.try_get("text")?,
@@ -229,9 +239,9 @@ async fn changes(
                 recorded_at: row.try_get("recorded_at")?,
                 operation: row.try_get("operation")?,
                 chat: row.try_get("chat")?,
-                key: MessageKey {
-                    sent_at: row.try_get("sent_at")?,
-                    author: row.try_get("author")?,
+                key: match (row.try_get("sent_at")?, row.try_get("author")?) {
+                    (Some(sent_at), Some(author)) => Some(MessageKey { sent_at, author }),
+                    _ => None,
                 },
             })
         })

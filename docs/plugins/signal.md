@@ -45,7 +45,7 @@ Chats become segments exactly as for [WhatsApp](whatsapp.md#documents-and-privac
 
 - Indexed: text, captions, and attachment metadata (MIME type, file name, size, and whether it is a voice note). Binary media is never stored or indexed. Each attachment takes one line; captions follow the message text.
 - Edits show the latest text with an "(edited)" marker; the message keeps its place and its segment. Deleted messages, including messages a group admin deleted, disappear from their segment on the next run.
-- Senders are `Me` for own messages, otherwise the sender's phone number, or their ACI when the number is unknown.
+- Senders are `Me` for own messages, otherwise the name the account knows them by (the nickname it gave them, else the system contact name, else their profile name), else their phone number, else their ACI. A direct chat's title is that name or number, a group's its name, Note to Self's "Note to Self". A rename re-renders exactly the chats it shows up in: the contact's direct chat and the chats they wrote in.
 - **Disappearing and view-once messages are kept and indexed, and never expire.** This deliberately differs from Signal's own exports: what the account has read, ferret remembers. Decide whether that fits your privacy policy before connecting the chat archive, and block chats where it does not.
 - Metadata holds the chat ID and kind (`direct`, `group`, `note_to_self`), the first message's ID (`<author ACI>/<sent timestamp in ms>`) and the last message's date.
 
