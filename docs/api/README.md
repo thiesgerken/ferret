@@ -15,6 +15,8 @@ The REST reference owns machine endpoint contracts. [Ingestion](../ingestion.md)
 
 The independent [WhatsApp archive HTTP API](whatsapp-archive.md) is a separate read-only service with its own mounted bearer Secret, not another ferret public endpoint. The plugin pins its archive through required ordinary connection configuration; no plugin-specific server API is involved.
 
+The [Signal archive HTTP API](signal-archive.md) follows the same model for one Signal account.
+
 ## Conventions
 
 REST uses JSON, snake_case fields, RFC 3339 timestamps and UUID document/sync ids. GraphQL uses camelCase and uppercase enum values. Both scope document access to the authenticated user. A source root includes descendants by whole path segments, not arbitrary prefix matches.

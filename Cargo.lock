@@ -1305,6 +1305,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferret-signal-archive"
+version = "0.38.9"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ferret-whatsapp-archive"
 version = "0.38.9"
 dependencies = [
