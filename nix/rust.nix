@@ -99,7 +99,7 @@ let
     // {
       inherit cargoArtifacts;
       pname = "ferret-binaries";
-      cargoExtraArgs = "--locked -p ferret-server -p ferret-plugins -p ferret-whatsapp-archive";
+      cargoExtraArgs = "--locked -p ferret-server -p ferret-plugins -p ferret-whatsapp-archive -p ferret-signal-archive";
       doCheck = false;
     }
   );
@@ -117,6 +117,7 @@ let
   server = binary "ferret";
   plugins = binary "ferret-plugins";
   whatsapp-archive = binary "ferret-whatsapp-archive";
+  signal-archive = binary "ferret-signal-archive";
   services = {
     nativeBuildInputs = common.nativeBuildInputs ++ [
       postgres
@@ -136,6 +137,7 @@ in
     server
     plugins
     whatsapp-archive
+    signal-archive
     postgres
     cargoArtifacts
     ;

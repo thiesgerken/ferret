@@ -12,8 +12,8 @@ There is no wacli for Signal. No maintained tool is collector, durable chat arch
 
 One pod, two containers, one Signal account:
 
-- **Collector:** the official `signal-cli` image, linked as an additional device (`signal-cli link`, never `register`, which would unregister the phone), running `daemon --receive-mode manual`, its account data on a PVC. Pinned and bumped at least monthly by Renovate, independent of ferret releases: signal-cli releases older than three months may stop working. [C1][C2]
-- **`ferret-signal-archive`:** a new crate and image in this repo, built with Nix like `ferret-whatsapp-archive`. One process subscribes to the daemon over JSON-RPC, is the only writer of its SQLite chat archive, refreshes contact and group names via `listContacts`/`listGroups`, and serves the read-only HTTP API the plugin polls.
+- **Collector:** the official `signal-cli` image, linked as an additional device (`signal-cli link`, never `register`, which would unregister the phone), running `daemon --tcp --receive-mode manual` in multi-account mode (no `-a`, so that `listAccounts` reports the account's own ACI), its account data on a PVC. Pinned and bumped at least monthly by Renovate, independent of ferret releases: signal-cli releases older than three months may stop working. [C1][C2]
+- **`ferret-signal-archive`:** a new crate and image in this repo, built with Nix like `ferret-whatsapp-archive`. One process pulls from the daemon over JSON-RPC, is the only writer of its SQLite chat archive, refreshes contact and group names via `listContacts`/`listGroups`, and serves the read-only HTTP API the plugin polls.
 
 Writer and API share a process because SQLite has one writer anyway; WhatsApp splits them only because wacli is the writer. Neither container is part of the Helm chart. Deployment, the PVCs, the NetworkPolicy and backups belong to the cluster's infrastructure, next to wacli. The chat archive is the only raw copy of everything after the history import, so backing it up is the operator's job, as for wacli.
 
@@ -21,9 +21,9 @@ Linking is a one-time manual step (`kubectl exec` into the collector, scan the `
 
 ## Receiving without loss
 
-`--receive-mode manual` is required. In the default `on-start` the daemon acks every envelope to the server and hands it to whatever handlers are connected, so with the consumer down it is gone. In manual mode envelopes stay queued on the Signal server until the consumer subscribes. The server drops queued messages after about 30 days (sample config and support article; the production value is not in the source). [C3][C5][C6][V6][S2]
+`--receive-mode manual` is required. In the default `on-start` the daemon acks every envelope to the server and hands it to whatever handlers are connected, so with the consumer down it is gone. In manual mode envelopes stay queued on the Signal server until the consumer asks for them. The server drops queued messages after about 30 days (sample config and support article; the production value is not in the source). [C3][C5][C6][V6][S2]
 
-JSON-RPC notifications have no client ack. A consumer crash mid-delivery loses the one envelope in flight. Accepted: envelopes are fetched one at a time, and both containers share a pod lifecycle, so the window stays one message per crash. [C4][C7]
+JSON-RPC has no client ack: signal-cli acks an envelope to the server before handing it over. A consumer crash mid-delivery loses the one envelope in flight. Accepted: envelopes are pulled one at a time with `receive` and `maxMessages: 1` rather than pushed by `subscribeReceive`, which would stream and ack a whole backlog, and both containers share a pod lifecycle, so the window stays one message per crash. [C4][C7][C14]
 
 ## History import
 
@@ -98,6 +98,7 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 - [C10: ProvisioningManagerImpl, link capabilities and sync request](https://github.com/AsamK/signal-cli/blob/v0.14.9/lib/src/main/java/org/asamk/signal/manager/internal/ProvisioningManagerImpl.java)
 - [C12: signal-cli issue #1747, no message history](https://github.com/AsamK/signal-cli/issues/1747)
 - [C13: signal-cli release workflow, container images](https://github.com/AsamK/signal-cli/blob/v0.14.9/.github/workflows/release.yml)
+- [C14: ReceiveCommand, JSON-RPC `receive` with `maxMessages` and `timeout`](https://github.com/AsamK/signal-cli/blob/v0.14.9/src/main/java/org/asamk/signal/commands/ReceiveCommand.java)
 - [P1: presage-store-sqlite schema](https://github.com/whisperfish/presage/blob/6f630791b2c7bf3d5b00c75f5a6c94131bf79c8c/presage-store-sqlite/migrations/20250112201436_init.sql)
 - [P2: presage issue #396, no history transfer](https://github.com/whisperfish/presage/issues/396)
 - [P3: presage PR #447, link-and-sync archive (open)](https://github.com/whisperfish/presage/pull/447)

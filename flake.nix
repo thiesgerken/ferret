@@ -76,7 +76,7 @@
           };
           images = import ./nix/images.nix {
             inherit pkgs;
-            inherit (backend) server plugins whatsapp-archive;
+            inherit (backend) server plugins whatsapp-archive signal-archive;
             inherit (frontend) frontend;
           };
           # The version comes from the committed Chart.yaml, which the release commit bumps.
@@ -116,7 +116,7 @@
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
-            inherit (p.backend) server plugins whatsapp-archive;
+            inherit (p.backend) server plugins whatsapp-archive signal-archive;
             inherit (p.frontend) frontend;
             inherit (p) chart;
             default = p.backend.server;
@@ -161,7 +161,7 @@
         in
         self.checks.${linux}
         // {
-          inherit (p.backend) server plugins whatsapp-archive;
+          inherit (p.backend) server plugins whatsapp-archive signal-archive;
           inherit (p.frontend) frontend;
           inherit (p) chart;
           tools = project.${system}.tools.ci;
@@ -263,6 +263,7 @@
                   ferret = artifacts.server-image;
                   ferret-plugins = artifacts.plugins-image;
                   ferret-whatsapp-archive = artifacts.whatsapp-archive-image;
+                  ferret-signal-archive = artifacts.signal-archive-image;
                   ferret-frontend = artifacts.frontend-image;
                 };
             oci-helm.ferret = ghcr // {
@@ -280,6 +281,7 @@
                 docker pull ghcr.io/thiesgerken/ferret:{{ version }}
                 docker pull ghcr.io/thiesgerken/ferret-plugins:{{ version }}
                 docker pull ghcr.io/thiesgerken/ferret-whatsapp-archive:{{ version }}
+                docker pull ghcr.io/thiesgerken/ferret-signal-archive:{{ version }}
                 docker pull ghcr.io/thiesgerken/ferret-frontend:{{ version }}
                 ```
 
