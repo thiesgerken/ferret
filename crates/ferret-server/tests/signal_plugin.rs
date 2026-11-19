@@ -134,6 +134,17 @@ fn variant(line: usize, author: (&str, &str), sent_at: i64, text: &str) -> Strin
     item.to_string()
 }
 
+/// A `receive` result item from Alice with `content` (`dataMessage` or `editMessage`).
+fn from_alice(content: Value) -> String {
+    let mut envelope =
+        json!({"sourceUuid": ALICE, "sourceNumber": ALICE_NUMBER, "sourceDevice": 1});
+    envelope
+        .as_object_mut()
+        .unwrap()
+        .extend(content.as_object().unwrap().clone());
+    json!({"account": "+15555550100", "envelope": envelope}).to_string()
+}
+
 async fn setup(server: &TestServer, config: Value) -> (Worker, Uuid, String) {
     let worker = Worker {
         internal: server.internal(),
@@ -311,4 +322,40 @@ async fn a_different_chat_archive_fails_before_any_write(pool: PgPool) {
     let (status, error, _, _) = execute(&worker, wid, &pool).await;
     assert_eq!(status, "succeeded", "{error:?}");
     assert_eq!(documents(&server, &pool).await.len(), 3);
+}
+
+#[sqlx::test(migrations = false)]
+async fn edits_and_deletes_rerender_their_segment(pool: PgPool) {
+    let archive = ChatArchive::start().await;
+    archive.receive(FIXTURE, FIXTURE_MESSAGES).await;
+    let server = start_server(pool.clone()).await;
+    let (worker, wid, id) = setup(&server, archive.config(&[], &[])).await;
+    let (status, error, _, _) = execute(&worker, wid, &pool).await;
+    assert_eq!(status, "succeeded", "{error:?}");
+
+    let hello = 1_760_000_001_000_i64;
+    let disappearing = 1_760_000_006_000_i64;
+    let changes = [
+        from_alice(json!({"editMessage": {"targetSentTimestamp": hello,
+            "dataMessage": {"timestamp": 1_760_000_020_000_i64, "message": "Editedsentinel"}}})),
+        from_alice(json!({"dataMessage": {"timestamp": 1_760_000_021_000_i64,
+            "remoteDelete": {"targetTimestamp": disappearing, "timestamp": disappearing}}})),
+    ]
+    .join("\n");
+    archive.receive(&changes, FIXTURE_MESSAGES + 2).await;
+    due(&server, &id).await;
+    let (status, error, stats, _) = execute(&worker, wid, &pool).await;
+    assert_eq!(status, "succeeded", "{error:?}");
+    assert_eq!(stats["put"], 1, "{stats}");
+    assert_eq!(stats["deleted"], 0, "{stats}");
+    let docs = documents(&server, &pool).await;
+    let alice = in_thread(&docs, ALICE);
+    assert_eq!(
+        alice.len(),
+        1,
+        "the edited message keeps its identity and segment"
+    );
+    assert!(alice[0].text.contains(" (edited)  \nEditedsentinel"));
+    assert!(!alice[0].text.contains("Hello from Alice"));
+    assert!(!alice[0].text.contains("Disappearing"));
 }
