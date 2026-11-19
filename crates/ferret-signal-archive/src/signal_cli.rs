@@ -81,6 +81,7 @@ pub struct Received {
     pub attachments: Vec<Attachment>,
     /// ACI and phone number pairs the envelope revealed.
     pub numbers: Vec<(String, String)>,
+    pub edited: bool,
 }
 
 impl Envelope {
@@ -152,6 +153,7 @@ impl Envelope {
             text,
             attachments,
             numbers,
+            edited: false,
         })
     }
 }

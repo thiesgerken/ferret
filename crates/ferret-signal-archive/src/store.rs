@@ -62,7 +62,8 @@ impl Store {
     }
 
     /// Stores a message unless its identity is already present, and journals the insert.
-    pub(crate) async fn insert(&self, message: Received) -> Result<(), sqlx::Error> {
+    /// Returns whether it was absent.
+    pub(crate) async fn insert(&self, message: Received) -> Result<bool, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING")
             .bind(&message.chat)
@@ -82,8 +83,8 @@ impl Store {
         let attachments =
             serde_json::to_string(&message.attachments).expect("attachments serialize");
         let inserted = sqlx::query(
-            "INSERT INTO messages (chat, sent_at, author, from_me, text, attachments)
-             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            "INSERT INTO messages (chat, sent_at, author, from_me, text, attachments, edited)
+             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
         )
         .bind(&message.chat)
         .bind(message.sent_at)
@@ -91,6 +92,7 @@ impl Store {
         .bind(message.from_me)
         .bind(&message.text)
         .bind(attachments)
+        .bind(message.edited)
         .execute(&mut *tx)
         .await?
         .rows_affected()
@@ -107,7 +109,14 @@ impl Store {
             .execute(&mut *tx)
             .await?;
         }
-        tx.commit().await
+        tx.commit().await?;
+        Ok(inserted)
+    }
+
+    pub(crate) async fn self_aci(&self) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT self_aci FROM archive")
+            .fetch_one(&self.pool)
+            .await
     }
 }
 

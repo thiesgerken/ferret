@@ -1,7 +1,8 @@
 use std::{env, fs};
 
-use ferret_signal_archive::{Store, receive, router};
+use ferret_signal_archive::{ImportSummary, Store, import, receive, router};
 use tokio::signal::unix::{SignalKind, signal};
+use tracing::info;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 type StartupError = Box<dyn std::error::Error + Send + Sync>;
@@ -17,6 +18,22 @@ async fn main() -> Result<(), StartupError> {
         )
         .init();
     let store = Store::open(required_env("SIGNAL_ARCHIVE_DB")?).await?;
+    match env::args().skip(1).collect::<Vec<_>>().as_slice() {
+        [] => serve(store).await,
+        [command, path] if command == "import" => {
+            let ImportSummary {
+                inserted,
+                present,
+                skipped,
+            } = import(&store, path.as_ref()).await?;
+            info!(inserted, present, skipped, "imported the chat export");
+            Ok(())
+        }
+        _ => Err("usage: ferret-signal-archive [import <main.jsonl>]".into()),
+    }
+}
+
+async fn serve(store: Store) -> Result<(), StartupError> {
     let token = fs::read_to_string(required_env("SIGNAL_ARCHIVE_TOKEN_FILE")?)
         .map_err(|_| "cannot read archive token file")?;
     let app = router(store.clone(), &token)?;

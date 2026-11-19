@@ -18,6 +18,10 @@ Image: `ghcr.io/thiesgerken/ferret-signal-archive:<version>`, non-root, read-onl
 
 What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
 
+## History import
+
+`ferret-signal-archive import <main.jsonl>` imports Signal Desktop's chat export (Settings > Chats > Export chat history, without media) into the database at `SIGNAL_ARCHIVE_DB`, then exits. It runs next to the live service against the same database, e.g. via `kubectl exec`. It needs the account's own ACI, which the export does not carry: the service must have connected to signal-cli at least once. Messages whose identity is already present are left alone, new ones are journaled as ordinary inserts, so re-running is a no-op. Content rules match live receiving; an edited message keeps its original identity, with the latest text and `edited: true`. An export containing group chats is rejected (`group import unsupported`): mapping its groups to signal-cli's group IDs is not implemented. The command logs only counts (`inserted`, `present`, `skipped`), never content.
+
 ## Authentication and errors
 
 Listen port: 8080. Every `/v1/*` request requires `Authorization: Bearer <token>` matching the mounted Secret, compared as fixed-length SHA-256 digests in constant time. `GET /healthz` returns only HTTP 200; it is a process probe, not collector or archive freshness.
