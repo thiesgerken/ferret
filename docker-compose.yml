@@ -45,7 +45,7 @@ services:
 
   # The UI at http://127.0.0.1:3380, routed like the cluster's HTTPRoute (docker/traefik-dynamic.yml).
   proxy:
-    image: traefik:v3.7@sha256:b7b1b31e6440de0b1f7c4e0f6cf0a0f3f004866761d30c025fe00c80daaf7d9c
+    image: traefik:v3.7@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:80"
@@ -80,7 +80,7 @@ services:
   # password `pass`. Mails live only in the container. Scaled to 0 so a plain `docker compose up`
   # leaves it out, start it with `--scale dovecot=1`.
   dovecot:
-    image: dovecot/dovecot:2.4.5@sha256:43c14def08a57f25107593cbcf64a0a6fbae84a7b9de7aa038513c9b21e91914
+    image: dovecot/dovecot:2.4.5@sha256:a2e908c9a93698f3923104ea5be7f4beacde9586242aff5d8059599d0042c62a
     deploy:
       replicas: 0
     environment:
