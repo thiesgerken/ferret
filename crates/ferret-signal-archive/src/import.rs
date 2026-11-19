@@ -121,16 +121,20 @@ pub async fn import(store: &Store, path: &Path) -> Result<ImportSummary, Fatal> 
     let mut parties = HashMap::new();
     let mut chats = HashMap::new();
     let mut summary = ImportSummary::default();
-    for (number, line) in reader.lines().enumerate() {
-        // Line numbers only: serde's messages can quote message content.
-        let frame: Frame = serde_json::from_str(&line?)
-            .map_err(|_| format!("line {} is not a backup frame", number + 1))?;
+    for (index, line) in reader.lines().enumerate() {
+        // Errors name the line and a static reason, never a value: the export is message content.
+        let at_line = |reason: &dyn std::fmt::Display| format!("line {}: {reason}", index + 1);
+        let frame: Frame = serde_json::from_str(&line.map_err(|error| at_line(&error))?)
+            .map_err(|error| at_line(&format!("not a backup frame (column {})", error.column())))?;
         if let Some(recipient) = frame.recipient {
-            parties.insert(recipient.id.clone(), party(recipient)?);
+            parties.insert(
+                recipient.id.clone(),
+                party(recipient).map_err(|error| at_line(&error))?,
+            );
         } else if let Some(chat) = frame.chat {
             chats.insert(chat.id, chat.recipient_id);
         } else if let Some(item) = frame.chat_item {
-            match received(item, &parties, &chats, &self_aci)? {
+            match received(item, &parties, &chats, &self_aci).map_err(|error| at_line(&error))? {
                 Some(message) => match store.insert(message).await? {
                     true => summary.inserted += 1,
                     false => summary.present += 1,

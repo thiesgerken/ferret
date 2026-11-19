@@ -598,5 +598,5 @@ async fn group_import_is_unsupported() {
     let error = ferret_signal_archive::import(&store, &export)
         .await
         .unwrap_err();
-    assert_eq!(error.to_string(), "group import unsupported");
+    assert_eq!(error.to_string(), "line 1: group import unsupported");
 }
