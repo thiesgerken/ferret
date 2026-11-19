@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 import re
 import secrets
+import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -95,12 +97,73 @@ def smoke_whatsapp_archive(state, architecture):
             raise
 
 
+def fake_signal_cli(notifications):
+    """Serves one `signal-cli daemon --tcp --receive-mode manual` session on the host."""
+    server = socket.create_server(("0.0.0.0", 0))
+
+    def session():
+        connection, _ = server.accept()
+        with connection, connection.makefile("rwb") as stream:
+            assert json.loads(stream.readline())["method"] == "subscribeReceive"
+            stream.write(b'{"jsonrpc":"2.0","result":0,"id":1}\n' + notifications)
+            stream.flush()
+            stream.read()
+
+    threading.Thread(target=session, daemon=True).start()
+    return server.getsockname()[1]
+
+
+def smoke_signal_archive(state, architecture):
+    archive_dir = state / "signal-archive"
+    archive_dir.mkdir()
+    # The image's non-root user creates the database in the mounted volume.
+    archive_dir.chmod(0o777)
+    token = secrets.token_hex(32)
+    token_file = state / "signal-archive-token"
+    token_file.write_text(token + "\n")
+    token_file.chmod(0o644)
+    port = fake_signal_cli((ROOT / "crates/ferret-signal-archive/tests/fixtures/receive.jsonl").read_bytes())
+    container = run(
+        "docker", "run", "-d", "--name", f"ferret-signal-archive-smoke-{uuid.uuid4().hex[:10]}",
+        "--platform", f"linux/{architecture}", "--read-only", "--cap-drop=ALL",
+        "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,mode=1777",
+        "--add-host=host.docker.internal:host-gateway",
+        "--mount", f"type=bind,src={archive_dir},dst=/data",
+        "--mount", f"type=bind,src={token_file},dst=/run/secrets/archive-token,readonly",
+        "-e", "SIGNAL_ARCHIVE_DB=/data/signal.db",
+        "-e", "SIGNAL_ARCHIVE_TOKEN_FILE=/run/secrets/archive-token",
+        "-e", f"SIGNAL_CLI_ADDRESS=host.docker.internal:{port}",
+        "-p", "127.0.0.1::8080", "ferret-signal-archive:local"
+    )
+    try:
+        base = "http://" + run("docker", "port", container, "8080/tcp")
+        eventually(lambda: request(base + "/healthz").read())
+
+        def received():
+            archive = json.load(urllib.request.urlopen(urllib.request.Request(
+                base + "/v1/archive", headers={"Authorization": "Bearer " + token}
+            ), timeout=15))
+            assert archive["high"] == 8, archive
+
+        eventually(received, timeout=30)
+        config = json.loads(run("docker", "inspect", container))[0]
+        assert config["State"]["Running"], config["State"]
+        assert config["Config"]["User"] == "65532:65532"
+        assert config["HostConfig"]["ReadonlyRootfs"]
+        print(f"PASS {architecture} Signal archive: receive from signal-cli, authenticated read, non-root/read-only runtime")
+    except BaseException:
+        subprocess.run(["docker", "logs", container], check=False)
+        raise
+    finally:
+        run("docker", "rm", "--force", container)
+
+
 def main():
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     arm = architecture in ("aarch64", "arm64")
     assert arm or architecture in ("x86_64", "amd64"), architecture
     expected = "arm64" if arm else "amd64"
-    for image in ("ferret", "ferret-plugins", "ferret-whatsapp-archive", "ferret-frontend"):
+    for image in ("ferret", "ferret-plugins", "ferret-whatsapp-archive", "ferret-signal-archive", "ferret-frontend"):
         actual = run("docker", "image", "inspect", f"{image}:local", "--format", "{{.Architecture}}")
         assert actual == expected, (image, actual, expected)
 
@@ -109,6 +172,7 @@ def main():
         # Docker Desktop must be able to traverse the bind mount as the image's non-root user.
         state.chmod(0o755)
         smoke_whatsapp_archive(state, expected)
+        smoke_signal_archive(state, expected)
         repo = state / "repo"
         repo.mkdir()
         run("git", "init", "--quiet", str(repo))

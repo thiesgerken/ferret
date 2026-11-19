@@ -3,6 +3,7 @@
   server,
   plugins,
   whatsapp-archive,
+  signal-archive,
   frontend,
 }:
 let
@@ -74,6 +75,10 @@ in
   };
   whatsapp-archive-image = image "ferret-whatsapp-archive" [ whatsapp-archive ] {
     Cmd = [ "${whatsapp-archive}/bin/ferret-whatsapp-archive" ];
+    ExposedPorts."8080/tcp" = { };
+  };
+  signal-archive-image = image "ferret-signal-archive" [ signal-archive ] {
+    Cmd = [ "${signal-archive}/bin/ferret-signal-archive" ];
     ExposedPorts."8080/tcp" = { };
   };
   frontend-image = image "ferret-frontend" [ pkgs.nginx frontend ] {
