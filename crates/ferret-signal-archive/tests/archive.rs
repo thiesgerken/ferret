@@ -534,6 +534,8 @@ async fn edits_and_deletes_resolve_any_revision_and_keep_identities_occupied() {
             serde_json::json!({"syncMessage": {"sentMessage": {"destinationUuid": ALICE,
                 "editMessage": {"targetSentTimestamp": 4_000, "dataMessage": data(5_000, "Mine edited")}}}}),
         ),
+        // An older revision arriving late does not overwrite the newer text.
+        envelope(ALICE, edit(1_000, 1_500, "Late older edit")),
         envelope(ALICE, serde_json::json!({"dataMessage": data(6_000, "Doomed")})),
         envelope(ALICE, edit(6_000, 7_000, "Doomed edited")),
         // Deletes may name any revision.

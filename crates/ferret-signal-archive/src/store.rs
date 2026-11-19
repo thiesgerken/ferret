@@ -124,7 +124,8 @@ impl Store {
     }
 
     /// Replaces the text of the message `target` names and records the revision. Edits of
-    /// unknown or deleted messages and redelivered edits change nothing.
+    /// unknown or deleted messages and redelivered edits change nothing, and an edit arriving
+    /// after a newer one only records its revision.
     async fn edit(
         &self,
         target: Target,
@@ -138,29 +139,39 @@ impl Store {
         if !record_revision(&mut tx, &target.chat, &target.author, edited_at, sent_at).await? {
             return Ok(());
         }
-        sqlx::query(
-            "UPDATE messages SET text = ?, edited = 1 WHERE chat = ? AND sent_at = ? AND author = ?",
+        let latest = sqlx::query(
+            "UPDATE messages SET text = ?1, edited = 1
+             WHERE chat = ?2 AND sent_at = ?3 AND author = ?4 AND NOT EXISTS (SELECT 1 FROM edits
+                 WHERE chat = ?2 AND author = ?4 AND sent_at = ?3 AND edited_at > ?5)",
         )
         .bind(text)
         .bind(&target.chat)
         .bind(sent_at)
         .bind(&target.author)
+        .bind(edited_at)
         .execute(&mut *tx)
-        .await?;
-        journal(
-            &mut tx,
-            ChangeOperation::Edit,
-            &target.chat,
-            sent_at,
-            &target.author,
-        )
-        .await?;
+        .await?
+        .rows_affected()
+            == 1;
+        if latest {
+            journal(
+                &mut tx,
+                ChangeOperation::Edit,
+                &target.chat,
+                sent_at,
+                &target.author,
+            )
+            .await?;
+        }
         tx.commit().await
     }
 
     /// Turns the message `target` names into a tombstone, see the `deleted` column. A delete
     /// that arrives before its message leaves a tombstone too, because the message can still
-    /// come: redelivered by signal-cli, or from a history import of an older export.
+    /// come: redelivered by signal-cli, or from a history import of an older export. That
+    /// tombstone sits at the timestamp the delete names, so it misses an original that arrives
+    /// later only if the delete named a later revision. Its chat row is created as well, so an
+    /// otherwise unknown chat is listed without visible messages.
     async fn delete(&self, target: Target) -> Result<(), sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         match resolve(&mut tx, &target).await? {
