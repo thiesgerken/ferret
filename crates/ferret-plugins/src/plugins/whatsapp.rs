@@ -3,7 +3,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::atomic::{AtomicUsize, Ordering},
-    time::Duration,
 };
 
 use ferret_api::internal::RunStats;
@@ -261,44 +260,20 @@ impl ChatArchive for ArchiveClient {
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: WhatsAppConfig = serde_json::from_value(run.config.clone())
         .map_err(|_| "WhatsApp configuration is invalid")?;
-    let url = reqwest::Url::parse(&config.url)
-        .map_err(|_| "WhatsApp requires an absolute HTTP(S) archive URL")?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(
-            "WhatsApp requires an HTTP(S) URL without credentials, query or fragment".into(),
-        );
-    }
-    if config.token.len() != 64 || !config.token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("WhatsApp requires a 64-character hexadecimal archive bearer token".into());
-    }
-    if config.expected_store_id.len() != 32
-        || !config
-            .expected_store_id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(
-            "WhatsApp expected_store_id must be 32 lowercase hexadecimal characters".into(),
-        );
-    }
+    let url = chat::validate_connection(
+        "WhatsApp",
+        &config.url,
+        &config.token,
+        &config.expected_store_id,
+    )?;
     let settings = Settings {
-        url: url.as_str().trim_end_matches('/').to_owned(),
+        url,
         expected_store_id: config.expected_store_id,
         allow_chats: config.allow_chats,
         block_chats: config.block_chats,
     };
     let client = ArchiveClient {
-        http: reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(120))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?,
+        http: chat::http_client()?,
         url: settings.url.clone(),
         token: config.token,
         expected_store_id: settings.expected_store_id.clone(),
