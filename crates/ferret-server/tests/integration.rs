@@ -35,6 +35,7 @@ mod runs;
 mod search;
 mod search_metadata;
 mod semantic;
+mod signal_plugin;
 mod startup;
 mod statistics;
 mod syncs;

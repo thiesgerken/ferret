@@ -1277,6 +1277,7 @@ dependencies = [
  "croner",
  "ferret-api",
  "ferret-plugins",
+ "ferret-signal-archive",
  "ferret-whatsapp-archive",
  "futures-util",
  "getrandom 0.4.3",
