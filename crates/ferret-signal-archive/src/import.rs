@@ -281,6 +281,7 @@ fn received(
         text,
         attachments,
         numbers,
+        group_name: None,
         revisions: sent,
     }))
 }

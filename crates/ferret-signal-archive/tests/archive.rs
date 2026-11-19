@@ -1,13 +1,16 @@
 use std::time::Duration;
 
 use ferret_signal_archive::{
-    Archive, Attachment, ChangesPage, Chat, ChatKind, ChatsPage, ImportSummary, MessageKey,
-    MessagesPage, PAGE_SIZE, Store,
+    Archive, Attachment, ChangeOperation, ChangesPage, Chat, ChatKind, ChatsPage, ImportSummary,
+    MessageKey, MessagesPage, PAGE_SIZE, Store,
 };
 use serde::de::DeserializeOwned;
+use std::sync::{Arc, Mutex};
+
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
+    sync::mpsc,
 };
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -18,43 +21,100 @@ const ALICE: &str = "00000000-0000-4000-8000-000000000002";
 const BOB: &str = "00000000-0000-4000-8000-000000000003";
 const GROUP: &str = "ZXhhbXBsZS1ncm91cC1pZC0wMDAwMDAwMDAwMDAwMDE=";
 
-/// A fake multi-account `signal-cli daemon --tcp --receive-mode manual` serving `account`: it
-/// answers `listAccounts`, then each one-envelope `receive` call with the next of `lines` (JSON
-/// `receive` result items), and leaves the call pending once they are used up.
-async fn fake_daemon(account: &'static str, lines: String) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap().to_string();
-    tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
-        let (reader, mut writer) = stream.into_split();
-        let mut requests = BufReader::new(reader).lines();
-        let mut results =
-            std::iter::once(serde_json::json!([{"number": "+15555550100", "aci": account}])).chain(
-                lines.lines().map(|line| {
-                    serde_json::Value::Array(vec![serde_json::from_str(line).unwrap()])
-                }),
-            );
-        while let Some(request) = requests.next_line().await.unwrap() {
-            let request: serde_json::Value = serde_json::from_str(&request).unwrap();
-            if request["method"] == "receive" {
-                assert_eq!(request["params"]["account"], account);
-                assert_eq!(request["params"]["maxMessages"], 1);
-            } else {
-                assert_eq!(request["method"], "listAccounts");
+/// A fake multi-account `signal-cli daemon --tcp --receive-mode manual` serving `account`. It
+/// answers `listAccounts`, `listContacts` and `listGroups` from `names`, which a test may change,
+/// and each one-envelope `receive` call with the next line sent through `lines` (a JSON `receive`
+/// result item); a `receive` call stays pending until a line arrives.
+struct FakeDaemon {
+    address: String,
+    lines: mpsc::UnboundedSender<String>,
+    names: Arc<Mutex<Names>>,
+}
+
+#[derive(Clone, Default)]
+struct Names {
+    contacts: Vec<serde_json::Value>,
+    groups: Vec<serde_json::Value>,
+    /// Answer `listContacts` with a JSON-RPC error instead.
+    contacts_fail: bool,
+}
+
+impl FakeDaemon {
+    async fn start(account: &'static str, names: Names) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (lines, mut pending) = mpsc::unbounded_channel::<String>();
+        let names = Arc::new(Mutex::new(names));
+        let served = names.clone();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (reader, mut writer) = stream.into_split();
+            let mut requests = BufReader::new(reader).lines();
+            while let Some(request) = requests.next_line().await.unwrap() {
+                let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+                let method = request["method"].as_str().unwrap();
+                if method != "listAccounts" {
+                    assert_eq!(request["params"]["account"], account, "{method}");
+                }
+                if method == "listContacts" && served.lock().unwrap().contacts_fail {
+                    let response = serde_json::json!({"jsonrpc": "2.0", "id": request["id"],
+                        "error": {"code": -32602, "message": "Unrecognized field"}});
+                    writer
+                        .write_all(format!("{response}\n").as_bytes())
+                        .await
+                        .unwrap();
+                    continue;
+                }
+                let result = match method {
+                    "listAccounts" => {
+                        serde_json::json!([{"number": "+15555550100", "aci": account}])
+                    }
+                    "listContacts" => {
+                        assert_eq!(request["params"]["allRecipients"], true);
+                        served.lock().unwrap().contacts.clone().into()
+                    }
+                    "listGroups" => served.lock().unwrap().groups.clone().into(),
+                    "receive" => {
+                        assert_eq!(request["params"]["maxMessages"], 1);
+                        let Some(line) = pending.recv().await else {
+                            break;
+                        };
+                        serde_json::json!([
+                            serde_json::from_str::<serde_json::Value>(&line).unwrap()
+                        ])
+                    }
+                    _ => panic!("unexpected call {method}"),
+                };
+                let response =
+                    serde_json::json!({"jsonrpc": "2.0", "id": request["id"], "result": result});
+                writer
+                    .write_all(format!("{response}\n").as_bytes())
+                    .await
+                    .unwrap();
             }
-            let Some(result) = results.next() else {
-                break;
-            };
-            let response =
-                serde_json::json!({"jsonrpc": "2.0", "id": request["id"], "result": result});
-            writer
-                .write_all(format!("{response}\n").as_bytes())
-                .await
-                .unwrap();
+            std::future::pending::<()>().await;
+        });
+        Self {
+            address,
+            lines,
+            names,
         }
-        std::future::pending::<()>().await;
-    });
-    address
+    }
+
+    fn send(&self, lines: &str) {
+        for line in lines.lines() {
+            self.lines.send(line.to_owned()).unwrap();
+        }
+    }
+}
+
+/// A fake daemon without names that emits `lines`.
+async fn fake_daemon(account: &'static str, lines: String) -> String {
+    let daemon = FakeDaemon::start(account, Names::default()).await;
+    daemon.send(&lines);
+    // The daemon task holds the receiving end; the sender may go.
+    std::mem::forget(daemon.lines);
+    daemon.address
 }
 
 struct Api {
@@ -133,17 +193,19 @@ async fn stores_messages_and_skips_events() {
             Chat {
                 id: ME.into(),
                 kind: ChatKind::NoteToSelf,
-                name: None
+                name: Some("Note to Self".into())
             },
+            // Without a name from signal-cli, a direct chat is titled with the number.
             Chat {
                 id: ALICE.into(),
                 kind: ChatKind::Direct,
-                name: None
+                name: Some("+15555550101".into())
             },
+            // The group's name as the creating envelope carried it.
             Chat {
                 id: GROUP.into(),
                 kind: ChatKind::Group,
-                name: None
+                name: Some("Example group".into())
             },
         ]
     );
@@ -265,15 +327,16 @@ async fn stores_messages_and_skips_events() {
     );
     assert_eq!(changes.changes[0].chat, ALICE);
     assert_eq!(
-        changes.changes[8].key.sent_at, 1760000019000,
+        changes.changes[8].key.as_ref().unwrap().sent_at,
+        1760000019000,
         "the last line is last"
     );
     assert_eq!(
         changes.changes[0].key,
-        MessageKey {
+        Some(MessageKey {
             sent_at: 1760000001000,
             author: ALICE.into()
-        }
+        })
     );
 }
 
@@ -488,6 +551,110 @@ async fn pages_cross_the_page_size() {
     assert_eq!(sequences, (1..=archive.high).collect::<Vec<_>>());
 }
 
+#[tokio::test]
+async fn names_come_from_signal_cli_and_renames_are_journaled() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let contact = |aci: &str, nick: Option<&str>, profile: &str| {
+        serde_json::json!({"uuid": aci, "number": null, "name": "", "nickName": null,
+            "nickGivenName": nick, "nickFamilyName": null,
+            "profile": {"givenName": profile, "familyName": null}})
+    };
+    let names = Names {
+        contacts: vec![
+            contact(ALICE, Some("Ally"), "Alice"),
+            contact(BOB, None, "Bob"),
+            contact(ME, None, "Myself"),
+            serde_json::json!({"uuid": null, "number": "+15555550109", "name": "Number only"}),
+        ],
+        groups: vec![serde_json::json!({"id": GROUP, "name": "Renamed group"})],
+        ..Names::default()
+    };
+    let daemon = FakeDaemon::start(ME, names).await;
+    daemon.send(RECEIVED);
+    tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        daemon.address.clone(),
+    ));
+    let api = Api::start(store).await;
+    // The fixture's group update makes the receiver refresh names mid-stream, which journals the
+    // group's new name. The first refresh, before any message, has no chat to journal.
+    let archive = api.await_high(10).await;
+    assert_eq!(archive.high, 10);
+    let store_id = archive.store_id.as_str();
+
+    let chats: ChatsPage = api.json("/v1/chats", &[("store_id", store_id)]).await;
+    let titles: Vec<_> = chats
+        .chats
+        .iter()
+        .map(|chat| chat.name.as_deref())
+        .collect();
+    assert_eq!(
+        titles,
+        [Some("Note to Self"), Some("Ally"), Some("Renamed group")]
+    );
+    let group: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", GROUP)])
+        .await;
+    let authors: Vec<_> = group
+        .messages
+        .iter()
+        .map(|message| message.author_name.as_deref())
+        .collect();
+    assert_eq!(
+        authors,
+        [Some("Bob"), None, Some("Bob")],
+        "own name is not kept"
+    );
+
+    let renames = |changes: &ChangesPage| -> Vec<(String, bool)> {
+        changes
+            .changes
+            .iter()
+            .filter(|change| change.operation == ChangeOperation::Rename)
+            .map(|change| (change.chat.clone(), change.key.is_some()))
+            .collect()
+    };
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[("store_id", store_id), ("after", "0"), ("through", "10")],
+        )
+        .await;
+    assert_eq!(renames(&changes), [(GROUP.to_owned(), false)]);
+
+    // Alice gets a new nickname and Bob a new profile name; a group update made on the
+    // account's own phone triggers the refresh before the next envelope.
+    {
+        let mut names = daemon.names.lock().unwrap();
+        names.contacts[0] = contact(ALICE, Some("Alice A"), "Alice");
+        names.contacts[1] = contact(BOB, None, "Robert");
+    }
+    let sync = serde_json::json!({"account": "+15555550100", "envelope": {
+        "sourceUuid": ME, "sourceNumber": "+15555550100", "timestamp": 1760000030000_i64,
+        "syncMessage": {"sentMessage": {"destinationUuid": null, "timestamp": 1760000030000_i64,
+            "message": null, "groupInfo": {"groupId": GROUP, "groupName": "Renamed group",
+            "revision": 5, "type": "UPDATE"}}}}});
+    let last = serde_json::json!({"account": "+15555550100", "envelope": {
+        "sourceUuid": BOB, "sourceNumber": null, "timestamp": 1760000031000_i64,
+        "dataMessage": {"timestamp": 1760000031000_i64, "message": "After the rename",
+            "groupInfo": {"groupId": GROUP, "groupName": "Renamed group", "revision": 4, "type": "DELIVER"}}}});
+    daemon.send(&format!("{sync}\n{last}\n"));
+    api.await_high(13).await;
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[("store_id", store_id), ("after", "10"), ("through", "13")],
+        )
+        .await;
+    // Alice's direct chat, and the group Bob writes in: only the chats whose rendering changed.
+    assert_eq!(
+        renames(&changes),
+        [(ALICE.to_owned(), false), (GROUP.to_owned(), false)]
+    );
+    assert_eq!(changes.changes[2].operation, ChangeOperation::Insert);
+}
+
 /// A `receive` result item: an envelope from `author` with `content` (`dataMessage`,
 /// `editMessage` or `syncMessage`).
 fn envelope(author: &str, content: serde_json::Value) -> String {
@@ -607,8 +774,8 @@ async fn edits_and_deletes_resolve_any_revision_and_keep_identities_occupied() {
         .map(|change| {
             (
                 change.operation,
-                change.key.sent_at,
-                change.key.author.as_str(),
+                change.key.as_ref().unwrap().sent_at,
+                change.key.as_ref().unwrap().author.as_str(),
             )
         })
         .collect();
@@ -853,8 +1020,8 @@ async fn live_edits_and_deletes_resolve_imported_revisions() {
         .map(|change| {
             (
                 change.operation,
-                change.key.sent_at,
-                change.key.author.as_str(),
+                change.key.as_ref().unwrap().sent_at,
+                change.key.as_ref().unwrap().author.as_str(),
             )
         })
         .collect();
@@ -875,4 +1042,22 @@ async fn live_edits_and_deletes_resolve_imported_revisions() {
             .iter()
             .all(|message| message.key.sent_at != 1_750_000_200_000)
     );
+}
+
+#[tokio::test]
+async fn a_failing_name_refresh_does_not_stop_receiving() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let names = Names {
+        contacts_fail: true,
+        ..Names::default()
+    };
+    let daemon = FakeDaemon::start(ME, names).await;
+    daemon.send(RECEIVED);
+    tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        daemon.address.clone(),
+    ));
+    let api = Api::start(store).await;
+    assert_eq!(api.await_high(9).await.high, 9);
 }
