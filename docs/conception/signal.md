@@ -34,11 +34,13 @@ Once, after the collector is linked and receiving, so the two overlap instead of
 3. Copy it into the pod and run `ferret-signal-archive import <main.jsonl>` via `kubectl exec`, against the live database (WAL plus a busy timeout; the daemon keeps writing). It inserts only messages whose key is absent and journals them as ordinary inserts, so the next plugin run ingests them incrementally. There is no import endpoint; the API stays read-only.
 4. Unlink Desktop.
 
+The export carries edits: an edited item holds the latest text and the latest revision's `dateSent`, its `revisions` the older versions, oldest first. The importer keys it by the oldest revision's `dateSent`, the original send, which is the identity signal-cli reports live. Remote deletes remain as `remoteDeletedMessage` items without content. The export has no own ACI, so the importer takes it from the chat archive, recorded by the receiver from `listAccounts`. [V1]
+
 Accepted gap: the export drops every message with a disappearing timer and all view-once media. Disappearing messages still unexpired at import time are therefore missing from history, at most one timer window per disappearing chat. Reading Desktop's SQLCipher database or decrypting an Android folder backup would close it, at the price of an internal-schema reader or AGPL tooling in the import step. [V4][S3]
 
 ## Message identity
 
-Signal addresses a message by its author's ACI plus its sent timestamp. Edits, remote deletes, reactions and quotes all point back with that pair, and an edit keeps the original's identity. The chat archive keys messages by `(chat, author ACI, sent timestamp)`, which also deduplicates the history import against the live stream. Own messages carry the account's ACI as author. [D6][D7][V1]
+Signal addresses a message by its author's ACI plus its sent timestamp. Edits, remote deletes, reactions and quotes all point back with that pair, and an edit keeps the original's identity. A later edit or delete may name any revision's timestamp instead of the original's: Signal-Desktop addresses an edit to the latest revision and matches deletes against all of them, so the chat archive maps every revision timestamp back to the original [D9][D10]. A deleted message stays as a tombstone, so neither a redelivered envelope nor the history import can bring it back. The chat archive keys messages by `(chat, author ACI, sent timestamp)`, which also deduplicates the history import against the live stream. Own messages carry the account's ACI as author. [D6][D7][V1]
 
 Chat IDs are the counterpart's ACI for a direct chat, the group ID for a group, and the account's own ACI for Note to Self.
 
@@ -72,7 +74,7 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 
 ## Open points
 
-- Whether the Desktop export carries edit revisions and group events in practice: check one real export before writing the importer.
+- Group chats in the history import. The one real export checked (2026-11-19) had no groups, so neither group events nor the mapping of a backup group (identified by its master key) to signal-cli's group ID could be verified; that ID is derived from the master key with zkgroup. The importer rejects exports containing groups until an export with groups is available.
 - How signal-cli reports an unlinked device over JSON-RPC, for `status`.
 - signal-cli's memory footprint, JVM versus native image (cluster nodes are amd64, which both official images support). [C13]
 
@@ -114,6 +116,8 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 - [D6: SignalService.proto](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/protos/SignalService.proto)
 - [D7: Desktop message lookup by author and sent time](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/sql/Server.node.ts)
 - [D8: Desktop build expiry](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/scripts/get-expire-time.mjs)
+- [D9: Desktop edit target, latest revision](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/util/sendEditedMessage.preload.ts)
+- [D10: Desktop delete matching, every revision](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/messageModifiers/Deletes.preload.ts)
 - [V1: libsignal backup.proto](https://github.com/signalapp/libsignal/blob/v0.106.0/rust/message-backup/src/proto/backup.proto)
 - [V4: libsignal takeout JSON exporter](https://github.com/signalapp/libsignal/blob/v0.106.0/rust/message-backup/src/json/exporter.rs)
 - [V5: Signal-Server linked device idle limit](https://github.com/signalapp/Signal-Server/blob/v20261022.0.0/service/src/main/java/org/whispersystems/textsecuregcm/storage/Device.java)

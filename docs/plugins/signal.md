@@ -8,6 +8,17 @@ Collector and chat archive run as one pod outside the ferret Helm chart, next to
 
 **Backing up the chat archive is the operator's job.** After the one-time history import it is the only raw copy of everything the collector received. Signal keeps nothing to re-fetch, and ferret's documents are rendered segments, not the messages. Losing the database means losing that history.
 
+## History import
+
+The collector only receives what arrives after linking. Import older history once, after the collector is linked and `ferret-signal-archive` has connected to it (it records the account's own ACI then, which the export lacks), so the two overlap instead of leaving a gap:
+
+1. Install Signal Desktop fresh on a workstation and link it with **Transfer Message History**.
+2. Settings > Chats > Export chat history, **without media**. Desktop writes `main.jsonl`.
+3. Stream it into the running `ferret-signal-archive` container: `kubectl exec -i <pod> -c <archive container> -- ferret-signal-archive import /dev/stdin < main.jsonl`. The image has no shell or `tar`, so `kubectl cp` does not work, and streaming keeps the export off the volume. The import writes next to the running service and logs only counts. Re-running is a no-op.
+4. Delete `main.jsonl` from the workstation and unlink Desktop from the phone.
+
+The next plugin run picks up the imported messages incrementally. The export lacks messages with a disappearing timer and view-once media, and an export with group chats is rejected for now; see the [import reference](../api/signal-archive.md#history-import) for what is imported and the counts it logs.
+
 ## Connection configuration
 
 Authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Create a connection with plugin `signal`, a source such as `chat/signal`, a normal schedule, and that explicit chat archive identity:
@@ -33,7 +44,8 @@ Authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Cr
 Chats become segments exactly as for [WhatsApp](whatsapp.md#documents-and-privacy-boundaries): Markdown with a bold sender line and UTC time per message, split at pauses of at least 24 hours or about 8,000 characters, one thread per chat (the raw chat ID), the chat name (or raw chat ID) as title, the distinct speakers of a segment as its authors, ferret's viewer as the origin.
 
 - Indexed: text, captions, and attachment metadata (MIME type, file name, size, and whether it is a voice note). Binary media is never stored or indexed. Each attachment takes one line; captions follow the message text.
-- Senders are `Me` for own messages, otherwise the name the account knows them by (the nickname it gave them, else the system contact name, else their profile name), else their phone number, else their ACI. A direct chat's title is that name or number, a group's its name. A rename re-renders exactly the chats it shows up in: the contact's direct chat and the chats they wrote in.
+- Edits show the latest text with an "(edited)" marker; the message keeps its place and its segment. Deleted messages, including messages a group admin deleted, disappear from their segment on the next run.
+- Senders are `Me` for own messages, otherwise the name the account knows them by (the nickname it gave them, else the system contact name, else their profile name), else their phone number, else their ACI. A direct chat's title is that name or number, a group's its name, Note to Self's "Note to Self". A rename re-renders exactly the chats it shows up in: the contact's direct chat and the chats they wrote in.
 - **Disappearing and view-once messages are kept and indexed, and never expire.** This deliberately differs from Signal's own exports: what the account has read, ferret remembers. Decide whether that fits your privacy policy before connecting the chat archive, and block chats where it does not.
 - Metadata holds the chat ID and kind (`direct`, `group`, `note_to_self`), the first message's ID (`<author ACI>/<sent timestamp in ms>`) and the last message's date.
 

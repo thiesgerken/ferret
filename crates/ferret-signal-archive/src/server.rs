@@ -132,6 +132,7 @@ async fn chats(
                     CASE chats.kind
                         WHEN 'group' THEN chats.name
                         WHEN 'direct' THEN coalesce(recipients.name, recipients.number)
+                        WHEN 'note_to_self' THEN 'Note to Self'
                     END AS name
              FROM chats LEFT JOIN recipients ON recipients.aci = chats.id
              WHERE chats.id > ? ORDER BY chats.id LIMIT ?",
@@ -168,7 +169,7 @@ async fn messages(
         "SELECT sent_at, author, from_me, text, attachments, edited,
                 recipients.name AS author_name, recipients.number AS author_number
          FROM messages LEFT JOIN recipients ON recipients.aci = messages.author
-         WHERE chat = ? AND (sent_at, author) > (?, ?)
+         WHERE chat = ? AND NOT deleted AND (sent_at, author) > (?, ?)
          ORDER BY sent_at, author LIMIT ?",
     )
     .bind(query.chat)

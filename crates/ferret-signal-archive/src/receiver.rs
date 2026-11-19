@@ -107,8 +107,8 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
                     if envelope.changes_names() {
                         names_refreshed = None;
                     }
-                    if let Some(message) = envelope.into_received() {
-                        store.insert(message).await?;
+                    if let Some(incoming) = envelope.into_incoming() {
+                        store.apply(incoming).await?;
                     }
                 }
                 Ok(ReceiveResult { envelope: None }) => {}
@@ -124,21 +124,23 @@ const RECEIVE_TIMEOUT_SECONDS: f64 = 60.0;
 /// Profile names change without an envelope that announces it, so they are polled.
 const NAMES_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
-/// Stale names are better than no messages: a list result of unexpected shape is logged and
-/// receiving goes on.
+/// Stale names are better than no messages: a list call signal-cli fails, or a result of
+/// unexpected shape, is logged and receiving goes on. Only a broken connection ends the session.
 async fn refresh_names(daemon: &mut Daemon, store: &Store, aci: &str) -> Result<(), SessionError> {
     let contacts = daemon
-        .call(
+        .try_call(
             "listContacts",
             json!({"account": aci, "allRecipients": true}),
         )
         .await?;
-    let groups = daemon.call("listGroups", json!({"account": aci})).await?;
-    let (Ok(contacts), Ok(groups)) = (
-        serde_json::from_value::<Vec<Contact>>(contacts),
-        serde_json::from_value::<Vec<Group>>(groups),
+    let groups = daemon
+        .try_call("listGroups", json!({"account": aci}))
+        .await?;
+    let (Ok(Ok(contacts)), Ok(Ok(groups))) = (
+        contacts.map(serde_json::from_value::<Vec<Contact>>),
+        groups.map(serde_json::from_value::<Vec<Group>>),
     ) else {
-        error!("skipping a name refresh: unexpected listContacts or listGroups result");
+        error!("skipping a name refresh: listContacts or listGroups failed or was unexpected");
         return Ok(());
     };
     // Own messages are rendered as `Me`, so the account's own name never matters.
@@ -167,11 +169,23 @@ impl Daemon {
         })
     }
 
+    /// A call whose failure signal-cli reports ends the session.
     async fn call(
         &mut self,
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, SessionError> {
+        self.try_call(method, params)
+            .await?
+            .map_err(|CallFailed| retry("signal-cli call failed"))
+    }
+
+    /// A call whose failure signal-cli reports is the caller's to handle; it is logged here.
+    async fn try_call(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<Result<serde_json::Value, CallFailed>, SessionError> {
         self.last_id += 1;
         let request =
             json!({"jsonrpc": "2.0", "id": self.last_id, "method": method, "params": params});
@@ -197,14 +211,18 @@ impl Daemon {
                     message = error.message,
                     "signal-cli call failed"
                 );
-                return Err(retry("signal-cli call failed"));
+                return Ok(Err(CallFailed));
             }
             return response
                 .result
+                .map(Ok)
                 .ok_or_else(|| retry("signal-cli response without result"));
         }
     }
 }
+
+/// signal-cli answered a call with a JSON-RPC error.
+struct CallFailed;
 
 #[derive(Deserialize)]
 struct Response {

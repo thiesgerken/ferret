@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use ferret_signal_archive::{
-    Archive, Attachment, ChangeOperation, ChangesPage, Chat, ChatKind, ChatsPage, MessageKey,
-    MessagesPage, PAGE_SIZE, Store,
+    Archive, Attachment, ChangeOperation, ChangesPage, Chat, ChatKind, ChatsPage, ImportSummary,
+    MessageKey, MessagesPage, PAGE_SIZE, Store,
 };
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
@@ -35,6 +35,8 @@ struct FakeDaemon {
 struct Names {
     contacts: Vec<serde_json::Value>,
     groups: Vec<serde_json::Value>,
+    /// Answer `listContacts` with a JSON-RPC error instead.
+    contacts_fail: bool,
 }
 
 impl FakeDaemon {
@@ -53,6 +55,15 @@ impl FakeDaemon {
                 let method = request["method"].as_str().unwrap();
                 if method != "listAccounts" {
                     assert_eq!(request["params"]["account"], account, "{method}");
+                }
+                if method == "listContacts" && served.lock().unwrap().contacts_fail {
+                    let response = serde_json::json!({"jsonrpc": "2.0", "id": request["id"],
+                        "error": {"code": -32602, "message": "Unrecognized field"}});
+                    writer
+                        .write_all(format!("{response}\n").as_bytes())
+                        .await
+                        .unwrap();
+                    continue;
                 }
                 let result = match method {
                     "listAccounts" => {
@@ -182,7 +193,7 @@ async fn stores_messages_and_skips_events() {
             Chat {
                 id: ME.into(),
                 kind: ChatKind::NoteToSelf,
-                name: None
+                name: Some("Note to Self".into())
             },
             // Without a name from signal-cli, a direct chat is titled with the number.
             Chat {
@@ -557,6 +568,7 @@ async fn names_come_from_signal_cli_and_renames_are_journaled() {
             serde_json::json!({"uuid": null, "number": "+15555550109", "name": "Number only"}),
         ],
         groups: vec![serde_json::json!({"id": GROUP, "name": "Renamed group"})],
+        ..Names::default()
     };
     let daemon = FakeDaemon::start(ME, names).await;
     daemon.send(RECEIVED);
@@ -577,7 +589,10 @@ async fn names_come_from_signal_cli_and_renames_are_journaled() {
         .iter()
         .map(|chat| chat.name.as_deref())
         .collect();
-    assert_eq!(titles, [None, Some("Ally"), Some("Renamed group")]);
+    assert_eq!(
+        titles,
+        [Some("Note to Self"), Some("Ally"), Some("Renamed group")]
+    );
     let group: MessagesPage = api
         .json("/v1/messages", &[("store_id", store_id), ("chat", GROUP)])
         .await;
@@ -608,8 +623,8 @@ async fn names_come_from_signal_cli_and_renames_are_journaled() {
         .await;
     assert_eq!(renames(&changes), [(GROUP.to_owned(), false)]);
 
-    // Alice gets a new nickname and Bob a new profile name; another device's contacts sync
-    // triggers the refresh before the next envelope.
+    // Alice gets a new nickname and Bob a new profile name; a group update made on the
+    // account's own phone triggers the refresh before the next envelope.
     {
         let mut names = daemon.names.lock().unwrap();
         names.contacts[0] = contact(ALICE, Some("Alice A"), "Alice");
@@ -617,7 +632,9 @@ async fn names_come_from_signal_cli_and_renames_are_journaled() {
     }
     let sync = serde_json::json!({"account": "+15555550100", "envelope": {
         "sourceUuid": ME, "sourceNumber": "+15555550100", "timestamp": 1760000030000_i64,
-        "syncMessage": {"type": "CONTACTS_SYNC"}}});
+        "syncMessage": {"sentMessage": {"destinationUuid": null, "timestamp": 1760000030000_i64,
+            "message": null, "groupInfo": {"groupId": GROUP, "groupName": "Renamed group",
+            "revision": 5, "type": "UPDATE"}}}}});
     let last = serde_json::json!({"account": "+15555550100", "envelope": {
         "sourceUuid": BOB, "sourceNumber": null, "timestamp": 1760000031000_i64,
         "dataMessage": {"timestamp": 1760000031000_i64, "message": "After the rename",
@@ -636,4 +653,411 @@ async fn names_come_from_signal_cli_and_renames_are_journaled() {
         [(ALICE.to_owned(), false), (GROUP.to_owned(), false)]
     );
     assert_eq!(changes.changes[2].operation, ChangeOperation::Insert);
+}
+
+/// A `receive` result item: an envelope from `author` with `content` (`dataMessage`,
+/// `editMessage` or `syncMessage`).
+fn envelope(author: &str, content: serde_json::Value) -> String {
+    let mut envelope = serde_json::json!({"sourceUuid": author, "sourceDevice": 1});
+    envelope
+        .as_object_mut()
+        .unwrap()
+        .extend(content.as_object().unwrap().clone());
+    serde_json::json!({"account": "+15555550100", "envelope": envelope}).to_string()
+}
+
+fn data(sent_at: i64, text: &str) -> serde_json::Value {
+    serde_json::json!({"timestamp": sent_at, "message": text})
+}
+
+fn edit(target: i64, edited_at: i64, text: &str) -> serde_json::Value {
+    serde_json::json!({"editMessage": {"targetSentTimestamp": target, "dataMessage": data(edited_at, text)}})
+}
+
+fn remote_delete(sent_at: i64, target: i64) -> serde_json::Value {
+    serde_json::json!({"dataMessage": {"timestamp": sent_at,
+        "remoteDelete": {"targetTimestamp": target, "timestamp": target}}})
+}
+
+#[tokio::test]
+async fn edits_and_deletes_resolve_any_revision_and_keep_identities_occupied() {
+    let group_info = serde_json::json!({"groupId": GROUP, "type": "DELIVER"});
+    let mut spam = data(8_000, "Spam");
+    spam["groupInfo"] = group_info.clone();
+    let lines = [
+        envelope(ALICE, serde_json::json!({"dataMessage": data(1_000, "Original")})),
+        envelope(ALICE, edit(1_000, 2_000, "First edit")),
+        // Signal clients address a second edit to the first edit's timestamp.
+        envelope(ALICE, edit(2_000, 3_000, "Second edit")),
+        // A redelivered edit is not a new revision.
+        envelope(ALICE, edit(1_000, 2_000, "First edit")),
+        envelope(
+            ME,
+            serde_json::json!({"syncMessage": {"sentMessage": {"destinationUuid": ALICE,
+                "timestamp": 4_000, "message": "Mine"}}}),
+        ),
+        envelope(
+            ME,
+            serde_json::json!({"syncMessage": {"sentMessage": {"destinationUuid": ALICE,
+                "editMessage": {"targetSentTimestamp": 4_000, "dataMessage": data(5_000, "Mine edited")}}}}),
+        ),
+        // An older revision arriving late does not overwrite the newer text.
+        envelope(ALICE, edit(1_000, 1_500, "Late older edit")),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(6_000, "Doomed")})),
+        envelope(ALICE, edit(6_000, 7_000, "Doomed edited")),
+        // Deletes may name any revision.
+        envelope(ALICE, remote_delete(7_500, 7_000)),
+        // Neither a redelivery nor an edit brings a deleted message back.
+        envelope(ALICE, serde_json::json!({"dataMessage": data(6_000, "Doomed")})),
+        envelope(ALICE, edit(6_000, 10_000, "Revived")),
+        envelope(BOB, serde_json::json!({"dataMessage": spam})),
+        envelope(
+            ALICE,
+            serde_json::json!({"dataMessage": {"timestamp": 8_500, "groupInfo": group_info,
+                "adminDelete": {"targetAuthorUuid": BOB, "targetTimestamp": 8_000}}}),
+        ),
+        // A delete ahead of its message leaves a tombstone the message cannot replace.
+        envelope(ALICE, remote_delete(9_500, 9_000)),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(9_000, "Too late")})),
+        // Nobody edits or deletes another author's message, outside a group not even an admin.
+        envelope(ALICE, edit(4_000, 12_000, "Hijacked")),
+        envelope(ALICE, remote_delete(12_500, 4_000)),
+        envelope(
+            ALICE,
+            serde_json::json!({"dataMessage": {"timestamp": 13_000,
+                "adminDelete": {"targetAuthorUuid": ME, "targetTimestamp": 4_000}}}),
+        ),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(11_000, "Last")})),
+    ]
+    .join("\n");
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        fake_daemon(ME, lines).await,
+    ));
+    let api = Api::start(store).await;
+    let archive = api.await_high(11).await;
+    assert_eq!(archive.high, 11);
+    let store_id = archive.store_id.as_str();
+
+    let direct: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", ALICE)])
+        .await;
+    let shown: Vec<_> = direct
+        .messages
+        .iter()
+        .map(|message| (message.key.sent_at, message.text.as_deref(), message.edited))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (1_000, Some("Second edit"), true),
+            (4_000, Some("Mine edited"), true),
+            (11_000, Some("Last"), false),
+        ]
+    );
+    let group: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", GROUP)])
+        .await;
+    assert!(group.messages.is_empty());
+
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[("store_id", store_id), ("after", "0"), ("through", "11")],
+        )
+        .await;
+    let journaled: Vec<_> = changes
+        .changes
+        .iter()
+        .map(|change| {
+            (
+                change.operation,
+                change.key.as_ref().unwrap().sent_at,
+                change.key.as_ref().unwrap().author.as_str(),
+            )
+        })
+        .collect();
+    use ferret_signal_archive::ChangeOperation::{Delete, Edit, Insert};
+    assert_eq!(
+        journaled,
+        [
+            (Insert, 1_000, ALICE),
+            (Edit, 1_000, ALICE),
+            (Edit, 1_000, ALICE),
+            (Insert, 4_000, ME),
+            (Edit, 4_000, ME),
+            (Insert, 6_000, ALICE),
+            (Edit, 6_000, ALICE),
+            (Delete, 6_000, ALICE),
+            (Insert, 8_000, BOB),
+            (Delete, 8_000, BOB),
+            (Insert, 11_000, ALICE),
+        ],
+        "edits and deletes journal the original identity"
+    );
+}
+
+fn export_fixture() -> std::path::PathBuf {
+    // A synthetic Signal Desktop chat export, shaped like a real one's frames.
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/export.jsonl")
+}
+
+#[tokio::test]
+async fn imports_history_next_to_live_messages() {
+    let (dir, api, archive) = received_archive().await;
+    // A second handle while the receiver holds the database, as `kubectl exec ... import` does.
+    let importer = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let summary = ferret_signal_archive::import(&importer, &export_fixture())
+        .await
+        .unwrap();
+    assert_eq!(
+        summary,
+        ImportSummary {
+            inserted: 6,
+            present: 2,
+            skipped: 6,
+            unkeyed: 1,
+        }
+    );
+    assert_eq!(api.archive().await.high, archive.high + 6);
+
+    let store_id = archive.store_id.as_str();
+    let alice: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", ALICE)])
+        .await;
+    let history: Vec<_> = alice
+        .messages
+        .iter()
+        .take_while(|message| message.key.sent_at < 1760000000000)
+        .collect();
+    assert_eq!(history.len(), 4);
+    assert_eq!(history[3].text.as_deref(), Some("Nice story"));
+    assert_eq!(history[0].text.as_deref(), Some("An old message"));
+    assert_eq!(history[0].author_number.as_deref(), Some("+15555550101"));
+    assert!(history[1].from_me);
+    assert_eq!(
+        history[1].attachments,
+        [
+            Attachment {
+                mime_type: Some("application/pdf".into()),
+                filename: Some("plan.pdf".into()),
+                size: Some(48213),
+                caption: Some("The plan".into()),
+                voice_note: false,
+            },
+            Attachment {
+                mime_type: Some("audio/aac".into()),
+                filename: None,
+                size: Some(9120),
+                caption: None,
+                voice_note: true,
+            },
+        ]
+    );
+    // An edit keeps the identity of the original send, with the latest text.
+    assert_eq!(history[2].key.sent_at, 1750000200000);
+    assert_eq!(history[2].text.as_deref(), Some("Corrected text"));
+    assert!(history[2].edited);
+
+    let note: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", ME)])
+        .await;
+    assert_eq!(note.messages.len(), 2);
+    let bob: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", BOB)])
+        .await;
+    assert_eq!(bob.messages.len(), 1);
+    assert_eq!(bob.messages[0].text.as_deref(), Some("See this"));
+
+    let again = ferret_signal_archive::import(&importer, &export_fixture())
+        .await
+        .unwrap();
+    assert_eq!(
+        again,
+        ImportSummary {
+            inserted: 0,
+            present: 8,
+            skipped: 6,
+            unkeyed: 1,
+        }
+    );
+    assert_eq!(api.archive().await.high, archive.high + 6);
+}
+
+#[tokio::test]
+async fn import_requires_the_receivers_own_aci() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    assert!(
+        ferret_signal_archive::import(&store, &export_fixture())
+            .await
+            .is_err()
+    );
+    let archive = Api::start(store).await.archive().await;
+    assert_eq!(archive.high, 0);
+}
+
+#[tokio::test]
+async fn imports_into_an_empty_archive() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("signal.db");
+    let store = Store::open(&path).await.unwrap();
+    // What the receiver records on its first connect, without receiving anything.
+    let db =
+        sqlx::SqlitePool::connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&path))
+            .await
+            .unwrap();
+    sqlx::query("UPDATE archive SET self_aci = ?")
+        .bind(ME)
+        .execute(&db)
+        .await
+        .unwrap();
+    let summary = ferret_signal_archive::import(&store, &export_fixture())
+        .await
+        .unwrap();
+    assert_eq!(
+        summary,
+        ImportSummary {
+            inserted: 8,
+            present: 0,
+            skipped: 6,
+            unkeyed: 1,
+        }
+    );
+    let api = Api::start(store).await;
+    let archive = api.archive().await;
+    assert_eq!(archive.high, 8);
+    let store_id = archive.store_id.as_str();
+    let chats: ChatsPage = api.json("/v1/chats", &[("store_id", store_id)]).await;
+    let kinds: Vec<_> = chats
+        .chats
+        .iter()
+        .map(|chat| (chat.id.as_str(), chat.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (ME, ChatKind::NoteToSelf),
+            (ALICE, ChatKind::Direct),
+            (BOB, ChatKind::Direct)
+        ]
+    );
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[("store_id", store_id), ("after", "0"), ("through", "8")],
+        )
+        .await;
+    assert_eq!(changes.changes.len(), 8);
+}
+
+#[tokio::test]
+async fn group_chats_are_rejected() {
+    let (dir, _api, _archive) = received_archive().await;
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let group = r#"{"recipient":{"id":"7","group":{"masterKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","whitelisted":true}}}"#;
+    let export = dir.path().join("groups.jsonl");
+    // A group recipient without a chat holds no history and does not block the import.
+    std::fs::write(&export, format!("{group}\n")).unwrap();
+    ferret_signal_archive::import(&store, &export)
+        .await
+        .unwrap();
+    std::fs::write(
+        &export,
+        format!(
+            "{group}\n{}\n",
+            r#"{"chat":{"id":"20","recipientId":"7","expireTimerVersion":1}}"#
+        ),
+    )
+    .unwrap();
+    let error = ferret_signal_archive::import(&store, &export)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "line 2: group chat import unsupported");
+}
+
+#[tokio::test]
+async fn live_edits_and_deletes_resolve_imported_revisions() {
+    let (dir, api, _) = received_archive().await;
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    ferret_signal_archive::import(&store, &export_fixture())
+        .await
+        .unwrap();
+    let imported = api.archive().await.high;
+    // The export holds Alice's message sent at 1750000200000 and edited at 1750000300000; Signal
+    // addresses later edits and deletes to the latest revision.
+    let lines = [
+        envelope(
+            ALICE,
+            edit(1_750_000_300_000, 1_750_000_600_000, "Edited live"),
+        ),
+        envelope(ALICE, remote_delete(1_750_000_700_000, 1_750_000_300_000)),
+    ]
+    .join("\n");
+    tokio::spawn(ferret_signal_archive::receive(
+        store,
+        fake_daemon(ME, lines).await,
+    ));
+    let archive = api.await_high(imported + 2).await;
+    let store_id = archive.store_id.as_str();
+    let after = imported.to_string();
+    let through = archive.high.to_string();
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[
+                ("store_id", store_id),
+                ("after", &after),
+                ("through", &through),
+            ],
+        )
+        .await;
+    let journaled: Vec<_> = changes
+        .changes
+        .iter()
+        .map(|change| {
+            (
+                change.operation,
+                change.key.as_ref().unwrap().sent_at,
+                change.key.as_ref().unwrap().author.as_str(),
+            )
+        })
+        .collect();
+    use ferret_signal_archive::ChangeOperation::{Delete, Edit};
+    assert_eq!(
+        journaled,
+        [
+            (Edit, 1_750_000_200_000, ALICE),
+            (Delete, 1_750_000_200_000, ALICE)
+        ]
+    );
+    let direct: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", ALICE)])
+        .await;
+    assert!(
+        direct
+            .messages
+            .iter()
+            .all(|message| message.key.sent_at != 1_750_000_200_000)
+    );
+}
+
+#[tokio::test]
+async fn a_failing_name_refresh_does_not_stop_receiving() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let names = Names {
+        contacts_fail: true,
+        ..Names::default()
+    };
+    let daemon = FakeDaemon::start(ME, names).await;
+    daemon.send(RECEIVED);
+    tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        daemon.address.clone(),
+    ));
+    let api = Api::start(store).await;
+    assert_eq!(api.await_high(9).await.high, 9);
 }

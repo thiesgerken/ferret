@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "server")]
+mod import;
+#[cfg(feature = "server")]
 mod receiver;
 #[cfg(feature = "server")]
 mod server;
@@ -12,7 +14,12 @@ mod signal_cli;
 #[cfg(feature = "server")]
 mod store;
 #[cfg(feature = "server")]
-pub use {receiver::receive, server::router, store::Store};
+pub use {
+    import::{ImportSummary, import},
+    receiver::receive,
+    server::router,
+    store::Store,
+};
 
 pub const PAGE_SIZE: i64 = 500;
 
@@ -116,6 +123,10 @@ pub struct MessagesPage {
 )]
 pub enum ChangeOperation {
     Insert,
+    /// The message's text changed; it keeps its identity.
+    Edit,
+    /// The message was deleted and no longer appears in its chat.
+    Delete,
     /// A chat's title or one of its authors' names changed.
     Rename,
 }

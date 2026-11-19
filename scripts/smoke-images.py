@@ -155,11 +155,22 @@ def smoke_signal_archive(state, architecture):
             assert archive["high"] == 9, archive
 
         eventually(received, timeout=30)
+        export = (ROOT / "crates/ferret-signal-archive/tests/fixtures/export.jsonl").read_bytes()
+        subprocess.run(["docker", "exec", "-i", container, "ferret-signal-archive", "import", "/dev/stdin"],
+                       input=export, check=True)
+
+        def imported():
+            archive = json.load(urllib.request.urlopen(urllib.request.Request(
+                base + "/v1/archive", headers={"Authorization": "Bearer " + token}
+            ), timeout=15))
+            assert archive["high"] == 15, archive
+
+        imported()
         config = json.loads(run("docker", "inspect", container))[0]
         assert config["State"]["Running"], config["State"]
         assert config["Config"]["User"] == "65532:65532"
         assert config["HostConfig"]["ReadonlyRootfs"]
-        print(f"PASS {architecture} Signal archive: receive from signal-cli, authenticated read, non-root/read-only runtime")
+        print(f"PASS {architecture} Signal archive: receive from signal-cli, history import over stdin, authenticated read, non-root/read-only runtime")
     except BaseException:
         subprocess.run(["docker", "logs", container], check=False)
         raise

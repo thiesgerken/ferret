@@ -20,6 +20,7 @@ pub struct Envelope {
     source_uuid: Option<String>,
     source_number: Option<String>,
     data_message: Option<DataMessage>,
+    edit_message: Option<EditMessage>,
     sync_message: Option<SyncMessage>,
 }
 
@@ -30,6 +31,30 @@ struct DataMessage {
     message: Option<String>,
     attachments: Option<Vec<JsonAttachment>>,
     group_info: Option<GroupInfo>,
+    remote_delete: Option<RemoteDelete>,
+    admin_delete: Option<AdminDelete>,
+}
+
+/// An edit's new revision of the message it targets.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditMessage {
+    target_sent_timestamp: i64,
+    data_message: DataMessage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteDelete {
+    target_timestamp: i64,
+}
+
+/// A group admin deleting another member's message.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminDelete {
+    target_author_uuid: Option<String>,
+    target_timestamp: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +71,7 @@ struct SyncMessage {
 struct SentMessage {
     destination_uuid: Option<String>,
     destination_number: Option<String>,
-    edit_message: Option<serde_json::Value>,
+    edit_message: Option<EditMessage>,
     /// signal-cli unwraps the data message into the transcript, absent for edits. Kept raw so
     /// that a data message failing to parse is reported instead of read as absent.
     #[serde(flatten)]
@@ -72,6 +97,29 @@ struct JsonAttachment {
     is_voice_note: bool,
 }
 
+/// What an envelope changes in the chat archive.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Incoming {
+    Message(Received),
+    /// The text of revision `edited_at` of the message `target` names.
+    Edit {
+        target: Target,
+        edited_at: i64,
+        text: Option<String>,
+    },
+    Delete(Target),
+}
+
+/// A message as an edit or delete names it: by its author and one of its revision timestamps,
+/// not necessarily the original send.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Target {
+    pub chat: String,
+    pub kind: ChatKind,
+    pub author: String,
+    pub sent_at: i64,
+}
+
 /// A message the chat archive stores, in its Signal identity.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Received {
@@ -86,45 +134,63 @@ pub struct Received {
     pub numbers: Vec<(String, String)>,
     /// The group's name, for a group chat the message creates.
     pub group_name: Option<String>,
+    /// Timestamps of later revisions of a message that arrives already edited, as an imported
+    /// one can; the live stream delivers edits separately.
+    pub revisions: Vec<i64>,
 }
 
 impl Envelope {
-    /// Whether the envelope announces changed contact or group names: a group update, or
-    /// another device syncing its contacts or groups.
+    /// Whether the envelope announces changed contact or group names: a group update, also
+    /// one made on another of the account's devices, or another device syncing its contacts or
+    /// groups.
     pub fn changes_names(&self) -> bool {
         let group_update = self
             .data_message
             .as_ref()
             .and_then(|data| data.group_info.as_ref())
             .is_some_and(|group| group.r#type == "UPDATE");
-        let sync = self
-            .sync_message
-            .as_ref()
+        let sync = self.sync_message.as_ref();
+        let own_group_update = sync
+            .and_then(|sync| sync.sent_message.as_ref())
+            .is_some_and(|sent| sent.data["groupInfo"]["type"] == "UPDATE");
+        let devices_sync = sync
             .and_then(|sync| sync.r#type.as_deref())
             .is_some_and(|kind| matches!(kind, "CONTACTS_SYNC" | "GROUPS_SYNC"));
-        group_update || sync
+        group_update || own_group_update || devices_sync
     }
 
-    /// The storable message, or `None` for everything the chat archive skips: receipts, typing,
-    /// calls, stories, reactions, polls, pins, group and timer changes and other content-free
-    /// data messages. Story replies are ordinary messages in their chat.
-    pub fn into_received(self) -> Option<Received> {
+    /// The message, edit or delete, or `None` for everything the chat archive skips: receipts,
+    /// typing, calls, stories, reactions, polls, pins, group and timer changes and other
+    /// content-free data messages. Story replies are ordinary messages in their chat.
+    pub fn into_incoming(self) -> Option<Incoming> {
         let author = self.source_uuid?;
         let mut numbers: Vec<_> = self
             .source_number
             .map(|number| (author.clone(), number))
             .into_iter()
             .collect();
-        let (data, chat, kind, from_me) = if let Some(data) = self.data_message {
-            (data, author.clone(), ChatKind::Direct, false)
+        let (data, edit_target, chat, kind, from_me) = if let Some(data) = self.data_message {
+            (data, None, author.clone(), ChatKind::Direct, false)
+        } else if let Some(edit) = self.edit_message {
+            let target = Some(edit.target_sent_timestamp);
+            (
+                edit.data_message,
+                target,
+                author.clone(),
+                ChatKind::Direct,
+                false,
+            )
         } else {
             let sent = self.sync_message?.sent_message?;
-            if sent.edit_message.is_some() {
-                return None;
-            }
-            let Ok(data) = serde_json::from_value::<DataMessage>(sent.data) else {
-                warn!("skipping a sent transcript whose data message does not parse");
-                return None;
+            let (data, edit_target) = match sent.edit_message {
+                Some(edit) => (edit.data_message, Some(edit.target_sent_timestamp)),
+                None => {
+                    let Ok(data) = serde_json::from_value::<DataMessage>(sent.data) else {
+                        warn!("skipping a sent transcript whose data message does not parse");
+                        return None;
+                    };
+                    (data, None)
+                }
             };
             let destination = sent.destination_uuid;
             if let (Some(aci), Some(number)) = (&destination, sent.destination_number) {
@@ -137,7 +203,7 @@ impl Envelope {
             } else {
                 ChatKind::Direct
             };
-            (data, chat, kind, true)
+            (data, edit_target, chat, kind, true)
         };
         let mut group_name = None;
         let (chat, kind) = match data.group_info {
@@ -152,6 +218,33 @@ impl Envelope {
             }
             None => (chat, kind),
         };
+        if let Some(delete) = data.remote_delete {
+            return Some(Incoming::Delete(Target {
+                chat,
+                kind,
+                author,
+                sent_at: delete.target_timestamp,
+            }));
+        }
+        // signal-cli v0.14.9 drops a group's admin deletes from non-admins
+        // (`IncomingMessageHandler.isNotAllowedToSendToGroup`), but checks nothing outside a
+        // group, where an admin delete would let any contact delete others' messages.
+        if let Some(delete) = data.admin_delete {
+            if kind != ChatKind::Group {
+                warn!("skipping an admin delete outside a group");
+                return None;
+            }
+            let Some(target_author) = delete.target_author_uuid else {
+                warn!("skipping an admin delete without target author ACI");
+                return None;
+            };
+            return Some(Incoming::Delete(Target {
+                chat,
+                kind,
+                author: target_author,
+                sent_at: delete.target_timestamp,
+            }));
+        }
         let text = data.message.filter(|text| !text.is_empty());
         let attachments: Vec<Attachment> = data
             .attachments
@@ -165,10 +258,24 @@ impl Envelope {
                 voice_note: attachment.is_voice_note,
             })
             .collect();
+        if let Some(target) = edit_target {
+            // The chat archive takes only the text from an edit, as the design asks; attachment
+            // metadata stays the original's.
+            return Some(Incoming::Edit {
+                target: Target {
+                    chat,
+                    kind,
+                    author,
+                    sent_at: target,
+                },
+                edited_at: data.timestamp,
+                text,
+            });
+        }
         if text.is_none() && attachments.is_empty() {
             return None;
         }
-        Some(Received {
+        Some(Incoming::Message(Received {
             chat,
             kind,
             author,
@@ -178,7 +285,8 @@ impl Envelope {
             attachments,
             numbers,
             group_name,
-        })
+            revisions: Vec::new(),
+        }))
     }
 }
 

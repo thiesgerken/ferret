@@ -16,9 +16,13 @@ Image: `ghcr.io/thiesgerken/ferret-signal-archive:<version>`, non-root, read-onl
 
 `--receive-mode manual` is required: only then does signal-cli leave messages queued on the Signal server while this service is down, instead of acknowledging and dropping them. The daemon runs in multi-account mode (no `-a`), because only there does `listAccounts` report the account's own ACI. On every connect the service requires exactly one linked account, records its ACI on first use and passes it as `account` on every call. It then pulls envelopes one at a time (`receive` with `maxMessages: 1`): signal-cli acknowledges an envelope to the Signal server before handing it over, so a crash loses at most the one envelope in flight. It reconnects every 5 seconds while the daemon is unreachable or has no linked account yet, and exits when the database cannot be written, the daemon serves several accounts, or the account differs from the recorded one: a different account is a different chat archive. The database is the only raw copy of everything received, so back it up.
 
-Names come from signal-cli's `listContacts` (all recipients) and `listGroups`: on every connect, hourly, and after a group update or another device's contacts or groups sync. A changed name is journaled as a `rename` of the affected chats.
+Names come from signal-cli's `listContacts` (all recipients) and `listGroups`: on every connect, hourly, and after a group update (also one made on the account's own phone) or another device's contacts or groups sync. Nickname and system-name edits on current Signal clients travel via storage-service sync rather than a contacts sync, so they arrive with the hourly refresh. A changed name or number is journaled as a `rename` of the affected chats.
 
-What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
+What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. An edit replaces a message's text and sets `edited`; a remote delete, including a group admin's, removes the message. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
+
+## History import
+
+`ferret-signal-archive import <main.jsonl>` (or `/dev/stdin`) imports Signal Desktop's chat export (Settings > Chats > Export chat history, without media) into the database at `SIGNAL_ARCHIVE_DB`, then exits. It runs next to the live service against the same database, e.g. via `kubectl exec`. It needs the account's own ACI, which the export does not carry: the service must have connected to signal-cli at least once. Messages whose identity is already present are left alone, new ones are journaled as ordinary inserts, so re-running is a no-op. Content rules match live receiving, story replies included; an edited message keeps its original identity, with the latest text and `edited: true`. An export with a group chat is rejected (`group chat import unsupported`): mapping its groups to signal-cli's group IDs is not implemented. The command logs only counts, never content: `inserted`, `present` (identity already held), `skipped` (not stored, e.g. stickers, calls, deletes) and `unkeyed` (lost because the chat or author is a contact without ACI, known only by phone number). An error names the line and a reason. Operator steps are in the [plugin guide](../plugins/signal.md#history-import).
 
 ## Authentication and errors
 
@@ -62,7 +66,7 @@ Ascending chat ID keyset over all chats, up to 500 per page:
 }
 ```
 
-`id` is the counterpart's ACI for `direct`, the group ID for `group`, and the account's own ACI for `note_to_self`. `name` is the group's name for `group`, the contact's name as for `author_name` (else their phone number) for `direct`, and null for `note_to_self` or when unknown. `next` is the last returned ID when more rows exist, otherwise null; repeat with `after=next`.
+`id` is the counterpart's ACI for `direct`, the group ID for `group`, and the account's own ACI for `note_to_self`. `name` is the group's name for `group`, the contact's name as for `author_name` (else their phone number) for `direct`, `Note to Self` for `note_to_self`, and null when unknown. `next` is the last returned ID when more rows exist, otherwise null; repeat with `after=next`.
 
 ## `GET /v1/messages?store_id=<id>&chat=<chat>[&after_sent_at=<ms>&after_author=<aci>]`
 
@@ -86,6 +90,8 @@ Ascending `(sent_at, author)` keyset over one chat's messages, up to 500 per pag
 
 `(chat, author, sent_at)` identifies a message; `author` is the sender's ACI, the account's own for `from_me`. `author_name` is the name the account knows the sender by, as Signal's apps choose it: the nickname the account gave them, else the system contact name, else their profile name; null when signal-cli knows none, and always null for the account itself. `author_number` is the sender's phone number if signal-cli knows it. `text` is null for attachment-only messages. Attachments carry metadata only. Their type is the MIME type (stickers are not attachments in Signal); `voice_note` marks recorded voice messages, the one type MIME does not distinguish. `mime_type`, `filename`, `size` and `caption` are nullable. Disappearing and view-once messages are returned like any other: the chat archive never expires them. `next` is null when the chat is exhausted.
 
+An edited message keeps its original `sent_at` and returns its latest text with `edited: true`; its attachments stay the original's. A deleted message is no longer returned.
+
 ## `GET /v1/changes?store_id=<id>&after=<sequence>&through=<sequence>`
 
 Journal entries with `after < sequence <= through`, ascending, up to 500 per page:
@@ -105,6 +111,6 @@ Journal entries with `after < sequence <= through`, ascending, up to 500 per pag
 }
 ```
 
-`operation` is `insert` for a new message, with `key` its identity, or `rename` when a chat's title or the name of someone who wrote in it changed, with `key` null. A contact's rename journals one entry for their direct chat and one for every chat they wrote in. Fetch the current state of the affected chat instead of treating entries as historical payloads.
+`operation` is `insert`, `edit` or `delete` with `key` the message's original identity, also for edits and deletes that Signal addressed to a later revision's timestamp; or `rename`, with `key` null, when a chat's title or the name of someone who wrote in it changed. A contact's rename journals one entry for their direct chat and one for every chat they wrote in. Fetch the current state of the affected chat instead of treating entries as historical payloads.
 
 Capture `through` from `/v1/archive.high` and hold it fixed for one drain. Repeat with `after=next` while `has_more` is true; the last page returns `next=through`. The journal is never pruned, so every position from 0 stays replayable. For a full reconciliation, capture `high` before enumerating chats and messages, then drain the journal from it afterwards.
