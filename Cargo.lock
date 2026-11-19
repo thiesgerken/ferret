@@ -1238,6 +1238,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "ferret-api",
+ "ferret-signal-archive",
  "ferret-whatsapp-archive",
  "futures-util",
  "globset",
