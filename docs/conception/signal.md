@@ -34,6 +34,8 @@ Once, after the collector is linked and receiving, so the two overlap instead of
 3. Copy it into the pod and run `ferret-signal-archive import <main.jsonl>` via `kubectl exec`, against the live database (WAL plus a busy timeout; the daemon keeps writing). It inserts only messages whose key is absent and journals them as ordinary inserts, so the next plugin run ingests them incrementally. There is no import endpoint; the API stays read-only.
 4. Unlink Desktop.
 
+The export carries edits: an edited item holds the latest text and the latest revision's `dateSent`, its `revisions` the older versions, oldest first. The importer keys it by the oldest revision's `dateSent`, the original send, which is the identity signal-cli reports live. Remote deletes remain as `remoteDeletedMessage` items without content. The export has no own ACI, so the importer takes it from the chat archive, recorded by the receiver from `listAccounts`. [V1]
+
 Accepted gap: the export drops every message with a disappearing timer and all view-once media. Disappearing messages still unexpired at import time are therefore missing from history, at most one timer window per disappearing chat. Reading Desktop's SQLCipher database or decrypting an Android folder backup would close it, at the price of an internal-schema reader or AGPL tooling in the import step. [V4][S3]
 
 ## Message identity
@@ -72,7 +74,7 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 
 ## Open points
 
-- Whether the Desktop export carries edit revisions and group events in practice: check one real export before writing the importer.
+- Group chats in the history import. The one real export checked (2026-11-19) had no groups, so neither group events nor the mapping of a backup group (identified by its master key) to signal-cli's group ID could be verified; that ID is derived from the master key with zkgroup. The importer rejects exports containing groups until an export with groups is available.
 - How signal-cli reports an unlinked device over JSON-RPC, for `status`.
 - signal-cli's memory footprint, JVM versus native image (cluster nodes are amd64, which both official images support). [C13]
 

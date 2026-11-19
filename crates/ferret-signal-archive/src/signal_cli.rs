@@ -129,6 +129,9 @@ pub struct Received {
     pub attachments: Vec<Attachment>,
     /// ACI and phone number pairs the envelope revealed.
     pub numbers: Vec<(String, String)>,
+    /// Timestamps of later revisions of a message that arrives already edited, as an imported
+    /// one can; the live stream delivers edits separately.
+    pub revisions: Vec<i64>,
 }
 
 impl Envelope {
@@ -247,6 +250,7 @@ impl Envelope {
             text,
             attachments,
             numbers,
+            revisions: Vec::new(),
         }))
     }
 }

@@ -1311,6 +1311,7 @@ name = "ferret-signal-archive"
 version = "0.38.9"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "reqwest",
  "serde",
  "serde_json",
@@ -1321,6 +1322,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

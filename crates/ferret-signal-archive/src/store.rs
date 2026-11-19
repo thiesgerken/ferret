@@ -66,7 +66,7 @@ impl Store {
 
     pub(crate) async fn apply(&self, incoming: Incoming) -> Result<(), sqlx::Error> {
         match incoming {
-            Incoming::Message(message) => self.insert(message).await,
+            Incoming::Message(message) => self.insert(message).await.map(drop),
             Incoming::Edit {
                 target,
                 edited_at,
@@ -77,7 +77,8 @@ impl Store {
     }
 
     /// Stores a message unless its identity is already present, and journals the insert.
-    async fn insert(&self, message: Received) -> Result<(), sqlx::Error> {
+    /// Records its revisions either way. Returns whether it was absent.
+    pub(crate) async fn insert(&self, message: Received) -> Result<bool, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING")
             .bind(&message.chat)
@@ -97,8 +98,8 @@ impl Store {
         let attachments =
             serde_json::to_string(&message.attachments).expect("attachments serialize");
         let inserted = sqlx::query(
-            "INSERT INTO messages (chat, sent_at, author, from_me, text, attachments)
-             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            "INSERT INTO messages (chat, sent_at, author, from_me, text, attachments, edited)
+             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
         )
         .bind(&message.chat)
         .bind(message.sent_at)
@@ -106,6 +107,7 @@ impl Store {
         .bind(message.from_me)
         .bind(&message.text)
         .bind(attachments)
+        .bind(!message.revisions.is_empty())
         .execute(&mut *tx)
         .await?
         .rows_affected()
@@ -120,7 +122,24 @@ impl Store {
             )
             .await?;
         }
-        tx.commit().await
+        for edited_at in message.revisions {
+            record_revision(
+                &mut tx,
+                &message.chat,
+                &message.author,
+                edited_at,
+                message.sent_at,
+            )
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(inserted)
+    }
+
+    pub(crate) async fn self_aci(&self) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT self_aci FROM archive")
+            .fetch_one(&self.pool)
+            .await
     }
 
     /// Replaces the text of the message `target` names and records the revision. Edits of
@@ -239,7 +258,7 @@ async fn resolve(
 
 /// Records that revision `edited_at` of the message `(chat, sent_at, author)` exists, so edits
 /// and deletes addressed to it resolve. Returns false if it was already recorded.
-pub(crate) async fn record_revision(
+async fn record_revision(
     conn: &mut SqliteConnection,
     chat: &str,
     author: &str,
