@@ -26,6 +26,8 @@ const FIXTURE_MESSAGES: i64 = 9;
 /// The real chat archive: its receiver fed by a fake `signal-cli` daemon, its router on a port.
 struct ChatArchive {
     _dir: tempfile::TempDir,
+    store: ferret_signal_archive::Store,
+    receiver: tokio::task::AbortHandle,
     daemon: mpsc::UnboundedSender<String>,
     url: String,
     store_id: String,
@@ -38,22 +40,43 @@ impl ChatArchive {
             .await
             .unwrap();
         let (daemon, lines) = mpsc::unbounded_channel();
-        tokio::spawn(ferret_signal_archive::receive(
+        let receiver = tokio::spawn(ferret_signal_archive::receive(
             store.clone(),
             fake_daemon(lines).await,
-        ));
-        let app = ferret_signal_archive::router(store, TOKEN).unwrap();
+        ))
+        .abort_handle();
+        let app = ferret_signal_archive::router(store.clone(), TOKEN).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let mut archive = Self {
             _dir: dir,
+            store,
+            receiver,
             daemon,
             url,
             store_id: String::new(),
         };
         archive.store_id = archive.identity().await.store_id;
         archive
+    }
+
+    /// Restarts the receiver against a daemon that no longer lists the account, as signal-cli
+    /// does once the phone removed the linked device, and waits until the archive reports it.
+    async fn unlink(&mut self) {
+        self.receiver.abort();
+        self.receiver = tokio::spawn(ferret_signal_archive::receive(
+            self.store.clone(),
+            daemon_without_accounts().await,
+        ))
+        .abort_handle();
+        for _ in 0..200 {
+            if self.identity().await.status == ferret_signal_archive::CollectorStatus::Unlinked {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("the chat archive did not report the unlinked collector");
     }
 
     async fn identity(&self) -> ferret_signal_archive::Archive {
@@ -115,6 +138,30 @@ async fn fake_daemon(mut lines: mpsc::UnboundedReceiver<String>) -> String {
                 .await
                 .unwrap();
         }
+        std::future::pending::<()>().await;
+    });
+    address
+}
+
+/// Answers `listAccounts` with no account.
+async fn daemon_without_accounts() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let request = BufReader::new(reader)
+            .lines()
+            .next_line()
+            .await
+            .unwrap()
+            .unwrap();
+        let request: Value = serde_json::from_str(&request).unwrap();
+        let response = json!({"jsonrpc": "2.0", "id": request["id"], "result": []});
+        writer
+            .write_all(format!("{response}\n").as_bytes())
+            .await
+            .unwrap();
         std::future::pending::<()>().await;
     });
     address
@@ -358,4 +405,20 @@ async fn edits_and_deletes_rerender_their_segment(pool: PgPool) {
     assert!(alice[0].text.contains(" (edited)  \nEditedsentinel"));
     assert!(!alice[0].text.contains("Hello from Alice"));
     assert!(!alice[0].text.contains("Disappearing"));
+}
+
+#[sqlx::test(migrations = false)]
+async fn a_run_against_an_unlinked_collector_succeeds_and_reports_it(pool: PgPool) {
+    let mut archive = ChatArchive::start().await;
+    archive.receive(FIXTURE, FIXTURE_MESSAGES).await;
+    archive.unlink().await;
+    let server = start_server(pool.clone()).await;
+    let (worker, wid, _) = setup(&server, archive.config(&[], &[])).await;
+    let (status, error, _, log) = execute(&worker, wid, &pool).await;
+    assert_eq!(status, "succeeded", "{error:?}");
+    assert!(
+        log.contains("collector status unlinked, last received envelope 20"),
+        "{log}"
+    );
+    assert_eq!(documents(&server, &pool).await.len(), 3);
 }
