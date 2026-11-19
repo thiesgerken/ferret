@@ -487,3 +487,137 @@ async fn pages_cross_the_page_size() {
     }
     assert_eq!(sequences, (1..=archive.high).collect::<Vec<_>>());
 }
+
+/// A `receive` result item: an envelope from `author` with `content` (`dataMessage`,
+/// `editMessage` or `syncMessage`).
+fn envelope(author: &str, content: serde_json::Value) -> String {
+    let mut envelope = serde_json::json!({"sourceUuid": author, "sourceDevice": 1});
+    envelope
+        .as_object_mut()
+        .unwrap()
+        .extend(content.as_object().unwrap().clone());
+    serde_json::json!({"account": "+15555550100", "envelope": envelope}).to_string()
+}
+
+fn data(sent_at: i64, text: &str) -> serde_json::Value {
+    serde_json::json!({"timestamp": sent_at, "message": text})
+}
+
+fn edit(target: i64, edited_at: i64, text: &str) -> serde_json::Value {
+    serde_json::json!({"editMessage": {"targetSentTimestamp": target, "dataMessage": data(edited_at, text)}})
+}
+
+fn remote_delete(sent_at: i64, target: i64) -> serde_json::Value {
+    serde_json::json!({"dataMessage": {"timestamp": sent_at,
+        "remoteDelete": {"targetTimestamp": target, "timestamp": target}}})
+}
+
+#[tokio::test]
+async fn edits_and_deletes_resolve_any_revision_and_keep_identities_occupied() {
+    let group_info = serde_json::json!({"groupId": GROUP, "type": "DELIVER"});
+    let mut spam = data(8_000, "Spam");
+    spam["groupInfo"] = group_info.clone();
+    let lines = [
+        envelope(ALICE, serde_json::json!({"dataMessage": data(1_000, "Original")})),
+        envelope(ALICE, edit(1_000, 2_000, "First edit")),
+        // Signal clients address a second edit to the first edit's timestamp.
+        envelope(ALICE, edit(2_000, 3_000, "Second edit")),
+        // A redelivered edit is not a new revision.
+        envelope(ALICE, edit(1_000, 2_000, "First edit")),
+        envelope(
+            ME,
+            serde_json::json!({"syncMessage": {"sentMessage": {"destinationUuid": ALICE,
+                "timestamp": 4_000, "message": "Mine"}}}),
+        ),
+        envelope(
+            ME,
+            serde_json::json!({"syncMessage": {"sentMessage": {"destinationUuid": ALICE,
+                "editMessage": {"targetSentTimestamp": 4_000, "dataMessage": data(5_000, "Mine edited")}}}}),
+        ),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(6_000, "Doomed")})),
+        envelope(ALICE, edit(6_000, 7_000, "Doomed edited")),
+        // Deletes may name any revision.
+        envelope(ALICE, remote_delete(7_500, 7_000)),
+        // Neither a redelivery nor an edit brings a deleted message back.
+        envelope(ALICE, serde_json::json!({"dataMessage": data(6_000, "Doomed")})),
+        envelope(ALICE, edit(6_000, 10_000, "Revived")),
+        envelope(BOB, serde_json::json!({"dataMessage": spam})),
+        envelope(
+            ALICE,
+            serde_json::json!({"dataMessage": {"timestamp": 8_500, "groupInfo": group_info,
+                "adminDelete": {"targetAuthorUuid": BOB, "targetTimestamp": 8_000}}}),
+        ),
+        // A delete ahead of its message leaves a tombstone the message cannot replace.
+        envelope(ALICE, remote_delete(9_500, 9_000)),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(9_000, "Too late")})),
+        envelope(ALICE, serde_json::json!({"dataMessage": data(11_000, "Last")})),
+    ]
+    .join("\n");
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    tokio::spawn(ferret_signal_archive::receive(
+        store.clone(),
+        fake_daemon(ME, lines).await,
+    ));
+    let api = Api::start(store).await;
+    let archive = api.await_high(11).await;
+    assert_eq!(archive.high, 11);
+    let store_id = archive.store_id.as_str();
+
+    let direct: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", ALICE)])
+        .await;
+    let shown: Vec<_> = direct
+        .messages
+        .iter()
+        .map(|message| (message.key.sent_at, message.text.as_deref(), message.edited))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (1_000, Some("Second edit"), true),
+            (4_000, Some("Mine edited"), true),
+            (11_000, Some("Last"), false),
+        ]
+    );
+    let group: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", GROUP)])
+        .await;
+    assert!(group.messages.is_empty());
+
+    let changes: ChangesPage = api
+        .json(
+            "/v1/changes",
+            &[("store_id", store_id), ("after", "0"), ("through", "11")],
+        )
+        .await;
+    let journaled: Vec<_> = changes
+        .changes
+        .iter()
+        .map(|change| {
+            (
+                change.operation,
+                change.key.sent_at,
+                change.key.author.as_str(),
+            )
+        })
+        .collect();
+    use ferret_signal_archive::ChangeOperation::{Delete, Edit, Insert};
+    assert_eq!(
+        journaled,
+        [
+            (Insert, 1_000, ALICE),
+            (Edit, 1_000, ALICE),
+            (Edit, 1_000, ALICE),
+            (Insert, 4_000, ME),
+            (Edit, 4_000, ME),
+            (Insert, 6_000, ALICE),
+            (Edit, 6_000, ALICE),
+            (Delete, 6_000, ALICE),
+            (Insert, 8_000, BOB),
+            (Delete, 8_000, BOB),
+            (Insert, 11_000, ALICE),
+        ],
+        "edits and deletes journal the original identity"
+    );
+}

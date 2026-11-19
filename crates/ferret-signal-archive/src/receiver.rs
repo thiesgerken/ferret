@@ -93,8 +93,8 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
                 Ok(ReceiveResult {
                     envelope: Some(envelope),
                 }) => {
-                    if let Some(message) = envelope.into_received() {
-                        store.insert(message).await?;
+                    if let Some(incoming) = envelope.into_incoming() {
+                        store.apply(incoming).await?;
                     }
                 }
                 Ok(ReceiveResult { envelope: None }) => {}

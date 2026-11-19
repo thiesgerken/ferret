@@ -4,11 +4,14 @@ use std::{
 };
 
 use sqlx::{
-    SqlitePool,
+    SqliteConnection, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
 };
 
-use crate::signal_cli::Received;
+use crate::{
+    ChangeOperation,
+    signal_cli::{Incoming, Received, Target},
+};
 
 /// The chat archive's SQLite database. The receiver is its only writer.
 #[derive(Clone)]
@@ -61,8 +64,20 @@ impl Store {
         Ok(())
     }
 
+    pub(crate) async fn apply(&self, incoming: Incoming) -> Result<(), sqlx::Error> {
+        match incoming {
+            Incoming::Message(message) => self.insert(message).await,
+            Incoming::Edit {
+                target,
+                edited_at,
+                text,
+            } => self.edit(target, edited_at, text).await,
+            Incoming::Delete(target) => self.delete(target).await,
+        }
+    }
+
     /// Stores a message unless its identity is already present, and journals the insert.
-    pub(crate) async fn insert(&self, message: Received) -> Result<(), sqlx::Error> {
+    async fn insert(&self, message: Received) -> Result<(), sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING")
             .bind(&message.chat)
@@ -96,19 +111,163 @@ impl Store {
         .rows_affected()
             == 1;
         if inserted {
-            sqlx::query(
-                "INSERT INTO changes (recorded_at, operation, chat, sent_at, author)
-                 VALUES (?, 'insert', ?, ?, ?)",
+            journal(
+                &mut tx,
+                ChangeOperation::Insert,
+                &message.chat,
+                message.sent_at,
+                &message.author,
             )
-            .bind(now())
-            .bind(&message.chat)
-            .bind(message.sent_at)
-            .bind(&message.author)
-            .execute(&mut *tx)
             .await?;
         }
         tx.commit().await
     }
+
+    /// Replaces the text of the message `target` names and records the revision. Edits of
+    /// unknown or deleted messages and redelivered edits change nothing.
+    async fn edit(
+        &self,
+        target: Target,
+        edited_at: i64,
+        text: Option<String>,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        let Some((sent_at, false)) = resolve(&mut tx, &target).await? else {
+            return Ok(());
+        };
+        if !record_revision(&mut tx, &target.chat, &target.author, edited_at, sent_at).await? {
+            return Ok(());
+        }
+        sqlx::query(
+            "UPDATE messages SET text = ?, edited = 1 WHERE chat = ? AND sent_at = ? AND author = ?",
+        )
+        .bind(text)
+        .bind(&target.chat)
+        .bind(sent_at)
+        .bind(&target.author)
+        .execute(&mut *tx)
+        .await?;
+        journal(
+            &mut tx,
+            ChangeOperation::Edit,
+            &target.chat,
+            sent_at,
+            &target.author,
+        )
+        .await?;
+        tx.commit().await
+    }
+
+    /// Turns the message `target` names into a tombstone, see the `deleted` column. A delete
+    /// that arrives before its message leaves a tombstone too, because the message can still
+    /// come: redelivered by signal-cli, or from a history import of an older export.
+    async fn delete(&self, target: Target) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        match resolve(&mut tx, &target).await? {
+            Some((_, true)) => return Ok(()),
+            Some((sent_at, false)) => {
+                sqlx::query(
+                    "UPDATE messages SET deleted = 1, text = NULL, attachments = '[]'
+                     WHERE chat = ? AND sent_at = ? AND author = ?",
+                )
+                .bind(&target.chat)
+                .bind(sent_at)
+                .bind(&target.author)
+                .execute(&mut *tx)
+                .await?;
+                journal(
+                    &mut tx,
+                    ChangeOperation::Delete,
+                    &target.chat,
+                    sent_at,
+                    &target.author,
+                )
+                .await?;
+            }
+            None => {
+                sqlx::query(
+                    "INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                )
+                .bind(&target.chat)
+                .bind(target.kind)
+                .execute(&mut *tx)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO messages (chat, sent_at, author, from_me, attachments, deleted)
+                     VALUES (?1, ?2, ?3, IFNULL(?3 = (SELECT self_aci FROM archive), 0), '[]', 1)",
+                )
+                .bind(&target.chat)
+                .bind(target.sent_at)
+                .bind(&target.author)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await
+    }
+}
+
+/// The original send and tombstone flag of the message `target` names by any of its revision
+/// timestamps. Signal-Desktop v8.32.0 addresses an edit to the latest revision
+/// (`ts/util/sendEditedMessage.preload.ts`, `getMessageSentTimestamp` includes edits) and matches
+/// a delete against every revision (`ts/messageModifiers/Deletes.preload.ts`).
+async fn resolve(
+    conn: &mut SqliteConnection,
+    target: &Target,
+) -> Result<Option<(i64, bool)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT sent_at, deleted FROM messages WHERE chat = ?1 AND author = ?2 AND sent_at IN
+             (?3, (SELECT sent_at FROM edits WHERE chat = ?1 AND author = ?2 AND edited_at = ?3))",
+    )
+    .bind(&target.chat)
+    .bind(&target.author)
+    .bind(target.sent_at)
+    .fetch_optional(conn)
+    .await
+}
+
+/// Records that revision `edited_at` of the message `(chat, sent_at, author)` exists, so edits
+/// and deletes addressed to it resolve. Returns false if it was already recorded.
+pub(crate) async fn record_revision(
+    conn: &mut SqliteConnection,
+    chat: &str,
+    author: &str,
+    edited_at: i64,
+    sent_at: i64,
+) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query(
+        "INSERT INTO edits (chat, author, edited_at, sent_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(chat)
+    .bind(author)
+    .bind(edited_at)
+    .bind(sent_at)
+    .execute(conn)
+    .await?
+    .rows_affected()
+        == 1)
+}
+
+async fn journal(
+    conn: &mut SqliteConnection,
+    operation: ChangeOperation,
+    chat: &str,
+    sent_at: i64,
+    author: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO changes (recorded_at, operation, chat, sent_at, author)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(now())
+    .bind(operation)
+    .bind(chat)
+    .bind(sent_at)
+    .bind(author)
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 fn now() -> i64 {

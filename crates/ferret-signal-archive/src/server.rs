@@ -160,7 +160,7 @@ async fn messages(
     let rows = sqlx::query(
         "SELECT sent_at, author, from_me, text, attachments, edited,
                 (SELECT number FROM recipients WHERE aci = author) AS author_number
-         FROM messages WHERE chat = ? AND (sent_at, author) > (?, ?)
+         FROM messages WHERE chat = ? AND NOT deleted AND (sent_at, author) > (?, ?)
          ORDER BY sent_at, author LIMIT ?",
     )
     .bind(query.chat)
