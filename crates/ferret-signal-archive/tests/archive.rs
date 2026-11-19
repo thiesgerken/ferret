@@ -17,24 +17,34 @@ const ALICE: &str = "00000000-0000-4000-8000-000000000002";
 const BOB: &str = "00000000-0000-4000-8000-000000000003";
 const GROUP: &str = "ZXhhbXBsZS1ncm91cC1pZC0wMDAwMDAwMDAwMDAwMDE=";
 
-/// A fake `signal-cli daemon --tcp --receive-mode manual`: it expects `subscribeReceive`, then
-/// emits `lines` and keeps the connection open.
-async fn fake_daemon(lines: &'static str) -> String {
+/// A fake multi-account `signal-cli daemon --tcp --receive-mode manual` serving `account`: it
+/// answers `listAccounts`, expects `subscribeReceive` for that account, then emits `lines` and
+/// keeps the connection open.
+async fn fake_daemon(account: &'static str, lines: &'static str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let (reader, mut writer) = stream.into_split();
-        let request = BufReader::new(reader)
-            .lines()
-            .next_line()
-            .await
-            .unwrap()
-            .unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request).unwrap();
-        assert_eq!(request["method"], "subscribeReceive");
+        let mut requests = BufReader::new(reader).lines();
+        let mut request = async || -> serde_json::Value {
+            serde_json::from_str(&requests.next_line().await.unwrap().unwrap()).unwrap()
+        };
+        assert_eq!(request().await["method"], "listAccounts");
+        let accounts = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": [{"number": "+15555550100", "aci": account}],
+        });
         writer
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"result\":0,\"id\":1}\n")
+            .write_all(format!("{accounts}\n").as_bytes())
+            .await
+            .unwrap();
+        let subscribe = request().await;
+        assert_eq!(subscribe["method"], "subscribeReceive");
+        assert_eq!(subscribe["params"]["account"], account);
+        writer
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"result\":0,\"id\":2}\n")
             .await
             .unwrap();
         writer.write_all(lines.as_bytes()).await.unwrap();
@@ -96,7 +106,7 @@ impl Api {
 async fn received_archive() -> (tempfile::TempDir, Api, Archive) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("signal.db")).await.unwrap();
-    let address = fake_daemon(NOTIFICATIONS).await;
+    let address = fake_daemon(ME, NOTIFICATIONS).await;
     tokio::spawn(ferret_signal_archive::receive(store.clone(), address));
     let api = Api::start(store).await;
     let archive = api.await_high(8).await;
@@ -369,4 +379,18 @@ async fn store_identity_survives_a_restart() {
     assert_ne!(fresh.store_id, store_id);
     assert_eq!(fresh.high, 0);
     assert_eq!(fresh.last_received_at, None);
+}
+
+#[tokio::test]
+async fn a_daemon_for_another_account_is_fatal() {
+    let (dir, _api, _archive) = received_archive().await;
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    let other = fake_daemon(ALICE, "").await;
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        ferret_signal_archive::receive(store, other),
+    )
+    .await
+    .expect("fails instead of retrying");
+    assert!(result.is_err());
 }

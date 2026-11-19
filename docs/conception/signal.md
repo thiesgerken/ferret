@@ -12,7 +12,7 @@ There is no wacli for Signal. No maintained tool is collector, durable chat arch
 
 One pod, two containers, one Signal account:
 
-- **Collector:** the official `signal-cli` image, linked as an additional device (`signal-cli link`, never `register`, which would unregister the phone), running `daemon --receive-mode manual`, its account data on a PVC. Pinned and bumped at least monthly by Renovate, independent of ferret releases: signal-cli releases older than three months may stop working. [C1][C2]
+- **Collector:** the official `signal-cli` image, linked as an additional device (`signal-cli link`, never `register`, which would unregister the phone), running `daemon --tcp --receive-mode manual` in multi-account mode (no `-a`, so that `listAccounts` reports the account's own ACI), its account data on a PVC. Pinned and bumped at least monthly by Renovate, independent of ferret releases: signal-cli releases older than three months may stop working. [C1][C2]
 - **`ferret-signal-archive`:** a new crate and image in this repo, built with Nix like `ferret-whatsapp-archive`. One process subscribes to the daemon over JSON-RPC, is the only writer of its SQLite chat archive, refreshes contact and group names via `listContacts`/`listGroups`, and serves the read-only HTTP API the plugin polls.
 
 Writer and API share a process because SQLite has one writer anyway; WhatsApp splits them only because wacli is the writer. Neither container is part of the Helm chart. Deployment, the PVCs, the NetworkPolicy and backups belong to the cluster's infrastructure, next to wacli. The chat archive is the only raw copy of everything after the history import, so backing it up is the operator's job, as for wacli.

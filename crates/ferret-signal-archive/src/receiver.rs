@@ -18,46 +18,100 @@ use crate::{
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 /// Receives from the daemon at `address` (`host:port` of `daemon --tcp`) forever, reconnecting
-/// whenever the connection drops. Returns only when the chat archive cannot be written.
-pub async fn receive(store: Store, address: String) -> Result<Infallible, sqlx::Error> {
+/// whenever the connection drops. Returns only on a fatal error: the chat archive cannot be
+/// written, or the daemon serves a different account than the chat archive holds.
+pub async fn receive(store: Store, address: String) -> Result<Infallible, Fatal> {
     loop {
         match session(&store, &address).await {
             Ok(()) => warn!("signal-cli closed the connection"),
-            Err(SessionError::Connection(error)) => warn!(%error, "signal-cli connection failed"),
-            Err(SessionError::Store(error)) => return Err(error),
+            Err(SessionError::Retry(error)) => warn!(%error, "signal-cli session failed"),
+            Err(SessionError::Fatal(error)) => return Err(error),
         }
         tokio::time::sleep(RECONNECT_DELAY).await;
     }
 }
 
+pub type Fatal = Box<dyn std::error::Error + Send + Sync>;
+
 enum SessionError {
-    Connection(std::io::Error),
-    Store(sqlx::Error),
+    Retry(std::io::Error),
+    Fatal(Fatal),
 }
 
 impl From<std::io::Error> for SessionError {
     fn from(error: std::io::Error) -> Self {
-        Self::Connection(error)
+        Self::Retry(error)
     }
 }
 
 impl From<sqlx::Error> for SessionError {
     fn from(error: sqlx::Error) -> Self {
-        Self::Store(error)
+        Self::Fatal(error.into())
     }
+}
+
+impl From<Fatal> for SessionError {
+    fn from(error: Fatal) -> Self {
+        Self::Fatal(error)
+    }
+}
+
+fn retry(reason: &str) -> SessionError {
+    SessionError::Retry(std::io::Error::other(reason))
 }
 
 async fn session(store: &Store, address: &str) -> Result<(), SessionError> {
     let (reader, mut writer) = TcpStream::connect(address).await?.into_split();
+    let mut lines = BufReader::new(reader).lines();
     writer
-        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"subscribeReceive\"}\n")
+        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"listAccounts\"}\n")
+        .await?;
+    let accounts: Vec<Account> = loop {
+        let line = lines
+            .next_line()
+            .await?
+            .ok_or_else(|| retry("closed before listAccounts"))?;
+        if let Ok(Response { id: 1, result }) = serde_json::from_str(&line) {
+            break serde_json::from_value(result)
+                .map_err(|_| retry("unexpected listAccounts result"))?;
+        }
+    };
+    let aci = match accounts.as_slice() {
+        [] => return Err(retry("signal-cli has no linked account yet")),
+        [Account { aci: Some(aci) }] => aci,
+        [_] => return Err(retry("signal-cli's account has no ACI yet")),
+        _ => {
+            return Err(SessionError::Fatal(
+                "signal-cli serves several accounts; the chat archive holds one".into(),
+            ));
+        }
+    };
+    store.adopt_self_aci(aci).await?;
+    let subscribe = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "subscribeReceive",
+        "params": {"account": aci},
+    });
+    writer
+        .write_all(format!("{subscribe}\n").as_bytes())
         .await?;
     info!("subscribed to signal-cli");
-    let mut lines = BufReader::new(reader).lines();
     while let Some(line) = lines.next_line().await? {
         handle(store, &line).await?;
     }
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct Response {
+    id: i64,
+    result: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct Account {
+    aci: Option<String>,
 }
 
 /// Envelopes are already acknowledged to the Signal server when signal-cli forwards them, so a

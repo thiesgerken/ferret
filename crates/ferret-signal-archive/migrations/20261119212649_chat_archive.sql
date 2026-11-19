@@ -1,6 +1,8 @@
 CREATE TABLE archive (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     store_id TEXT NOT NULL,
+    -- The account's own ACI, from signal-cli's listAccounts on the receiver's first connect.
+    self_aci TEXT,
     last_received_at INTEGER
 ) STRICT;
 

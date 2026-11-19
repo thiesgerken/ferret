@@ -12,9 +12,9 @@ Image: `ghcr.io/thiesgerken/ferret-signal-archive:<version>`, non-root, read-onl
 |---|---|
 | `SIGNAL_ARCHIVE_DB` | Path of the SQLite database on a persistent, writable volume. Created and migrated at startup. |
 | `SIGNAL_ARCHIVE_TOKEN_FILE` | Mounted Secret holding the bearer token: 64 hexadecimal characters (32 random bytes), optionally newline-terminated. |
-| `SIGNAL_CLI_ADDRESS` | `host:port` of the collector, `signal-cli -a <account> daemon --tcp=<host:port> --receive-mode manual`. |
+| `SIGNAL_CLI_ADDRESS` | `host:port` of the collector, `signal-cli daemon --tcp=<host:port> --receive-mode manual`, without `-a`. |
 
-`--receive-mode manual` is required: only then does signal-cli leave messages queued on the Signal server while this service is down, instead of acknowledging and dropping them. The service reconnects every 5 seconds while the daemon is unreachable and exits when the database cannot be written. The database is the only raw copy of everything received, so back it up.
+`--receive-mode manual` is required: only then does signal-cli leave messages queued on the Signal server while this service is down, instead of acknowledging and dropping them. The daemon runs in multi-account mode (no `-a`), because only there does `listAccounts` report the account's own ACI. On every connect the service requires exactly one linked account, records its ACI on first use and passes it as `account` on every call. It reconnects every 5 seconds while the daemon is unreachable or has no linked account yet, and exits when the database cannot be written, the daemon serves several accounts, or the account differs from the recorded one: a different account is a different chat archive. The database is the only raw copy of everything received, so back it up.
 
 What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Reactions, polls, pins, stories and story replies, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
 

@@ -37,6 +37,22 @@ impl Store {
         Ok(Self { pool, store_id })
     }
 
+    /// Records the account's own ACI on first use. A daemon serving another account is not this
+    /// chat archive's collector.
+    pub(crate) async fn adopt_self_aci(&self, aci: &str) -> Result<(), crate::receiver::Fatal> {
+        sqlx::query("UPDATE archive SET self_aci = ? WHERE self_aci IS NULL")
+            .bind(aci)
+            .execute(&self.pool)
+            .await?;
+        let stored: String = sqlx::query_scalar("SELECT self_aci FROM archive")
+            .fetch_one(&self.pool)
+            .await?;
+        if stored != aci {
+            return Err("signal-cli serves another account than the chat archive holds".into());
+        }
+        Ok(())
+    }
+
     pub(crate) async fn record_arrival(&self) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE archive SET last_received_at = ?")
             .bind(now())
