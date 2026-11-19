@@ -16,7 +16,7 @@ Image: `ghcr.io/thiesgerken/ferret-signal-archive:<version>`, non-root, read-onl
 
 `--receive-mode manual` is required: only then does signal-cli leave messages queued on the Signal server while this service is down, instead of acknowledging and dropping them. The daemon runs in multi-account mode (no `-a`), because only there does `listAccounts` report the account's own ACI. On every connect the service requires exactly one linked account, records its ACI on first use and passes it as `account` on every call. It then pulls envelopes one at a time (`receive` with `maxMessages: 1`): signal-cli acknowledges an envelope to the Signal server before handing it over, so a crash loses at most the one envelope in flight. It reconnects every 5 seconds while the daemon is unreachable or has no linked account yet, and exits when the database cannot be written, the daemon serves several accounts, or the account differs from the recorded one: a different account is a different chat archive. The database is the only raw copy of everything received, so back it up.
 
-What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
+What is stored: direct, group and Note to Self messages, including sync transcripts of messages sent from the phone or other linked devices, with text and attachment metadata. Disappearing and view-once messages are stored and never expire. Story replies are ordinary messages in their chat. An edit replaces a message's text and sets `edited`; a remote delete, including a group admin's, removes the message. Reactions, polls, pins, stories, calls, receipts, typing, group changes and timer changes are skipped, as are messages with neither text nor attachments (e.g. stickers).
 
 ## History import
 
@@ -87,6 +87,8 @@ Ascending `(sent_at, author)` keyset over one chat's messages, up to 500 per pag
 
 `(chat, author, sent_at)` identifies a message; `author` is the sender's ACI, the account's own for `from_me`. `author_number` is the sender's phone number if signal-cli knows it. `text` is null for attachment-only messages. Attachments carry metadata only. Their type is the MIME type (stickers are not attachments in Signal); `voice_note` marks recorded voice messages, the one type MIME does not distinguish. `mime_type`, `filename`, `size` and `caption` are nullable. Disappearing and view-once messages are returned like any other: the chat archive never expires them. `next` is null when the chat is exhausted.
 
+An edited message keeps its original `sent_at` and returns its latest text with `edited: true`; its attachments stay the original's. A deleted message is no longer returned.
+
 ## `GET /v1/changes?store_id=<id>&after=<sequence>&through=<sequence>`
 
 Journal entries with `after < sequence <= through`, ascending, up to 500 per page:
@@ -107,6 +109,6 @@ Journal entries with `after < sequence <= through`, ascending, up to 500 per pag
 }
 ```
 
-Each entry references one message by its identity. Fetch the current state of the affected chat instead of treating entries as historical payloads.
+`operation` is `insert`, `edit` or `delete`. Each entry references one message by its original identity, also for edits and deletes that Signal addressed to a later revision's timestamp. Fetch the current state of the affected chat instead of treating entries as historical payloads.
 
 Capture `through` from `/v1/archive.high` and hold it fixed for one drain. Repeat with `after=next` while `has_more` is true; the last page returns `next=through`. The journal is never pruned, so every position from 0 stays replayable. For a full reconciliation, capture `high` before enumerating chats and messages, then drain the journal from it afterwards.

@@ -260,24 +260,27 @@ fn received(
         Party::Contact { aci: None, .. } => return Ok(Outcome::Unkeyed),
         Party::Group | Party::Other => return Err("chat item author is not a person".into()),
     };
-    // An edited item carries the latest revision's dateSent, but Signal (and signal-cli's live
-    // stream) identifies a message by its original sent timestamp: the oldest revision's.
-    let edited = !item.revisions.is_empty();
-    let date_sent = item
+    // An edited item carries the latest revision's dateSent and its older revisions, oldest
+    // first. Signal (and signal-cli's live stream) identifies a message by its original sent
+    // timestamp, the oldest revision's, but addresses later edits and deletes to the others too.
+    let parse = |date_sent: &str| date_sent.parse().map_err(|_| "dateSent is not an integer");
+    let mut sent = item
         .revisions
-        .first()
-        .map_or(&item.date_sent, |original| &original.date_sent);
+        .iter()
+        .map(|revision| &revision.date_sent)
+        .chain([&item.date_sent])
+        .map(|date_sent| parse(date_sent))
+        .collect::<Result<Vec<i64>, _>>()?;
+    let sent_at = sent.remove(0);
     Ok(Outcome::Message(Received {
         chat,
         kind,
         author,
-        sent_at: date_sent
-            .parse()
-            .map_err(|_| "dateSent is not an integer")?,
+        sent_at,
         from_me: item.outgoing.is_some(),
         text,
         attachments,
         numbers,
-        edited,
+        revisions: sent,
     }))
 }

@@ -44,6 +44,7 @@ Authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Cr
 Chats become segments exactly as for [WhatsApp](whatsapp.md#documents-and-privacy-boundaries): Markdown with a bold sender line and UTC time per message, split at pauses of at least 24 hours or about 8,000 characters, one thread per chat (the raw chat ID), the chat name (or raw chat ID) as title, the distinct speakers of a segment as its authors, ferret's viewer as the origin.
 
 - Indexed: text, captions, and attachment metadata (MIME type, file name, size, and whether it is a voice note). Binary media is never stored or indexed. Each attachment takes one line; captions follow the message text.
+- Edits show the latest text with an "(edited)" marker; the message keeps its place and its segment. Deleted messages, including messages a group admin deleted, disappear from their segment on the next run.
 - Senders are `Me` for own messages, otherwise the sender's phone number, or their ACI when the number is unknown.
 - **Disappearing and view-once messages are kept and indexed, and never expire.** This deliberately differs from Signal's own exports: what the account has read, ferret remembers. Decide whether that fits your privacy policy before connecting the chat archive, and block chats where it does not.
 - Metadata holds the chat ID and kind (`direct`, `group`, `note_to_self`), the first message's ID (`<author ACI>/<sent timestamp in ms>`) and the last message's date.

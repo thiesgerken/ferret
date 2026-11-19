@@ -40,7 +40,7 @@ Accepted gap: the export drops every message with a disappearing timer and all v
 
 ## Message identity
 
-Signal addresses a message by its author's ACI plus its sent timestamp. Edits, remote deletes, reactions and quotes all point back with that pair, and an edit keeps the original's identity. The chat archive keys messages by `(chat, author ACI, sent timestamp)`, which also deduplicates the history import against the live stream. Own messages carry the account's ACI as author. [D6][D7][V1]
+Signal addresses a message by its author's ACI plus its sent timestamp. Edits, remote deletes, reactions and quotes all point back with that pair, and an edit keeps the original's identity. A later edit or delete may name any revision's timestamp instead of the original's: Signal-Desktop addresses an edit to the latest revision and matches deletes against all of them, so the chat archive maps every revision timestamp back to the original [D9][D10]. A deleted message stays as a tombstone, so neither a redelivered envelope nor the history import can bring it back. The chat archive keys messages by `(chat, author ACI, sent timestamp)`, which also deduplicates the history import against the live stream. Own messages carry the account's ACI as author. [D6][D7][V1]
 
 Chat IDs are the counterpart's ACI for a direct chat, the group ID for a group, and the account's own ACI for Note to Self.
 
@@ -116,6 +116,8 @@ Connection configuration copies WhatsApp's: `url`, write-only `token`, required 
 - [D6: SignalService.proto](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/protos/SignalService.proto)
 - [D7: Desktop message lookup by author and sent time](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/sql/Server.node.ts)
 - [D8: Desktop build expiry](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/scripts/get-expire-time.mjs)
+- [D9: Desktop edit target, latest revision](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/util/sendEditedMessage.preload.ts)
+- [D10: Desktop delete matching, every revision](https://github.com/signalapp/Signal-Desktop/blob/v8.32.0/ts/messageModifiers/Deletes.preload.ts)
 - [V1: libsignal backup.proto](https://github.com/signalapp/libsignal/blob/v0.106.0/rust/message-backup/src/proto/backup.proto)
 - [V4: libsignal takeout JSON exporter](https://github.com/signalapp/libsignal/blob/v0.106.0/rust/message-backup/src/json/exporter.rs)
 - [V5: Signal-Server linked device idle limit](https://github.com/signalapp/Signal-Server/blob/v20261022.0.0/service/src/main/java/org/whispersystems/textsecuregcm/storage/Device.java)

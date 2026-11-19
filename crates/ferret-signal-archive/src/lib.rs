@@ -120,6 +120,10 @@ pub struct MessagesPage {
 )]
 pub enum ChangeOperation {
     Insert,
+    /// The message's text changed; it keeps its identity.
+    Edit,
+    /// The message was deleted and no longer appears in its chat.
+    Delete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
