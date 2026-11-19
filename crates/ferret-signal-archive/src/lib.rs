@@ -35,6 +35,11 @@ pub struct Archive {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "server",
+    derive(sqlx::Type),
+    sqlx(rename_all = "snake_case")
+)]
 pub enum ChatKind {
     Direct,
     Group,
@@ -42,6 +47,7 @@ pub enum ChatKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct Chat {
     /// The counterpart's ACI, the group ID, or the account's own ACI for Note to Self.
     pub id: String,
@@ -100,6 +106,11 @@ pub struct MessagesPage {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "server",
+    derive(sqlx::Type),
+    sqlx(rename_all = "snake_case")
+)]
 pub enum ChangeOperation {
     Insert,
 }

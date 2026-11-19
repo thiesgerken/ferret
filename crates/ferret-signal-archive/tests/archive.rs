@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use ferret_signal_archive::{
-    Archive, Attachment, ChangesPage, Chat, ChatKind, ChatsPage, MessageKey, MessagesPage, Store,
+    Archive, Attachment, ChangesPage, Chat, ChatKind, ChatsPage, MessageKey, MessagesPage,
+    PAGE_SIZE, Store,
 };
 use serde::de::DeserializeOwned;
 use tokio::{
@@ -10,44 +11,47 @@ use tokio::{
 };
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-/// Hand-built `receive` notifications shaped like signal-cli v0.14.9's JSON records.
-const NOTIFICATIONS: &str = include_str!("fixtures/receive.jsonl");
+/// Hand-built `receive` result items shaped like signal-cli v0.14.9's JSON records.
+const RECEIVED: &str = include_str!("fixtures/receive.jsonl");
 const ME: &str = "00000000-0000-4000-8000-000000000001";
 const ALICE: &str = "00000000-0000-4000-8000-000000000002";
 const BOB: &str = "00000000-0000-4000-8000-000000000003";
 const GROUP: &str = "ZXhhbXBsZS1ncm91cC1pZC0wMDAwMDAwMDAwMDAwMDE=";
 
 /// A fake multi-account `signal-cli daemon --tcp --receive-mode manual` serving `account`: it
-/// answers `listAccounts`, expects `subscribeReceive` for that account, then emits `lines` and
-/// keeps the connection open.
-async fn fake_daemon(account: &'static str, lines: &'static str) -> String {
+/// answers `listAccounts`, then each one-envelope `receive` call with the next of `lines` (JSON
+/// `receive` result items), and leaves the call pending once they are used up.
+async fn fake_daemon(account: &'static str, lines: String) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let (reader, mut writer) = stream.into_split();
         let mut requests = BufReader::new(reader).lines();
-        let mut request = async || -> serde_json::Value {
-            serde_json::from_str(&requests.next_line().await.unwrap().unwrap()).unwrap()
-        };
-        assert_eq!(request().await["method"], "listAccounts");
-        let accounts = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "result": [{"number": "+15555550100", "aci": account}],
-        });
-        writer
-            .write_all(format!("{accounts}\n").as_bytes())
-            .await
-            .unwrap();
-        let subscribe = request().await;
-        assert_eq!(subscribe["method"], "subscribeReceive");
-        assert_eq!(subscribe["params"]["account"], account);
-        writer
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"result\":0,\"id\":2}\n")
-            .await
-            .unwrap();
-        writer.write_all(lines.as_bytes()).await.unwrap();
+        let mut results =
+            std::iter::once(serde_json::json!([{"number": "+15555550100", "aci": account}])).chain(
+                lines.lines().map(|line| {
+                    serde_json::Value::Array(vec![serde_json::from_str(line).unwrap()])
+                }),
+            );
+        while let Some(request) = requests.next_line().await.unwrap() {
+            let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+            if request["method"] == "receive" {
+                assert_eq!(request["params"]["account"], account);
+                assert_eq!(request["params"]["maxMessages"], 1);
+            } else {
+                assert_eq!(request["method"], "listAccounts");
+            }
+            let Some(result) = results.next() else {
+                break;
+            };
+            let response =
+                serde_json::json!({"jsonrpc": "2.0", "id": request["id"], "result": result});
+            writer
+                .write_all(format!("{response}\n").as_bytes())
+                .await
+                .unwrap();
+        }
         std::future::pending::<()>().await;
     });
     address
@@ -106,10 +110,10 @@ impl Api {
 async fn received_archive() -> (tempfile::TempDir, Api, Archive) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("signal.db")).await.unwrap();
-    let address = fake_daemon(ME, NOTIFICATIONS).await;
+    let address = fake_daemon(ME, RECEIVED.to_owned()).await;
     tokio::spawn(ferret_signal_archive::receive(store.clone(), address));
     let api = Api::start(store).await;
-    let archive = api.await_high(8).await;
+    let archive = api.await_high(9).await;
     (dir, api, archive)
 }
 
@@ -117,7 +121,7 @@ async fn received_archive() -> (tempfile::TempDir, Api, Archive) {
 async fn stores_messages_and_skips_events() {
     let (_dir, api, archive) = received_archive().await;
     // The last fixture line is stored, so all lines before it were handled.
-    assert_eq!(archive.high, 8, "duplicates and events are not journaled");
+    assert_eq!(archive.high, 9, "duplicates and events are not journaled");
     assert!(archive.last_received_at.is_some());
     assert_eq!(archive.store_id.len(), 32);
 
@@ -174,6 +178,7 @@ async fn stores_messages_and_skips_events() {
             (ME.into(), true, Some("Reply from the phone".into())),
             (ALICE.into(), false, Some("Disappearing".into())),
             (ALICE.into(), false, None),
+            (ALICE.into(), false, Some("Reply to a story".into())),
         ]
     );
     assert_eq!(
@@ -240,15 +245,15 @@ async fn stores_messages_and_skips_events() {
             ],
         )
         .await;
-    assert_eq!(after.messages.len(), 2);
+    assert_eq!(after.messages.len(), 3);
 
     let changes: ChangesPage = api
         .json(
             "/v1/changes",
-            &[("store_id", store_id), ("after", "0"), ("through", "8")],
+            &[("store_id", store_id), ("after", "0"), ("through", "9")],
         )
         .await;
-    assert_eq!(changes.next, 8);
+    assert_eq!(changes.next, 9);
     assert!(!changes.has_more);
     assert_eq!(
         changes
@@ -256,11 +261,11 @@ async fn stores_messages_and_skips_events() {
             .iter()
             .map(|change| change.sequence)
             .collect::<Vec<_>>(),
-        [1, 2, 3, 4, 5, 6, 7, 8]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9]
     );
     assert_eq!(changes.changes[0].chat, ALICE);
     assert_eq!(
-        changes.changes[7].key.sent_at, 1760000019000,
+        changes.changes[8].key.sent_at, 1760000019000,
         "the last line is last"
     );
     assert_eq!(
@@ -337,7 +342,7 @@ async fn requests_fail_without_credentials_or_with_another_store() {
             r#"{"code":"invalid_query"}"#
         );
     }
-    for (after, through) in [("-1", "0"), ("3", "2"), ("0", "9")] {
+    for (after, through) in [("-1", "0"), ("3", "2"), ("0", "10")] {
         let response = api
             .get(
                 "/v1/changes",
@@ -385,7 +390,7 @@ async fn store_identity_survives_a_restart() {
 async fn a_daemon_for_another_account_is_fatal() {
     let (dir, _api, _archive) = received_archive().await;
     let store = Store::open(dir.path().join("signal.db")).await.unwrap();
-    let other = fake_daemon(ALICE, "").await;
+    let other = fake_daemon(ALICE, String::new()).await;
     let result = tokio::time::timeout(
         Duration::from_secs(5),
         ferret_signal_archive::receive(store, other),
@@ -393,4 +398,92 @@ async fn a_daemon_for_another_account_is_fatal() {
     .await
     .expect("fails instead of retrying");
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn pages_cross_the_page_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("signal.db")).await.unwrap();
+    // 501 people each write once to the account and once to one group: 501 direct chats plus
+    // the group, 501 group messages and 1002 journal entries.
+    let count = PAGE_SIZE + 1;
+    let line = |aci: &str, sent_at: i64, group: bool| {
+        let group_info = group.then(|| {
+            serde_json::json!({"groupId": GROUP, "groupName": null, "revision": 1, "type": "DELIVER"})
+        });
+        let envelope = serde_json::json!({
+            "sourceUuid": aci, "sourceNumber": null, "timestamp": sent_at,
+            "dataMessage": {"timestamp": sent_at, "message": "Hello", "groupInfo": group_info},
+        });
+        serde_json::json!({"account": "+15555550100", "envelope": envelope}).to_string() + "\n"
+    };
+    let lines: String = (0..count)
+        .flat_map(|index| {
+            let aci = format!("00000000-0000-4000-8000-{index:012}");
+            let sent_at = 1_760_000_000_000 + index;
+            [line(&aci, sent_at, false), line(&aci, sent_at, true)]
+        })
+        .collect();
+    let address = fake_daemon(ME, lines).await;
+    tokio::spawn(ferret_signal_archive::receive(store.clone(), address));
+    let api = Api::start(store).await;
+    let archive = api.await_high(2 * count).await;
+    let store_id = archive.store_id.as_str();
+
+    let mut chats = 0;
+    let mut after = String::new();
+    loop {
+        let page: ChatsPage = api
+            .json("/v1/chats", &[("store_id", store_id), ("after", &after)])
+            .await;
+        chats += page.chats.len() as i64;
+        let Some(next) = page.next else { break };
+        assert_eq!(page.chats.len() as i64, PAGE_SIZE);
+        after = next;
+    }
+    assert_eq!(chats, count + 1);
+
+    let first: MessagesPage = api
+        .json("/v1/messages", &[("store_id", store_id), ("chat", GROUP)])
+        .await;
+    let next = first.next.expect("a second page");
+    assert_eq!(next, first.messages.last().unwrap().key);
+    let sent_at = next.sent_at.to_string();
+    let second: MessagesPage = api
+        .json(
+            "/v1/messages",
+            &[
+                ("store_id", store_id),
+                ("chat", GROUP),
+                ("after_sent_at", &sent_at),
+                ("after_author", &next.author),
+            ],
+        )
+        .await;
+    assert_eq!((first.messages.len() + second.messages.len()) as i64, count);
+    assert_eq!(second.next, None);
+
+    let through = archive.high.to_string();
+    let mut sequences = Vec::new();
+    let mut after = "0".to_owned();
+    loop {
+        let page: ChangesPage = api
+            .json(
+                "/v1/changes",
+                &[
+                    ("store_id", store_id),
+                    ("after", &after),
+                    ("through", &through),
+                ],
+            )
+            .await;
+        sequences.extend(page.changes.iter().map(|change| change.sequence));
+        if !page.has_more {
+            assert_eq!(page.next, archive.high);
+            break;
+        }
+        assert!(page.next < archive.high);
+        after = page.next.to_string();
+    }
+    assert_eq!(sequences, (1..=archive.high).collect::<Vec<_>>());
 }

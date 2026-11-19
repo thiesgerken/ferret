@@ -127,32 +127,14 @@ async fn chats(
 ) -> Result<Json<ChatsPage>, Error> {
     let Query(query) = query.map_err(|_| INVALID_QUERY)?;
     state.same_store(&query.store_id)?;
-    let rows = sqlx::query("SELECT id, kind, name FROM chats WHERE id > ? ORDER BY id LIMIT ?")
-        .bind(query.after.unwrap_or_default())
-        .bind(PAGE_SIZE + 1)
-        .fetch_all(&state.store.pool)
-        .await?;
-    let mut chats = rows
-        .iter()
-        .map(|row| {
-            Ok(Chat {
-                id: row.try_get("id")?,
-                kind: chat_kind(row.try_get("kind")?)?,
-                name: row.try_get("name")?,
-            })
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
+    let mut chats: Vec<Chat> =
+        sqlx::query_as("SELECT id, kind, name FROM chats WHERE id > ? ORDER BY id LIMIT ?")
+            .bind(query.after.unwrap_or_default())
+            .bind(PAGE_SIZE + 1)
+            .fetch_all(&state.store.pool)
+            .await?;
     let next = next_page(&mut chats).map(|chat| chat.id.clone());
     Ok(Json(ChatsPage { chats, next }))
-}
-
-fn chat_kind(kind: &str) -> Result<ChatKind, Error> {
-    match kind {
-        "direct" => Ok(ChatKind::Direct),
-        "group" => Ok(ChatKind::Group),
-        "note_to_self" => Ok(ChatKind::NoteToSelf),
-        _ => Err(UNAVAILABLE),
-    }
 }
 
 #[derive(Deserialize)]
@@ -240,10 +222,7 @@ async fn changes(
             Ok(Change {
                 sequence: row.try_get("sequence")?,
                 recorded_at: row.try_get("recorded_at")?,
-                operation: match row.try_get("operation")? {
-                    "insert" => ChangeOperation::Insert,
-                    _ => return Err(UNAVAILABLE),
-                },
+                operation: row.try_get("operation")?,
                 chat: row.try_get("chat")?,
                 key: MessageKey {
                     sent_at: row.try_get("sent_at")?,

@@ -97,20 +97,20 @@ def smoke_whatsapp_archive(state, architecture):
             raise
 
 
-def fake_signal_cli(notifications):
-    """Serves one multi-account `signal-cli daemon --tcp --receive-mode manual` session on the host."""
+def fake_signal_cli(received):
+    """Serves one multi-account `signal-cli daemon --tcp --receive-mode manual` session on the host:
+    `listAccounts`, then one `receive` result item per call."""
     server = socket.create_server(("0.0.0.0", 0))
+    results = [[{"number": "+15555550100", "aci": "00000000-0000-4000-8000-000000000001"}]]
+    results += [[json.loads(line)] for line in received.splitlines()]
 
     def session():
         connection, _ = server.accept()
         with connection, connection.makefile("rwb") as stream:
-            assert json.loads(stream.readline())["method"] == "listAccounts"
-            stream.write(json.dumps({"jsonrpc": "2.0", "id": 1, "result": [
-                {"number": "+15555550100", "aci": "00000000-0000-4000-8000-000000000001"}]}).encode() + b"\n")
-            stream.flush()
-            assert json.loads(stream.readline())["method"] == "subscribeReceive"
-            stream.write(b'{"jsonrpc":"2.0","result":0,"id":2}\n' + notifications)
-            stream.flush()
+            for result in results:
+                request = json.loads(stream.readline())
+                stream.write(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode() + b"\n")
+                stream.flush()
             stream.read()
 
     threading.Thread(target=session, daemon=True).start()
@@ -126,7 +126,7 @@ def smoke_signal_archive(state, architecture):
     token_file = state / "signal-archive-token"
     token_file.write_text(token + "\n")
     token_file.chmod(0o644)
-    port = fake_signal_cli((ROOT / "crates/ferret-signal-archive/tests/fixtures/receive.jsonl").read_bytes())
+    port = fake_signal_cli((ROOT / "crates/ferret-signal-archive/tests/fixtures/receive.jsonl").read_text())
     container = run(
         "docker", "run", "-d", "--name", f"ferret-signal-archive-smoke-{uuid.uuid4().hex[:10]}",
         "--platform", f"linux/{architecture}", "--read-only", "--cap-drop=ALL",
@@ -147,7 +147,7 @@ def smoke_signal_archive(state, architecture):
             archive = json.load(urllib.request.urlopen(urllib.request.Request(
                 base + "/v1/archive", headers={"Authorization": "Bearer " + token}
             ), timeout=15))
-            assert archive["high"] == 8, archive
+            assert archive["high"] == 9, archive
 
         eventually(received, timeout=30)
         config = json.loads(run("docker", "inspect", container))[0]

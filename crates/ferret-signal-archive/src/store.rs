@@ -8,7 +8,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
 };
 
-use crate::{ChatKind, signal_cli::Received};
+use crate::signal_cli::Received;
 
 /// The chat archive's SQLite database. The receiver is its only writer.
 #[derive(Clone)]
@@ -66,7 +66,7 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING")
             .bind(&message.chat)
-            .bind(kind_name(message.kind))
+            .bind(message.kind)
             .execute(&mut *tx)
             .await?;
         for (aci, number) in &message.numbers {
@@ -108,14 +108,6 @@ impl Store {
             .await?;
         }
         tx.commit().await
-    }
-}
-
-fn kind_name(kind: ChatKind) -> &'static str {
-    match kind {
-        ChatKind::Direct => "direct",
-        ChatKind::Group => "group",
-        ChatKind::NoteToSelf => "note_to_self",
     }
 }
 

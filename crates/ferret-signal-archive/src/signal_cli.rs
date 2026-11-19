@@ -1,32 +1,13 @@
-//! signal-cli v0.14.9's JSON-RPC `receive` notifications (`src/main/java/org/asamk/signal/json`),
+//! signal-cli v0.14.9's JSON-RPC `receive` results (`src/main/java/org/asamk/signal/json`),
 //! reduced to what the chat archive stores. Unknown fields are ignored, so newer signal-cli
 //! releases that add fields keep working.
 
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::{Attachment, ChatKind};
 
-/// A line from the daemon: a notification such as
-/// `{"jsonrpc":"2.0","method":"receive","params":{"subscription":0,"result":{...}}}`, or the
-/// response to `subscribeReceive`.
-#[derive(Debug, Deserialize)]
-pub struct Notification {
-    pub method: Option<String>,
-    pub params: Option<serde_json::Value>,
-    pub error: Option<RpcError>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RpcError {
-    pub code: i64,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ReceiveParams {
-    pub result: ReceiveResult,
-}
-
+/// One element of a JSON-RPC `receive` result.
 #[derive(Debug, Deserialize)]
 pub struct ReceiveResult {
     /// Absent when signal-cli reports an exception without an envelope.
@@ -49,7 +30,6 @@ struct DataMessage {
     message: Option<String>,
     attachments: Option<Vec<JsonAttachment>>,
     group_info: Option<GroupInfo>,
-    story_context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,9 +44,11 @@ struct SyncMessage {
 struct SentMessage {
     destination_uuid: Option<String>,
     destination_number: Option<String>,
-    /// signal-cli unwraps the data message into the transcript; it is absent for edits.
+    edit_message: Option<serde_json::Value>,
+    /// signal-cli unwraps the data message into the transcript, absent for edits. Kept raw so
+    /// that a data message failing to parse is reported instead of read as absent.
     #[serde(flatten)]
-    data: Option<DataMessage>,
+    data: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,7 +86,7 @@ pub struct Received {
 impl Envelope {
     /// The storable message, or `None` for everything the chat archive skips: receipts, typing,
     /// calls, stories, reactions, polls, pins, group and timer changes and other content-free
-    /// data messages.
+    /// data messages. Story replies are ordinary messages in their chat.
     pub fn into_received(self) -> Option<Received> {
         let author = self.source_uuid?;
         let mut numbers: Vec<_> = self
@@ -116,7 +98,13 @@ impl Envelope {
             (data, author.clone(), ChatKind::Direct, false)
         } else {
             let sent = self.sync_message?.sent_message?;
-            let data = sent.data?;
+            if sent.edit_message.is_some() {
+                return None;
+            }
+            let Ok(data) = serde_json::from_value::<DataMessage>(sent.data) else {
+                warn!("skipping a sent transcript whose data message does not parse");
+                return None;
+            };
             let destination = sent.destination_uuid;
             if let (Some(aci), Some(number)) = (&destination, sent.destination_number) {
                 numbers.push((aci.clone(), number));
@@ -133,12 +121,12 @@ impl Envelope {
         let (chat, kind) = match data.group_info {
             Some(group) if group.r#type == "DELIVER" => (group.group_id, ChatKind::Group),
             Some(_) => return None,
-            None if chat.is_empty() => return None,
+            None if chat.is_empty() => {
+                warn!("skipping a direct sent transcript without destination ACI");
+                return None;
+            }
             None => (chat, kind),
         };
-        if data.story_context.is_some() {
-            return None;
-        }
         let text = data.message.filter(|text| !text.is_empty());
         let attachments: Vec<Attachment> = data
             .attachments

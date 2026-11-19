@@ -1,19 +1,21 @@
 //! The collector side: one JSON-RPC connection to `signal-cli daemon --receive-mode manual`.
-//! In manual mode signal-cli leaves envelopes queued on the Signal server until a client
-//! subscribes, so nothing is lost while this process or the connection is down.
+//! In manual mode signal-cli leaves envelopes queued on the Signal server until a client asks
+//! for them, so nothing is lost while this process or the connection is down.
 
 use std::{convert::Infallible, time::Duration};
 
+use serde::Deserialize;
+use serde_json::json;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::TcpStream,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
+    net::{
+        TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
 };
 use tracing::{error, info, warn};
 
-use crate::{
-    Store,
-    signal_cli::{Notification, ReceiveParams},
-};
+use crate::{Store, signal_cli::ReceiveResult};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -22,10 +24,10 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 /// written, or the daemon serves a different account than the chat archive holds.
 pub async fn receive(store: Store, address: String) -> Result<Infallible, Fatal> {
     loop {
-        match session(&store, &address).await {
-            Ok(()) => warn!("signal-cli closed the connection"),
-            Err(SessionError::Retry(error)) => warn!(%error, "signal-cli session failed"),
-            Err(SessionError::Fatal(error)) => return Err(error),
+        let Err(error) = session(&store, &address).await;
+        match error {
+            SessionError::Retry(error) => warn!(%error, "signal-cli session failed"),
+            SessionError::Fatal(error) => return Err(error),
         }
         tokio::time::sleep(RECONNECT_DELAY).await;
     }
@@ -60,25 +62,14 @@ fn retry(reason: &str) -> SessionError {
     SessionError::Retry(std::io::Error::other(reason))
 }
 
-async fn session(store: &Store, address: &str) -> Result<(), SessionError> {
-    let (reader, mut writer) = TcpStream::connect(address).await?.into_split();
-    let mut lines = BufReader::new(reader).lines();
-    writer
-        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"listAccounts\"}\n")
-        .await?;
-    let accounts: Vec<Account> = loop {
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| retry("closed before listAccounts"))?;
-        if let Ok(Response { id: 1, result }) = serde_json::from_str(&line) {
-            break serde_json::from_value(result)
-                .map_err(|_| retry("unexpected listAccounts result"))?;
-        }
-    };
+async fn session(store: &Store, address: &str) -> Result<Infallible, SessionError> {
+    let mut daemon = Daemon::connect(address).await?;
+    let accounts: Vec<Account> =
+        serde_json::from_value(daemon.call("listAccounts", json!({})).await?)
+            .map_err(|_| retry("unexpected listAccounts result"))?;
     let aci = match accounts.as_slice() {
         [] => return Err(retry("signal-cli has no linked account yet")),
-        [Account { aci: Some(aci) }] => aci,
+        [Account { aci: Some(aci) }] => aci.clone(),
         [_] => return Err(retry("signal-cli's account has no ACI yet")),
         _ => {
             return Err(SessionError::Fatal(
@@ -86,73 +77,105 @@ async fn session(store: &Store, address: &str) -> Result<(), SessionError> {
             ));
         }
     };
-    store.adopt_self_aci(aci).await?;
-    let subscribe = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "subscribeReceive",
-        "params": {"account": aci},
-    });
-    writer
-        .write_all(format!("{subscribe}\n").as_bytes())
-        .await?;
-    info!("subscribed to signal-cli");
-    while let Some(line) = lines.next_line().await? {
-        handle(store, &line).await?;
+    store.adopt_self_aci(&aci).await?;
+    info!("receiving from signal-cli");
+    // One envelope per call: signal-cli acknowledges an envelope to the Signal server before
+    // handing it over, so this bounds what a crash can lose to the one envelope in flight.
+    let receive = json!({"account": aci, "maxMessages": 1, "timeout": RECEIVE_TIMEOUT_SECONDS});
+    loop {
+        let results = daemon.call("receive", receive.clone()).await?;
+        let results: Vec<serde_json::Value> =
+            serde_json::from_value(results).map_err(|_| retry("unexpected receive result"))?;
+        for result in results {
+            store.record_arrival().await?;
+            // Logs never carry serde's messages, which can quote message content.
+            match serde_json::from_value::<ReceiveResult>(result) {
+                Ok(ReceiveResult {
+                    envelope: Some(envelope),
+                }) => {
+                    if let Some(message) = envelope.into_received() {
+                        store.insert(message).await?;
+                    }
+                }
+                Ok(ReceiveResult { envelope: None }) => {}
+                Err(_) => error!("skipping a received envelope of unexpected shape"),
+            }
+        }
     }
-    Ok(())
 }
 
-#[derive(serde::Deserialize)]
+/// How long one `receive` call waits for an envelope before returning none.
+const RECEIVE_TIMEOUT_SECONDS: f64 = 60.0;
+
+struct Daemon {
+    lines: Lines<BufReader<OwnedReadHalf>>,
+    writer: OwnedWriteHalf,
+    last_id: i64,
+}
+
+impl Daemon {
+    async fn connect(address: &str) -> Result<Self, SessionError> {
+        let (reader, writer) = TcpStream::connect(address).await?.into_split();
+        Ok(Self {
+            lines: BufReader::new(reader).lines(),
+            writer,
+            last_id: 0,
+        })
+    }
+
+    async fn call(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, SessionError> {
+        self.last_id += 1;
+        let request =
+            json!({"jsonrpc": "2.0", "id": self.last_id, "method": method, "params": params});
+        self.writer
+            .write_all(format!("{request}\n").as_bytes())
+            .await?;
+        loop {
+            let line = self
+                .lines
+                .next_line()
+                .await?
+                .ok_or_else(|| retry("signal-cli closed the connection"))?;
+            let Ok(response) = serde_json::from_str::<Response>(&line) else {
+                continue;
+            };
+            if response.id != Some(self.last_id) {
+                continue;
+            }
+            if let Some(error) = response.error {
+                error!(
+                    method,
+                    code = error.code,
+                    message = error.message,
+                    "signal-cli call failed"
+                );
+                return Err(retry("signal-cli call failed"));
+            }
+            return response
+                .result
+                .ok_or_else(|| retry("signal-cli response without result"));
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct Response {
-    id: i64,
-    result: serde_json::Value,
+    id: Option<i64>,
+    result: Option<serde_json::Value>,
+    error: Option<RpcError>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
+struct RpcError {
+    code: i64,
+    message: String,
+}
+
+#[derive(Deserialize)]
 struct Account {
     aci: Option<String>,
-}
-
-/// Envelopes are already acknowledged to the Signal server when signal-cli forwards them, so a
-/// malformed one is logged and skipped: failing would not get it delivered again. Logs never
-/// carry serde's messages, which can quote message content.
-async fn handle(store: &Store, line: &str) -> Result<(), SessionError> {
-    let notification: Notification = match serde_json::from_str(line) {
-        Ok(notification) => notification,
-        Err(error) => {
-            error!(
-                column = error.column(),
-                "skipping unparseable JSON-RPC line"
-            );
-            return Ok(());
-        }
-    };
-    if let Some(rpc_error) = notification.error {
-        error!(
-            code = rpc_error.code,
-            message = rpc_error.message,
-            "signal-cli refused the subscription"
-        );
-        return Err(std::io::Error::other("subscribeReceive failed").into());
-    }
-    if notification.method.as_deref() != Some("receive") {
-        return Ok(());
-    }
-    let params: ReceiveParams = match notification.params.map(serde_json::from_value) {
-        Some(Ok(params)) => params,
-        _ => {
-            error!("skipping a receive notification of unexpected shape");
-            return Ok(());
-        }
-    };
-    store.record_arrival().await?;
-    if let Some(message) = params
-        .result
-        .envelope
-        .and_then(|envelope| envelope.into_received())
-    {
-        store.insert(message).await?;
-    }
-    Ok(())
 }
