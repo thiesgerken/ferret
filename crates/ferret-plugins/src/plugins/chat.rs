@@ -245,12 +245,12 @@ impl<'a> Segments<'a> {
     }
 
     fn segment(&self, first: &Message, at: DateTime<Utc>, text: String) -> DocumentPut {
-        let mut meta = json!({"chat_id": self.chat.id, "chat_kind": self.chat.kind,
-            "first_message_id": first.id})
-        .as_object()
-        .expect("object")
-        .clone();
-        meta.extend(first.segment_meta.clone());
+        let mut meta = first.segment_meta.clone();
+        meta.extend([
+            ("chat_id".to_owned(), json!(self.chat.id)),
+            ("chat_kind".to_owned(), json!(self.chat.kind)),
+            ("first_message_id".to_owned(), json!(first.id)),
+        ]);
         DocumentPut {
             source: self.source.to_owned(),
             external_id: format!("{}/{}", self.chat_hash, digest_id(&first.id)),
@@ -310,6 +310,9 @@ pub trait ChatArchive {
     async fn chats(&self) -> Result<BTreeMap<String, Self::Chat>, PluginError>;
     /// The chats with changes in `(after, through]`.
     async fn changes(&self, after: i64, through: i64) -> Result<BTreeSet<String>, PluginError>;
+    /// Must reach the archive and fail if its identity changed or the journal from `checkpoint`
+    /// is no longer replayable: it is the last check before a sweep deletes documents.
+    async fn recheck(&self, checkpoint: i64) -> Result<(), PluginError>;
     /// Whether the plugin indexes this kind of chat at all, before the connection's filters.
     fn indexable(chat: &Self::Chat) -> bool;
     async fn ingest_chat(
@@ -373,9 +376,9 @@ pub async fn reconcile<A: ChatArchive>(
     rebuild(run, archive, settings, &chats, &affected, &mut syncs, stats).await?;
     // No traversal failure authorizes any sweep. Recheck retention and identity immediately
     // before destructive commits, even when the final change page was empty.
-    archive.changes(beginning, beginning).await?;
+    archive.recheck(beginning).await?;
     for sync in syncs.iter().copied().chain(root_sync) {
-        archive.changes(beginning, beginning).await?;
+        archive.recheck(beginning).await?;
         stats.deleted += run.api.commit_sync(sync).await?.deleted;
     }
     run.log.line(format!(

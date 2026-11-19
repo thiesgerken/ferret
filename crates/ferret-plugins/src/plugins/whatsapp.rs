@@ -203,6 +203,11 @@ impl ChatArchive for ArchiveClient {
         matches!(chat.kind.as_str(), "dm" | "group") && chat.jid != "status@broadcast"
     }
 
+    /// An empty drain still sends the pinned `store_id` and gets 410 once the range expired.
+    async fn recheck(&self, checkpoint: i64) -> Result<(), PluginError> {
+        self.changes(checkpoint, checkpoint).await.map(drop)
+    }
+
     async fn ingest_chat(
         &self,
         run: &Run,
