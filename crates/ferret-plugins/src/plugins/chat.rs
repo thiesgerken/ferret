@@ -45,14 +45,13 @@ impl<'a> Chat<'a> {
 /// A message as segments see it, with its sender already resolved by the plugin.
 pub struct Message<'a> {
     /// Unique within its chat; a segment is named after the message that opens it.
-    pub id: &'a str,
+    pub id: String,
     pub sender: String,
     /// Unix seconds.
     pub ts: i64,
     pub edited: bool,
-    pub attachment: Attachment<'a>,
+    pub attachments: Vec<Attachment<'a>>,
     pub body: Option<&'a str>,
-    pub caption: Option<&'a str>,
     /// Recorded in the metadata of a segment this message opens, next to its ID.
     pub segment_meta: Map<String, Value>,
 }
@@ -64,6 +63,7 @@ pub struct Attachment<'a> {
     pub mime_type: Option<&'a str>,
     /// Bytes.
     pub size: Option<i64>,
+    pub caption: Option<&'a str>,
 }
 
 pub fn digest_id(value: &str) -> String {
@@ -91,7 +91,7 @@ pub async fn put(
     Ok(())
 }
 
-/// One message as a Markdown block: a bold sender line, then attachment, text and caption, joined
+/// One message as a Markdown block: a bold sender line, then attachments, text and captions, joined
 /// by hard line breaks because the viewer renders single newlines as spaces.
 pub fn message_block(message: &Message, at: DateTime<Utc>, with_date: bool) -> String {
     let stamp = at.format(if with_date {
@@ -104,8 +104,12 @@ pub fn message_block(message: &Message, at: DateTime<Utc>, with_date: bool) -> S
         "**{}** · {stamp}{edited}",
         escape_inline(&message.sender)
     )];
-    lines.extend(attachment_line(&message.attachment));
-    for text in [message.body, message.caption].into_iter().flatten() {
+    lines.extend(message.attachments.iter().filter_map(attachment_line));
+    let captions = message
+        .attachments
+        .iter()
+        .filter_map(|attachment| attachment.caption);
+    for text in message.body.into_iter().chain(captions) {
         // Untrimmed indentation would turn a line after a blank one into a code block.
         lines.extend(
             text.trim()
@@ -249,7 +253,7 @@ impl<'a> Segments<'a> {
         meta.extend(first.segment_meta.clone());
         DocumentPut {
             source: self.source.to_owned(),
-            external_id: format!("{}/{}", self.chat_hash, digest_id(first.id)),
+            external_id: format!("{}/{}", self.chat_hash, digest_id(&first.id)),
             content_type: ContentType::Markdown,
             title: Some(self.chat.title.clone()),
             text,

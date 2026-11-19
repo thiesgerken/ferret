@@ -344,20 +344,16 @@ fn shared_chat(chat: &Chat) -> chat::Chat<'_> {
 
 fn shared_message<'m>(chat: &chat::Chat, message: &'m Message) -> chat::Message<'m> {
     chat::Message {
-        id: &message.msg_id,
+        id: message.msg_id.clone(),
         sender: sender(chat, message),
         ts: message.ts,
         edited: message.edited,
-        attachment: attachment(message),
+        attachments: vec![attachment(message)],
         body: message
             .text
             .as_deref()
             .filter(|text| !text.is_empty())
             .or(message.display_text.as_deref()),
-        caption: message
-            .media_caption
-            .as_deref()
-            .filter(|caption| Some(*caption) != message.text.as_deref()),
         segment_meta: Map::from_iter([("first_message_rowid".to_owned(), json!(message.rowid))]),
     }
 }
@@ -368,6 +364,10 @@ fn attachment(message: &Message) -> chat::Attachment<'_> {
         filename: message.filename.as_deref(),
         mime_type: message.mime_type.as_deref(),
         size: message.file_length,
+        caption: message
+            .media_caption
+            .as_deref()
+            .filter(|caption| Some(*caption) != message.text.as_deref()),
     }
 }
 
