@@ -10,6 +10,7 @@ use serde_json::Value;
 
 pub mod affine;
 pub mod carapace;
+mod chat;
 pub mod files;
 pub mod git;
 pub mod gitea;
