@@ -8,6 +8,17 @@ Collector and chat archive run as one pod outside the ferret Helm chart, next to
 
 **Backing up the chat archive is the operator's job.** After the one-time history import it is the only raw copy of everything the collector received. Signal keeps nothing to re-fetch, and ferret's documents are rendered segments, not the messages. Losing the database means losing that history.
 
+## History import
+
+The collector only receives what arrives after linking. Import older history once, after the collector is linked and `ferret-signal-archive` has connected to it (it records the account's own ACI then, which the export lacks), so the two overlap instead of leaving a gap:
+
+1. Install Signal Desktop fresh on a workstation and link it with **Transfer Message History**.
+2. Settings > Chats > Export chat history, **without media**. Desktop writes `main.jsonl`.
+3. Stream it into the running `ferret-signal-archive` container: `kubectl exec -i <pod> -c <archive container> -- ferret-signal-archive import /dev/stdin < main.jsonl`. The image has no shell or `tar`, so `kubectl cp` does not work, and streaming keeps the export off the volume. The import writes next to the running service and logs only counts. Re-running is a no-op.
+4. Delete `main.jsonl` from the workstation and unlink Desktop from the phone.
+
+The next plugin run picks up the imported messages incrementally. The export lacks messages with a disappearing timer and view-once media, and an export with group chats is rejected for now; see the [import reference](../api/signal-archive.md#history-import) for what is imported and the counts it logs.
+
 ## Connection configuration
 
 Authenticate to `GET /v1/archive` on the private API and copy its `store_id`. Create a connection with plugin `signal`, a source such as `chat/signal`, a normal schedule, and that explicit chat archive identity:
