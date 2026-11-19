@@ -2,7 +2,10 @@
 //! In manual mode signal-cli leaves envelopes queued on the Signal server until a client asks
 //! for them, so nothing is lost while this process or the connection is down.
 
-use std::{convert::Infallible, time::Duration};
+use std::{
+    convert::Infallible,
+    time::{Duration, Instant},
+};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -15,7 +18,10 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use crate::{Store, signal_cli::ReceiveResult};
+use crate::{
+    Store,
+    signal_cli::{Contact, Group, ReceiveResult},
+};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -82,7 +88,12 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
     // One envelope per call: signal-cli acknowledges an envelope to the Signal server before
     // handing it over, so this bounds what a crash can lose to the one envelope in flight.
     let receive = json!({"account": aci, "maxMessages": 1, "timeout": RECEIVE_TIMEOUT_SECONDS});
+    let mut names_refreshed: Option<Instant> = None;
     loop {
+        if names_refreshed.is_none_or(|at| at.elapsed() >= NAMES_REFRESH_INTERVAL) {
+            refresh_names(&mut daemon, store, &aci).await?;
+            names_refreshed = Some(Instant::now());
+        }
         let results = daemon.call("receive", receive.clone()).await?;
         let results: Vec<serde_json::Value> =
             serde_json::from_value(results).map_err(|_| retry("unexpected receive result"))?;
@@ -93,6 +104,9 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
                 Ok(ReceiveResult {
                     envelope: Some(envelope),
                 }) => {
+                    if envelope.changes_names() {
+                        names_refreshed = None;
+                    }
                     if let Some(message) = envelope.into_received() {
                         store.insert(message).await?;
                     }
@@ -106,6 +120,36 @@ async fn session(store: &Store, address: &str) -> Result<Infallible, SessionErro
 
 /// How long one `receive` call waits for an envelope before returning none.
 const RECEIVE_TIMEOUT_SECONDS: f64 = 60.0;
+
+/// Profile names change without an envelope that announces it, so they are polled.
+const NAMES_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+/// Stale names are better than no messages: a list result of unexpected shape is logged and
+/// receiving goes on.
+async fn refresh_names(daemon: &mut Daemon, store: &Store, aci: &str) -> Result<(), SessionError> {
+    let contacts = daemon
+        .call(
+            "listContacts",
+            json!({"account": aci, "allRecipients": true}),
+        )
+        .await?;
+    let groups = daemon.call("listGroups", json!({"account": aci})).await?;
+    let (Ok(contacts), Ok(groups)) = (
+        serde_json::from_value::<Vec<Contact>>(contacts),
+        serde_json::from_value::<Vec<Group>>(groups),
+    ) else {
+        error!("skipping a name refresh: unexpected listContacts or listGroups result");
+        return Ok(());
+    };
+    // Own messages are rendered as `Me`, so the account's own name never matters.
+    let contacts: Vec<_> = contacts
+        .into_iter()
+        .filter_map(Contact::into_named)
+        .filter(|contact| contact.aci != aci)
+        .collect();
+    store.refresh_names(&contacts, &groups).await?;
+    Ok(())
+}
 
 struct Daemon {
     lines: Lines<BufReader<OwnedReadHalf>>,

@@ -1,6 +1,9 @@
 use crate::common;
 
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use common::{TestServer, start_server};
 use ferret_api::{ContentType, Document};
@@ -19,6 +22,7 @@ const FIXTURE: &str = include_str!("../../ferret-signal-archive/tests/fixtures/r
 const ME: &str = "00000000-0000-4000-8000-000000000001";
 const ALICE: &str = "00000000-0000-4000-8000-000000000002";
 const ALICE_NUMBER: &str = "+15555550101";
+const BOB: &str = "00000000-0000-4000-8000-000000000003";
 const GROUP: &str = "ZXhhbXBsZS1ncm91cC1pZC0wMDAwMDAwMDAwMDAwMDE=";
 /// Messages the archive stores from the fixture; the other lines are ignored events.
 const FIXTURE_MESSAGES: i64 = 9;
@@ -27,20 +31,27 @@ const FIXTURE_MESSAGES: i64 = 9;
 struct ChatArchive {
     _dir: tempfile::TempDir,
     daemon: mpsc::UnboundedSender<String>,
+    /// What the fake daemon's `listContacts` and `listGroups` return.
+    names: Arc<Mutex<Value>>,
     url: String,
     store_id: String,
 }
 
 impl ChatArchive {
     async fn start() -> Self {
+        Self::named(json!({"contacts": [], "groups": []})).await
+    }
+
+    async fn named(names: Value) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let store = ferret_signal_archive::Store::open(dir.path().join("archive.db"))
             .await
             .unwrap();
         let (daemon, lines) = mpsc::unbounded_channel();
+        let names = Arc::new(Mutex::new(names));
         tokio::spawn(ferret_signal_archive::receive(
             store.clone(),
-            fake_daemon(lines).await,
+            fake_daemon(lines, names.clone()).await,
         ));
         let app = ferret_signal_archive::router(store, TOKEN).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -49,6 +60,7 @@ impl ChatArchive {
         let mut archive = Self {
             _dir: dir,
             daemon,
+            names,
             url,
             store_id: String::new(),
         };
@@ -88,9 +100,13 @@ impl ChatArchive {
     }
 }
 
-/// Answers `listAccounts` with the fixture account, then each `receive` call with the next line
-/// it is sent, leaving the call pending while there is none.
-async fn fake_daemon(mut lines: mpsc::UnboundedReceiver<String>) -> String {
+/// Answers `listAccounts` with the fixture account, `listContacts` and `listGroups` from `names`,
+/// and each `receive` call with the next line it is sent, leaving the call pending while there is
+/// none.
+async fn fake_daemon(
+    mut lines: mpsc::UnboundedReceiver<String>,
+    names: Arc<Mutex<Value>>,
+) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {
@@ -99,15 +115,18 @@ async fn fake_daemon(mut lines: mpsc::UnboundedReceiver<String>) -> String {
         let mut requests = BufReader::new(reader).lines();
         while let Some(request) = requests.next_line().await.unwrap() {
             let request: Value = serde_json::from_str(&request).unwrap();
-            let result = if request["method"] == "listAccounts" {
-                json!([{"number": "+15555550100", "aci": ME}])
-            } else {
-                assert_eq!(request["method"], "receive");
-                assert_eq!(request["params"]["account"], ME);
-                let Some(line) = lines.recv().await else {
-                    break;
-                };
-                json!([serde_json::from_str::<Value>(&line).unwrap()])
+            let result = match request["method"].as_str().unwrap() {
+                "listAccounts" => json!([{"number": "+15555550100", "aci": ME}]),
+                "listContacts" => names.lock().unwrap()["contacts"].clone(),
+                "listGroups" => names.lock().unwrap()["groups"].clone(),
+                method => {
+                    assert_eq!(method, "receive");
+                    assert_eq!(request["params"]["account"], ME);
+                    let Some(line) = lines.recv().await else {
+                        break;
+                    };
+                    json!([serde_json::from_str::<Value>(&line).unwrap()])
+                }
             };
             let response = json!({"jsonrpc": "2.0", "id": request["id"], "result": result});
             writer
@@ -226,7 +245,8 @@ async fn registered_worker_imports_then_follows_the_journal_and_filters(pool: Pg
     );
     let alice = in_thread(&docs, ALICE);
     assert_eq!(alice.len(), 1);
-    assert_eq!(alice[0].title.as_deref(), Some(ALICE));
+    // Without a name from signal-cli, the chat archive titles a direct chat with the number.
+    assert_eq!(alice[0].title.as_deref(), Some(ALICE_NUMBER));
     assert_eq!(alice[0].authors, [ALICE_NUMBER, "Me"]);
     assert!(alice[0].text.contains("Reply from the phone"));
     assert!(alice[0].text.contains("Disappearing"));
@@ -311,4 +331,42 @@ async fn a_different_chat_archive_fails_before_any_write(pool: PgPool) {
     let (status, error, _, _) = execute(&worker, wid, &pool).await;
     assert_eq!(status, "succeeded", "{error:?}");
     assert_eq!(documents(&server, &pool).await.len(), 3);
+}
+
+#[sqlx::test(migrations = false)]
+async fn names_come_from_signal_cli_and_a_rename_rerenders_only_its_chat(pool: PgPool) {
+    let alice = |nick: &str| {
+        json!({"uuid": ALICE, "number": ALICE_NUMBER, "name": "Alice Example", "nickName": null,
+            "nickGivenName": nick, "nickFamilyName": null, "profile": {"givenName": "A", "familyName": null}})
+    };
+    let bob = json!({"uuid": BOB, "number": null, "name": "", "profile": {"givenName": "Bob", "familyName": null}});
+    let archive = ChatArchive::named(json!({"contacts": [alice("Ally"), bob], "groups": []})).await;
+    archive.receive(FIXTURE, FIXTURE_MESSAGES).await;
+    let server = start_server(pool.clone()).await;
+    let (worker, wid, id) = setup(&server, archive.config(&[], &[])).await;
+    let (status, error, _, _) = execute(&worker, wid, &pool).await;
+    assert_eq!(status, "succeeded", "{error:?}");
+    let docs = documents(&server, &pool).await;
+    let direct = in_thread(&docs, ALICE);
+    assert_eq!(direct[0].title.as_deref(), Some("Ally"));
+    assert_eq!(direct[0].authors, ["Ally", "Me"]);
+    assert_eq!(in_thread(&docs, GROUP)[0].authors, ["Bob", "Me"]);
+
+    // A new nickname; another device's contacts sync makes the chat archive refresh names and
+    // journal the rename.
+    archive.names.lock().unwrap()["contacts"][0] = alice("Alice A");
+    let sync = json!({"account": "+15555550100", "envelope": {"sourceUuid": ME,
+        "sourceNumber": "+15555550100", "timestamp": 1_760_000_030_000_i64,
+        "syncMessage": {"type": "CONTACTS_SYNC"}}});
+    archive
+        .receive(&sync.to_string(), FIXTURE_MESSAGES + 1)
+        .await;
+    due(&server, &id).await;
+    let (status, error, stats, _) = execute(&worker, wid, &pool).await;
+    assert_eq!(status, "succeeded", "{error:?}");
+    assert_eq!(stats["put"], 1, "only Alice's chat is re-rendered: {stats}");
+    let docs = documents(&server, &pool).await;
+    let direct = in_thread(&docs, ALICE);
+    assert_eq!(direct[0].title.as_deref(), Some("Alice A"));
+    assert_eq!(direct[0].authors, ["Alice A", "Me"]);
 }

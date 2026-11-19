@@ -8,7 +8,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode},
 };
 
-use crate::signal_cli::Received;
+use crate::signal_cli::{Group, Named, Received};
 
 /// The chat archive's SQLite database. The receiver is its only writer.
 #[derive(Clone)]
@@ -53,6 +53,67 @@ impl Store {
         Ok(())
     }
 
+    /// Takes over current contact and group names and journals a rename for every chat whose
+    /// title or authors' names changed, so the plugin re-renders exactly those chats.
+    pub(crate) async fn refresh_names(
+        &self,
+        contacts: &[Named],
+        groups: &[Group],
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        for contact in contacts {
+            // A number signal-cli no longer reports is kept: the messages still came from it.
+            let changed = sqlx::query(
+                "INSERT INTO recipients (aci, number, name) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (aci) DO UPDATE SET
+                     number = coalesce(excluded.number, number), name = excluded.name
+                 WHERE number IS NOT coalesce(excluded.number, number)
+                     OR name IS NOT excluded.name",
+            )
+            .bind(&contact.aci)
+            .bind(&contact.number)
+            .bind(&contact.name)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+                == 1;
+            if changed {
+                sqlx::query(
+                    "INSERT INTO changes (recorded_at, operation, chat)
+                     SELECT ?1, 'rename', chat FROM (
+                         SELECT id AS chat FROM chats WHERE id = ?2 AND kind = 'direct'
+                         UNION SELECT DISTINCT chat FROM messages WHERE author = ?2
+                     ) ORDER BY chat",
+                )
+                .bind(now())
+                .bind(&contact.aci)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        for group in groups {
+            let renamed = sqlx::query(
+                "UPDATE chats SET name = ?1 WHERE id = ?2 AND kind = 'group' AND name IS NOT ?1",
+            )
+            .bind(group.name())
+            .bind(&group.id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+                == 1;
+            if renamed {
+                sqlx::query(
+                    "INSERT INTO changes (recorded_at, operation, chat) VALUES (?, 'rename', ?)",
+                )
+                .bind(now())
+                .bind(&group.id)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await
+    }
+
     pub(crate) async fn record_arrival(&self) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE archive SET last_received_at = ?")
             .bind(now())
@@ -64,11 +125,15 @@ impl Store {
     /// Stores a message unless its identity is already present, and journals the insert.
     pub(crate) async fn insert(&self, message: Received) -> Result<(), sqlx::Error> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT INTO chats (id, kind) VALUES (?, ?) ON CONFLICT (id) DO NOTHING")
-            .bind(&message.chat)
-            .bind(message.kind)
-            .execute(&mut *tx)
-            .await?;
+        // A group's later renames come from the name refresh, which journals them.
+        sqlx::query(
+            "INSERT INTO chats (id, kind, name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(&message.chat)
+        .bind(message.kind)
+        .bind(&message.group_name)
+        .execute(&mut *tx)
+        .await?;
         for (aci, number) in &message.numbers {
             sqlx::query(
                 "INSERT INTO recipients (aci, number) VALUES (?, ?)

@@ -88,6 +88,9 @@ pub struct Attachment {
 pub struct Message {
     #[serde(flatten)]
     pub key: MessageKey,
+    /// The author's nickname, else system contact name, else profile name.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub author_name: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub author_number: Option<String>,
     pub from_me: bool,
@@ -113,6 +116,8 @@ pub struct MessagesPage {
 )]
 pub enum ChangeOperation {
     Insert,
+    /// A chat's title or one of its authors' names changed.
+    Rename,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,8 +126,9 @@ pub struct Change {
     pub recorded_at: i64,
     pub operation: ChangeOperation,
     pub chat: String,
-    #[serde(flatten)]
-    pub key: MessageKey,
+    /// The message concerned; null for an entry about the whole chat.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub key: Option<MessageKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -152,7 +158,7 @@ mod tests {
     #[test]
     fn message_key_is_flat_on_the_wire() {
         let message: Message = serde_json::from_str(
-            r#"{"sent_at":1,"author":"a","author_number":null,"from_me":false,"text":"hi","attachments":[],"edited":false}"#,
+            r#"{"sent_at":1,"author":"a","author_name":null,"author_number":null,"from_me":false,"text":"hi","attachments":[],"edited":false}"#,
         )
         .unwrap();
         assert_eq!(

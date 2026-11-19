@@ -99,16 +99,21 @@ def smoke_whatsapp_archive(state, architecture):
 
 def fake_signal_cli(received):
     """Serves one multi-account `signal-cli daemon --tcp --receive-mode manual` session on the host:
-    `listAccounts`, then one `receive` result item per call."""
+    `listAccounts`, empty `listContacts` and `listGroups`, then one `receive` result item per call."""
     server = socket.create_server(("0.0.0.0", 0))
-    results = [[{"number": "+15555550100", "aci": "00000000-0000-4000-8000-000000000001"}]]
-    results += [[json.loads(line)] for line in received.splitlines()]
+    items = [[json.loads(line)] for line in received.splitlines()]
 
     def session():
         connection, _ = server.accept()
         with connection, connection.makefile("rwb") as stream:
-            for result in results:
+            while items:
                 request = json.loads(stream.readline())
+                result = {
+                    "listAccounts": lambda: [{"number": "+15555550100", "aci": "00000000-0000-4000-8000-000000000001"}],
+                    "listContacts": lambda: [],
+                    "listGroups": lambda: [],
+                    "receive": lambda: items.pop(0),
+                }[request["method"]]()
                 stream.write(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode() + b"\n")
                 stream.flush()
             stream.read()

@@ -289,19 +289,24 @@ fn shared_chat(chat: &Chat) -> chat::Chat<'_> {
     chat::Chat::new(&chat.id, kind, chat.name.as_deref())
 }
 
+/// `Me` for the account; else the chat archive's name for the author (nickname, system contact
+/// name or profile name), else the phone number, else the raw ACI.
+fn sender(message: &Message) -> String {
+    if message.from_me {
+        return "Me".to_owned();
+    }
+    message
+        .author_name
+        .clone()
+        .or_else(|| message.author_number.clone())
+        .unwrap_or_else(|| message.key.author.clone())
+}
+
 fn shared_message(message: &Message) -> chat::Message<'_> {
     chat::Message {
         // Signal's own message identity within a chat.
         id: format!("{}/{}", message.key.author, message.key.sent_at),
-        // ponytail: raw number or ACI; contact and profile names come with the name refresh.
-        sender: if message.from_me {
-            "Me".to_owned()
-        } else {
-            message
-                .author_number
-                .clone()
-                .unwrap_or_else(|| message.key.author.clone())
-        },
+        sender: sender(message),
         ts: message.key.sent_at.div_euclid(1_000),
         edited: message.edited,
         attachments: message
@@ -326,12 +331,25 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn senders_fall_back_from_name_to_number_to_aci() {
+        let mut message = message("aci", 1, Some("Hi"));
+        assert_eq!(sender(&message), "aci");
+        message.author_number = Some("+15555550101".into());
+        assert_eq!(sender(&message), "+15555550101");
+        message.author_name = Some("Alice".into());
+        assert_eq!(sender(&message), "Alice");
+        message.from_me = true;
+        assert_eq!(sender(&message), "Me");
+    }
+
     fn message(author: &str, sent_at: i64, text: Option<&str>) -> Message {
         Message {
             key: MessageKey {
                 sent_at,
                 author: author.to_owned(),
             },
+            author_name: None,
             author_number: None,
             from_me: false,
             text: text.map(str::to_owned),
