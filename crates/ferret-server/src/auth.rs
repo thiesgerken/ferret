@@ -52,9 +52,11 @@ impl SessionKey {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_issuer(&[ISSUER]);
         validation.set_audience(&[AUDIENCE]);
+        // jsonwebtoken only rejects empty HMAC secrets, which the length check above rules out.
+        let non_empty = "the session secret is non-empty";
         Ok(Self {
-            encoding: EncodingKey::from_secret(secret.as_bytes()),
-            decoding: DecodingKey::from_secret(secret.as_bytes()),
+            encoding: EncodingKey::from_secret(secret.as_bytes()).expect(non_empty),
+            decoding: DecodingKey::from_secret(secret.as_bytes()).expect(non_empty),
             validation,
         })
     }

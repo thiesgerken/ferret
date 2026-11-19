@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v0.38.8 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(plugins): port the IMAP mail parsing to mail-parser 1.0
+- chore: upgrade Rust crate mail-parser to 1.0.1
+
+### 📝 Add or update documentation
+
+- docs(plugins): note that a named HTML alternative is an attachment
+
+## v0.38.7 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(server): adapt session keys to jsonwebtoken 12
+- chore: upgrade Rust crate jsonwebtoken to 12.0.0
+
+## v0.38.6 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore(frontend): regenerate the GraphQL schema for juniper 0.18
+- chore: upgrade Rust crate juniper to 0.18.0
+- chore: upgrade Rust crate jsonschema to 0.61.2
+- chore: upgrade graphqlcodegenerator monorepo
+- chore: upgrade jsdom to 31.0.0
+- chore(nix): update rust-overlay for Rust 1.100.0
+- chore: upgrade Rust to 1.100.0
+- chore(nix): refresh pg_search binary pins for 0.26.6
+- chore: upgrade all routine dependency updates
+
+## v0.38.5 (2026-11-15)
+
+### ⬆️ Upgrade dependencies
+
+- chore: Lock file maintenance
+
+## v0.38.4 (2026-11-15)
+
+### 🐛 Fix a bug
+
+- fix(release): give the publish job a git identity for the annotated tag
+
+### 👷 Add or update CI build system
+
+- ci(release): drop the one-time v0.38.2 trust gate
+
+## v0.38.3 (2026-11-15)
+
+### 👷 Add or update CI build system
+
+- ci(release): release with Presswerk's push run and candidate run
+- ci(release): declare the release with Presswerk
+- ci(chart): package the Helm chart as a Nix derivation
+
+### 🔒️ Fix security or privacy issues
+
+- fix(release): build the Presswerk CLI in CI instead of trusting upstream's cache
+- fix(release): scope the release tokens to the prepare step
+
+### 🗑️ Deprecate code that needs to be cleaned up
+
+- chore(release): drop python-semantic-release and its release tools
+
+### 📝 Add or update documentation
+
+- docs(development): mention the Presswerk CLI in ciBuilds
+- docs(agents): list the Gitmojis Presswerk's catalog releases a patch for
+- docs(release): describe releasing with Presswerk
+
+### 🎨 Improve structure / format of the code
+
+- style(nix): rewrap the dependency source comment
+
 ## v0.38.2 (2026-11-10)
 
 

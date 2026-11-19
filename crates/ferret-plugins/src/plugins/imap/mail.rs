@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use ferret_api::{ContentType, DocumentPut};
-use mail_parser::{Addr, Address, HeaderValue, Message, MessageParser, MimeHeaders};
+use mail_parser::{AddressList, Message, MessageParser, PartKind};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::{Map, json};
 
@@ -83,25 +83,20 @@ pub fn document(
 /// The first Message-ID of `References`, else `In-Reply-To`: the thread's first mail as far as
 /// the mail knows it.
 fn thread(message: &Message) -> Option<String> {
-    let first = |value: &HeaderValue| match value {
-        HeaderValue::Text(id) => Some(message_id(id)),
-        HeaderValue::TextList(ids) => ids.first().map(|id| message_id(id)),
-        _ => None,
-    };
-    first(message.references()).or_else(|| first(message.in_reply_to()))
+    message
+        .references()
+        .or_else(|| message.in_reply_to())
+        .and_then(|ids| ids.first().map(message_id))
 }
 
 /// The mail this one replies to: `In-Reply-To`, else the last Message-ID of `References`, which
 /// clients that drop `In-Reply-To` still fill.
 fn parent(message: &Message) -> Option<String> {
     match message.in_reply_to() {
-        HeaderValue::Text(id) => Some(message_id(id)),
-        HeaderValue::TextList(ids) => ids.first().map(|id| message_id(id)),
-        _ => match message.references() {
-            HeaderValue::Text(id) => Some(message_id(id)),
-            HeaderValue::TextList(ids) => ids.last().map(|id| message_id(id)),
-            _ => None,
-        },
+        Some(ids) => ids.first().map(message_id),
+        None => message
+            .references()
+            .and_then(|ids| ids.last().map(message_id)),
     }
 }
 
@@ -109,15 +104,17 @@ fn parent(message: &Message) -> Option<String> {
 fn text(message: &Message) -> String {
     let forward = message.subject().is_some_and(is_forward);
     // HTML when there is some: its quote containers are more reliable than text markers.
-    let has_html = message.html_bodies().any(|part| part.is_text_html());
+    let has_html = message
+        .html_body()
+        .any(|part| matches!(part.kind(), PartKind::Html));
     let bodies: Vec<String> = if has_html {
-        (0..message.html_body_count())
-            .filter_map(|at| message.body_html(at))
+        message
+            .html_bodies()
             .map(|html| quotes::html_text(&html, forward))
             .collect()
     } else {
-        (0..message.text_body_count())
-            .filter_map(|at| message.body_text(at))
+        message
+            .text_bodies()
             .map(|text| text.into_owned())
             .collect()
     };
@@ -137,17 +134,17 @@ fn is_forward(subject: &str) -> bool {
 }
 
 /// The authors' names, or their addresses where a name is missing.
-fn names<'a>(address: &'a Address) -> impl Iterator<Item = String> + 'a {
-    address
-        .iter()
-        .filter_map(|addr| addr.name().or(addr.address()).map(str::to_owned))
+fn names(addresses: AddressList) -> impl Iterator<Item = String> {
+    addresses
+        .mailboxes()
+        .filter_map(|mailbox| mailbox.name().or(mailbox.address()).map(str::to_owned))
 }
 
 /// `Name <address>`, or what of it there is.
-fn with_addresses<'a>(address: &'a Address) -> impl Iterator<Item = String> + 'a {
-    address
-        .iter()
-        .filter_map(|addr: &Addr| match (addr.name(), addr.address()) {
+fn with_addresses(addresses: AddressList) -> impl Iterator<Item = String> {
+    addresses
+        .mailboxes()
+        .filter_map(|mailbox| match (mailbox.name(), mailbox.address()) {
             (Some(name), Some(address)) => Some(format!("{name} <{address}>")),
             (name, address) => name.or(address).map(str::to_owned),
         })

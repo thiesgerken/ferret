@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.38.2"
+version = "0.38.8"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -21,12 +21,12 @@ axum = "0.8"
 axum-extra = { version = "0.12", default-features = false, features = ["query"] }
 getrandom = "0.4"
 globset = "0.4"
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 lol_html = "3"
-mail-parser = "0.11"
+mail-parser = "1.0"
 parking_lot = "0.13"
-jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-juniper = { version = "0.17", default-features = false, features = ["chrono", "schema-language"] }
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }
+juniper = { version = "0.18", default-features = false, features = ["chrono", "schema-language"] }
 # rustls rather than openssl, so the images need no system TLS library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rmcp = { version = "3.5", default-features = false }
