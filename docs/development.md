@@ -129,7 +129,7 @@ For individual outputs, replace `<system>` with `x86_64-linux` or `aarch64-linux
 | Output | Command |
 | --- | --- |
 | Checks: `rust-fmt`, `rust-clippy`, `rust-test`, `sqlx`, `graphql-schema`, `frontend-lint`, `frontend-test`, `frontend-build`, `helm` | `nix build .#checks.<system>.<check>` |
-| Packages and images | `nix build .#packages.<system>.{server,plugins,whatsapp-archive,frontend}{,-image}` |
+| Packages and images | `nix build .#packages.<system>.{server,plugins,whatsapp-archive,signal-archive,frontend}{,-image}` |
 | Helm chart archive | `nix build .#packages.<system>.chart` |
 
 Bootstrap the locked runner:
@@ -153,7 +153,7 @@ result-build-tool/bin/nix-fast-build --no-nom --flake .#ciBuilds.aarch64-darwin 
 Load the images and exercise the runtime restrictions:
 
 ```sh
-for image in result-ci-{server,plugins,whatsapp-archive,frontend}-image; do docker load -i "$image"; done
+for image in result-ci-{server,plugins,whatsapp-archive,signal-archive,frontend}-image; do docker load -i "$image"; done
 result-ci-tools/bin/python scripts/smoke-images.py
 ```
 
