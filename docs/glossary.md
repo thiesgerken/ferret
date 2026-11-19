@@ -11,6 +11,17 @@ The external system a piece of content comes from and lives in, e.g. a Paperless
 account, a notes folder.
 _Avoid_: backend, provider, upstream
 
+**Chat archive**:
+The durable store of a messenger account's messages that a collector fills. It is the origin of a
+chat plugin: for messengers without a usable origin of their own, the chat archive is it. Not
+carapace's session archive, which is an agent's own record of its sessions.
+_Avoid_: backup, export, mirror
+
+**Collector**:
+The always-on linked device that receives a messenger account's messages and writes them to its
+chat archive. It never sends.
+_Avoid_: bridge, bot, client
+
 **Document**:
 The unit of content ferret indexes and returns. What a document is (a file, a mail, a fact, a chat
 segment) is decided by whoever ingests it.
