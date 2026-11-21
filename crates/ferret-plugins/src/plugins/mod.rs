@@ -10,6 +10,7 @@ use serde_json::Value;
 
 pub mod affine;
 pub mod carapace;
+mod chat;
 pub mod files;
 pub mod git;
 pub mod gitea;
@@ -20,6 +21,7 @@ pub mod mealie;
 pub mod moneta;
 pub mod paperless;
 pub mod repo;
+pub mod signal;
 pub mod vikunja;
 pub mod whatsapp;
 
@@ -83,6 +85,11 @@ pub fn registrations() -> Vec<PluginRegistration> {
         PluginRegistration {
             name: paperless::NAME.to_owned(),
             config_schema: serde_json::to_value(schemars::schema_for!(paperless::PaperlessConfig))
+                .expect("a schema serializes"),
+        },
+        PluginRegistration {
+            name: signal::NAME.to_owned(),
+            config_schema: serde_json::to_value(schemars::schema_for!(signal::SignalConfig))
                 .expect("a schema serializes"),
         },
         PluginRegistration {
@@ -171,6 +178,7 @@ pub async fn run(plugin: &str, run: &Run) -> Result<Outcome, PluginError> {
         mealie::NAME => mealie::run(run).await,
         moneta::NAME => moneta::run(run).await,
         paperless::NAME => paperless::run(run).await,
+        signal::NAME => signal::run(run).await,
         vikunja::NAME => vikunja::run(run).await,
         whatsapp::NAME => whatsapp::run(run).await,
         other => Err(format!("this worker doesn't know the plugin {other:?}").into()),

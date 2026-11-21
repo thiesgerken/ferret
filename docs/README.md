@@ -14,6 +14,7 @@ Ferret is a personal search index. It copies text from origins, indexes it, and 
 - [API guide](api/README.md): choose [REST](api/rest.md), [GraphQL](api/graphql.md) or [MCP](api/mcp.md), with the right credentials.
 - Plugin setup: [files](plugins/files.md), [git](plugins/git.md), [Gitea](plugins/gitea.md), [Home Assistant](plugins/homeassistant.md), [Paperless](plugins/paperless.md), [carapace](plugins/carapace.md), [IMAP](plugins/imap.md), [AFFiNE](plugins/affine.md), [Vikunja](plugins/vikunja.md), [Karakeep](plugins/karakeep.md), [Mealie](plugins/mealie.md), [Moneta](plugins/moneta.md).
 - [WhatsApp archive](plugins/whatsapp.md): private archive API deployment and scheduled chat ingestion.
+- [Signal chat archive](plugins/signal.md): connecting the Signal chat archive, what it keeps, and the backup duty.
 - [MCP setup](api/mcp.md): connect agents with source-scoped search keys.
 
 ## Deploy and operate

@@ -2,35 +2,25 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::Write,
     sync::atomic::{AtomicUsize, Ordering},
-    time::Duration,
 };
 
-use chrono::{DateTime, Utc};
-use ferret_api::{ContentType, DocumentPut, PutResponse, internal::RunStats};
+use ferret_api::internal::RunStats;
 use ferret_whatsapp_archive::{
     Archive, ChangesPage, Chat, ChatsPage, Message, MessageKey, MessagesPage,
 };
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::json;
-use sha2::{Digest, Sha256};
-use uuid::Uuid;
+use serde::{Deserialize, de::DeserializeOwned};
+use serde_json::{Map, json};
 
-use super::{Outcome, PluginError, Run};
+use super::{
+    Outcome, PluginError, Run,
+    chat::{self, ChatArchive, Cursor, Journal, Segments, Settings},
+};
 
 pub const NAME: &str = "whatsapp";
 const MAX_REQUESTS: usize = 20_000;
-const SEGMENT_CHARS: usize = 8_000;
-/// About one segment per day of conversation, but a conversation running past midnight stays in
-/// one segment.
-const PAUSE_SECONDS: i64 = 24 * 3_600;
 const CURSOR_VERSION: u32 = 3;
-const MESSAGE_SEPARATOR: &str = "\n\n";
-/// Markdown's hard line break as two trailing spaces: unlike a trailing backslash, it stays
-/// invisible in search snippets.
-const LINE_BREAK: &str = "  \n";
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -52,22 +42,6 @@ pub struct WhatsAppConfig {
     #[serde(default)]
     #[schemars(extend("x-ferret-preserve-credentials" = true))]
     block_chats: BTreeSet<String>,
-}
-
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
-struct Settings {
-    url: String,
-    expected_store_id: String,
-    allow_chats: BTreeSet<String>,
-    block_chats: BTreeSet<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Cursor {
-    version: u32,
-    checkpoint: i64,
-    settings: Settings,
-    chats: BTreeMap<String, Chat>,
 }
 
 #[derive(Debug)]
@@ -130,6 +104,22 @@ impl ArchiveClient {
             return Err("WhatsApp archive returned unsupported schema or journal bounds".into());
         }
         Ok(archive)
+    }
+}
+
+impl ChatArchive for ArchiveClient {
+    type Chat = Chat;
+
+    async fn journal(&self) -> Result<Journal, PluginError> {
+        let archive = self.archive().await?;
+        Ok(Journal {
+            floor: archive.floor,
+            high: archive.high,
+            collector: format!(
+                "collector status {}, last successful collector sync {:?}",
+                archive.collector_status, archive.last_sync_at
+            ),
+        })
     }
 
     async fn chats(&self) -> Result<BTreeMap<String, Chat>, PluginError> {
@@ -208,13 +198,23 @@ impl ArchiveClient {
         }
     }
 
+    fn indexable(chat: &Chat) -> bool {
+        matches!(chat.kind.as_str(), "dm" | "group") && chat.jid != "status@broadcast"
+    }
+
+    /// An empty drain still sends the pinned `store_id` and gets 410 once the range expired.
+    async fn recheck(&self, checkpoint: i64) -> Result<(), PluginError> {
+        self.changes(checkpoint, checkpoint).await.map(drop)
+    }
+
     async fn ingest_chat(
         &self,
         run: &Run,
         chat: &Chat,
         stats: &mut RunStats,
     ) -> Result<(), PluginError> {
-        let mut segments = Segments::new(&run.source, chat);
+        let shared = shared_chat(chat);
+        let mut segments = Segments::new(&run.source, &shared);
         let mut after: Option<MessageKey> = None;
         let mut ids = BTreeSet::new();
         loop {
@@ -237,14 +237,14 @@ impl ArchiveClient {
                     return Err("WhatsApp message traversal is incomplete or unordered".into());
                 }
                 last = Some(key);
-                if let Some(document) = segments.push(&message)? {
-                    put(run, &document, stats).await?;
+                if let Some(document) = segments.push(shared_message(&shared, &message))? {
+                    chat::put(run, &document, stats).await?;
                 }
             }
             match page.next {
                 None => {
-                    if let Some(document) = segments.current {
-                        put(run, &document, stats).await?;
+                    if let Some(document) = segments.finish() {
+                        chat::put(run, &document, stats).await?;
                     }
                     return Ok(());
                 }
@@ -260,44 +260,20 @@ impl ArchiveClient {
 pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let config: WhatsAppConfig = serde_json::from_value(run.config.clone())
         .map_err(|_| "WhatsApp configuration is invalid")?;
-    let url = reqwest::Url::parse(&config.url)
-        .map_err(|_| "WhatsApp requires an absolute HTTP(S) archive URL")?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(
-            "WhatsApp requires an HTTP(S) URL without credentials, query or fragment".into(),
-        );
-    }
-    if config.token.len() != 64 || !config.token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("WhatsApp requires a 64-character hexadecimal archive bearer token".into());
-    }
-    if config.expected_store_id.len() != 32
-        || !config
-            .expected_store_id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(
-            "WhatsApp expected_store_id must be 32 lowercase hexadecimal characters".into(),
-        );
-    }
+    let url = chat::validate_connection(
+        "WhatsApp",
+        &config.url,
+        &config.token,
+        &config.expected_store_id,
+    )?;
     let settings = Settings {
-        url: url.as_str().trim_end_matches('/').to_owned(),
+        url,
         expected_store_id: config.expected_store_id,
         allow_chats: config.allow_chats,
         block_chats: config.block_chats,
     };
     let client = ArchiveClient {
-        http: reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(120))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?,
+        http: chat::http_client()?,
         url: settings.url.clone(),
         token: config.token,
         expected_store_id: settings.expected_store_id.clone(),
@@ -306,7 +282,7 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     let previous = if run.state == json!({}) {
         None
     } else {
-        let cursor: Cursor = serde_json::from_value(run.state.clone())
+        let cursor: Cursor<Chat> = serde_json::from_value(run.state.clone())
             .map_err(|_| "WhatsApp saved cursor is invalid")?;
         match cursor.version {
             1 => return Err("WhatsApp cursor uses the old index layout; delete/recreate the WhatsApp connection to rebuild the flat index (indexed documents and remembered exclusions will be cleared; the native archive is untouched)".into()),
@@ -319,10 +295,20 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
         }
     };
     let mut stats = RunStats::default();
-    match reconcile(run, &client, &settings, previous.as_ref(), &mut stats).await {
+    match chat::reconcile(
+        run,
+        &client,
+        &settings,
+        previous.as_ref(),
+        CURSOR_VERSION,
+        &mut stats,
+    )
+    .await
+    {
         Err(error) if error.is::<Expired>() => {
             run.log.line("Journal replay range expired; restarting authoritative local-archive reconciliation (lost replay range)");
-            let state = reconcile(run, &client, &settings, None, &mut stats).await?;
+            let state =
+                chat::reconcile(run, &client, &settings, None, CURSOR_VERSION, &mut stats).await?;
             Ok(Outcome { state, stats })
         }
         result => Ok(Outcome {
@@ -332,361 +318,55 @@ pub async fn run(run: &Run) -> Result<Outcome, PluginError> {
     }
 }
 
-fn validate_filters(
-    settings: &Settings,
-    chats: &BTreeMap<String, Chat>,
-) -> Result<(), PluginError> {
-    if settings
-        .allow_chats
-        .iter()
-        .chain(&settings.block_chats)
-        .any(|id| !chats.contains_key(id))
-    {
-        return Err("WhatsApp filter references a missing chat ID; inspect the authenticated archive inventory and update moved/removed IDs before retrying (filters fail closed)".into());
-    }
-    Ok(())
+fn shared_chat(chat: &Chat) -> chat::Chat<'_> {
+    chat::Chat::new(&chat.jid, &chat.kind, chat.name.as_deref())
 }
 
-fn eligible(settings: &Settings, chat: &Chat) -> bool {
-    matches!(chat.kind.as_str(), "dm" | "group")
-        && chat.jid != "status@broadcast"
-        && !settings.block_chats.contains(&chat.jid)
-        && (settings.allow_chats.is_empty() || settings.allow_chats.contains(&chat.jid))
-}
-
-fn digest_id(value: &str) -> String {
-    let mut hex = String::with_capacity(64);
-    for byte in Sha256::digest(value.as_bytes()) {
-        write!(hex, "{byte:02x}").expect("formatting into a string");
-    }
-    hex
-}
-
-fn metadata_changes(
-    before: &BTreeMap<String, Chat>,
-    after: &BTreeMap<String, Chat>,
-) -> BTreeSet<String> {
-    before
-        .keys()
-        .chain(after.keys())
-        .filter(|id| before.get(*id) != after.get(*id))
-        .cloned()
-        .collect()
-}
-
-async fn reconcile(
-    run: &Run,
-    client: &ArchiveClient,
-    settings: &Settings,
-    previous: Option<&Cursor>,
-    stats: &mut RunStats,
-) -> Result<serde_json::Value, PluginError> {
-    let start = client.archive().await?;
-    run.log.line(format!(
-        "Local archive only; collector status {}, last successful collector sync {:?}",
-        start.collector_status, start.last_sync_at
-    ));
-    let full = previous
-        .is_none_or(|cursor| cursor.settings != *settings || cursor.checkpoint < start.floor);
-    if previous.is_some_and(|cursor| cursor.checkpoint < start.floor) {
-        run.log.line("Journal replay range expired; performing authoritative local-archive reconciliation (lost replay range)");
-    }
-    let beginning = if full {
-        start.high
-    } else {
-        previous.expect("incremental cursor").checkpoint
-    };
-    let mut chats = client.chats().await?;
-    validate_filters(settings, &chats)?;
-    let root_sync = if full {
-        Some(run.api.start_sync(&run.source).await?.sync_id)
-    } else {
-        None
-    };
-    let mut affected = if full {
-        chats.keys().cloned().collect()
-    } else {
-        let mut affected = client.changes(beginning, start.high).await?;
-        affected.extend(metadata_changes(
-            &previous.expect("incremental cursor").chats,
-            &chats,
-        ));
-        affected
-    };
-    let mut syncs = Vec::new();
-    rebuild(run, client, settings, &chats, &affected, &mut syncs, stats).await?;
-    // Capture the replay boundary after traversal, not before it: backfill can arrive behind
-    // both keysets. This fixed drain is finite even when the collector keeps writing.
-    let end = client.archive().await?;
-    let latest_chats = client.chats().await?;
-    validate_filters(settings, &latest_chats)?;
-    affected = client.changes(start.high, end.high).await?;
-    affected.extend(metadata_changes(&chats, &latest_chats));
-    chats = latest_chats;
-    rebuild(run, client, settings, &chats, &affected, &mut syncs, stats).await?;
-    // No traversal failure authorizes any sweep. Recheck retention and identity immediately
-    // before destructive commits, even when the final change page was empty.
-    client.changes(beginning, beginning).await?;
-    for sync in syncs.iter().copied().chain(root_sync) {
-        client.changes(beginning, beginning).await?;
-        stats.deleted += run.api.commit_sync(sync).await?.deleted;
-    }
-    run.log.line(format!(
-        "{} put, {} unchanged, {} deleted; {} chats checked; unchanged chats skipped",
-        stats.put,
-        stats.unchanged,
-        stats.deleted,
-        chats.len()
-    ));
-    Ok(serde_json::to_value(Cursor {
-        version: CURSOR_VERSION,
-        checkpoint: end.high,
-        settings: Settings {
-            url: settings.url.clone(),
-            expected_store_id: settings.expected_store_id.clone(),
-            allow_chats: settings.allow_chats.clone(),
-            block_chats: settings.block_chats.clone(),
-        },
-        chats,
-    })?)
-}
-
-async fn rebuild(
-    run: &Run,
-    client: &ArchiveClient,
-    settings: &Settings,
-    chats: &BTreeMap<String, Chat>,
-    affected: &BTreeSet<String>,
-    syncs: &mut Vec<Uuid>,
-    stats: &mut RunStats,
-) -> Result<(), PluginError> {
-    for jid in affected {
-        let sync = run.api.start_thread_sync(&run.source, jid).await?.sync_id;
-        syncs.push(sync);
-        if let Some(chat) = chats.get(jid).filter(|chat| eligible(settings, chat)) {
-            client.ingest_chat(run, chat, stats).await?;
-        }
-    }
-    Ok(())
-}
-
-async fn put(run: &Run, document: &DocumentPut, stats: &mut RunStats) -> Result<(), PluginError> {
-    match run.api.put_document(document).await? {
-        PutResponse::Created { .. } | PutResponse::Updated { .. } => stats.put += 1,
-        PutResponse::Unchanged { .. } => stats.unchanged += 1,
-        PutResponse::Excluded => {}
-    }
-    Ok(())
-}
-
-fn timestamp(ts: i64) -> Result<DateTime<Utc>, PluginError> {
-    DateTime::from_timestamp(ts, 0)
-        .ok_or_else(|| "WhatsApp message timestamp is out of range".into())
-}
-
-/// One message as a Markdown block: a bold sender line, then attachment, text and caption, joined
-/// by hard line breaks because the viewer renders single newlines as spaces.
-fn message_block(message: &Message, sender: &str, at: DateTime<Utc>, with_date: bool) -> String {
-    let stamp = at.format(if with_date {
-        "%Y-%m-%d %H:%M UTC"
-    } else {
-        "%H:%M"
-    });
-    let edited = if message.edited { " (edited)" } else { "" };
-    let mut lines = vec![format!("**{}** · {stamp}{edited}", escape_inline(sender))];
-    lines.extend(attachment_line(message));
-    let body = message
-        .text
-        .as_deref()
-        .filter(|text| !text.is_empty())
-        .or(message.display_text.as_deref());
-    let caption = message
-        .media_caption
-        .as_deref()
-        .filter(|caption| Some(*caption) != message.text.as_deref());
-    for text in [body, caption].into_iter().flatten() {
-        // Untrimmed indentation would turn a line after a blank one into a code block.
-        lines.extend(
-            text.trim()
-                .lines()
-                .map(|line| escape_block_start(line.trim())),
-        );
-    }
-    lines.join(LINE_BREAK)
-}
-
-fn attachment_line(message: &Message) -> Option<String> {
-    let size = message.file_length.filter(|size| *size > 0).map(human_size);
-    let parts: Vec<_> = [&message.media_type, &message.filename, &message.mime_type]
-        .into_iter()
-        .flatten()
-        .map(|part| escape_inline(part))
-        .chain(size)
-        .collect();
-    (!parts.is_empty()).then(|| format!("Attachment: {}", parts.join(" · ")))
-}
-
-fn human_size(bytes: i64) -> String {
-    if bytes < 1_000 {
-        return format!("{bytes} B");
-    }
-    let mut size = bytes as f64 / 1_000.0;
-    for unit in ["kB", "MB", "GB"] {
-        if size < 1_000.0 {
-            return format!("{size:.1} {unit}");
-        }
-        size /= 1_000.0;
-    }
-    format!("{size:.1} TB")
-}
-
-/// Keeps a line of user text from opening a Markdown block (heading, list, quote, code fence,
-/// table, HTML, thematic break, setext underline, link definition). Other punctuation like `:)`
-/// stays unescaped, since agents read this text raw. Inline emphasis stays too, WhatsApp's own
-/// `*bold*` is close enough.
-fn escape_block_start(line: &str) -> String {
-    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    // A table's delimiter row may also start with the alignment colon.
-    let delimiter_row = line.contains('-')
-        && line
-            .chars()
-            .all(|c| matches!(c, '|' | ':' | '-' | ' ' | '\t'));
-    match line[digits..].chars().next() {
-        Some('#' | '>' | '-' | '+' | '*' | '=' | '_' | '`' | '~' | '|' | '<' | '[')
-            if digits == 0 =>
-        {
-            format!("\\{line}")
-        }
-        Some(':') if delimiter_row => format!("\\{line}"),
-        Some('.' | ')') if digits > 0 => format!("{}\\{}", &line[..digits], &line[digits..]),
-        _ => line.to_owned(),
-    }
-}
-
-/// Keeps text inside our own Markdown (the bold sender, attachment metadata) from closing it or
-/// starting code, links or emphasis.
-fn escape_inline(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for c in text.chars() {
-        if matches!(c, '\\' | '`' | '*' | '_' | '~' | '[' | ']' | '<') {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-    escaped
-}
-
-struct Segments<'a> {
-    source: &'a str,
-    chat: &'a Chat,
-    chat_hash: String,
-    name: String,
-    current: Option<DocumentPut>,
-    current_chars: usize,
-    previous: Option<DateTime<Utc>>,
-}
-
-impl<'a> Segments<'a> {
-    fn new(source: &'a str, chat: &'a Chat) -> Self {
-        let name: String = chat
-            .name
+fn shared_message<'m>(chat: &chat::Chat, message: &'m Message) -> chat::Message<'m> {
+    chat::Message {
+        id: message.msg_id.clone(),
+        sender: sender(chat, message),
+        ts: message.ts,
+        edited: message.edited,
+        attachments: vec![attachment(message)],
+        body: message
+            .text
             .as_deref()
-            .unwrap_or(&chat.jid)
-            .chars()
-            .take(256)
-            .collect();
-        Self {
-            source,
-            chat,
-            chat_hash: digest_id(&chat.jid),
-            name,
-            current: None,
-            current_chars: 0,
-            previous: None,
-        }
+            .filter(|text| !text.is_empty())
+            .or(message.display_text.as_deref()),
+        segment_meta: Map::from_iter([("first_message_rowid".to_owned(), json!(message.rowid))]),
     }
+}
 
-    /// A direct chat's JID is the chat ID itself, and wacli stores it as the sender of my own
-    /// history-synced messages there, so a JID only names an otherwise unnamed group member.
-    fn sender(&self, message: &Message) -> String {
-        let name = message
-            .sender_name
+fn attachment(message: &Message) -> chat::Attachment<'_> {
+    chat::Attachment {
+        kind: message.media_type.as_deref(),
+        filename: message.filename.as_deref(),
+        mime_type: message.mime_type.as_deref(),
+        size: message.file_length,
+        caption: message
+            .media_caption
             .as_deref()
-            .filter(|name| !name.is_empty());
-        if message.from_me {
-            "Me"
-        } else if self.chat.kind == "dm" {
-            name.unwrap_or(&self.name)
-        } else {
-            name.or(message.sender_jid.as_deref())
-                .unwrap_or("Unknown sender")
-        }
-        .to_owned()
+            .filter(|caption| Some(*caption) != message.text.as_deref()),
     }
+}
 
-    fn push(&mut self, message: &Message) -> Result<Option<DocumentPut>, PluginError> {
-        let at = timestamp(message.ts)?;
-        let sender = self.sender(message);
-        let continuation = self
-            .previous
-            .filter(|previous| (at - *previous).num_seconds() < PAUSE_SECONDS)
-            .map(|previous| {
-                message_block(
-                    message,
-                    &sender,
-                    at,
-                    at.date_naive() != previous.date_naive(),
-                )
-            })
-            .filter(|block| {
-                self.current_chars + MESSAGE_SEPARATOR.len() + block.chars().count()
-                    <= SEGMENT_CHARS
-            });
-        let completed = match continuation {
-            Some(block) => {
-                let doc = self.current.as_mut().expect("segment");
-                doc.text.push_str(MESSAGE_SEPARATOR);
-                doc.text.push_str(&block);
-                self.current_chars += MESSAGE_SEPARATOR.len() + block.chars().count();
-                None
-            }
-            // One oversized message stays intact; the server's ordinary chunker handles its size.
-            None => {
-                let block = message_block(message, &sender, at, true);
-                self.current_chars = block.chars().count();
-                self.current.replace(self.segment(message, at, block))
-            }
-        };
-        let doc = self.current.as_mut().expect("segment");
-        if !doc.authors.contains(&sender) {
-            doc.authors.push(sender);
-        }
-        doc.meta
-            .insert("last_message_at".to_owned(), json!(at.to_rfc3339()));
-        self.previous = Some(at);
-        Ok(completed)
+/// A direct chat's JID is the chat ID itself, and wacli stores it as the sender of my own
+/// history-synced messages there, so a JID only names an otherwise unnamed group member.
+fn sender(chat: &chat::Chat, message: &Message) -> String {
+    let name = message
+        .sender_name
+        .as_deref()
+        .filter(|name| !name.is_empty());
+    if message.from_me {
+        "Me"
+    } else if chat.kind == "dm" {
+        name.unwrap_or(&chat.title)
+    } else {
+        name.or(message.sender_jid.as_deref())
+            .unwrap_or("Unknown sender")
     }
-
-    fn segment(&self, first: &Message, at: DateTime<Utc>, text: String) -> DocumentPut {
-        DocumentPut {
-            source: self.source.to_owned(),
-            external_id: format!("{}/{}", self.chat_hash, digest_id(&first.msg_id)),
-            content_type: ContentType::Markdown,
-            title: Some(self.name.clone()),
-            text,
-            url: None,
-            thread: Some(self.chat.jid.clone()),
-            parent: None,
-            authors: Vec::new(),
-            created_at: Some(at),
-            modified_at: None,
-            meta: json!({"chat_id": self.chat.jid, "chat_kind": self.chat.kind,
-                "first_message_id": first.msg_id, "first_message_rowid": first.rowid})
-            .as_object()
-            .expect("object")
-            .clone(),
-        }
-    }
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -694,19 +374,30 @@ fn documents(
     source: &str,
     chat: &Chat,
     messages: &[Message],
-) -> Result<Vec<DocumentPut>, PluginError> {
-    let mut segments = Segments::new(source, chat);
+) -> Result<Vec<ferret_api::DocumentPut>, PluginError> {
+    let shared = shared_chat(chat);
+    let mut segments = Segments::new(source, &shared);
     let mut documents = Vec::new();
     for message in messages {
-        documents.extend(segments.push(message)?);
+        documents.extend(segments.push(shared_message(&shared, message))?);
     }
-    documents.extend(segments.current);
+    documents.extend(segments.finish());
     Ok(documents)
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::DateTime;
+    use ferret_api::ContentType;
+
     use super::*;
+    use crate::plugins::chat::{
+        PAUSE_SECONDS, SEGMENT_CHARS, human_size, message_block, timestamp,
+    };
+
+    fn attachment_line(message: &Message) -> Option<String> {
+        chat::attachment_line(&attachment(message))
+    }
 
     fn message(id: &str, ts: i64, text: &str) -> Message {
         Message {
@@ -894,7 +585,12 @@ mod tests {
             attachment_line(&attachment).unwrap(),
             "Attachment: image · beach.jpg · image/jpeg · 1.2 MB"
         );
-        let block = message_block(&attachment, "Alice", timestamp(100).unwrap(), false);
+        let alice = chat::Chat::new("1@s.whatsapp.net", "dm", Some("Alice"));
+        let block = message_block(
+            &shared_message(&alice, &attachment),
+            timestamp(100).unwrap(),
+            false,
+        );
         assert_eq!(
             block,
             "**Alice** · 00:01  \nAttachment: image · beach.jpg · image/jpeg · 1.2 MB  \nPhoto  \nSunset"

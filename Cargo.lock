@@ -1238,6 +1238,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "ferret-api",
+ "ferret-signal-archive",
  "ferret-whatsapp-archive",
  "futures-util",
  "globset",
@@ -1276,6 +1277,7 @@ dependencies = [
  "croner",
  "ferret-api",
  "ferret-plugins",
+ "ferret-signal-archive",
  "ferret-whatsapp-archive",
  "futures-util",
  "getrandom 0.4.3",
@@ -1302,6 +1304,25 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "yrs",
+]
+
+[[package]]
+name = "ferret-signal-archive"
+version = "0.38.9"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
