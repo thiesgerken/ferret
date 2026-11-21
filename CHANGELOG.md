@@ -1,6 +1,58 @@
 # CHANGELOG
 
 
+## v0.39.0 (2026-11-21)
+
+### ✨ Introduce new features
+
+- feat(signal): name senders and chats from signal-cli's contacts and groups
+- feat(signal-archive): report an unlinked collector
+- feat(signal-archive): import history from Signal Desktop's chat export
+- feat(signal-archive): apply edits and remote deletes
+- feat(signal-archive): record the account's own ACI from signal-cli
+- feat(signal-archive): receive from signal-cli and serve the chat archive
+- feat(plugins): add the signal plugin for the Signal chat archive
+- feat(signal-archive): mark voice notes and name the change's message key
+- feat(signal-archive): add the archive API types and reference
+
+### ♻️ Refactor code
+
+- refactor(plugins): share chat archive connection checks
+- refactor(plugins): make the pre-sweep archive recheck explicit
+- refactor(plugins): let shared chat messages carry several attachments
+- refactor(plugins): extract the shared chat module from WhatsApp
+
+### 🩹 Simple fix for a non-critical issue
+
+- fix(signal-archive): name the export line in every import error
+- fix(plugins): log the Signal collector's last receipt as UTC time
+- fix(signal-archive): keep serde_json a test-only dependency
+
+### 🐛 Fix a bug
+
+- fix(signal-archive): import story replies and skip unkeyed messages
+- fix(signal-archive): keep the newest edit when an older one arrives late
+- fix(signal-archive): pull envelopes one at a time and keep story replies
+
+### 🔒️ Fix security or privacy issues
+
+- fix(signal-archive): honour admin deletes only in groups
+
+### 📝 Add or update documentation
+
+- docs(plugins): explain the unlinked Signal collector status
+- docs(signal): stream the export into the import instead of copying it
+- docs(signal): add the history import steps to the plugin guide
+- docs(plugins): describe Signal edits and deletes
+- docs(plugins): name the raw chat ID fallback for Signal titles
+- docs(plugins): add the Signal chat archive plugin guide
+
+### ✅ Add, update, or pass tests
+
+- test(plugins): run the signal plugin against an unlinked collector
+- test(plugins): re-render Signal segments on edits and deletes
+- test(plugins): run the signal plugin against the real chat archive
+
 ## v0.38.9 (2026-11-19)
 
 ### ⬆️ Upgrade dependencies
