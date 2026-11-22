@@ -20,3 +20,6 @@ plugins:
   volumeMounts:
     - name: documents
       mountPath: /mnt/documents
+postgres:
+  image:
+    tag: v0.26.6-pg18

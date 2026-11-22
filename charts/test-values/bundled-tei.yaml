@@ -10,3 +10,6 @@ embedding:
       dimension: 1024
       minSimilarity: 0.42
       bundledTei: true
+postgres:
+  image:
+    tag: v0.26.6-pg18
