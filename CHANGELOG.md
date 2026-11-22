@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.39.1 (2026-11-22)
+
+### 🐛 Fix a bug
+
+- fix(chart): require postgres.image.tag for the bundled ParadeDB
+
 ## v0.39.0 (2026-11-21)
 
 ### ✨ Introduce new features
