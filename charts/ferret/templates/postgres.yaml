@@ -53,7 +53,7 @@ spec:
       {{- end }}
       containers:
         - name: postgres
-          image: {{ .Values.postgres.image.registry }}/{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}
+          image: {{ .Values.postgres.image.registry }}/{{ .Values.postgres.image.repository }}:{{ required "postgres.image.tag is required: pin the ParadeDB image (e.g. v0.26.6-pg18), the chart does not migrate data between Postgres majors" .Values.postgres.image.tag }}
           imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
           env:
             - name: POSTGRES_DB

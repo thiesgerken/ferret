@@ -22,3 +22,6 @@ embedding:
       embeddingApi:
         url: https://api.example.com/v1
         model: bge-m3
+postgres:
+  image:
+    tag: v0.26.6-pg18

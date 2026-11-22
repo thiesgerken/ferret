@@ -40,7 +40,7 @@ the chart refuses to render without one. The quickest start is the bundled TEI:
 
 ```bash
 helm install ferret ./charts/ferret --namespace ferret --create-namespace \
-  --set ingress.hostname=ferret.example.com \
+  --set ingress.hostname=ferret.example.com --set postgres.image.tag=v0.26.6-pg18 \
   --set bundledTei.enabled=true --set 'embedding.models[0].bundledTei=true'
 ```
 
@@ -63,6 +63,16 @@ set `secrets.existingSecret`:
 | `session-secret` | signing session cookies, at least 32 bytes; changing it signs everyone out |
 | `worker-secret` | the plugin workers' key for the server's internal API, at least 32 bytes |
 | `config-key` | encrypts plugin credentials, 32 bytes in base64 (`openssl rand -base64 32`); back it up apart from the database |
+
+## Bundled ParadeDB
+
+Without `postgres.external`, the chart runs a single ParadeDB instance on a PVC. Its image tag
+`postgres.image.tag` is **required**: the chart ships no default, so a chart upgrade never
+changes your Postgres major or `pg_search` release. A new Postgres major refuses to start on the
+old data directory; move to one with `pg_dump`/`pg_restore` into a fresh data directory (see
+[operations](../../docs/operations.md#backups-and-restore-responsibilities)), not by bumping the
+tag alone. Keep `pg_search` within the release the [database requirements](#database-requirements)
+name.
 
 ## External Postgres
 
@@ -95,8 +105,8 @@ The presence of `external` disables the bundled PVC, Deployment and Service. All
 
 ### Database requirements
 
-The database must provide ParadeDB **`pg_search` compatible with the chart's pinned 0.26.x
-release** (currently 0.26.6), and **pgvector** (`vector`). Plain AWS RDS and Google Cloud SQL do
+The database must provide ParadeDB **`pg_search` 0.26.x**, the release ferret is tested against
+(currently 0.26.6, as in `docker-compose.yml`), and **pgvector** (`vector`). Plain AWS RDS and Google Cloud SQL do
 not offer `pg_search` and cannot serve as Ferret's database.
 
 Use a database owned by the Ferret user. If that user is not a superuser, an administrator must

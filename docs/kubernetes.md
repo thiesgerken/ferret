@@ -12,7 +12,9 @@ Choose who operates the database:
   PVC and establish a database-consistent backup policy with your infrastructure tooling. The
   chart is not an HA Postgres operator. Its database Deployment uses Recreate because two
   Postgres processes must never open one data directory. A multi-replica server does not make
-  the database highly available.
+  the database highly available. Pin its image with `postgres.image.tag`; the chart has no
+  default, so the Postgres major only changes when you change it
+  ([bundled ParadeDB](../charts/ferret/README.md#bundled-paradedb)).
 - **Your own Postgres:** set `postgres.external` as described in the
   [chart's external Postgres contract](../charts/ferret/README.md#external-postgres), checking its
   [database requirements](../charts/ferret/README.md#database-requirements). CloudNativePG with a
@@ -56,6 +58,8 @@ ingress:
       namespace: gateway-system
       sectionName: https
 postgres:
+  image:
+    tag: v0.26.6-pg18 # required, see the chart's Bundled ParadeDB section
   persistence:
     storageClassName: your-rwo-storage-class
 embedding:

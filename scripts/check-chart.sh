@@ -12,6 +12,7 @@ done
 # The defaults deploy no TEI. They name no endpoint either, so the model gets one here (`--set`
 # on a list replaces the whole list, hence the model's other required fields).
 defaults=$(helm template ferret "$chart" --set ingress.hostname=ferret.example.com \
+  --set postgres.image.tag=v0.26.6-pg18 \
   --set 'embedding.models[0].id=qwen3-embedding-0.6b' \
   --set 'embedding.models[0].dimension=1024' --set 'embedding.models[0].minSimilarity=0.42' \
   --set 'embedding.models[0].embeddingApi.url=http://tei/v1' \
@@ -72,7 +73,9 @@ refuse() {
 }
 bundled=(-f charts/test-values/bundled-tei.yaml)
 endpoints=(-f charts/test-values/endpoints.yaml)
-refuse "needs an embeddingApi or a queryApi" --set ingress.hostname=ferret.example.com
+refuse "needs an embeddingApi or a queryApi" --set ingress.hostname=ferret.example.com \
+  --set postgres.image.tag=v0.26.6-pg18
+refuse "postgres.image.tag is required" "${bundled[@]}" --set postgres.image.tag=
 refuse "exactly one model, but 2" "${endpoints[@]}" --set bundledTei.enabled=true \
   --set 'embedding.models[0].bundledTei=true' --set 'embedding.models[0].embeddingApi=null' \
   --set 'embedding.models[0].queryApi=null' --set 'embedding.models[1].bundledTei=true' \
