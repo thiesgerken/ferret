@@ -15,7 +15,7 @@ async-imap = { version = "0.12", default-features = false, features = ["runtime-
 base64 = "0.23"
 chacha20poly1305 = "0.11"
 chrono = { version = "0.4", default-features = false }
-croner = "4"
+croner = "5"
 futures-util = "0.3"
 axum = "0.8"
 axum-extra = { version = "0.12", default-features = false, features = ["query"] }
